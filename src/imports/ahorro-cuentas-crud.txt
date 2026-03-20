@@ -1,0 +1,217 @@
+Módulo: Cuentas de Ahorro
+Tabla: "EFINANCIANET_DB"."J_CUENTAS_CORP_CLIENTES"
+1. Identificación del registro
+Tomar el valor del campo oculto:
+
+Código
+id (UUID)
+2. Consulta institucional del registro
+sql
+SELECT
+    id,
+    type,
+    no_sol,
+    no_cuenta,
+    no_referenc1,
+    fecha_sol,
+    fecha_autori,
+    fecha_disper,
+    fecha_cancel,
+    fecha_inicio,
+    fecha_fin_cu,
+    descripcion,
+    linea_produc,
+    tipo_produc,
+    producto_id,
+    producto_eje,
+    cliente_id,
+    saldo_actual,
+    monto_sol,
+    monto_aut,
+    monto_disp,
+    estatus_disp,
+    estatus_sol,
+    estatus_cart,
+    estatus_cuen,
+    cta_eje_chec,
+    fases,
+    data
+FROM "EFINANCIANET_DB"."J_CUENTAS_CORP_CLIENTES"
+WHERE id = <ID>;
+3. Mapeo de campos al formulario (Modo Editar)
+3.1 Campos físicos
+Campo UI	Origen BD
+Número de Solicitud	no_sol
+Número de Cuenta	no_cuenta
+Número de Referencia	no_referenc1
+Fecha Solicitud	fecha_sol
+Fecha Autorización	fecha_autori
+Fecha Dispersión	fecha_disper
+Fecha Cancelación	fecha_cancel
+Fecha Inicio	fecha_inicio
+Fecha Fin	fecha_fin_cu
+Descripción	descripcion
+Saldo Actual	saldo_actual
+Monto Solicitado	monto_sol
+Monto Autorizado	monto_aut
+Monto Dispersado	monto_disp
+Estatus Dispersión	estatus_disp
+Estatus Solicitud	estatus_sol
+Estatus Cartera	estatus_cart
+Estatus Cuenta	estatus_cuen
+Cuenta Eje / Chequera	cta_eje_chec
+Fases	fases
+3.2 Campos del JSON (solo lectura o edición según reglas)
+El JSON debe cargarse sin alteraciones:
+
+Código
+data.cliente.*
+data.producto.*
+data.metadatos.*
+Ejemplos:
+
+data.cliente.claveCliente
+
+data.cliente.nombreCompleto
+
+data.producto.claveProducto
+
+data.producto.nombreProducto
+
+data.producto.tasa
+
+data.producto.montoMinimo
+
+4. Pick Maps en Modo Editar
+4.1 Cliente
+Si el usuario cambia el cliente:
+
+Código
+cliente_id = J_CLIENTES.id
+data.cliente.claveCliente = J_CLIENTES.data.idCliente
+data.cliente.nombreCompleto = nombre + apellidos
+4.2 Producto
+Si el usuario cambia el producto:
+
+Código
+producto_id = J_PRODUCTOS.id
+data.producto.claveProducto = claveProducto
+data.producto.nombreProducto = nombreProducto
+data.producto.tasa = tasa
+data.producto.montoMinimo = montoMinimo
+5. Reglas institucionales del Modo Editar
+No eliminar campos del JSON.
+
+No reconstruir el JSON desde cero.
+
+No modificar id.
+
+No modificar linea_produc (siempre “CAPTACION”).
+
+No modificar tipo_produc (siempre “Ahorro”).
+
+Respetar llaves foráneas.
+
+Mantener estructura padre + nodos JSON.
+
+⭐ PROMPT 3.1 — GUARDAR / EDITAR CUENTA DE AHORRO
+Botón: Guardar – Modo Editar
+Tabla: "EFINANCIANET_DB"."J_CUENTAS_CORP_CLIENTES"
+1. Obtener el ID del registro
+Código
+id (UUID)
+2. Leer el JSON actual desde la BD
+sql
+SELECT data
+FROM "EFINANCIANET_DB"."J_CUENTAS_CORP_CLIENTES"
+WHERE id = <ID>;
+3. Construcción del JSON parcial
+El sistema debe construir un JSON solo con los campos modificados, por ejemplo:
+
+json
+{
+  "cliente": {
+    "claveCliente": "CL-001",
+    "nombreCompleto": "Juan Pérez"
+  },
+  "producto": {
+    "claveProducto": "AHO-001",
+    "nombreProducto": "Ahorro Tradicional",
+    "tasa": 5.5,
+    "montoMinimo": 1000
+  },
+  "metadatos": {
+    "ultimaActualizacion": "2026-02-27"
+  }
+}
+Reglas:
+
+No eliminar nodos.
+
+No enviar campos no modificados.
+
+No reconstruir el JSON completo.
+
+4. MERGE JSON institucional
+sql
+UPDATE "EFINANCIANET_DB"."J_CUENTAS_CORP_CLIENTES"
+SET
+  no_sol = '<no_sol>',
+  no_cuenta = '<no_cuenta>',
+  no_referenc1 = '<no_referenc1>',
+  fecha_sol = '<fecha_sol>',
+  fecha_autori = '<fecha_autori>',
+  fecha_disper = '<fecha_disper>',
+  fecha_cancel = '<fecha_cancel>',
+  fecha_inicio = '<fecha_inicio>',
+  fecha_fin_cu = '<fecha_fin_cu>',
+  descripcion = '<descripcion>',
+  producto_id = '<producto_id>',
+  producto_eje = '<producto_eje>',
+  cliente_id = '<cliente_id>',
+  saldo_actual = '<saldo_actual>',
+  monto_sol = '<monto_sol>',
+  monto_aut = '<monto_aut>',
+  monto_disp = '<monto_disp>',
+  estatus_disp = '<estatus_disp>',
+  estatus_sol = '<estatus_sol>',
+  estatus_cart = '<estatus_cart>',
+  estatus_cuen = '<estatus_cuen>',
+  cta_eje_chec = '<cta_eje_chec>',
+  fases = '<fases>',
+  data = data || '<JSON_PARCIAL>'::jsonb
+WHERE id = '<ID>';
+Reglas del MERGE:
+data SIEMPRE va a la izquierda.
+
+El JSON parcial va a la derecha.
+
+Los campos no enviados se conservan.
+
+No se borra nada del JSON existente.
+
+5. Validaciones obligatorias
+no_sol no puede estar vacío.
+
+no_cuenta no puede estar vacío.
+
+cliente_id debe existir en "J_CLIENTES".
+
+producto_id debe existir en "J_PRODUCTOS".
+
+linea_produc debe seguir siendo “CAPTACION”.
+
+tipo_produc debe seguir siendo “Ahorro”.
+
+No permitir guardar sin JSON.
+
+6. Resultado final
+El registro queda actualizado:
+
+Campos físicos actualizados
+
+JSON actualizado mediante MERGE
+
+Relaciones cliente/producto preservadas
+
+Estructura institucional intacta

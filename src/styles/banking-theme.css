@@ -1,0 +1,220 @@
+/* Variables CSS para el tema del sistema bancario */
+/* Estas variables son actualizadas dinámicamente por el ThemeContext */
+
+/* Clases de utilidad para elementos que usan el tema */
+.tab-active {
+  background-color: var(--theme-secondary) !important;
+  color: white !important;
+}
+
+.tab-inactive {
+  color: #374151;
+}
+
+.tab-inactive:hover {
+  background-color: #e5e7eb;
+}
+
+.btn-primary-theme {
+  background-color: var(--theme-primary);
+  color: white;
+}
+
+.btn-primary-theme:hover {
+  background-color: var(--theme-primary-hover);
+}
+
+.btn-secondary-theme {
+  background-color: var(--theme-secondary);
+  color: white;
+}
+
+.btn-secondary-theme:hover {
+  background-color: var(--theme-secondary-hover);
+}
+
+.btn-accent-theme {
+  background-color: var(--theme-accent);
+  color: white;
+}
+
+.btn-accent-theme:hover {
+  background-color: var(--theme-accent-hover);
+}
+
+.bg-primary-theme {
+  background-color: var(--theme-primary);
+}
+
+.bg-secondary-theme {
+  background-color: var(--theme-secondary);
+}
+
+.bg-accent-theme {
+  background-color: var(--theme-accent);
+}
+
+.bg-primary-hover-theme:hover {
+  background-color: var(--theme-primary-hover);
+}
+
+.bg-secondary-hover-theme:hover {
+  background-color: var(--theme-secondary-hover);
+}
+
+.bg-accent-hover-theme:hover {
+  background-color: var(--theme-accent-hover);
+}
+
+.text-primary-theme {
+  color: var(--theme-primary);
+}
+
+.text-secondary-theme {
+  color: var(--theme-secondary);
+}
+
+.text-accent-theme {
+  color: var(--theme-accent);
+}
+
+.border-primary-theme {
+  border-color: var(--theme-primary);
+}
+
+.border-secondary-theme {
+  border-color: var(--theme-secondary);
+}
+
+.border-accent-theme {
+  border-color: var(--theme-accent);
+}
+
+/* Header de tablas con tema */
+.table-header-theme {
+  background-color: var(--theme-primary);
+  color: white;
+}
+
+/* Secciones con tema */
+.section-header-theme {
+  background-color: var(--theme-primary);
+  color: white;
+}
+
+/* Modal header con tema */
+.modal-header-theme {
+  background-color: var(--theme-secondary);
+  color: white;
+}
+
+/* Row seleccionado con tema */
+.row-selected-theme {
+  background-color: var(--theme-primary);
+  color: white;
+}
+
+/* Hover para filas */
+.row-hover-theme:hover {
+  background-color: var(--theme-primary-light);
+}
+
+/* Focus ring con tema */
+.ring-primary-theme {
+  --tw-ring-color: var(--theme-primary);
+}
+
+/* Opacidades del tema primary */
+.bg-primary-theme-10 {
+  background-color: color-mix(in srgb, var(--theme-primary) 10%, transparent);
+}
+
+.bg-primary-theme-40 {
+  background-color: color-mix(in srgb, var(--theme-primary) 40%, transparent);
+}
+
+.border-primary-theme-40 {
+  border-color: color-mix(in srgb, var(--theme-primary) 40%, transparent);
+}
+
+/* Section header light (para subtabs) */
+.bg-section-light-theme {
+  background-color: color-mix(in srgb, var(--theme-primary) 12%, white);
+}
+
+/* Border de indicadores con opacidad */
+.border-primary-theme-light {
+  border-color: color-mix(in srgb, var(--theme-primary) 25%, transparent);
+}
+
+/* === CLASES ADICIONALES PARA MIGRACIÓN COMPLETA === */
+
+/* Focus border con tema */
+.focus\:border-primary-theme:focus {
+  border-color: var(--theme-primary);
+}
+.focus\:border-accent-theme:focus {
+  border-color: var(--theme-accent);
+}
+
+/* Focus ring con accent */
+.focus\:ring-accent-theme:focus {
+  --tw-ring-color: var(--theme-accent);
+}
+
+/* Ring inset con tema */
+.ring-accent-theme {
+  --tw-ring-color: var(--theme-accent);
+}
+
+/* Accent color para checkboxes */
+.accent-primary-theme {
+  accent-color: var(--theme-primary);
+}
+
+/* Stroke y fill para SVGs */
+.stroke-primary-theme {
+  stroke: var(--theme-primary);
+}
+.stroke-accent-theme {
+  stroke: var(--theme-accent);
+}
+.fill-primary-theme {
+  fill: var(--theme-primary);
+}
+
+/* Opacidad 15% del primary para borders sutiles */
+.border-primary-theme-15 {
+  border-color: color-mix(in srgb, var(--theme-primary) 15%, transparent);
+}
+
+/* Background primary light con opacidad (~D9E2F3 equivalente) */
+.bg-primary-tint-theme {
+  background-color: color-mix(in srgb, var(--theme-primary) 15%, white);
+}
+
+/* Hover sobre background tint */
+.hover\:bg-primary-tint-theme:hover {
+  background-color: color-mix(in srgb, var(--theme-primary) 20%, white);
+}
+
+/* Text primary con opacidad */
+.text-primary-theme-60 {
+  color: color-mix(in srgb, var(--theme-primary) 60%, transparent);
+}
+
+/* Border primary hover theme */
+.border-primary-hover-theme {
+  border-color: var(--theme-primary-hover);
+}
+
+/* Hover bg primary tint sutil (60% opacidad) */
+.hover\:bg-primary-tint-60:hover {
+  background-color: color-mix(in srgb, var(--theme-primary) 10%, white);
+}
+
+/* Row seleccionado en tablas master-detail */
+.row-selected-primary {
+  background-color: var(--theme-primary);
+  color: white;
+}

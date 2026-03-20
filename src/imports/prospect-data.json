@@ -1,0 +1,103 @@
+{
+  "rfc": "SOEC",
+  "sic": [
+    {
+      "id": 1,
+      "estatus": "NEGATIVO"
+    },
+    {
+      "id": 2,
+      "estatus": "NEGATIVO"
+    },
+    {
+      "id": 1772310717275,
+      "estatus": "NEGATIVO"
+    }
+  ],
+  "curp": "1-17160648",
+  "sexo": "Masculino",
+  "nombre": "Juan Cuenta eje Pérez Sanchez",
+  "default": {
+    "rfc": "SOEC",
+    "curp": "1-17160648",
+    "sexo": "Masculino",
+    "tipo": "Persona Fisica",
+    "nombre": "Juan Cuenta eje",
+    "estatus": "Activo",
+    "telefono": "12121212",
+    "direccion": "GENERAL",
+    "estatusSIC": "NEGATIVO",
+    "idProspecto": "PROS-004",
+    "razonSocial": "Fisica",
+    "apellidoMaterno": "Sanchez",
+    "apellidoPaterno": "Pérez",
+    "fechaNacimiento": "22/02/2001",
+    "estatusProspecto": "Activo",
+    "correoElectronico": "test2@t.t",
+    "entidadFederativa": "CDMX",
+    "estatusListaNegra": "NEGATIVO",
+    "denominacionRazonSocial": "Fisica"
+  },
+  "estatus": "Activo",
+  "sucursal": "CDMX",
+  "telefono": "12121212",
+  "cotizacion": "S",
+  "estatusSIC": "NEGATIVO",
+  "direcciones": [
+    {
+      "id": 1772310678128,
+      "calle": "Hola",
+      "colonia": "Hola",
+      "principal": true,
+      "codigoPostal": "Hola"
+    }
+  ],
+  "idProspecto": "PROS-004",
+  "razonSocial": "Fisica",
+  "cotizaciones": [
+    {
+      "id": 1
+    }
+  ],
+  "listasNegras": [
+    {
+      "id": 1,
+      "estatus": "NEGATIVO",
+      "tipoLista": "Externa",
+      "nombreLista": "Articulos 69"
+    },
+    {
+      "id": 2,
+      "estatus": "NEGATIVO",
+      "tipoLista": "Externa",
+      "nombreLista": "j"
+    },
+    {
+      "id": 1772310726730,
+      "estatus": "NEGATIVO",
+      "tipoLista": "Externa",
+      "nombreLista": "x"
+    }
+  ],
+  "estatusCliente": "Activo",
+  "apellidoMaterno": "Sanchez",
+  "apellidoPaterno": "Pérez",
+  "fechaNacimiento": "22/02/2001",
+  "fechaOriginacion": "2026-02-24",
+  "correoElectronico": "test2@t.t",
+  "entidadFederativa": "CDMX",
+  "estatusListaNegra": "NEGATIVO",
+  "institucionGobierno": "x",
+  "clasificacionCliente": "Persona",
+  "denominacionRazonSocial": "Fisica",
+  "expedientesElectronicos": [
+    {
+      "id": 1,
+      "estatus": "Pendiente"
+    },
+    {
+      "id": 2,
+      "estatus": "Pendiente"
+    }
+  ]
+}

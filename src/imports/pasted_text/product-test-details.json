@@ -1,0 +1,300 @@
+{
+  "cargo": [],
+  "fases": [
+    {
+      "id": 1,
+      "seq": "1",
+      "notes": "primera fase",
+      "phaseId": "Primera",
+      "phaseName": "",
+      "productId": 5,
+      "assetBoolean": true
+    },
+    {
+      "id": 2,
+      "seq": "x",
+      "notes": "x",
+      "phaseId": "x",
+      "phaseName": "",
+      "productId": 5,
+      "assetBoolean": true
+    }
+  ],
+  "nombre": "Prueba de Producto",
+  "default": {
+    "cat": null,
+    "clave": "PR-005",
+    "moneda": "MXN",
+    "nombre": "Prueba de Producto",
+    "estatus": "Activo",
+    "sublinea": "Crédito Empleado",
+    "sucursal": "Querétaro",
+    "tipoTasa": "Fija",
+    "baseCalculo": "360",
+    "descripcion": "",
+    "fechaRegistro": "2026-03-11T20:46:31.169Z",
+    "lineaProducto": "Crédito",
+    "puestoTrabajo": "Gerente de Productos",
+    "descuentoNomina": false,
+    "usuarioRegistro": "Usuario Actual",
+    "aplicaInteresMoratorio": false
+  },
+  "estatus": "Activo",
+  "comision": [],
+  "paquetes": [],
+  "periodos": [
+    {
+      "id": 1,
+      "dias": 7,
+      "periodoId": 2,
+      "descripcion": "Semanal"
+    },
+    {
+      "id": 2,
+      "dias": 14,
+      "periodoId": 3,
+      "descripcion": "Catorcenal"
+    },
+    {
+      "id": 3,
+      "dias": 15,
+      "periodoId": 4,
+      "descripcion": "Quincenal"
+    },
+    {
+      "id": 4,
+      "dias": 30,
+      "periodoId": 5,
+      "descripcion": "Mensual"
+    }
+  ],
+  "sublinea": "Crédito Empleado",
+  "sucursal": "Querétaro",
+  "garantias": [],
+  "impuestos": [],
+  "idProducto": "PR-005",
+  "descripcion": "",
+  "autorizacion": [
+    {
+      "desde": "$1.00",
+      "firma": false,
+      "hasta": "$50,000.00",
+      "nivel": 1,
+      "activo": true,
+      "puesto": "Ejecutivo de Cuenta"
+    },
+    {
+      "desde": "$50,001.00",
+      "firma": true,
+      "hasta": "$250,000.00",
+      "nivel": 2,
+      "activo": true,
+      "puesto": "Gerente de Sucursal"
+    },
+    {
+      "desde": "$250,001.00",
+      "firma": true,
+      "hasta": "$1,000,000.00",
+      "nivel": 3,
+      "activo": true,
+      "puesto": "Subdirector de Crédito"
+    },
+    {
+      "desde": "$1,000,001.00",
+      "firma": true,
+      "hasta": "$5,000,000.00",
+      "nivel": 4,
+      "activo": true,
+      "puesto": "Director de Crédito"
+    },
+    {
+      "desde": "$5,000,001.00",
+      "firma": true,
+      "hasta": "$25,000,000.00",
+      "nivel": 5,
+      "activo": true,
+      "puesto": "Comité de Crédito"
+    },
+    {
+      "desde": "$25,000,001.00",
+      "firma": true,
+      "hasta": "$999,999,999.00",
+      "nivel": 6,
+      "activo": true,
+      "puesto": "Consejo de Administración"
+    }
+  ],
+  "fechaRegistro": "2026-03-11T20:46:31.169Z",
+  "lineaProducto": "Crédito",
+  "amortizaciones": [
+    {
+      "id": 1,
+      "metodo": "Francés (Cuota Fija)",
+      "descripcion": "Cuota constante con amortización creciente e intereses decrecientes",
+      "tipoCalculo": "Saldo Insoluto",
+      "pagoAnticipado": true,
+      "predeterminado": true
+    },
+    {
+      "id": 2,
+      "metodo": "Alemán (Amortización Fija)",
+      "descripcion": "Amortización constante con cuota decreciente",
+      "tipoCalculo": "Saldo Insoluto",
+      "pagoAnticipado": true,
+      "predeterminado": false
+    },
+    {
+      "id": 3,
+      "metodo": "Americano (Bullet)",
+      "descripcion": "Solo intereses durante el plazo, capital al vencimiento",
+      "tipoCalculo": "Monto Original",
+      "pagoAnticipado": false,
+      "predeterminado": false
+    },
+    {
+      "id": 4,
+      "metodo": "Flat (Interés Global)",
+      "descripcion": "Intereses calculados sobre monto original durante todo el plazo",
+      "tipoCalculo": "Monto Original",
+      "pagoAnticipado": false,
+      "predeterminado": false
+    },
+    {
+      "id": 5,
+      "metodo": "Libre (Pagos Variables)",
+      "descripcion": "Pagos variables acordados según flujo del acreditado",
+      "tipoCalculo": "Saldo Insoluto",
+      "pagoAnticipado": true,
+      "predeterminado": false
+    }
+  ],
+  "eventoContable": [
+    {
+      "clave": "EC-001",
+      "cuenta": "1203-01-001",
+      "evento": "Desembolso de Crédito",
+      "automatico": true,
+      "naturaleza": "Cargo",
+      "descripcion": "Registro de préstamo otorgado al acreditado"
+    },
+    {
+      "clave": "EC-002",
+      "cuenta": "1203-01-001",
+      "evento": "Cobro de Capital",
+      "automatico": true,
+      "naturaleza": "Abono",
+      "descripcion": "Aplicación de pago a capital del crédito"
+    },
+    {
+      "clave": "EC-003",
+      "cuenta": "5101-01-001",
+      "evento": "Devengamiento de Interés Ordinario",
+      "automatico": true,
+      "naturaleza": "Cargo",
+      "descripcion": "Reconocimiento diario de intereses devengados"
+    },
+    {
+      "clave": "EC-004",
+      "cuenta": "2101-01-003",
+      "evento": "Cobro de Interés Ordinario",
+      "automatico": true,
+      "naturaleza": "Abono",
+      "descripcion": "Aplicación de pago de intereses ordinarios"
+    },
+    {
+      "clave": "EC-005",
+      "cuenta": "5102-01-001",
+      "evento": "Devengamiento de Interés Moratorio",
+      "automatico": true,
+      "naturaleza": "Cargo",
+      "descripcion": "Reconocimiento de intereses por mora"
+    },
+    {
+      "clave": "EC-006",
+      "cuenta": "2105-01-001",
+      "evento": "Cobro de IVA",
+      "automatico": true,
+      "naturaleza": "Abono",
+      "descripcion": "IVA trasladado sobre intereses cobrados"
+    },
+    {
+      "clave": "EC-007",
+      "cuenta": "5201-01-001",
+      "evento": "Constitución de Reserva",
+      "automatico": true,
+      "naturaleza": "Cargo",
+      "descripcion": "Provisión de reserva preventiva por calificación"
+    },
+    {
+      "clave": "EC-008",
+      "cuenta": "1203-01-001",
+      "evento": "Castigo de Cartera",
+      "automatico": false,
+      "naturaleza": "Abono",
+      "descripcion": "Baja de crédito irrecuperable contra reservas"
+    },
+    {
+      "clave": "EC-009",
+      "cuenta": "4201-01-001",
+      "evento": "Cobro de Comisión por Apertura",
+      "automatico": true,
+      "naturaleza": "Abono",
+      "descripcion": "Ingreso por comisión de apertura del crédito"
+    },
+    {
+      "clave": "EC-010",
+      "cuenta": "1204-01-001",
+      "evento": "Traspaso a Cartera Vencida",
+      "automatico": true,
+      "naturaleza": "Cargo",
+      "descripcion": "Reclasificación a cartera vencida por días de atraso"
+    }
+  ],
+  "matrizTasaFija": [
+    {
+      "id": 1,
+      "periodo": "Semanal",
+      "productId": 5,
+      "tasaMaxima": "12",
+      "tasaMinima": "10",
+      "montoMaximo": 500000,
+      "montoMinimo": 50000,
+      "plazoMaximo": 24,
+      "plazoMinimo": 112,
+      "tasaDefault": "10",
+      "montoDefault": 50000,
+      "plazoDefault": 12
+    }
+  ],
+  "sucursalConfig": [],
+  "tasaReferencia": [
+    {
+      "id": 1,
+      "activo": true,
+      "moneda": "USD",
+      "productId": 5,
+      "tasaReferenciaId": 0,
+      "tasaReferenciaNombre": "Tasa Referencia"
+    }
+  ],
+  "prelacionCargos": [],
+  "matrizTasaVariable": [
+    {
+      "id": 1,
+      "periodo": "Semanal",
+      "productId": 5,
+      "montoMaximo": "122222",
+      "montoMinimo": "1",
+      "plazoMaximo": "12",
+      "plazoMinimo": "1",
+      "montoDefault": "12222",
+      "plazoDefault": "12",
+      "spreadMaxima": "11",
+      "spreadMinima": "11",
+      "spreadDefault": "1",
+      "tasaReferencia": "Tasa Referencia"
+    }
+  ],
+  "tabuladorProductos": [],
+  "expedientesElectronicos": []
+}

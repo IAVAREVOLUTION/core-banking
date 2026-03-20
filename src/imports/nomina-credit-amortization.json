@@ -1,0 +1,167 @@
+{
+  "plazo": "12",
+  "seguro": {
+    "nombre": "",
+    "tasaSeguro": "8",
+    "montoSeguro": 10000,
+    "totalSeguro": "19600.00",
+    "claveProducto": "",
+    "productoSeguroId": "0fa4a2d0-76a1-4756-9f9f-1cba406b4548",
+    "pagoSeguroPorPeriodo": "1633.33"
+  },
+  "cliente": {
+    "id": "b5325a8e-a93c-4c22-ad52-d0e0bd6fa5fe",
+    "nombreCompleto": "Mariana Pérez"
+  },
+  "periodo": "Diario",
+  "usuario": "p@p.p",
+  "garantia": null,
+  "producto": {
+    "id": "7e5d3920-5e9b-4577-9898-7f54090c9339",
+    "claveProducto": "",
+    "nombreProducto": "Crédito Nómina (Prueba)"
+  },
+  "amortizacion": "Alemán (Amortización Fija)",
+  "interesPagar": "90.32",
+  "tasaCotizada": "10",
+  "lineaProducto": "Crédito",
+  "montoCotizado": "50000",
+  "pagoPorPeriodo": "4176.42",
+  "fechaPrimerPago": "2026-03-07",
+  "seguroFinanciado": true,
+  "tablaAmortizacion": [
+    {
+      "no": 1,
+      "capital": "4160.30",
+      "interes": "13.89",
+      "fechaPago": "07/03/2026",
+      "pagoTotal": "5809.75",
+      "ivaInteres": "2.22",
+      "pagoSeguro": "1633.33",
+      "pagoPeriodo": "4176.42",
+      "saldoInsoluto": "50000.00"
+    },
+    {
+      "no": 2,
+      "capital": "4161.46",
+      "interes": "12.73",
+      "fechaPago": "08/03/2026",
+      "pagoTotal": "5809.56",
+      "ivaInteres": "2.04",
+      "pagoSeguro": "1633.33",
+      "pagoPeriodo": "4176.23",
+      "saldoInsoluto": "45839.70"
+    },
+    {
+      "no": 3,
+      "capital": "4162.62",
+      "interes": "11.58",
+      "fechaPago": "09/03/2026",
+      "pagoTotal": "5809.38",
+      "ivaInteres": "1.85",
+      "pagoSeguro": "1633.33",
+      "pagoPeriodo": "4176.05",
+      "saldoInsoluto": "41678.23"
+    },
+    {
+      "no": 4,
+      "capital": "4163.77",
+      "interes": "10.42",
+      "fechaPago": "10/03/2026",
+      "pagoTotal": "5809.19",
+      "ivaInteres": "1.67",
+      "pagoSeguro": "1633.33",
+      "pagoPeriodo": "4175.86",
+      "saldoInsoluto": "37515.62"
+    },
+    {
+      "no": 5,
+      "capital": "4164.93",
+      "interes": "9.26",
+      "fechaPago": "11/03/2026",
+      "pagoTotal": "5809.01",
+      "ivaInteres": "1.48",
+      "pagoSeguro": "1633.33",
+      "pagoPeriodo": "4175.68",
+      "saldoInsoluto": "33351.85"
+    },
+    {
+      "no": 6,
+      "capital": "4166.09",
+      "interes": "8.11",
+      "fechaPago": "12/03/2026",
+      "pagoTotal": "5808.82",
+      "ivaInteres": "1.30",
+      "pagoSeguro": "1633.33",
+      "pagoPeriodo": "4175.49",
+      "saldoInsoluto": "29186.92"
+    },
+    {
+      "no": 7,
+      "capital": "4167.24",
+      "interes": "6.95",
+      "fechaPago": "13/03/2026",
+      "pagoTotal": "5808.64",
+      "ivaInteres": "1.11",
+      "pagoSeguro": "1633.33",
+      "pagoPeriodo": "4175.31",
+      "saldoInsoluto": "25020.83"
+    },
+    {
+      "no": 8,
+      "capital": "4168.40",
+      "interes": "5.79",
+      "fechaPago": "14/03/2026",
+      "pagoTotal": "5808.45",
+      "ivaInteres": "0.93",
+      "pagoSeguro": "1633.33",
+      "pagoPeriodo": "4175.12",
+      "saldoInsoluto": "20853.59"
+    },
+    {
+      "no": 9,
+      "capital": "4169.56",
+      "interes": "4.63",
+      "fechaPago": "15/03/2026",
+      "pagoTotal": "5808.27",
+      "ivaInteres": "0.74",
+      "pagoSeguro": "1633.33",
+      "pagoPeriodo": "4174.94",
+      "saldoInsoluto": "16685.19"
+    },
+    {
+      "no": 10,
+      "capital": "4170.72",
+      "interes": "3.48",
+      "fechaPago": "16/03/2026",
+      "pagoTotal": "5808.08",
+      "ivaInteres": "0.56",
+      "pagoSeguro": "1633.33",
+      "pagoPeriodo": "4174.75",
+      "saldoInsoluto": "12515.63"
+    },
+    {
+      "no": 11,
+      "capital": "4171.88",
+      "interes": "2.32",
+      "fechaPago": "17/03/2026",
+      "pagoTotal": "5807.90",
+      "ivaInteres": "0.37",
+      "pagoSeguro": "1633.33",
+      "pagoPeriodo": "4174.56",
+      "saldoInsoluto": "8344.91"
+    },
+    {
+      "no": 12,
+      "capital": "4173.03",
+      "interes": "1.16",
+      "fechaPago": "18/03/2026",
+      "pagoTotal": "5807.71",
+      "ivaInteres": "0.19",
+      "pagoSeguro": "1633.33",
+      "pagoPeriodo": "4174.38",
+      "saldoInsoluto": "4173.03"
+    }
+  ],
+  "institucionGobierno": "Colegio Nacional de Educación Profesional Técnica"
+}

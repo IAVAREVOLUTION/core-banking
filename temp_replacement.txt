@@ -1,0 +1,18 @@
+                    {/* Campo: Número de Tarjeta Débito - Siempre visible en modo editar/ver */}
+                    <div className="flex flex-col min-h-[52px]">
+                      <label className="text-[10px] text-gray-600 mb-0.5">
+                        NÚMERO DE TARJETA DÉBITO
+                      </label>
+                      {!camposEditables ? (
+                        <div className="px-2 py-1 text-xs text-gray-700">{formData.numeroTarjetaDebito || ''}</div>
+                      ) : (
+                        <input 
+                          type="text" 
+                          value={formData.numeroTarjetaDebito || ''}
+                          disabled
+                          className="px-2 py-1 text-xs border border-gray-300 rounded bg-gray-100 text-gray-600"
+                        />
+                      )}
+                    </div>
+                  </>
+                )}

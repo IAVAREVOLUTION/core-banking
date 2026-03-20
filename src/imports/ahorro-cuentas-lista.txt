@@ -1,0 +1,173 @@
+Basado en la tabla real:
+sql
+EFINANCIANET_DB."J_CUENTAS_CORP_CLIENTES"
+1. Objetivo institucional de la Lista
+El módulo Cuentas de Ahorro debe mostrar únicamente las cuentas cuyo campo:
+
+Código
+linea_produc = 'CAPTACION'
+y cuyo tipo de producto:
+
+Código
+tipo_produc = 'Ahorro'
+Esto garantiza que la lista muestre solo cuentas de ahorro, no créditos ni líneas de crédito.
+
+2. Consulta institucional para la Lista
+Cuando el usuario ingrese al módulo:
+
+Cuentas de Ahorro → Lista
+
+debes ejecutar:
+
+sql
+SELECT
+    id,
+    type,
+    no_sol,
+    no_cuenta,
+    no_referenc1,
+    fecha_sol,
+    fecha_autori,
+    fecha_disper,
+    fecha_cancel,
+    fecha_inicio,
+    fecha_fin_cu,
+    descripcion,
+    linea_produc,
+    tipo_produc,
+    producto_id,
+    producto_eje,
+    cliente_id,
+    saldo_actual,
+    monto_sol,
+    monto_aut,
+    monto_disp,
+    estatus_disp,
+    estatus_sol,
+    estatus_cart,
+    estatus_cuen,
+    cta_eje_chec,
+    fases,
+    data
+FROM "EFINANCIANET_DB"."J_CUENTAS_CORP_CLIENTES"
+WHERE linea_produc = 'CAPTACION'
+  AND tipo_produc = 'Ahorro';
+3. Campos obligatorios que deben mostrarse en la Lista
+La lista debe mostrar los siguientes campos:
+
+Campo en UI	Origen en BD
+No. Cuenta	no_cuenta
+Cliente	cliente_id (mostrar nombre desde J_CLIENTES)
+Producto	producto_id (mostrar nombre desde J_PRODUCTOS)
+Fecha Solicitud	fecha_sol
+Fecha Autorización	fecha_autori
+Saldo Actual	saldo_actual
+Estatus Cuenta	estatus_cuen
+Estatus Cartera	estatus_cart
+Estatus Solicitud	estatus_sol
+Estatus Dispersión	estatus_disp
+Cuenta Eje / Chequera	cta_eje_chec
+Fases	fases
+Campos ocultos obligatorios:
+id (PK)
+
+producto_id
+
+cliente_id
+
+linea_produc
+
+tipo_produc
+
+data (JSON completo)
+
+4. Reglas institucionales de la Lista
+4.1 Filtrado obligatorio
+La lista solo debe mostrar registros donde:
+
+linea_produc = 'CAPTACION'
+
+tipo_produc = 'Ahorro'
+
+4.2 No mezclar con otros productos
+No deben aparecer:
+
+Créditos
+
+Líneas de crédito
+
+Cuentas eje que no sean de ahorro
+
+Productos de inversión
+
+Cuentas corporativas que no sean de ahorro
+
+4.3 No reconstruir JSON
+El campo data debe leerse, no modificarse.
+
+4.4 No eliminar campos del JSON
+El JSON debe preservarse íntegro.
+
+4.5 Llaves foráneas
+El sistema debe resolver:
+
+cliente_id → nombre completo desde "J_CLIENTES"
+
+producto_id → nombre del producto desde "J_PRODUCTOS"
+
+5. Mapeo institucional del JSON (si aplica)
+Si el JSON contiene información adicional relevante, puede mostrarse en columnas adicionales, por ejemplo:
+
+data.cuentaEje
+
+data.condiciones
+
+data.metadatos
+
+Pero no es obligatorio para la lista.
+
+6. Acciones permitidas en la Lista
+Cada registro debe permitir:
+
+Editar (liga a PROMPT 3)
+
+Ver (liga a PROMPT 4)
+
+Historial (si aplica)
+
+Subtabs (si aplica: movimientos, garantías, etc.)
+
+7. Ordenamiento institucional
+Ordenar por:
+
+Código
+fecha_sol DESC
+8. Comportamiento esperado
+Cuando el usuario entra al módulo:
+
+Cuentas de Ahorro → Lista
+
+debe ver:
+
+Todas las cuentas de ahorro existentes
+
+Con información clara y completa
+
+Con acceso inmediato a Editar / Ver
+
+Con datos provenientes de la tabla real
+
+Con nombres de cliente y producto resueltos
+
+9. Resultado final
+El módulo queda listo para integrarse con:
+
+PROMPT 2 (Alta de Cuenta de Ahorro)
+
+PROMPT 3 (Editar Cuenta de Ahorro)
+
+PROMPT 3.1 (Guardar cambios)
+
+PROMPT 4 (View)
+
+Subtabs (Movimientos, Garantías, Documentos, etc.)

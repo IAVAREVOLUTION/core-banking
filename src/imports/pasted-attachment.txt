@@ -1,0 +1,211 @@
+Objetivo institucional
+Garantizar que TODOS los campos del formulario del módulo CLIENTE:
+
+Se carguen correctamente desde la BD
+
+Se mapeen correctamente al formulario
+
+Se guarden correctamente en la BD
+
+Se integren correctamente en el JSON data
+
+No eliminen ni sobrescriban nodos existentes
+
+Mantengan compatibilidad con Prospectos
+
+1. Consulta institucional para cargar el formulario
+Cuando el usuario abra:
+
+Clientes → Editar
+
+el sistema debe ejecutar:
+
+sql
+SELECT 
+  id,
+  type,
+  subtipo,
+  estatus,
+  data
+FROM "EFINANCIANET_DB"."J_CLIENTES"
+WHERE id = <ID_CLIENTE>;
+Regla institucional:  
+El formulario NO debe leer datos de ningún otro lado.
+Todo viene de:
+
+Campos físicos: type, subtipo, estatus
+
+JSON: data
+
+2. Mapeo obligatorio del JSON al formulario
+El formulario debe mapear campo por campo desde data.
+
+2.1 Datos personales
+Campo UI	JSON
+Nombre	data.nombre
+Apellido Paterno	data.apellidoPaterno
+Apellido Materno	data.apellidoMaterno
+Fecha Nacimiento	data.fechaNacimiento
+Sexo	data.sexo
+CURP	data.curp
+RFC	data.rfc
+Tipo Persona	data.tipo
+2.2 Contacto
+Campo UI	JSON
+Teléfono	data.telefono
+Correo	data.correoElectronico
+Dirección	data.direccion
+Entidad Federativa	data.entidadFederativa
+2.3 Prospecto / Cliente
+Campo UI	JSON
+Estatus Prospecto	data.estatusProspecto
+Estatus Cliente	data.estatusCliente
+Fecha Originación	data.fechaOriginacion
+Fecha Activación	data.fechaActivacion
+2.4 Listas y arrays
+Subtab	JSON
+Direcciones	data.direcciones[]
+SIC	data.sic[]
+Listas Negras	data.listasNegras[]
+Expedientes Electrónicos	data.expedientesElectronicos[]
+Regla institucional:  
+Si un array existe, se carga completo.
+Si no existe, se inicializa como [].
+
+3. Reglas institucionales para GUARDAR (Editar Cliente)
+Cuando el usuario presione Guardar, el sistema debe:
+
+3.1 Leer el JSON actual desde BD
+sql
+SELECT data
+FROM "EFINANCIANET_DB"."J_CLIENTES"
+WHERE id = <ID_CLIENTE>;
+3.2 Construir un JSON PARCIAL con solo los campos modificados
+Ejemplo:
+
+json
+{
+  "nombre": "Nuevo Nombre",
+  "apellidoPaterno": "Nuevo Paterno",
+  "telefono": "55555555",
+  "direcciones": [...],
+  "sic": [...],
+  "listasNegras": [...],
+  "expedientesElectronicos": [...]
+}
+3.3 MERGE JSON institucional
+sql
+UPDATE "EFINANCIANET_DB"."J_CLIENTES"
+SET 
+  type = '<type>',
+  subtipo = '<subtipo>',
+  estatus = '<estatus>',
+  data = data || '<JSON_PARCIAL>'::jsonb
+WHERE id = '<ID_CLIENTE>';
+Reglas del MERGE:
+data SIEMPRE va a la izquierda.
+
+El JSON parcial va a la derecha.
+
+No se borra nada que no se mande.
+
+No se reconstruye el JSON completo.
+
+No se eliminan arrays existentes.
+
+No se reemplazan arrays completos a menos que el usuario los edite.
+
+4. Reglas institucionales para arrays (direcciones, SIC, listas negras, expedientes)
+4.1 Al cargar
+Mostrar todos los elementos del array.
+
+No filtrar ni modificar.
+
+4.2 Al guardar
+Si el usuario edita un elemento → reemplazar solo ese elemento.
+
+Si el usuario agrega uno nuevo → agregar al array.
+
+Si el usuario elimina uno → eliminar solo ese elemento.
+
+4.3 Estructura obligatoria de cada array
+Direcciones
+json
+{
+  "id": <timestamp>,
+  "pais": "",
+  "estado": "",
+  "municipio": "",
+  "ciudad": "",
+  "colonia": "",
+  "calle": "",
+  "numeroExterior": "",
+  "numeroInterior": "",
+  "piso": "",
+  "codigoPostal": "",
+  "principal": true
+}
+SIC
+json
+{
+  "id": <timestamp>,
+  "estatus": "",
+  "usuario": "",
+  "fechaHora": "",
+  "tipoConsulta": "",
+  "xmlResultado": ""
+}
+Listas Negras
+json
+{
+  "id": <timestamp>,
+  "estatus": "",
+  "usuario": "",
+  "fechaHora": "",
+  "tipoLista": "",
+  "nombreLista": ""
+}
+Expedientes Electrónicos
+json
+{
+  "id": <timestamp>,
+  "nombre": "",
+  "mime": "",
+  "tamanoKB": "",
+  "fechaCarga": "",
+  "storagePath": "",
+  "tipoDocumento": ""
+}
+5. Reglas institucionales para ACTIVAR PROSPECTO → CLIENTE
+Cuando se presione Activar Prospecto:
+
+5.1 Actualizar campos físicos
+sql
+type = 'Clientes'
+estatus = 'Activo'
+5.2 Actualizar JSON
+sql
+data = data || '{
+  "estatusCliente": "Cliente",
+  "estatusProspecto": "Convertido",
+  "fechaActivacion": "<FECHA>"
+}'::jsonb
+5.3 No borrar nada del JSON existente
+5.4 No reconstruir el JSON
+5.5 No crear un nuevo registro en otra tabla
+6. Resultado esperado
+Después de aplicar este prompt:
+
+El formulario de Clientes → Editar cargará TODOS los datos.
+
+Los cambios se guardarán correctamente en la BD.
+
+Los arrays se cargarán y guardarán sin perder información.
+
+Los datos heredados de Prospectos se respetarán.
+
+La activación de prospecto actualizará correctamente el registro.
+
+No se perderá información del JSON.
+
+No aparecerán campos vacíos en Editar que sí estaban en el listado.

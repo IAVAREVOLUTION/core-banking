@@ -1,0 +1,74 @@
+Quiero que crees un nuevo endpoint exclusivo para Lista de Clientes, separado de Prospectos, con las siguientes reglas institucionales:
+
+1. Tabla y filtro obligatorio
+Tabla: EFINANCIANET_DB."J_CLIENTES"
+
+Filtro obligatorio:
+
+sql
+WHERE type = 'Cliente'
+Prohibido:
+
+No traer registros con type = 'Prospecto'
+
+No traer registros con type = 'Contacto'
+
+No reutilizar el endpoint ni la consulta de Prospectos
+
+Consulta base del endpoint:
+
+sql
+SELECT id, type, subtipo, estatus, data
+FROM EFINANCIANET_DB."J_CLIENTES"
+WHERE type = 'Cliente';
+2. Validación de datos: por qué hoy no trae nada
+Además de crear el endpoint, debes validar explícitamente:
+
+Cuántos registros existen en J_CLIENTES en total:
+
+sql
+SELECT COUNT(*) FROM EFINANCIANET_DB."J_CLIENTES";
+Cuántos tienen type = 'Cliente':
+
+sql
+SELECT COUNT(*) FROM EFINANCIANET_DB."J_CLIENTES"
+WHERE type = 'Cliente';
+Cuántos tienen type = 'Prospecto':
+
+sql
+SELECT COUNT(*) FROM EFINANCIANET_DB."J_CLIENTES"
+WHERE type = 'Prospecto';
+Si el resultado es:
+
+0 registros con type = 'Cliente'  
+→ El endpoint está bien, el problema es que nunca se han guardado clientes con ese type.
+
+6 registros con type = 'Prospecto'  
+→ Esos son Prospectos mal ubicados en J_CLIENTES o es una tabla compartida mal usada.
+
+3. Comportamiento del endpoint
+Si no hay registros con type = 'Cliente', el endpoint debe regresar lista vacía, no errores.
+
+No debe “caer de regreso” a Prospectos ni hacer fallback a otro type.
+
+No debe hacer OR type IN ('Cliente','Prospecto').
+
+No debe usar la misma consulta ni el mismo repositorio que Prospectos.
+
+4. Mapeo de la lista
+Una vez que existan registros con type='Cliente', el endpoint debe:
+
+Leer data (jsonb)
+
+Mapear los campos de la lista (nombre, curp, rfc, teléfono, correo, estatus, etc.)
+
+Usar id como llave primaria para Editar / Ver
+
+5. Entregable
+Quiero que me entregues:
+
+El SQL exacto del nuevo endpoint para Clientes.
+
+La evidencia de conteos por type en J_CLIENTES.
+
+La confirmación de que no se está usando el endpoint de Prospectos ni su lógica compartida.
