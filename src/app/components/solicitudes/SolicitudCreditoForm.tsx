@@ -26,6 +26,8 @@ import { GarantiasTab } from './GarantiasTab';
 import { ComisionesTab } from './ComisionesTab';
 import { AutorizacionTab } from './AutorizacionTab';
 import { NotasTab } from './NotasTab';
+import { FasesSolicitudTab } from './tabs/FasesSolicitudTab';
+import { PartesRelacionadasTab } from './tabs/PartesRelacionadasTab';
 import { useProductosCatalogoDB, type ProductoCatalogo } from '../../hooks/useProductosCatalogoDB';
 import { fetchNextNoSol } from '../../hooks/useSolicitudesDB';
 
@@ -75,7 +77,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
     return initial;
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [activeSection, setActiveSection] = useState<string>('terminos');
+  const [activeSection, setActiveSection] = useState<string>('fases');
 
   const isRO = mode === 'ver';
 
@@ -184,6 +186,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
       return raw.map((f: any) => ({
         faseId: String(f.phaseId ?? f.faseId ?? f.id ?? ''),
         descripcion: f.phaseName ?? f.descripcion ?? f.nombre ?? '',
+        promptIA: f.promptIA || '',
       }));
     }
     return CAT_FASES;
@@ -201,7 +204,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
     }));
   };
 
-  // When fase changes, fill descripcionFase
+  // When fase changes, fill descripcionFase and promptIA
   const handleFaseChange = (faseId: string) => {
     const fase = fasesDelProducto.find(f => f.faseId === faseId);
     setFormData(prev => ({
@@ -210,6 +213,12 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
       descripcionFase: fase?.descripcion || '',
     }));
   };
+
+  // Get promptIA for current phase
+  const fasePromptIA = useMemo(() => {
+    const fase = fasesDelProducto.find(f => f.faseId === formData.faseId);
+    return fase?.promptIA || '';
+  }, [fasesDelProducto, formData.faseId]);
 
   // Validation
   const validate = (): boolean => {
@@ -314,6 +323,8 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
   );
 
   const sections = [
+    { id: 'fases', label: 'Fases' },
+    { id: 'partesRelacionadas', label: 'Partes Relacionadas' },
     { id: 'terminos', label: 'Términos y Condiciones' },
     { id: 'simulacion', label: 'Simulación' },
     { id: 'expediente', label: 'Expediente Electrónico' },
@@ -611,6 +622,21 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
 
             {activeSection === sec.id && (
               <>
+                {sec.id === 'fases' && (
+                  <FasesSolicitudTab 
+                    mode={mode}
+                    productoId={formData.productoId}
+                    faseIdActual={formData.faseId}
+                  />
+                )}
+                {sec.id === 'partesRelacionadas' && (
+                  <PartesRelacionadasTab
+                    mode={mode}
+                    solicitudId={storageId}
+                    montoSolicitado={formData.montoSolicitado}
+                    clienteNombre={`${formData.nombrePersona || ''} ${formData.apellidoPaternoPersona || ''} ${formData.apellidoMaternoPersona || ''}`.trim()}
+                  />
+                )}
                 {sec.id === 'terminos' && (
                   <TerminosCondicionesTab mode={mode} solicitudId={storageId} lineaProducto={formData.lineaProducto} productoSeleccionado={productoSeleccionado} montoSolicitadoHeader={formData.montoSolicitado} />
                 )}
@@ -618,7 +644,14 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
                   <SimulacionTab mode={mode} solicitudId={storageId} lineaProducto={formData.lineaProducto} />
                 )}
                 {sec.id === 'expediente' && (
-                  <ExpedienteElectronicoTab mode={mode} solicitudId={storageId} faseIdActual={parseInt(formData.faseId) || 1} productoId={formData.productoId} nombreSolicitante={`${formData.nombrePersona || ''} ${formData.apellidoPaternoPersona || ''} ${formData.apellidoMaternoPersona || ''}`.trim()} />
+                  <ExpedienteElectronicoTab 
+                    mode={mode} 
+                    solicitudId={storageId} 
+                    faseIdActual={parseInt(formData.faseId) || 1} 
+                    productoId={formData.productoId} 
+                    nombreSolicitante={`${formData.nombrePersona || ''} ${formData.apellidoPaternoPersona || ''} ${formData.apellidoMaternoPersona || ''}`.trim()}
+                    fasePromptIA={fasePromptIA}
+                  />
                 )}
                 {sec.id === 'garantias' && (
                   <GarantiasTab mode={mode} solicitudId={storageId} montoSolicitado={formData.montoSolicitado} productoId={formData.productoId} faseIdActual={parseInt(formData.faseId) || 1} />

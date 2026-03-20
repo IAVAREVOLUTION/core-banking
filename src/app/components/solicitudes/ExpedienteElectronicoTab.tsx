@@ -321,9 +321,10 @@ interface Props {
   faseIdActual: number;
   productoId?: string;
   nombreSolicitante?: string;
+  fasePromptIA?: string;
 }
 
-export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, productoId, nombreSolicitante }: Props) {
+export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, productoId, nombreSolicitante, fasePromptIA }: Props) {
   // ── State: requisitos del producto (desde DB) ──
   const [requisitosDB, setRequisitosDB] = useState<RequisitoProducto[]>([]);
   const [loadingReqs, setLoadingReqs] = useState(false);
@@ -787,12 +788,16 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
     });
 
     try {
-      const promptAEnviar = reqInfo?.promptIA || `Verificar que el documento sea un "${doc.tipoDocumento}" legítimo y legible.`;
+      // PRIORIDAD DE PROMPT IA:
+      // 1. fasePromptIA (configurado en la fase del producto) - PRIORIDAD MÁS ALTA
+      // 2. reqInfo?.promptIA (del catálogo de documentos)
+      // 3. Fallback por defecto
+      const promptAEnviar = fasePromptIA || reqInfo?.promptIA || `Verificar que el documento sea un "${doc.tipoDocumento}" legítimo y legible.`;
       console.log(`${LOG} [IA] Enviando a /validar-documento-ia`);
       console.log(`${LOG} [IA]   - storagePath: ${doc.storagePath || '(n/a)'}`);
       console.log(`${LOG} [IA]   - tipoDocumento: ${doc.tipoDocumento}`);
       console.log(`${LOG} [IA]   - prompt usado: ${promptAEnviar.substring(0, 100)}...`);
-      console.log(`${LOG} [IA]   - reqInfo.promptIA: ${reqInfo?.promptIA ? 'ENCONTRADO ✓' : 'NO ENCONTRADO ✗'}`);
+      console.log(`${LOG} [IA]   - fuente prompt: ${fasePromptIA ? 'FASE (prioridad)' : reqInfo?.promptIA ? 'CATÁLOGO' : 'FALLBACK'}`);
       
       const payload: any = {
         storagePath: doc.storagePath,
@@ -941,6 +946,12 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
               Requisitos del Producto
               <span className="text-gray-500 font-normal ml-1">(Fase Actual: {faseIdActual})</span>
             </h4>
+            {fasePromptIA && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-purple-100 text-purple-700 text-[10px] font-medium rounded-full">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 18a8 8 0 1 1 8-8 8 8 0 0 1-8 8z"/><path d="M9 9h.01M15 9h.01M9.5 15a3.5 3.5 0 0 0 5 0"/></svg>
+                Prompt IA de Fase activo
+              </span>
+            )}
             {reqSource === 'db' && (
               <span className="inline-flex items-center gap-1 text-[10px] text-green-700 bg-green-50 px-1.5 py-0.5 rounded border border-green-200">
                 <svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 4l2 2 4-4" /></svg>

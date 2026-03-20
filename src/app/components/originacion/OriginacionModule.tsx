@@ -21,6 +21,7 @@ import {
   FaseOriginacion,
   ReglaValidacionResult,
 } from './originacionRules';
+import { FlujoTrabajo } from './FlujoTrabajo';
 
 // ═══════════════════════════════════════════════════════════════════
 // VIEW STATE — Solo consulta: editar | ver (sin nuevo)
@@ -650,7 +651,8 @@ function OriginacionForm({ mode, originacionId, onCancel, onSave }: {
   );
 
   const sections = [
-    { id: 'default', label: 'Default' }, { id: 'montos', label: 'Montos/Plazos' }, { id: 'tasas', label: 'Tasas' },
+    { id: 'flujo', label: 'Flujo de Trabajo' }, { id: 'default', label: 'Default' },
+    { id: 'montos', label: 'Montos/Plazos' }, { id: 'tasas', label: 'Tasas' },
     { id: 'cotizacion', label: 'Cotización' }, { id: 'expedientes', label: 'Expedientes Electrónicos' },
     { id: 'autorizacion', label: 'Autorización' }, { id: 'garantias', label: 'Garantías' },
     { id: 'cargos', label: 'Cargos' }, { id: 'avisos', label: 'Avisos' },
@@ -911,6 +913,15 @@ function OriginacionForm({ mode, originacionId, onCancel, onSave }: {
             </button>
             {activeSec === sec.id && (
               <div className="border border-gray-300 border-t-0 px-4 py-4 bg-gray-50">
+                {sec.id === 'flujo' && (
+                  <div className="bg-white rounded-lg p-4">
+                    <div className="mb-4">
+                      <h4 className="text-sm font-semibold text-gray-800">Flujo de Trabajo</h4>
+                      <p className="text-xs text-gray-500">Visualización del proceso de originación según el sub-estatus actual</p>
+                    </div>
+                    <FlujoTrabajo subEstatus={fd.subEstatus} />
+                  </div>
+                )}
                 {sec.id === 'default' && <DefaultSection fd={fd} set={set} isRO={isRO} />}
                 {sec.id === 'montos' && <MontosSection fd={fd} set={set} isRO={isRO} />}
                 {sec.id === 'tasas' && <TasasSection fd={fd} set={set} isRO={isRO} />}
