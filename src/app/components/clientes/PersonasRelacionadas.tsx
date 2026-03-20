@@ -60,7 +60,6 @@ export interface PersonaRelacionada {
   estatus: string;
   estatusCliente?: string;    // spec §4: alias de estatus
   tipoRelacion: string;
-  participacion: string;
   esPrincipal?: boolean;      // true = relación física (par_cliente_id)
   fechaRegistro?: string;
   seleccionada: boolean;
@@ -428,7 +427,6 @@ export function PersonasRelacionadas({
           estatus: cliente.estatus || 'Activo',
           estatusCliente: cliente.estatus || 'Activo',
           tipoRelacion: '',
-          participacion: '',
           esPrincipal: true,
           fechaRegistro: '',
           seleccionada: false,
@@ -556,7 +554,6 @@ export function PersonasRelacionadas({
       estatus: cliente.estatus || 'Activo',
       estatusCliente: cliente.estatus || 'Activo',
       tipoRelacion: '',
-      participacion: '',
       esPrincipal: false,
       fechaRegistro: formatDate(),
       seleccionada: false,
@@ -733,15 +730,12 @@ export function PersonasRelacionadas({
               <th className="px-3 py-2 text-left font-medium text-xs text-gray-800">
                 Tipo Relación <span className="text-red-600">*</span>
               </th>
-              <th className="px-3 py-2 text-left font-medium text-xs text-gray-800">
-                Participación <span className="text-red-600">*</span>
-              </th>
             </tr>
           </thead>
           <tbody className="bg-white">
             {items.length === 0 ? (
               <tr>
-                <td colSpan={isView ? 8 : 10} className="px-3 py-8 text-center text-gray-400 text-xs">
+                <td colSpan={isView ? 8 : 9} className="px-3 py-8 text-center text-gray-400 text-xs">
                   No hay personas relacionadas registradas.
                   {!isView && ' Presione "Nuevo" para agregar una relación.'}
                 </td>
@@ -811,16 +805,6 @@ export function PersonasRelacionadas({
                         <option key={tipo} value={tipo}>{tipo}</option>
                       ))}
                     </select>
-                  </td>
-                  <td className="px-3 py-2">
-                    <input
-                      type="text"
-                      value={persona.participacion || ''}
-                      onChange={(e) => handleUpdateField(persona.id, 'participacion', e.target.value)}
-                      readOnly={isView}
-                      placeholder="0%"
-                      className="w-full px-2 py-1 text-xs border border-gray-300 rounded"
-                    />
                   </td>
                 </tr>
               ))
@@ -907,76 +891,68 @@ export function PersonasRelacionadas({
             <div className="flex-1 overflow-auto px-5 py-3">
               {loadingClientes ? (
                 <div className="flex items-center justify-center py-12 text-gray-500 text-xs">
-                  <Loader2 className="w-5 h-5 animate-spin mr-2" />
-                  Consultando J_CLIENTES (todos los registros)...
+                  <Loader2 className="w-6 h-6 animate-spin mr-2" />
+                  Cargando clientes...
                 </div>
               ) : clientesFiltrados.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-12 text-gray-400 text-xs">
-                  <Users className="w-8 h-8 mb-2" />
-                  {searchTerm
-                    ? `No se encontraron clientes para "${searchTerm}"`
-                    : clientesDisponibles.length === 0
-                      ? 'No hay clientes disponibles en J_CLIENTES'
-                      : 'Todos los clientes ya están relacionados'}
+                <div className="text-center py-12 text-gray-500 text-xs">
+                  {clientesDisponibles.length === 0
+                    ? 'No hay clientes disponibles. Verifique la conexión a la base de datos.'
+                    : 'No se encontraron clientes con los criterios de búsqueda.'}
                 </div>
               ) : (
-                <div className="border border-gray-300 rounded">
-                  <table className="w-full text-xs">
-                    <thead>
-                      <tr className="bg-[#E7E6E6] border-b border-gray-400">
-                        <th className="px-3 py-2 text-left font-medium text-xs text-gray-800">Clave</th>
-                        <th className="px-3 py-2 text-left font-medium text-xs text-gray-800">RFC</th>
-                        <th className="px-3 py-2 text-left font-medium text-xs text-gray-800">Nombre</th>
-                        <th className="px-3 py-2 text-left font-medium text-xs text-gray-800">Personalidad</th>
-                        <th className="px-3 py-2 text-left font-medium text-xs text-gray-800">Fecha Nac./Const.</th>
-                        <th className="px-3 py-2 text-left font-medium text-xs text-gray-800">Estatus</th>
-                        <th className="px-3 py-2 text-center font-medium text-xs text-gray-800" style={{ width: '80px' }}>Acción</th>
-                      </tr>
-                    </thead>
-                    <tbody className="bg-white">
-                      {clientesFiltrados.map((cliente, idx) => (
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-gray-300 bg-gray-50">
+                      <th className="px-3 py-2 text-left text-gray-600">Clave</th>
+                      <th className="px-3 py-2 text-left text-gray-600">Nombre</th>
+                      <th className="px-3 py-2 text-left text-gray-600">RFC</th>
+                      <th className="px-3 py-2 text-left text-gray-600">Tipo</th>
+                      <th className="px-3 py-2 text-left text-gray-600">Estatus</th>
+                      <th className="px-3 py-2 text-center text-gray-600">Acción</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {clientesFiltrados.map((cliente) => {
+                      const isAlreadyRelated = items.some(p => p.clienteUuid === cliente.dbUuid);
+                      const isSelf = cliente.dbUuid === clienteUuid;
+                      return (
                         <tr
-                          key={cliente.dbUuid || idx}
-                          className="border-b border-gray-200 hover:bg-blue-50 transition-colors"
+                          key={cliente.dbUuid}
+                          className={`border-b border-gray-200 hover:bg-gray-50 ${isAlreadyRelated || isSelf ? 'opacity-50' : ''}`}
                         >
-                          <td className="px-3 py-2 text-xs text-gray-700">{cliente.idCliente || cliente.dbUuid.substring(0, 8)}</td>
-                          <td className="px-3 py-2 text-xs text-gray-700">{cliente.rfc}</td>
-                          <td className="px-3 py-2 text-xs text-gray-800 font-medium">{cliente.nombreCompleto}</td>
-                          <td className="px-3 py-2 text-xs text-gray-700">{cliente.personalidad}</td>
-                          <td className="px-3 py-2 text-xs text-gray-700">{cliente.fechaNacimiento}</td>
-                          <td className="px-3 py-2 text-xs text-gray-700">
+                          <td className="px-3 py-2">{cliente.idCliente}</td>
+                          <td className="px-3 py-2">{cliente.nombreCompleto}</td>
+                          <td className="px-3 py-2">{cliente.rfc}</td>
+                          <td className="px-3 py-2">{cliente.personalidad}</td>
+                          <td className="px-3 py-2">
                             <span className={`px-1.5 py-0.5 rounded text-[10px] ${
                               cliente.estatus === 'Activo' ? 'bg-green-100 text-green-700' :
                               cliente.estatus === 'Inactivo' ? 'bg-red-100 text-red-700' :
-                              'bg-gray-100 text-gray-700'
+                              'bg-gray-100 text-gray-600'
                             }`}>
-                              {cliente.estatus || '—'}
+                              {cliente.estatus}
                             </span>
                           </td>
                           <td className="px-3 py-2 text-center">
                             <button
-                              onClick={() => handleAgregar(cliente)}
-                              className="px-3 py-1 bg-primary-theme text-white rounded text-[10px] hover:bg-primary-hover-theme transition-colors"
+                              onClick={() => handleAgregarPersona(cliente)}
+                              disabled={isAlreadyRelated || isSelf}
+                              className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
+                                isAlreadyRelated || isSelf
+                                  ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                                  : 'bg-primary-theme text-white hover:bg-primary-hover-theme'
+                              }`}
                             >
-                              Agregar
+                              {isAlreadyRelated ? 'Ya agregado' : isSelf ? 'Auto-ref' : 'Agregar'}
                             </button>
                           </td>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                      );
+                    })}
+                  </tbody>
+                </table>
               )}
-            </div>
-
-            {/* Footer */}
-            <div className="px-5 py-3 border-t border-gray-200 flex justify-end">
-              <button
-                onClick={() => setShowModal(false)}
-                className="px-5 py-2 text-xs bg-gray-500 text-white rounded hover:bg-gray-600 font-medium"
-              >
-                Cerrar
-              </button>
             </div>
           </div>
         </div>

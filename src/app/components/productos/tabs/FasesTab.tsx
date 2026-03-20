@@ -11,6 +11,7 @@ interface Fase {
   phaseName: string;
   notes: string;
   assetBoolean: boolean;
+  promptIA?: string;
 }
 
 interface FasesTabProps {
@@ -223,13 +224,14 @@ export const FasesTab = forwardRef<{ getData: () => Fase[] }, FasesTabProps>(
                   <th className="text-center px-3 py-2 font-semibold text-white/90 text-[11px] uppercase tracking-wide w-16">Seq</th>
                   <th className="text-left px-3 py-2 font-semibold text-white/90 text-[11px] uppercase tracking-wide w-36">Fase</th>
                   <th className="text-left px-3 py-2 font-semibold text-white/90 text-[11px] uppercase tracking-wide">Nota</th>
+                  <th className="text-center px-3 py-2 font-semibold text-white/90 text-[11px] uppercase tracking-wide w-20">Prompt IA</th>
                   <th className="text-center px-3 py-2 font-semibold text-white/90 text-[11px] uppercase tracking-wide w-24">Activo</th>
                 </tr>
               </thead>
               <tbody>
                 {data.length === 0 ? (
                   <tr>
-                    <td colSpan={deleteMode && !isViewMode ? 5 : 4} className="px-3 py-10 text-center text-gray-400 text-xs">
+                    <td colSpan={deleteMode && !isViewMode ? 6 : 5} className="px-3 py-10 text-center text-gray-400 text-xs">
                       <div className="flex flex-col items-center gap-2">
                         <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-gray-300">
                           <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" strokeLinecap="round" strokeLinejoin="round"/>
@@ -275,6 +277,16 @@ export const FasesTab = forwardRef<{ getData: () => Fase[] }, FasesTabProps>(
                       </td>
                       <td className="px-3 py-2 border-b border-gray-200 font-medium text-gray-700">{item.phaseName || item.phaseId || '—'}</td>
                       <td className="px-3 py-2 border-b border-gray-200 text-gray-600">{item.notes}</td>
+                      <td className="px-3 py-2 border-b border-gray-200 text-center">
+                        {item.promptIA ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-purple-100 text-purple-700" title={item.promptIA.substring(0, 100) + '...'}>
+                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 18a8 8 0 1 1 8-8 8 8 0 0 1-8 8z"/><path d="M9 9h.01M15 9h.01M9.5 15a3.5 3.5 0 0 0 5 0"/></svg>
+                            Configurado
+                          </span>
+                        ) : (
+                          <span className="text-[10px] text-gray-400">—</span>
+                        )}
+                      </td>
                       <td className="px-3 py-2 border-b border-gray-200 text-center">
                         <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium ${
                           item.assetBoolean 
@@ -384,6 +396,7 @@ function FormModal({ mode, item, productId, existingData, onSave, onClose }: For
     phaseName: item?.phaseName || item?.phaseId?.toString() || '',
     notes: item?.notes || '',
     assetBoolean: item?.assetBoolean !== undefined ? item.assetBoolean : true,
+    promptIA: item?.promptIA || '',
   });
 
   // Filtrar fases ya usadas (en modo crear, excluir las que ya están en la tabla)
@@ -427,6 +440,11 @@ function FormModal({ mode, item, productId, existingData, onSave, onClose }: For
 
     if (formData.notes.length > 255) {
       toast.error('Nota no puede exceder 255 caracteres');
+      return;
+    }
+
+    if (formData.promptIA && formData.promptIA.length > 5000) {
+      toast.error('Prompt IA no puede exceder 5000 caracteres');
       return;
     }
 
@@ -562,6 +580,30 @@ function FormModal({ mode, item, productId, existingData, onSave, onClose }: For
                     </label>
                     <span className={`text-xs font-medium ${formData.assetBoolean ? 'text-green-700' : 'text-gray-500'}`}>
                       {formData.assetBoolean ? 'Fase Activa' : 'Fase Inactiva'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Prompt IA */}
+                <div className="col-span-2">
+                  <label className="block text-[11px] font-semibold text-gray-600 uppercase tracking-wide mb-1.5">
+                    Prompt IA
+                    <span className="ml-1.5 text-[10px] font-normal text-gray-400 normal-case">
+                      (instrucciones para validación de documentos)
+                    </span>
+                  </label>
+                  <textarea 
+                    rows={4}
+                    value={formData.promptIA || ''} 
+                    onChange={(e) => handleChange('promptIA', e.target.value)} 
+                    disabled={isViewMode} 
+                    placeholder="Ingrese las instrucciones específicas que la IA utilizará para validar los documentos de esta fase..." 
+                    className={`${inputClassName()} resize-none`}
+                  />
+                  <div className="flex justify-between mt-0.5">
+                    <span className="text-[10px] text-gray-400">Máximo 5000 caracteres</span>
+                    <span className={`text-[10px] ${(formData.promptIA?.length || 0) > 4800 ? 'text-amber-600' : 'text-gray-400'}`}>
+                      {(formData.promptIA?.length || 0)}/5000
                     </span>
                   </div>
                 </div>
