@@ -450,15 +450,16 @@ function validarFase4Formalizacion(
   const { fase, tipoPersona, documentos, notas, lineaProducto, tipoProducto, header, garantias } = context;
 
   if (accion === 'formalizarContrato') {
+    // Solo genera el contrato/pagaré para revisión e impresión.
+    // NO avanza de fase — el avance ocurre con "Enviar de Fase".
     const contrato = generarContrato(lineaProducto, tipoProducto, header, garantias);
-    const faseDestino = getSiguienteFase(fase);
     return {
       accionPermitida: true,
       fase,
-      faseDestino,
-      motivos: ['Contrato y pagaré generados exitosamente.'],
+      faseDestino: null,
+      motivos: ['Contrato y pagaré generados. Revise e imprima los documentos antes de avanzar.'],
       validaciones: { documentosCompletos: true, notaReciente: true, garantiasSuficientes: true, comitesAutorizados: true, beneficiariosCompletos: true, solicitudPagoCompletado: true },
-      actualizaciones: [{ faseActual: fase, faseDestino: faseDestino! }],
+      actualizaciones: [],
       contrato,
     };
   }

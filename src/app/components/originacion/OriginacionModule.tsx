@@ -990,6 +990,8 @@ function FaseActionBar({
   onResult,
   isRO,
 }: FaseActionBarProps) {
+  const [contratoModal, setContratoModal] = useState<{ contrato: any; lineaProducto: string; tipoProducto: string; noOriginacion: string } | null>(null);
+
   const ejecutarAccion = useCallback((accion: AccionFase) => {
     const tipoPersona = formData.cliente.includes('S.A.') || formData.cliente.includes('S. de R.L.') || formData.cliente.includes('S.C.') ? 'Moral' : 'Física';
 
@@ -1037,6 +1039,15 @@ function FaseActionBar({
         if (update.estatusPago) onActualizarEstatusPago(update.estatusPago);
         if (update.estatusCartera) onActualizarEstatusCartera(update.estatusCartera);
       });
+      // Mostrar modal de contrato/pagaré cuando se formaliza
+      if (result.contrato) {
+        setContratoModal({
+          contrato: result.contrato,
+          lineaProducto: formData.lineaProducto,
+          tipoProducto: formData.producto,
+          noOriginacion: formData.noOriginacion,
+        });
+      }
     }
     onResult(result);
   }, [fase, formData, documentos, notas, garantias, comites, beneficiarios, solicitudActivacion, onActualizarFase, onActualizarEstatus, onActualizarEstatusCuenta, onActualizarEstatusPago, onActualizarEstatusCartera, onResult]);
@@ -1059,7 +1070,7 @@ function FaseActionBar({
   const puedeSolicitarActivacion = fase === 'Solicitud de Activación de Cuenta Financiera';
   const puedeActivar = fase === 'Activación de Cuenta Financiera';
 
-  return (
+  return (<>
     <div className="bg-[#EBF3FB] border border-[#4A6FA5] rounded px-4 py-3 mb-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
@@ -1116,6 +1127,180 @@ function FaseActionBar({
               Activar Cuenta
             </button>
           )}
+        </div>
+      </div>
+    </div>
+
+    {/* Modal de Contrato/Pagaré — Formalización FASE 4 */}
+    {contratoModal && (
+      <ContratoModal
+        contrato={contratoModal.contrato}
+        lineaProducto={contratoModal.lineaProducto}
+        tipoProducto={contratoModal.tipoProducto}
+        noOriginacion={contratoModal.noOriginacion}
+        onClose={() => setContratoModal(null)}
+      />
+    )}
+  </>);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// CONTRATO MODAL — Vista de contrato/pagaré para impresión (FASE 4)
+// ═══════════════════════════════════════════════════════════════════
+function ContratoModal({ contrato, lineaProducto, tipoProducto, noOriginacion, onClose }: {
+  contrato: any;
+  lineaProducto: string;
+  tipoProducto: string;
+  noOriginacion: string;
+  onClose: () => void;
+}) {
+  const fmtCurrency = (v: number) => `$${(v || 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const hoy = new Date().toLocaleDateString('es-MX', { day: '2-digit', month: 'long', year: 'numeric' });
+  const tc = contrato.terminosCondiciones || {};
+  const hdr = contrato.header || {};
+  const garantias: any[] = contrato.garantias || [];
+
+  const handlePrint = () => {
+    const el = document.getElementById('contrato-print-area');
+    if (!el) return;
+    const w = window.open('', '_blank', 'width=900,height=700');
+    if (!w) return;
+    w.document.write(`<!DOCTYPE html><html><head><title>Contrato — ${noOriginacion}</title>
+      <style>
+        body { font-family: Arial, sans-serif; font-size: 12px; color: #111; margin: 40px; }
+        h1 { font-size: 16px; text-align: center; margin-bottom: 4px; }
+        h2 { font-size: 13px; border-bottom: 1px solid #999; padding-bottom: 4px; margin: 20px 0 8px; }
+        .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 24px; margin-bottom: 12px; }
+        .field label { font-size: 10px; color: #555; display: block; }
+        .field span { font-weight: bold; }
+        table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+        th { background: #ddd; padding: 6px; text-align: left; font-size: 11px; border: 1px solid #bbb; }
+        td { padding: 5px 6px; font-size: 11px; border: 1px solid #ddd; }
+        .firmas { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-top: 60px; }
+        .firma-box { border-top: 1px solid #333; padding-top: 6px; text-align: center; font-size: 11px; }
+        @media print { body { margin: 20px; } }
+      </style></head><body>${el.innerHTML}</body></html>`);
+    w.document.close();
+    w.focus();
+    w.print();
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-3xl max-h-[90vh] flex flex-col">
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200">
+          <div className="flex items-center gap-2">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#7C3AED" strokeWidth="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/></svg>
+            <span className="text-sm font-semibold text-gray-800">Contrato / Pagaré — {noOriginacion}</span>
+            <span className="px-2 py-0.5 text-[10px] bg-purple-100 text-purple-700 rounded">{lineaProducto} · {tipoProducto}</span>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-700">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
+
+        {/* Body scrollable */}
+        <div className="overflow-auto flex-1 px-5 py-4" id="contrato-print-area">
+          {/* ── CONTRATO ── */}
+          <h1 className="text-base font-bold text-center text-gray-900 mb-1">CONTRATO DE {lineaProducto.toUpperCase()}</h1>
+          <p className="text-[10px] text-center text-gray-500 mb-4">{tipoProducto} — Folio: {noOriginacion} — Fecha: {hoy}</p>
+
+          <h2 className="text-xs font-semibold text-gray-700 border-b border-gray-200 pb-1 mb-3">1. DATOS DEL CLIENTE</h2>
+          <div className="grid grid-cols-2 gap-x-8 gap-y-2 mb-4">
+            {[
+              { label: 'Cliente', value: hdr.cliente },
+              { label: 'No. Originación', value: noOriginacion },
+              { label: 'Línea de Producto', value: lineaProducto },
+              { label: 'Tipo de Producto', value: tipoProducto },
+            ].map(f => (
+              <div key={f.label}>
+                <span className="text-[10px] text-gray-500 block">{f.label}</span>
+                <span className="text-xs font-medium text-gray-800">{f.value || '—'}</span>
+              </div>
+            ))}
+          </div>
+
+          <h2 className="text-xs font-semibold text-gray-700 border-b border-gray-200 pb-1 mb-3">2. TÉRMINOS Y CONDICIONES</h2>
+          <div className="grid grid-cols-2 gap-x-8 gap-y-2 mb-4">
+            {[
+              { label: 'Monto Autorizado', value: fmtCurrency(tc.montoAutorizado) },
+              { label: 'Tasa de Interés', value: tc.tasa ? `${tc.tasa}%` : '—' },
+              { label: 'Plazo', value: tc.plazo ? `${tc.plazo} períodos` : '—' },
+              { label: 'Periodicidad', value: tc.periodicidad || '—' },
+              { label: 'Fecha Inicio', value: tc.fechaInicio || '—' },
+              { label: 'Fecha Fin', value: tc.fechaFin || '—' },
+              { label: 'Tipo Amortización', value: tc.tipoAmortizacion || '—' },
+            ].map(f => (
+              <div key={f.label}>
+                <span className="text-[10px] text-gray-500 block">{f.label}</span>
+                <span className="text-xs font-medium text-gray-800">{f.value}</span>
+              </div>
+            ))}
+          </div>
+
+          {garantias.length > 0 && (<>
+            <h2 className="text-xs font-semibold text-gray-700 border-b border-gray-200 pb-1 mb-3">3. GARANTÍAS</h2>
+            <table className="w-full text-xs mb-4 border border-gray-200">
+              <thead><tr className="bg-gray-100">
+                <th className="px-2 py-1.5 text-left border-r border-gray-200">Tipo</th>
+                <th className="px-2 py-1.5 text-left border-r border-gray-200">Descripción</th>
+                <th className="px-2 py-1.5 text-right">Valor Nominal</th>
+              </tr></thead>
+              <tbody>
+                {garantias.map((g: any, i: number) => (
+                  <tr key={i} className="border-t border-gray-100">
+                    <td className="px-2 py-1 border-r border-gray-200">{g.tipo || '—'}</td>
+                    <td className="px-2 py-1 border-r border-gray-200">{g.descripcion || '—'}</td>
+                    <td className="px-2 py-1 text-right">{fmtCurrency(g.valorNominal)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </>)}
+
+          {/* ── PAGARÉ ── */}
+          <div className="border-t-2 border-dashed border-gray-400 mt-6 pt-4">
+            <h1 className="text-base font-bold text-center text-gray-900 mb-1">PAGARÉ</h1>
+            <p className="text-[10px] text-center text-gray-500 mb-4">Asociado al Contrato {noOriginacion} — Fecha: {hoy}</p>
+
+            <p className="text-xs text-gray-700 mb-4 leading-relaxed">
+              Por este pagaré me/nos obligo/obligamos incondicionalmente a pagar a la orden de <strong>la Institución</strong> la
+              cantidad de <strong>{fmtCurrency(tc.montoAutorizado)}</strong> ({lineaProducto} — {tipoProducto}),
+              más los intereses pactados a una tasa del <strong>{tc.tasa || '—'}%</strong>,
+              pagaderos en <strong>{tc.plazo || '—'}</strong> períodos con periodicidad <strong>{tc.periodicidad || '—'}</strong>,
+              con vencimiento el <strong>{tc.fechaFin || '—'}</strong>.
+            </p>
+
+            <div className="grid grid-cols-2 gap-12 mt-10">
+              <div className="text-center">
+                <div className="border-t border-gray-600 pt-1 mt-8">
+                  <p className="text-[10px] text-gray-600">Firma del Acreditado</p>
+                  <p className="text-[10px] text-gray-500">{hdr.cliente || '___________________________'}</p>
+                </div>
+              </div>
+              <div className="text-center">
+                <div className="border-t border-gray-600 pt-1 mt-8">
+                  <p className="text-[10px] text-gray-600">Firma del Representante Institucional</p>
+                  <p className="text-[10px] text-gray-500">___________________________</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-gray-200 bg-gray-50">
+          <button onClick={onClose} className="px-4 py-1.5 bg-white border border-gray-300 text-gray-700 rounded text-xs hover:bg-gray-50">
+            Cerrar
+          </button>
+          <button
+            onClick={handlePrint}
+            className="px-4 py-1.5 bg-[#7C3AED] text-white rounded text-xs hover:bg-[#6D28D9] flex items-center gap-1.5"
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+            Imprimir
+          </button>
         </div>
       </div>
     </div>
