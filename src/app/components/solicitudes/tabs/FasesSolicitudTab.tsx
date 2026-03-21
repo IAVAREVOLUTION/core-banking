@@ -7,6 +7,7 @@ interface FaseDisplay {
   promptIA?: string;
   notes?: string;
   assetBoolean?: boolean;
+  area?: string;
 }
 
 interface FasesSolicitudTabProps {
@@ -37,6 +38,7 @@ export function FasesSolicitudTab({ mode, productoId, faseIdActual }: FasesSolic
       promptIA: f.promptIA || '',
       notes: f.notes || f.nota || '',
       assetBoolean: f.assetBoolean ?? true,
+      area: f.area || '',
     }));
   }, [productoId, productosDB]);
 
@@ -101,6 +103,7 @@ export function FasesSolicitudTab({ mode, productoId, faseIdActual }: FasesSolic
           const isCompleted = parseInt(fase.faseId) < faseActualNum;
           const isPending = parseInt(fase.faseId) > faseActualNum;
           const hasPrompt = !!fase.promptIA;
+          const hasArea = !!fase.area;
 
           return (
             <div
@@ -128,6 +131,15 @@ export function FasesSolicitudTab({ mode, productoId, faseIdActual }: FasesSolic
                     <span className="font-medium text-gray-800">
                       {fase.descripcion || `Fase ${fase.faseId}`}
                     </span>
+                    {hasArea && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-cyan-100 text-cyan-700 rounded-full text-[10px] font-medium">
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+                          <polyline points="9 22 9 12 15 12 15 22"/>
+                        </svg>
+                        Área: {fase.area}
+                      </span>
+                    )}
                     <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium border ${getBadgeColor(fase.faseId)}`}>
                       {getBadgeIcon(fase.faseId)}
                       {isCompleted ? 'Completada' : isActive ? 'Actual' : 'Pendiente'}

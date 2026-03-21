@@ -26,6 +26,7 @@ export interface OriginacionFormData {
   fechaInicio: string;
   fechaFin: string;
   responsable: string;
+  area: string;
   // Default sub-tab
   estatusSC: string;
   estatusPago?: string;
@@ -225,6 +226,17 @@ export const CAT_CLIENTES = [
   { value: 'CL-005 - Sofía Reyes López', label: 'CL-005 - Sofía Reyes López' },
 ];
 
+export const CAT_AREA = [
+  { value: '', label: '(Sin área asignada)' },
+  { value: 'INTEGRACIÓN', label: 'Integración' },
+  { value: 'ANÁLISIS', label: 'Análisis' },
+  { value: 'JURÍDICO', label: 'Jurídico' },
+  { value: 'LIBERACIÓN', label: 'Liberación' },
+  { value: 'COBRANZA NORTE', label: 'Cobranza Norte' },
+  { value: 'COBRANZA SUR', label: 'Cobranza Sur' },
+  { value: 'COBRANZA CDMX', label: 'Cobranza CDMX' },
+];
+
 export const CAT_SUCURSAL = [
   { value: 'CDMX', label: 'CDMX' },
   { value: 'Monterrey', label: 'Monterrey' },
@@ -360,6 +372,7 @@ export const EMPTY_FORM: OriginacionFormData = {
   fechaInicio: '',
   fechaFin: '',
   responsable: '',
+  area: '',
   estatusSC: '',
   estatusPago: '',
   estatusCartera: '',

@@ -11,7 +11,7 @@ import {
   formatCurrency, parseCurrency,
   CAT_CLIENTES, CAT_SUCURSAL, CAT_EMPRESA_FONDEADORA, CAT_SUBLINEA, CAT_PRODUCTO,
   CAT_PERIODO, CAT_PLAZOS, CAT_DESTINO_CREDITO, CAT_ESTATUS, CAT_SUB_ESTATUS,
-  CAT_MONEDA, CAT_ESTATUS_AUTORIZACION,
+  CAT_MONEDA, CAT_ESTATUS_AUTORIZACION, CAT_AREA,
   CAT_TIPO_GARANTIA, CAT_TIPO_CARGO, CAT_ESTATUS_CARGO, CAT_TIPO_AVISO, CAT_ESTATUS_AVISO,
   CAT_ESTATUS_SC, CAT_ESTATUS_CLIENTE, CAT_ESTATUS_LISTA_NEGRA,
   getOriginaciones, seedOriginacionFromSolicitudItem,
@@ -665,7 +665,19 @@ function OriginacionForm({ mode, originacionId, onCancel, onSave, onActivarCuent
   }, [originacionId]);
 
   const handleActualizarFase = useCallback((nuevaFase: FaseOriginacion) => {
-    setFd(p => ({ ...p, subEstatus: nuevaFase }));
+    // Asignar área según la fase
+    let area = '';
+    const faseLower = nuevaFase.toLowerCase();
+    if (faseLower.includes('integración') || faseLower.includes('integracion')) {
+      area = 'INTEGRACIÓN';
+    } else if (faseLower.includes('análisis') || faseLower.includes('analisis')) {
+      area = 'ANÁLISIS';
+    } else if (faseLower.includes('jurídico') || faseLower.includes('juridico')) {
+      area = 'JURÍDICO';
+    } else if (faseLower.includes('liberación') || faseLower.includes('liberacion')) {
+      area = 'LIBERACIÓN';
+    }
+    setFd(p => ({ ...p, subEstatus: nuevaFase, area: area || p.area }));
   }, []);
 
   // Acumula los 4 campos de FASE 7 para disparar DB update cuando todos lleguen
@@ -1017,6 +1029,7 @@ function OriginacionForm({ mode, originacionId, onCancel, onSave, onActivarCuent
             <div><Lbl req>Estatus</Lbl><select value={fd.estatus} onChange={e => set('estatus', e.target.value)} disabled={isRO} className={sc()}>{CAT_ESTATUS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}</select></div>
             <div><Lbl req>Sub Estatus</Lbl><select value={fd.subEstatus} onChange={e => set('subEstatus', e.target.value)} disabled={isRO} className={sc()}>{CAT_SUB_ESTATUS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}</select></div>
             <div><Lbl>Responsable</Lbl><input type="text" value={fd.responsable} onChange={e => set('responsable', e.target.value)} disabled={isRO} className={ic()} placeholder="Nombre del responsable" /></div>
+            <div><Lbl>Área</Lbl><select value={fd.area} onChange={e => set('area', e.target.value)} disabled={isRO} className={sc()}>{CAT_AREA.map(a => <option key={a.value} value={a.value}>{a.label}</option>)}</select></div>
             <div><Lbl>Monto Autorizado</Lbl><div className="relative"><span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-600">$</span><input type="text" value={fd.montoAutorizado} onChange={e => numSet('montoAutorizado', e.target.value)} onBlur={() => curBlur('montoAutorizado')} disabled={isRO} placeholder="0.00" className={`${ic()} pl-5`} /></div></div>
             <div><Lbl>Tasa Autorizada (%)</Lbl><input type="text" value={fd.tasaAutorizada} onChange={e => numSet('tasaAutorizada', e.target.value)} onBlur={() => pctBlur('tasaAutorizada')} disabled={isRO} placeholder="0.0000" className={ic()} /></div>
             <div><Lbl>Fecha Inicio</Lbl><DatePicker value={fd.fechaInicio} onChange={v => set('fechaInicio', v)} disabled={isRO} placeholder="DD/MM/YYYY" className="px-2 py-1" /></div>
@@ -1035,9 +1048,16 @@ function OriginacionForm({ mode, originacionId, onCancel, onSave, onActivarCuent
               <div className="border border-gray-300 border-t-0 px-4 py-4 bg-gray-50">
                 {sec.id === 'flujo' && (
                   <div className="bg-white rounded-lg p-4">
-                    <div className="mb-4">
-                      <h4 className="text-sm font-semibold text-gray-800">Flujo de Trabajo</h4>
-                      <p className="text-xs text-gray-500">Visualización del proceso de originación según el sub-estatus actual</p>
+                    <div className="mb-4 flex items-center justify-between">
+                      <div>
+                        <h4 className="text-sm font-semibold text-gray-800">Flujo de Trabajo</h4>
+                        <p className="text-xs text-gray-500">Visualización del proceso de originación según el sub-estatus actual</p>
+                      </div>
+                      {fd.area && (
+                        <div className="px-3 py-1.5 bg-cyan-100 text-cyan-700 rounded-lg text-xs font-medium">
+                          Área: {fd.area}
+                        </div>
+                      )}
                     </div>
                     <FlujoTrabajo subEstatus={fd.subEstatus} />
                   </div>
