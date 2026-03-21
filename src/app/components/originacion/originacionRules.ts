@@ -385,7 +385,62 @@ function validarFase3Juridico(
   context: OriginacionContext,
   accion: 'enviarFase' | 'regresarFase' | 'formalizarContrato' | 'solicitudActivacion' | 'activarCuenta'
 ): ReglaValidacionResult {
-  return validarFase2Operativo(context, accion);
+  const { fase, tipoPersona, documentos, notas } = context;
+
+  if (accion === 'enviarFase') {
+    const docsValidacion = validarDocumentosObligatorios(fase, tipoPersona, documentos);
+    if (!docsValidacion.valido) {
+      return {
+        accionPermitida: false,
+        fase,
+        faseDestino: null,
+        motivos: [`Documentos obligatorios faltantes: ${docsValidacion.faltantes.join(', ')}`],
+        validaciones: { documentosCompletos: false, notaReciente: true, garantiasSuficientes: true, comitesAutorizados: true, beneficiariosCompletos: true, solicitudPagoCompletado: true },
+        actualizaciones: [],
+        documentosFaltantes: docsValidacion.faltantes,
+      };
+    }
+    const faseDestino = getSiguienteFase(fase);
+    return {
+      accionPermitida: true,
+      fase,
+      faseDestino,
+      motivos: ['Documentación jurídica completa. Avanzando a la siguiente fase.'],
+      validaciones: { documentosCompletos: true, notaReciente: true, garantiasSuficientes: true, comitesAutorizados: true, beneficiariosCompletos: true, solicitudPagoCompletado: true },
+      actualizaciones: [{ faseActual: fase, faseDestino: faseDestino! }],
+    };
+  }
+
+  if (accion === 'regresarFase') {
+    if (!validarNotaReciente(notas)) {
+      return {
+        accionPermitida: false,
+        fase,
+        faseDestino: null,
+        motivos: ['Debe existir al menos una nota creada en los últimos 30 minutos para regresar de fase'],
+        validaciones: { documentosCompletos: true, notaReciente: false, garantiasSuficientes: true, comitesAutorizados: true, beneficiariosCompletos: true, solicitudPagoCompletado: true },
+        actualizaciones: [],
+      };
+    }
+    const faseDestino = getFaseAnterior(fase);
+    return {
+      accionPermitida: true,
+      fase,
+      faseDestino,
+      motivos: ['Nota reciente encontrada. Regresando a la fase anterior.'],
+      validaciones: { documentosCompletos: true, notaReciente: true, garantiasSuficientes: true, comitesAutorizados: true, beneficiariosCompletos: true, solicitudPagoCompletado: true },
+      actualizaciones: [{ faseActual: fase, faseDestino: faseDestino! }],
+    };
+  }
+
+  return {
+    accionPermitida: false,
+    fase,
+    faseDestino: null,
+    motivos: ['Acción no permitida en esta fase'],
+    validaciones: { documentosCompletos: true, notaReciente: true, garantiasSuficientes: true, comitesAutorizados: true, beneficiariosCompletos: true, solicitudPagoCompletado: true },
+    actualizaciones: [],
+  };
 }
 
 function validarFase4Formalizacion(
