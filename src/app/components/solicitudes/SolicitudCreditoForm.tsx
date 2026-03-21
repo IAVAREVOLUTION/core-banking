@@ -30,6 +30,7 @@ import { FasesSolicitudTab } from './tabs/FasesSolicitudTab';
 import { PartesRelacionadasTab } from './tabs/PartesRelacionadasTab';
 import { useProductosCatalogoDB, type ProductoCatalogo } from '../../hooks/useProductosCatalogoDB';
 import { fetchNextNoSol } from '../../hooks/useSolicitudesDB';
+import { addOriginacionItem } from '../originacion/originacionStore';
 
 type FormMode = 'nuevo' | 'editar' | 'ver';
 
@@ -155,6 +156,29 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
     setFormData(prev => ({ ...prev, [field]: value }));
     if (errors[field]) setErrors(prev => { const n = { ...prev }; delete n[field]; return n; });
   };
+
+  const handleEnviarSolicitud = useCallback(() => {
+    setFormData(prev => ({ ...prev, estatusSolicitud: 'En proceso' }));
+    const today = new Date();
+    const dd = String(today.getDate()).padStart(2, '0');
+    const mm = String(today.getMonth() + 1).padStart(2, '0');
+    const yy = String(today.getFullYear()).slice(-2);
+    addOriginacionItem({
+      noSolicitud: formData.noSol || `SC-${storageId}`,
+      noCliente: '',
+      cliente: `${formData.nombrePersona || ''} ${formData.apellidoPaternoPersona || ''} ${formData.apellidoMaternoPersona || ''}`.trim() || 'Sin nombre',
+      fechaSolicitud: `${dd}/${mm}/${yy}`,
+      montoSolicitado: parseFloat(parseCurrency(formData.montoSolicitado || '0')) || 0,
+      montoAutorizado: 0,
+      sublinea: formData.lineaProducto || '',
+      producto: formData.tipoProducto || '',
+      sucursal: formData.sucursal || '',
+      estatus: 'En Proceso',
+      subEstatus: 'Integración del Expediente',
+      responsable: '',
+    });
+    toast.success('Solicitud enviada', { description: 'Estatus actualizado a "En proceso". La solicitud aparece en Originación.' });
+  }, [formData, storageId]);
 
   const handleNumeric = (field: keyof SolicitudFormData, value: string) => {
     const cleaned = value.replace(/[^0-9.]/g, '');
@@ -644,13 +668,14 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
                   <SimulacionTab mode={mode} solicitudId={storageId} lineaProducto={formData.lineaProducto} />
                 )}
                 {sec.id === 'expediente' && (
-                  <ExpedienteElectronicoTab 
-                    mode={mode} 
-                    solicitudId={storageId} 
-                    faseIdActual={parseInt(formData.faseId) || 1} 
-                    productoId={formData.productoId} 
+                  <ExpedienteElectronicoTab
+                    mode={mode}
+                    solicitudId={storageId}
+                    faseIdActual={parseInt(formData.faseId) || 1}
+                    productoId={formData.productoId}
                     nombreSolicitante={`${formData.nombrePersona || ''} ${formData.apellidoPaternoPersona || ''} ${formData.apellidoMaternoPersona || ''}`.trim()}
                     fasePromptIA={fasePromptIA}
+                    onEnviarSolicitud={handleEnviarSolicitud}
                   />
                 )}
                 {sec.id === 'garantias' && (

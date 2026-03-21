@@ -397,6 +397,7 @@ export const CAT_SUCURSAL = [
 
 export const CAT_ESTATUS_SOLICITUD = [
   { value: 'Pendiente', label: 'Pendiente' },
+  { value: 'En proceso', label: 'En proceso' },
   { value: 'En Análisis', label: 'En Análisis' },
   { value: 'Aprobado', label: 'Aprobado' },
   { value: 'Rechazado', label: 'Rechazado' },

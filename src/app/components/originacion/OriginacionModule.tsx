@@ -14,6 +14,7 @@ import {
   CAT_MONEDA, CAT_ESTATUS_AUTORIZACION,
   CAT_TIPO_GARANTIA, CAT_TIPO_CARGO, CAT_ESTATUS_CARGO, CAT_TIPO_AVISO, CAT_ESTATUS_AVISO,
   CAT_ESTATUS_SC, CAT_ESTATUS_CLIENTE, CAT_ESTATUS_LISTA_NEGRA,
+  getOriginaciones,
 } from './originacionStore';
 import { ExpedientesSection } from './ExpedientesSection';
 import {
@@ -41,7 +42,8 @@ const fmtCur = (v: number) => `$${v.toLocaleString('es-MX', { minimumFractionDig
 // ═══════════════════════════════════════════════════════════════════
 export function OriginacionModule() {
   const [view, setView] = useState<ViewState>({ type: 'dashboard' });
-  const [items, setItems] = useState<OriginacionListItem[]>([...MOCK_ORIGINACIONES]);
+  // Solo solicitudes con estatus ≠ "Pendiente" (regla de negocio)
+  const [items, setItems] = useState<OriginacionListItem[]>(() => getOriginaciones());
 
   const goToDashboard = () => { setView({ type: 'dashboard' }); };
   const goToList = () => { setView({ type: 'list' }); };
@@ -131,11 +133,12 @@ function OriginacionDashboard({ items, onGoToList }: {
 
   const recientes = [...items].sort((a, b) => parseDate(b.fechaSolicitud).getTime() - parseDate(a.fechaSolicitud).getTime()).slice(0, 8);
 
+  // Solo estatus activos en Originación (sin Pendiente — regla de negocio)
   const distribucionEstatus = [
-    { estatus: 'Aprobado', cantidad: items.filter(i => i.estatus === 'Aprobado').length, color: '#10B981' },
-    { estatus: 'Pendiente', cantidad: items.filter(i => i.estatus === 'Pendiente').length, color: '#F59E0B' },
     { estatus: 'En Proceso', cantidad: items.filter(i => i.estatus === 'En Proceso').length, color: '#3B82F6' },
+    { estatus: 'Aprobado', cantidad: items.filter(i => i.estatus === 'Aprobado').length, color: '#10B981' },
     { estatus: 'Rechazado', cantidad: items.filter(i => i.estatus === 'Rechazado').length, color: '#EF4444' },
+    { estatus: 'Cancelado', cantidad: items.filter(i => i.estatus === 'Cancelado').length, color: '#6B7280' },
   ];
 
   const distribucionSubEstatus = [
@@ -413,7 +416,7 @@ function OriginacionList({ items, onEditar, onVer }: {
             </select>
             <select value={fEstatus} onChange={e => { setFEstatus(e.target.value); setCurrentPage(1); }} className="px-2 py-1 text-xs border border-gray-300 rounded">
               <option value="">Estatus: Todos</option>
-              {CAT_ESTATUS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+              {CAT_ESTATUS.filter(c => c.value !== 'Pendiente').map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
             </select>
             <input ref={searchRef} type="text" value={searchTerm} onChange={e => { setSearchTerm(e.target.value); setCurrentPage(1); }} placeholder="Buscar originaciones..." className="px-3 py-1 border border-gray-400 rounded text-sm w-64 transition-all" />
           </div>
@@ -683,7 +686,7 @@ function OriginacionForm({ mode, originacionId, onCancel, onSave }: {
       <FaseActionBar
         fase={fd.subEstatus as FaseOriginacion}
         estatus={fd.estatus}
-        documentos={expedientes.map(e => e.tipoDocumento)}
+        documentos={expedientes.filter(e => e.estatus === 'Aprobado').map(e => e.tipoDocumento)}
         notas={notas}
         garantias={garantias}
         comites={comites}
@@ -1044,8 +1047,8 @@ function FaseActionBar({
     ) : null;
   }
 
-  const puedeEnviar = !['Integración del Expediente', 'Análisis de Expediente Operativo', 'Análisis de Expediente Jurídico', 'Formalización de Cuenta Financiera', 'Validación de Contratos y Pagarés Firmados'].includes(fase) ||
-    fase !== 'Integración del Expediente';
+  // "Enviar de Fase" está disponible en todas las fases excepto la última (Activación)
+  const puedeEnviar = fase !== 'Activación de Cuenta Financiera';
   const puedeRegresar = !['Integración del Expediente'].includes(fase);
   const puedeFormalizar = fase === 'Formalización de Cuenta Financiera';
   const puedeSolicitarActivacion = fase === 'Solicitud de Activación de Cuenta Financiera';
@@ -1063,16 +1066,7 @@ function FaseActionBar({
           </span>
         </div>
         <div className="flex items-center gap-2">
-          {puedeEnviar && fase !== 'Integración del Expediente' && (
-            <button
-              onClick={() => ejecutarAccion('enviarFase')}
-              className="px-4 py-1.5 bg-[#10B981] text-white rounded text-xs hover:bg-[#059669] flex items-center gap-1.5"
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
-              Enviar de Fase
-            </button>
-          )}
-          {puedeEnviar && fase === 'Integración del Expediente' && (
+          {puedeEnviar && (
             <button
               onClick={() => ejecutarAccion('enviarFase')}
               className="px-4 py-1.5 bg-[#10B981] text-white rounded text-xs hover:bg-[#059669] flex items-center gap-1.5"
