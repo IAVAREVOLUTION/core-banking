@@ -48,10 +48,21 @@ export interface ContratoData {
   garantias: Garantia[];
 }
 
+export interface CargoItem {
+  cveSubproducto: string;
+  descSubproducto: string;
+  cantidad: number;
+  monto: number;
+  impuesto: number;
+  moneda: string;
+  subTotal: number;
+  estatus: string;
+}
+
 export interface CuentaPorCrear {
   tipo: 'CuentaporPagar' | 'CuentaporCobrar';
   header: Record<string, any>;
-  detail: { subproducto: string; monto: number }[];
+  detail: CargoItem[];
 }
 
 export interface FlujoTrabajoUpdate {
@@ -177,31 +188,63 @@ export function generarContrato(
   };
 }
 
-export function crearCuentaPorPagar(header: Record<string, any>): CuentaPorCrear {
+function buildDetail(header: Record<string, any>, cargos?: CargoItem[]): CargoItem[] {
+  if (cargos && cargos.length > 0) return cargos;
+  // Fallback: solo subproducto Capital tomado de Cargos/montoAutorizado
+  const monto = header.montoAutorizado || 0;
+  return [{
+    cveSubproducto: 'CAP',
+    descSubproducto: 'Capital',
+    cantidad: 1,
+    monto,
+    impuesto: 0,
+    moneda: header.moneda || 'MXN',
+    subTotal: monto,
+    estatus: 'Pendiente',
+  }];
+}
+
+export function crearCuentaPorPagar(header: Record<string, any>, cargos?: CargoItem[]): CuentaPorCrear {
   return {
     tipo: 'CuentaporPagar',
     header: {
-      noCuenta: header.noCuenta || `CP-${Date.now()}`,
+      solicitudId: header.solicitudId || header.id,
+      noDocto: header.noDocto || `CP-${Date.now()}`,
+      fecha: new Date().toISOString(),
+      tipo: 'Por Pagar',
       cliente: header.cliente,
-      monto: header.montoAutorizado,
-      fechaCreacion: new Date().toISOString(),
+      fechaCompromiso: header.fechaCompromiso || header.fechaFin || '',
+      formaPago: header.formaPago || '',
+      institucionFinanciera: header.institucionFinanciera || '',
+      cuentaBancaria: header.cuentaBancaria || '',
+      referencia: header.referencia || '',
+      montoTransaccion: header.montoAutorizado || 0,
+      moneda: header.moneda || 'MXN',
       estatus: 'Pendiente',
     },
-    detail: [{ subproducto: 'Capital', monto: header.montoAutorizado }],
+    detail: buildDetail(header, cargos),
   };
 }
 
-export function crearCuentaPorCobrar(header: Record<string, any>): CuentaPorCrear {
+export function crearCuentaPorCobrar(header: Record<string, any>, cargos?: CargoItem[]): CuentaPorCrear {
   return {
     tipo: 'CuentaporCobrar',
     header: {
-      noCuenta: header.noCuenta || `CC-${Date.now()}`,
+      solicitudId: header.solicitudId || header.id,
+      noDocto: header.noDocto || `CC-${Date.now()}`,
+      fecha: new Date().toISOString(),
+      tipo: 'Por Cobrar',
       cliente: header.cliente,
-      monto: header.montoAutorizado,
-      fechaCreacion: new Date().toISOString(),
+      fechaCompromiso: header.fechaCompromiso || header.fechaFin || '',
+      formaPago: header.formaPago || '',
+      institucionFinanciera: header.institucionFinanciera || '',
+      cuentaBancaria: header.cuentaBancaria || '',
+      referencia: header.referencia || '',
+      montoTransaccion: header.montoAutorizado || 0,
+      moneda: header.moneda || 'MXN',
       estatus: 'Pendiente',
     },
-    detail: [{ subproducto: 'Capital', monto: header.montoAutorizado }],
+    detail: buildDetail(header, cargos),
   };
 }
 
@@ -219,6 +262,9 @@ export interface OriginacionContext {
   beneficiarios: Beneficiario[];
   solicitudActivacion?: SolicitudActivacion;
   header: Record<string, any>;
+  cargos?: CargoItem[];
+  requiereGarantia?: boolean;
+  requiereComite?: boolean;
 }
 
 export function ejecutarReglasFase(
@@ -385,7 +431,62 @@ function validarFase3Juridico(
   context: OriginacionContext,
   accion: 'enviarFase' | 'regresarFase' | 'formalizarContrato' | 'solicitudActivacion' | 'activarCuenta'
 ): ReglaValidacionResult {
-  return validarFase2Operativo(context, accion);
+  const { fase, tipoPersona, documentos, notas } = context;
+
+  if (accion === 'enviarFase') {
+    const docsValidacion = validarDocumentosObligatorios(fase, tipoPersona, documentos);
+    if (!docsValidacion.valido) {
+      return {
+        accionPermitida: false,
+        fase,
+        faseDestino: null,
+        motivos: [`Documentos obligatorios faltantes: ${docsValidacion.faltantes.join(', ')}`],
+        validaciones: { documentosCompletos: false, notaReciente: true, garantiasSuficientes: true, comitesAutorizados: true, beneficiariosCompletos: true, solicitudPagoCompletado: true },
+        actualizaciones: [],
+        documentosFaltantes: docsValidacion.faltantes,
+      };
+    }
+    const faseDestino = getSiguienteFase(fase);
+    return {
+      accionPermitida: true,
+      fase,
+      faseDestino,
+      motivos: ['Documentación jurídica completa. Avanzando a la siguiente fase.'],
+      validaciones: { documentosCompletos: true, notaReciente: true, garantiasSuficientes: true, comitesAutorizados: true, beneficiariosCompletos: true, solicitudPagoCompletado: true },
+      actualizaciones: [{ faseActual: fase, faseDestino: faseDestino! }],
+    };
+  }
+
+  if (accion === 'regresarFase') {
+    if (!validarNotaReciente(notas)) {
+      return {
+        accionPermitida: false,
+        fase,
+        faseDestino: null,
+        motivos: ['Debe existir al menos una nota creada en los últimos 30 minutos para regresar de fase'],
+        validaciones: { documentosCompletos: true, notaReciente: false, garantiasSuficientes: true, comitesAutorizados: true, beneficiariosCompletos: true, solicitudPagoCompletado: true },
+        actualizaciones: [],
+      };
+    }
+    const faseDestino = getFaseAnterior(fase);
+    return {
+      accionPermitida: true,
+      fase,
+      faseDestino,
+      motivos: ['Nota reciente encontrada. Regresando a la fase anterior.'],
+      validaciones: { documentosCompletos: true, notaReciente: true, garantiasSuficientes: true, comitesAutorizados: true, beneficiariosCompletos: true, solicitudPagoCompletado: true },
+      actualizaciones: [{ faseActual: fase, faseDestino: faseDestino! }],
+    };
+  }
+
+  return {
+    accionPermitida: false,
+    fase,
+    faseDestino: null,
+    motivos: ['Acción no permitida en esta fase'],
+    validaciones: { documentosCompletos: true, notaReciente: true, garantiasSuficientes: true, comitesAutorizados: true, beneficiariosCompletos: true, solicitudPagoCompletado: true },
+    actualizaciones: [],
+  };
 }
 
 function validarFase4Formalizacion(
@@ -395,15 +496,16 @@ function validarFase4Formalizacion(
   const { fase, tipoPersona, documentos, notas, lineaProducto, tipoProducto, header, garantias } = context;
 
   if (accion === 'formalizarContrato') {
+    // Solo genera el contrato/pagaré para revisión e impresión.
+    // NO avanza de fase — el avance ocurre con "Enviar de Fase".
     const contrato = generarContrato(lineaProducto, tipoProducto, header, garantias);
-    const faseDestino = getSiguienteFase(fase);
     return {
       accionPermitida: true,
       fase,
-      faseDestino,
-      motivos: ['Contrato y pagaré generados exitosamente.'],
+      faseDestino: null,
+      motivos: ['Contrato y pagaré generados. Revise e imprima los documentos antes de avanzar.'],
       validaciones: { documentosCompletos: true, notaReciente: true, garantiasSuficientes: true, comitesAutorizados: true, beneficiariosCompletos: true, solicitudPagoCompletado: true },
-      actualizaciones: [{ faseActual: fase, faseDestino: faseDestino! }],
+      actualizaciones: [],
       contrato,
     };
   }
@@ -432,39 +534,102 @@ function validarFase5Contratos(
   context: OriginacionContext,
   accion: 'enviarFase' | 'regresarFase' | 'formalizarContrato' | 'solicitudActivacion' | 'activarCuenta'
 ): ReglaValidacionResult {
-  return validarFase2Operativo(context, accion);
+  const { fase, tipoPersona, documentos, notas } = context;
+
+  if (accion === 'enviarFase') {
+    const docsValidacion = validarDocumentosObligatorios(fase, tipoPersona, documentos);
+    if (!docsValidacion.valido) {
+      return {
+        accionPermitida: false,
+        fase,
+        faseDestino: null,
+        motivos: [`Documentos obligatorios faltantes: ${docsValidacion.faltantes.join(', ')}`],
+        validaciones: { documentosCompletos: false, notaReciente: true, garantiasSuficientes: true, comitesAutorizados: true, beneficiariosCompletos: true, solicitudPagoCompletado: true },
+        actualizaciones: [],
+        documentosFaltantes: docsValidacion.faltantes,
+      };
+    }
+    const faseDestino = getSiguienteFase(fase);
+    return {
+      accionPermitida: true,
+      fase,
+      faseDestino,
+      motivos: ['Contratos y pagarés validados. Avanzando a la siguiente fase.'],
+      validaciones: { documentosCompletos: true, notaReciente: true, garantiasSuficientes: true, comitesAutorizados: true, beneficiariosCompletos: true, solicitudPagoCompletado: true },
+      actualizaciones: [{ faseActual: fase, faseDestino: faseDestino! }],
+    };
+  }
+
+  if (accion === 'regresarFase') {
+    if (!validarNotaReciente(notas)) {
+      return {
+        accionPermitida: false,
+        fase,
+        faseDestino: null,
+        motivos: ['Debe existir al menos una nota creada en los últimos 30 minutos para regresar de fase'],
+        validaciones: { documentosCompletos: true, notaReciente: false, garantiasSuficientes: true, comitesAutorizados: true, beneficiariosCompletos: true, solicitudPagoCompletado: true },
+        actualizaciones: [],
+      };
+    }
+    const faseDestino = getFaseAnterior(fase);
+    return {
+      accionPermitida: true,
+      fase,
+      faseDestino,
+      motivos: ['Nota reciente encontrada. Regresando a la fase anterior.'],
+      validaciones: { documentosCompletos: true, notaReciente: true, garantiasSuficientes: true, comitesAutorizados: true, beneficiariosCompletos: true, solicitudPagoCompletado: true },
+      actualizaciones: [{ faseActual: fase, faseDestino: faseDestino! }],
+    };
+  }
+
+  return {
+    accionPermitida: false,
+    fase,
+    faseDestino: null,
+    motivos: ['Acción no permitida en esta fase'],
+    validaciones: { documentosCompletos: true, notaReciente: true, garantiasSuficientes: true, comitesAutorizados: true, beneficiariosCompletos: true, solicitudPagoCompletado: true },
+    actualizaciones: [],
+  };
 }
 
 function validarFase6SolicitudActivacion(
   context: OriginacionContext,
   accion: 'enviarFase' | 'regresarFase' | 'formalizarContrato' | 'solicitudActivacion' | 'activarCuenta'
 ): ReglaValidacionResult {
-  const { fase, notas, lineaProducto, header, montoAutorizado, solicitudActivacion, garantias, comites, beneficiarios } = context;
+  const { fase, notas, lineaProducto, header, garantias, comites, cargos, requiereGarantia, requiereComite } = context;
+  const montoAutorizado = header.montoAutorizado || 0;
+
+  const V_OK = { documentosCompletos: true, notaReciente: true, garantiasSuficientes: true, comitesAutorizados: true, beneficiariosCompletos: true, solicitudPagoCompletado: true };
 
   if (accion === 'solicitudActivacion') {
     const errores: string[] = [];
     let cuenta: CuentaPorCrear | undefined;
 
     if (lineaProducto === 'Crédito') {
-      if (!validarGarantiasSuficientes(garantias, montoAutorizado)) {
-        errores.push('Garantías insuficientes para el monto autorizado');
+      // Validar garantías solo si el producto lo requiere
+      if (requiereGarantia && !validarGarantiasSuficientes(garantias, montoAutorizado)) {
+        errores.push('El Acuerdo de Garantías no cubre el monto requerido');
       }
-      if (!validarComitesAutorizados(comites)) {
-        errores.push('Comités no están autorizados');
+      // Validar comités solo si el producto lo requiere
+      if (requiereComite && !validarComitesAutorizados(comites)) {
+        errores.push('Los Comités no están todos autorizados');
       }
-      cuenta = crearCuentaPorPagar(header);
+      if (errores.length === 0) {
+        // Crear Cuenta por Pagar; si solo hay Capital, se toma de Cargos via cargos param
+        cuenta = crearCuentaPorPagar(header, cargos);
+      }
     } else if (lineaProducto === 'Captación') {
-      if (!validarBeneficiarios(beneficiarios)) {
-        errores.push('Beneficiarios incompletos o sin firmas');
-      }
-      cuenta = crearCuentaPorCobrar(header);
+      // Captación: crear Cuenta por Cobrar directamente (sin validar garantías/comités)
+      cuenta = crearCuentaPorCobrar(header, cargos);
     } else if (lineaProducto === 'Línea de Crédito') {
-      if (!validarGarantiasSuficientes(garantias, montoAutorizado)) {
-        errores.push('Garantías insuficientes para el monto autorizado');
+      // Línea de Crédito: actúa como "Enviar Solicitud" — avanza automáticamente
+      if (requiereGarantia && !validarGarantiasSuficientes(garantias, montoAutorizado)) {
+        errores.push('El Acuerdo de Garantías no cubre el monto requerido');
       }
-      if (!validarComitesAutorizados(comites)) {
-        errores.push('Comités no están autorizados');
+      if (requiereComite && !validarComitesAutorizados(comites)) {
+        errores.push('Los Comités no están todos autorizados');
       }
+      // Línea de Crédito NO genera Cuenta — avanza directamente
     }
 
     if (errores.length > 0) {
@@ -473,19 +638,29 @@ function validarFase6SolicitudActivacion(
         fase,
         faseDestino: null,
         motivos: errores,
-        validaciones: { documentosCompletos: true, notaReciente: true, garantiasSuficientes: lineaProducto !== 'Captación', comitesAutorizados: lineaProducto !== 'Captación', beneficiariosCompletos: lineaProducto !== 'Crédito', solicitudPagoCompletado: true },
+        validaciones: {
+          ...V_OK,
+          garantiasSuficientes: !(requiereGarantia && !validarGarantiasSuficientes(garantias, montoAutorizado)),
+          comitesAutorizados: !(requiereComite && !validarComitesAutorizados(comites)),
+        },
         actualizaciones: [],
         cuenta,
       };
     }
 
     const faseDestino = getSiguienteFase(fase);
+    const mensaje = lineaProducto === 'Línea de Crédito'
+      ? 'Validaciones completadas. Avanzando a la siguiente fase.'
+      : lineaProducto === 'Captación'
+        ? 'Cuenta por Cobrar generada. Avanzando a la siguiente fase.'
+        : 'Cuenta por Pagar generada. Avanzando a la siguiente fase.';
+
     return {
       accionPermitida: true,
       fase,
       faseDestino,
-      motivos: ['Validaciones completadas. Avanzando automáticamente a la siguiente fase.'],
-      validaciones: { documentosCompletos: true, notaReciente: true, garantiasSuficientes: true, comitesAutorizados: true, beneficiariosCompletos: true, solicitudPagoCompletado: true },
+      motivos: [mensaje],
+      validaciones: V_OK,
       actualizaciones: [{ faseActual: fase, faseDestino: faseDestino! }],
       cuenta,
     };
@@ -493,13 +668,34 @@ function validarFase6SolicitudActivacion(
 
   if (accion === 'regresarFase') {
     if (!validarNotaReciente(notas)) {
-      return { accionPermitida: false, fase, faseDestino: null, motivos: ['Debe existir al menos una nota creada en los últimos 30 minutos para regresar de fase'], validaciones: { documentosCompletos: true, notaReciente: false, garantiasSuficientes: true, comitesAutorizados: true, beneficiariosCompletos: true, solicitudPagoCompletado: true }, actualizaciones: [] };
+      return {
+        accionPermitida: false,
+        fase,
+        faseDestino: null,
+        motivos: ['Debe existir al menos una nota creada en los últimos 30 minutos para regresar de fase'],
+        validaciones: { ...V_OK, notaReciente: false },
+        actualizaciones: [],
+      };
     }
     const faseDestino = getFaseAnterior(fase);
-    return { accionPermitida: true, fase, faseDestino, motivos: ['Nota reciente encontrada. Regresando a la fase anterior.'], validaciones: { documentosCompletos: true, notaReciente: true, garantiasSuficientes: true, comitesAutorizados: true, beneficiariosCompletos: true, solicitudPagoCompletado: true }, actualizaciones: [{ faseActual: fase, faseDestino: faseDestino! }] };
+    return {
+      accionPermitida: true,
+      fase,
+      faseDestino,
+      motivos: ['Nota reciente encontrada. Regresando a la fase anterior.'],
+      validaciones: V_OK,
+      actualizaciones: [{ faseActual: fase, faseDestino: faseDestino! }],
+    };
   }
 
-  return { accionPermitida: false, fase, faseDestino: null, motivos: ['Acción no permitida en esta fase'], validaciones: { documentosCompletos: true, notaReciente: true, garantiasSuficientes: true, comitesAutorizados: true, beneficiariosCompletos: true, solicitudPagoCompletado: true }, actualizaciones: [] };
+  return {
+    accionPermitida: false,
+    fase,
+    faseDestino: null,
+    motivos: ['Acción no permitida en esta fase'],
+    validaciones: V_OK,
+    actualizaciones: [],
+  };
 }
 
 function validarFase7Activacion(

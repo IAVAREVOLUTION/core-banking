@@ -5,7 +5,7 @@ import { DatePicker } from '../clientes/DatePicker';
 import {
   OriginacionFormData, OriginacionListItem,
   OriginacionAutorizacion, OriginacionGarantia, OriginacionCargo, OriginacionAviso,
-  CotizacionRow, EMPTY_FORM, MOCK_ORIGINACIONES,
+  CotizacionRow, EMPTY_FORM,
   saveToSession, loadFromSession, loadFromSavedStore, saveToSavedStore,
   clearSession, commitAndClearSession, generateId,
   formatCurrency, parseCurrency,
@@ -14,8 +14,9 @@ import {
   CAT_MONEDA, CAT_ESTATUS_AUTORIZACION,
   CAT_TIPO_GARANTIA, CAT_TIPO_CARGO, CAT_ESTATUS_CARGO, CAT_TIPO_AVISO, CAT_ESTATUS_AVISO,
   CAT_ESTATUS_SC, CAT_ESTATUS_CLIENTE, CAT_ESTATUS_LISTA_NEGRA,
-  getOriginaciones,
+  getOriginaciones, seedOriginacionFromSolicitudItem,
 } from './originacionStore';
+import { useSolicitudesDB } from '../../hooks/useSolicitudesDB';
 import { ExpedientesSection } from './ExpedientesSection';
 import {
   ejecutarReglasFase,
@@ -27,7 +28,7 @@ import { FlujoTrabajo } from './FlujoTrabajo';
 // ═══════════════════════════════════════════════════════════════════
 // VIEW STATE — Solo consulta: editar | ver (sin nuevo)
 // ═══════════════════════════════════════════════════════════════════
-type ViewState = { type: 'dashboard' } | { type: 'list' } | { type: 'form'; mode: 'editar' | 'ver'; id: number };
+type ViewState = { type: 'dashboard' } | { type: 'list' } | { type: 'form'; mode: 'editar' | 'ver'; id: number | string };
 
 function parseDate(d: string): Date {
   const [day, month, year] = d.split('/');
@@ -42,16 +43,60 @@ const fmtCur = (v: number) => `$${v.toLocaleString('es-MX', { minimumFractionDig
 // ═══════════════════════════════════════════════════════════════════
 export function OriginacionModule() {
   const [view, setView] = useState<ViewState>({ type: 'dashboard' });
-  // Solo solicitudes con estatus ≠ "Pendiente" (regla de negocio)
+  // Bridge: items locales enviados desde Solicitudes aún no en DB
   const [items, setItems] = useState<OriginacionListItem[]>(() => getOriginaciones());
+
+  // ── Fuente de datos real: Fin_Corp_Accnt (Supabase) ──
+  const { solicitudes: solicitudesDB, backendStatus } = useSolicitudesDB(true);
+
+  // Mapear SolicitudListItem → OriginacionListItem
+  const mapSolToOrig = useCallback((sol: Record<string, any>): OriginacionListItem => ({
+    id: sol.id,
+    noOriginacion: sol.noSol || String(sol.id),
+    noSolicitud: sol.noSol || '',
+    noCliente: sol._clienteId || '',
+    cliente: sol.nombreCompleto || '',
+    fechaSolicitud: sol.fechaSolicitud || '',
+    montoSolicitado: sol.montoSolicitado || 0,
+    montoAutorizado: sol.montoAutorizado || 0,
+    sublinea: sol.tipoProducto || '',
+    producto: sol.nombreProducto || '',
+    sucursal: sol.sucursal || '',
+    estatus: sol.estatusSolicitud || '',
+    subEstatus: sol.faseDescripcion || '',
+    responsable: sol._data?.solicitud?.header?.responsable || '',
+  }), []);
+
+  // Sincronizar lista desde DB cuando lleguen datos — filtro: EstatusSolicitud ≠ "Pendiente"
+  useEffect(() => {
+    if (backendStatus === 'ready' || backendStatus === 'empty') {
+      const dbItems = (solicitudesDB as Record<string, any>[])
+        .filter(s => s.estatusSolicitud !== 'Pendiente')
+        .map(mapSolToOrig);
+      // Agregar bridge items que aún no estén en DB (por noSolicitud)
+      const dbNoSols = new Set(dbItems.map(i => i.noSolicitud));
+      const bridgeItems = getOriginaciones().filter(i => !dbNoSols.has(i.noSolicitud));
+      setItems([...dbItems, ...bridgeItems]);
+    }
+  }, [solicitudesDB, backendStatus, mapSolToOrig]);
 
   const goToDashboard = () => { setView({ type: 'dashboard' }); };
   const goToList = () => { setView({ type: 'list' }); };
 
-  const handleEditar = (i: OriginacionListItem) => { clearSession(i.id); setView({ type: 'form', mode: 'editar', id: i.id }); };
-  const handleVer = (i: OriginacionListItem) => { setView({ type: 'form', mode: 'ver', id: i.id }); };
+  // Antes de abrir el form, sembrar datos reales desde DB si no están en el store de Originación
+  const seedAndOpen = useCallback((i: OriginacionListItem, mode: 'editar' | 'ver') => {
+    const solItem = (solicitudesDB as Record<string, any>[]).find(s => s.id === i.id || s.noSol === i.noSolicitud);
+    if (solItem) {
+      seedOriginacionFromSolicitudItem(i.id, solItem);
+    }
+    if (mode === 'editar') clearSession(i.id);
+    setView({ type: 'form', mode, id: i.id });
+  }, [solicitudesDB]);
 
-  const handleSave = (data: OriginacionFormData, id: number) => {
+  const handleEditar = (i: OriginacionListItem) => { seedAndOpen(i, 'editar'); };
+  const handleVer = (i: OriginacionListItem) => { seedAndOpen(i, 'ver'); };
+
+  const handleSave = (data: OriginacionFormData, id: number | string) => {
     const ms = parseFloat(parseCurrency(data.montoSolicitado || '0')) || 0;
     const ma = parseFloat(parseCurrency(data.montoAutorizado || '0')) || 0;
     const fmtDt = (d: string) => { if (!d) return ''; const p = d.split('/'); if (p.length !== 3) return d; return p[2].length <= 2 ? d : `${p[0]}/${p[1]}/${p[2].slice(-2)}`; };
@@ -533,15 +578,18 @@ function OriginacionList({ items, onEditar, onVer }: {
 // FORM COMPONENT — Solo editar | ver (sin nuevo)
 // ═══════════════════════════════════════════════════════════════════
 function OriginacionForm({ mode, originacionId, onCancel, onSave }: {
-  mode: 'editar' | 'ver'; originacionId: number;
+  mode: 'editar' | 'ver'; originacionId: number | string;
   onCancel: () => void; onSave: (d: OriginacionFormData) => void;
 }) {
   const isRO = mode === 'ver';
 
   const [expedientes, setExpedientes] = useState<{ id: number; fechaHora: string; usuario: string; tipoDocumento: string; archivo: string; descripcion: string; estatus: string; observaciones: string }[]>(() =>
     loadFromSession(originacionId, 'expedientes') || loadFromSavedStore(originacionId, 'expedientes') || []);
-  const [notas, setNotas] = useState<{ id: number; fechaCreacion: Date; usuario: string; contenido: string }[]>(() =>
-    loadFromSession(originacionId, 'notas') || loadFromSavedStore(originacionId, 'notas') || []);
+  const [notas, setNotas] = useState<{ id: number; fechaCreacion: Date; usuario: string; contenido: string }[]>(() => {
+    const raw: any[] = loadFromSession(originacionId, 'notas') || loadFromSavedStore(originacionId, 'notas') || [];
+    // Deserializar fechaCreacion: JSON.parse devuelve strings, no Date
+    return raw.map(n => ({ ...n, fechaCreacion: n.fechaCreacion instanceof Date ? n.fechaCreacion : new Date(n.fechaCreacion) }));
+  });
   const [garantias, setGarantias] = useState<OriginacionGarantia[]>(() =>
     loadFromSession(originacionId, 'garantias') || loadFromSavedStore(originacionId, 'garantias') || []);
   const [autorizaciones, setAutorizaciones] = useState<OriginacionAutorizacion[]>(() =>
@@ -659,6 +707,7 @@ function OriginacionForm({ mode, originacionId, onCancel, onSave }: {
     { id: 'cotizacion', label: 'Cotización' }, { id: 'expedientes', label: 'Expedientes Electrónicos' },
     { id: 'autorizacion', label: 'Autorización' }, { id: 'garantias', label: 'Garantías' },
     { id: 'cargos', label: 'Cargos' }, { id: 'avisos', label: 'Avisos' },
+    { id: 'notas', label: 'Notas' },
   ];
 
   return (
@@ -934,6 +983,7 @@ function OriginacionForm({ mode, originacionId, onCancel, onSave }: {
                 {sec.id === 'garantias' && <GarantiasSection sid={sid} mode={mode} isRO={isRO} />}
                 {sec.id === 'cargos' && <CargosSection sid={sid} mode={mode} isRO={isRO} />}
                 {sec.id === 'avisos' && <AvisosSection sid={sid} mode={mode} isRO={isRO} />}
+                {sec.id === 'notas' && <NotasSection notas={notas} setNotas={setNotas} isRO={isRO} />}
               </div>
             )}
           </div>
@@ -985,9 +1035,12 @@ function FaseActionBar({
   onResult,
   isRO,
 }: FaseActionBarProps) {
+  const [contratoModal, setContratoModal] = useState<{ contrato: any; lineaProducto: string; tipoProducto: string; noOriginacion: string } | null>(null);
+
   const ejecutarAccion = useCallback((accion: AccionFase) => {
     const tipoPersona = formData.cliente.includes('S.A.') || formData.cliente.includes('S. de R.L.') || formData.cliente.includes('S.C.') ? 'Moral' : 'Física';
 
+    const montoAutorizadoNum = parseFloat(formData.montoAutorizado) || 0;
     const context = {
       id: 0,
       estatusSolicitud: formData.estatus,
@@ -1001,16 +1054,21 @@ function FaseActionBar({
       comites,
       beneficiarios,
       solicitudActivacion,
+      // Si hay garantías o comités registrados, se considera que el producto los requiere
+      requiereGarantia: garantias.length > 0,
+      requiereComite: comites.length > 0,
       header: {
+        solicitudId: formData.noOriginacion,
         cliente: formData.cliente,
         noCuenta: formData.noOriginacion,
         tasa: formData.tasaAutorizada,
         plazo: formData.plazos,
         periodicidad: formData.periodo,
-        montoAutorizado: parseFloat(formData.montoAutorizado) || 0,
+        montoAutorizado: montoAutorizadoNum,
         fechaInicio: formData.fechaInicio,
         fechaFin: formData.fechaFin,
         tipoAmortizacion: formData.tipoAmortizacion,
+        moneda: 'MXN',
       },
     };
 
@@ -1032,6 +1090,15 @@ function FaseActionBar({
         if (update.estatusPago) onActualizarEstatusPago(update.estatusPago);
         if (update.estatusCartera) onActualizarEstatusCartera(update.estatusCartera);
       });
+      // Mostrar modal de contrato/pagaré cuando se formaliza
+      if (result.contrato) {
+        setContratoModal({
+          contrato: result.contrato,
+          lineaProducto: formData.lineaProducto,
+          tipoProducto: formData.producto,
+          noOriginacion: formData.noOriginacion,
+        });
+      }
     }
     onResult(result);
   }, [fase, formData, documentos, notas, garantias, comites, beneficiarios, solicitudActivacion, onActualizarFase, onActualizarEstatus, onActualizarEstatusCuenta, onActualizarEstatusPago, onActualizarEstatusCartera, onResult]);
@@ -1047,14 +1114,14 @@ function FaseActionBar({
     ) : null;
   }
 
-  // "Enviar de Fase" está disponible en todas las fases excepto la última (Activación)
-  const puedeEnviar = fase !== 'Activación de Cuenta Financiera';
+  // "Enviar de Fase" no aplica en FASE 6 (usa "Solicitud de Activación") ni en la última fase
+  const puedeEnviar = !['Solicitud de Activación de Cuenta Financiera', 'Activación de Cuenta Financiera'].includes(fase);
   const puedeRegresar = !['Integración del Expediente'].includes(fase);
   const puedeFormalizar = fase === 'Formalización de Cuenta Financiera';
   const puedeSolicitarActivacion = fase === 'Solicitud de Activación de Cuenta Financiera';
   const puedeActivar = fase === 'Activación de Cuenta Financiera';
 
-  return (
+  return (<>
     <div className="bg-[#EBF3FB] border border-[#4A6FA5] rounded px-4 py-3 mb-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
@@ -1111,6 +1178,180 @@ function FaseActionBar({
               Activar Cuenta
             </button>
           )}
+        </div>
+      </div>
+    </div>
+
+    {/* Modal de Contrato/Pagaré — Formalización FASE 4 */}
+    {contratoModal && (
+      <ContratoModal
+        contrato={contratoModal.contrato}
+        lineaProducto={contratoModal.lineaProducto}
+        tipoProducto={contratoModal.tipoProducto}
+        noOriginacion={contratoModal.noOriginacion}
+        onClose={() => setContratoModal(null)}
+      />
+    )}
+  </>);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// CONTRATO MODAL — Vista de contrato/pagaré para impresión (FASE 4)
+// ═══════════════════════════════════════════════════════════════════
+function ContratoModal({ contrato, lineaProducto, tipoProducto, noOriginacion, onClose }: {
+  contrato: any;
+  lineaProducto: string;
+  tipoProducto: string;
+  noOriginacion: string;
+  onClose: () => void;
+}) {
+  const fmtCurrency = (v: number) => `$${(v || 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const hoy = new Date().toLocaleDateString('es-MX', { day: '2-digit', month: 'long', year: 'numeric' });
+  const tc = contrato.terminosCondiciones || {};
+  const hdr = contrato.header || {};
+  const garantias: any[] = contrato.garantias || [];
+
+  const handlePrint = () => {
+    const el = document.getElementById('contrato-print-area');
+    if (!el) return;
+    const w = window.open('', '_blank', 'width=900,height=700');
+    if (!w) return;
+    w.document.write(`<!DOCTYPE html><html><head><title>Contrato — ${noOriginacion}</title>
+      <style>
+        body { font-family: Arial, sans-serif; font-size: 12px; color: #111; margin: 40px; }
+        h1 { font-size: 16px; text-align: center; margin-bottom: 4px; }
+        h2 { font-size: 13px; border-bottom: 1px solid #999; padding-bottom: 4px; margin: 20px 0 8px; }
+        .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 24px; margin-bottom: 12px; }
+        .field label { font-size: 10px; color: #555; display: block; }
+        .field span { font-weight: bold; }
+        table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+        th { background: #ddd; padding: 6px; text-align: left; font-size: 11px; border: 1px solid #bbb; }
+        td { padding: 5px 6px; font-size: 11px; border: 1px solid #ddd; }
+        .firmas { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-top: 60px; }
+        .firma-box { border-top: 1px solid #333; padding-top: 6px; text-align: center; font-size: 11px; }
+        @media print { body { margin: 20px; } }
+      </style></head><body>${el.innerHTML}</body></html>`);
+    w.document.close();
+    w.focus();
+    w.print();
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-3xl max-h-[90vh] flex flex-col">
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200">
+          <div className="flex items-center gap-2">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#7C3AED" strokeWidth="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/></svg>
+            <span className="text-sm font-semibold text-gray-800">Contrato / Pagaré — {noOriginacion}</span>
+            <span className="px-2 py-0.5 text-[10px] bg-purple-100 text-purple-700 rounded">{lineaProducto} · {tipoProducto}</span>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-700">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
+
+        {/* Body scrollable */}
+        <div className="overflow-auto flex-1 px-5 py-4" id="contrato-print-area">
+          {/* ── CONTRATO ── */}
+          <h1 className="text-base font-bold text-center text-gray-900 mb-1">CONTRATO DE {lineaProducto.toUpperCase()}</h1>
+          <p className="text-[10px] text-center text-gray-500 mb-4">{tipoProducto} — Folio: {noOriginacion} — Fecha: {hoy}</p>
+
+          <h2 className="text-xs font-semibold text-gray-700 border-b border-gray-200 pb-1 mb-3">1. DATOS DEL CLIENTE</h2>
+          <div className="grid grid-cols-2 gap-x-8 gap-y-2 mb-4">
+            {[
+              { label: 'Cliente', value: hdr.cliente },
+              { label: 'No. Originación', value: noOriginacion },
+              { label: 'Línea de Producto', value: lineaProducto },
+              { label: 'Tipo de Producto', value: tipoProducto },
+            ].map(f => (
+              <div key={f.label}>
+                <span className="text-[10px] text-gray-500 block">{f.label}</span>
+                <span className="text-xs font-medium text-gray-800">{f.value || '—'}</span>
+              </div>
+            ))}
+          </div>
+
+          <h2 className="text-xs font-semibold text-gray-700 border-b border-gray-200 pb-1 mb-3">2. TÉRMINOS Y CONDICIONES</h2>
+          <div className="grid grid-cols-2 gap-x-8 gap-y-2 mb-4">
+            {[
+              { label: 'Monto Autorizado', value: fmtCurrency(tc.montoAutorizado) },
+              { label: 'Tasa de Interés', value: tc.tasa ? `${tc.tasa}%` : '—' },
+              { label: 'Plazo', value: tc.plazo ? `${tc.plazo} períodos` : '—' },
+              { label: 'Periodicidad', value: tc.periodicidad || '—' },
+              { label: 'Fecha Inicio', value: tc.fechaInicio || '—' },
+              { label: 'Fecha Fin', value: tc.fechaFin || '—' },
+              { label: 'Tipo Amortización', value: tc.tipoAmortizacion || '—' },
+            ].map(f => (
+              <div key={f.label}>
+                <span className="text-[10px] text-gray-500 block">{f.label}</span>
+                <span className="text-xs font-medium text-gray-800">{f.value}</span>
+              </div>
+            ))}
+          </div>
+
+          {garantias.length > 0 && (<>
+            <h2 className="text-xs font-semibold text-gray-700 border-b border-gray-200 pb-1 mb-3">3. GARANTÍAS</h2>
+            <table className="w-full text-xs mb-4 border border-gray-200">
+              <thead><tr className="bg-gray-100">
+                <th className="px-2 py-1.5 text-left border-r border-gray-200">Tipo</th>
+                <th className="px-2 py-1.5 text-left border-r border-gray-200">Descripción</th>
+                <th className="px-2 py-1.5 text-right">Valor Nominal</th>
+              </tr></thead>
+              <tbody>
+                {garantias.map((g: any, i: number) => (
+                  <tr key={i} className="border-t border-gray-100">
+                    <td className="px-2 py-1 border-r border-gray-200">{g.tipo || '—'}</td>
+                    <td className="px-2 py-1 border-r border-gray-200">{g.descripcion || '—'}</td>
+                    <td className="px-2 py-1 text-right">{fmtCurrency(g.valorNominal)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </>)}
+
+          {/* ── PAGARÉ ── */}
+          <div className="border-t-2 border-dashed border-gray-400 mt-6 pt-4">
+            <h1 className="text-base font-bold text-center text-gray-900 mb-1">PAGARÉ</h1>
+            <p className="text-[10px] text-center text-gray-500 mb-4">Asociado al Contrato {noOriginacion} — Fecha: {hoy}</p>
+
+            <p className="text-xs text-gray-700 mb-4 leading-relaxed">
+              Por este pagaré me/nos obligo/obligamos incondicionalmente a pagar a la orden de <strong>la Institución</strong> la
+              cantidad de <strong>{fmtCurrency(tc.montoAutorizado)}</strong> ({lineaProducto} — {tipoProducto}),
+              más los intereses pactados a una tasa del <strong>{tc.tasa || '—'}%</strong>,
+              pagaderos en <strong>{tc.plazo || '—'}</strong> períodos con periodicidad <strong>{tc.periodicidad || '—'}</strong>,
+              con vencimiento el <strong>{tc.fechaFin || '—'}</strong>.
+            </p>
+
+            <div className="grid grid-cols-2 gap-12 mt-10">
+              <div className="text-center">
+                <div className="border-t border-gray-600 pt-1 mt-8">
+                  <p className="text-[10px] text-gray-600">Firma del Acreditado</p>
+                  <p className="text-[10px] text-gray-500">{hdr.cliente || '___________________________'}</p>
+                </div>
+              </div>
+              <div className="text-center">
+                <div className="border-t border-gray-600 pt-1 mt-8">
+                  <p className="text-[10px] text-gray-600">Firma del Representante Institucional</p>
+                  <p className="text-[10px] text-gray-500">___________________________</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-gray-200 bg-gray-50">
+          <button onClick={onClose} className="px-4 py-1.5 bg-white border border-gray-300 text-gray-700 rounded text-xs hover:bg-gray-50">
+            Cerrar
+          </button>
+          <button
+            onClick={handlePrint}
+            className="px-4 py-1.5 bg-[#7C3AED] text-white rounded text-xs hover:bg-[#6D28D9] flex items-center gap-1.5"
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+            Imprimir
+          </button>
         </div>
       </div>
     </div>
@@ -1226,6 +1467,109 @@ function CargosSection({ sid, mode, isRO }: { sid: number; mode: string; isRO: b
       {items.length === 0 ? <tr><td colSpan={5} className="px-3 py-6 text-center text-xs text-gray-400">Sin cargos</td></tr>
       : items.map(c => <tr key={c.id} className="border-b border-gray-200 hover:bg-gray-50"><td className="px-2 py-1.5 border-r border-gray-200"><select value={c.tipoCargo} onChange={e => setItems(p => p.map(x => x.id === c.id ? {...x, tipoCargo: e.target.value} : x))} disabled={isRO} className={`w-full px-1 py-0.5 text-xs border border-gray-300 rounded ${isRO ? 'bg-gray-100' : 'bg-white'}`}><option value="">Seleccione...</option>{CAT_TIPO_CARGO.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}</select></td><td className="px-2 py-1.5 border-r border-gray-200"><input type="text" value={c.descripcion} onChange={e => setItems(p => p.map(x => x.id === c.id ? {...x, descripcion: e.target.value} : x))} disabled={isRO} className={`w-full px-1 py-0.5 text-xs border border-gray-300 rounded ${isRO ? 'bg-gray-100' : 'bg-white'}`} /></td><td className="px-2 py-1.5 border-r border-gray-200"><input type="number" step="0.01" min="0" value={c.monto} onChange={e => setItems(p => p.map(x => x.id === c.id ? {...x, monto: +e.target.value || 0} : x))} disabled={isRO} className={`w-full px-1 py-0.5 text-xs border border-gray-300 rounded text-right ${isRO ? 'bg-gray-100' : 'bg-white'}`} /></td><td className="px-2 py-1.5 border-r border-gray-200"><select value={c.estatus} onChange={e => setItems(p => p.map(x => x.id === c.id ? {...x, estatus: e.target.value} : x))} disabled={isRO} className={`w-full px-1 py-0.5 text-xs border border-gray-300 rounded ${isRO ? 'bg-gray-100' : 'bg-white'}`}>{CAT_ESTATUS_CARGO.map(s => <option key={s} value={s}>{s}</option>)}</select></td><td className="px-2 py-1.5"><input type="text" value={c.notas} onChange={e => setItems(p => p.map(x => x.id === c.id ? {...x, notas: e.target.value} : x))} disabled={isRO} className={`w-full px-1 py-0.5 text-xs border border-gray-300 rounded ${isRO ? 'bg-gray-100' : 'bg-white'}`} /></td></tr>)}
     </tbody></table></div>
+  </>);
+}
+
+// ── NOTAS SECTION — necesario para validar "Regresar de Fase" (nota en últimos 30 min)
+type NotaItem = { id: number; fechaCreacion: Date; usuario: string; contenido: string };
+
+function NotasSection({ notas, setNotas, isRO }: {
+  notas: NotaItem[];
+  setNotas: React.Dispatch<React.SetStateAction<NotaItem[]>>;
+  isRO: boolean;
+}) {
+  const [contenido, setContenido] = useState('');
+
+  const addNota = () => {
+    if (!contenido.trim()) { toast.error('Escribe el contenido de la nota'); return; }
+    const nueva: NotaItem = { id: Date.now(), fechaCreacion: new Date(), usuario: 'Usuario', contenido: contenido.trim() };
+    setNotas(prev => [nueva, ...prev]);
+    setContenido('');
+    toast.success('Nota agregada', { description: 'La nota quedó registrada y permite regresar de fase en los próximos 30 min.' });
+  };
+
+  const deleteNota = (id: number) => setNotas(prev => prev.filter(n => n.id !== id));
+
+  const fmtFecha = (d: Date) => {
+    const dt = d instanceof Date ? d : new Date(d);
+    return isNaN(dt.getTime()) ? '—' : dt.toLocaleString('es-MX');
+  };
+
+  const ahora = new Date();
+  const limite30 = new Date(ahora.getTime() - 30 * 60 * 1000);
+  const hayNotaReciente = notas.some(n => {
+    const fc = n.fechaCreacion instanceof Date ? n.fechaCreacion : new Date(n.fechaCreacion);
+    return fc >= limite30;
+  });
+
+  return (<>
+    <div className="flex items-center justify-between mb-3">
+      <div className="bg-[#D9E2F3] border-l-4 border-[#4A6FA5] px-3 py-1.5 flex items-center gap-3">
+        <span className="text-xs text-gray-800">NOTAS</span>
+        {hayNotaReciente
+          ? <span className="px-2 py-0.5 text-[10px] bg-green-100 text-green-700 rounded">✓ Nota reciente (≤30 min)</span>
+          : <span className="px-2 py-0.5 text-[10px] bg-yellow-100 text-yellow-700 rounded">⚠ Sin nota reciente — requerida para Regresar de Fase</span>}
+      </div>
+    </div>
+    {!isRO && (
+      <div className="mb-4 space-y-2">
+        <textarea
+          value={contenido}
+          onChange={e => setContenido(e.target.value)}
+          placeholder="Escribe una nota (requerida para regresar de fase)..."
+          className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-[#4A6FA5] bg-white resize-none"
+          rows={3}
+          maxLength={1024}
+        />
+        <div className="flex items-center justify-between">
+          <span className="text-[10px] text-gray-400">{contenido.length}/1024</span>
+          <button onClick={addNota} className="px-4 py-1.5 bg-[#0099CC] text-white rounded text-xs hover:bg-[#0088BB]">
+            Agregar Nota
+          </button>
+        </div>
+      </div>
+    )}
+    <div className="border border-gray-300 bg-white overflow-x-auto">
+      <table className="w-full border-collapse">
+        <thead>
+          <tr style={{ backgroundColor: '#D0D0D0' }} className="border-b border-gray-300">
+            <th className="px-2 py-2 text-xs text-gray-700 text-left border-r border-gray-300 whitespace-nowrap">Fecha / Hora</th>
+            <th className="px-2 py-2 text-xs text-gray-700 text-left border-r border-gray-300">Usuario</th>
+            <th className="px-2 py-2 text-xs text-gray-700 text-left border-r border-gray-300">Nota</th>
+            <th className="px-2 py-2 text-xs text-gray-700 text-left border-r border-gray-300 whitespace-nowrap">Reciente</th>
+            {!isRO && <th className="px-2 py-2 w-8"></th>}
+          </tr>
+        </thead>
+        <tbody>
+          {notas.length === 0
+            ? <tr><td colSpan={isRO ? 4 : 5} className="px-3 py-6 text-center text-xs text-gray-400">Sin notas</td></tr>
+            : notas.map(n => {
+                const fc = n.fechaCreacion instanceof Date ? n.fechaCreacion : new Date(n.fechaCreacion);
+                const esReciente = fc >= limite30;
+                return (
+                  <tr key={n.id} className="border-b border-gray-200 hover:bg-gray-50">
+                    <td className="px-2 py-1.5 text-xs border-r border-gray-200 whitespace-nowrap">{fmtFecha(n.fechaCreacion)}</td>
+                    <td className="px-2 py-1.5 text-xs border-r border-gray-200 whitespace-nowrap">{n.usuario}</td>
+                    <td className="px-2 py-1.5 text-xs border-r border-gray-200">{n.contenido}</td>
+                    <td className="px-2 py-1.5 text-xs border-r border-gray-200 text-center">
+                      {esReciente
+                        ? <span className="px-1.5 py-0.5 bg-green-100 text-green-700 rounded text-[10px]">✓</span>
+                        : <span className="px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded text-[10px]">—</span>}
+                    </td>
+                    {!isRO && (
+                      <td className="px-2 py-1.5 text-center">
+                        <button onClick={() => deleteNota(n.id)} className="text-red-500 hover:text-red-700">
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                        </button>
+                      </td>
+                    )}
+                  </tr>
+                );
+              })
+          }
+        </tbody>
+      </table>
+    </div>
   </>);
 }
 
