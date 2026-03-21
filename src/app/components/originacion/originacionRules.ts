@@ -9,7 +9,7 @@ export type FaseOriginacion =
   | 'Solicitud de Activación de Cuenta Financiera'
   | 'Activación de Cuenta Financiera';
 
-export type TipoPersona = 'Física' | 'Moral';
+export type TipoPersona = 'Física' | 'Moral' | 'Fís. c/Act. Emp.';
 
 export interface DocumentoObligatorio {
   tipoDocumento: string;
@@ -104,15 +104,27 @@ const FASES: FaseOriginacion[] = [
 ];
 
 const DOCUMENTOS_POR_FASE: DocumentoObligatorio[] = [
+  // ── FASE 1: Integración del Expediente ──
+  // Persona Física
   { tipoDocumento: 'Credencial de elector', aplicaPersona: ['Física'], fase: 'Integración del Expediente' },
+  { tipoDocumento: 'CURP', aplicaPersona: ['Física'], fase: 'Integración del Expediente' },
+  // Persona Moral
   { tipoDocumento: 'Acta constitutiva', aplicaPersona: ['Moral'], fase: 'Integración del Expediente' },
-  { tipoDocumento: 'Comprobante de domicilio', aplicaPersona: ['Física', 'Moral'], fase: 'Integración del Expediente' },
-  { tipoDocumento: 'Estado de cuenta bancario', aplicaPersona: ['Física', 'Moral'], fase: 'Integración del Expediente' },
-  { tipoDocumento: 'Constancia de situación fiscal', aplicaPersona: ['Física', 'Moral'], fase: 'Integración del Expediente' },
-  { tipoDocumento: 'Avalúo', aplicaPersona: ['Física', 'Moral'], fase: 'Análisis de Expediente Operativo' },
-  { tipoDocumento: 'Carta de autorización', aplicaPersona: ['Física', 'Moral'], fase: 'Análisis de Expediente Jurídico' },
-  { tipoDocumento: 'Contrato firmado', aplicaPersona: ['Física', 'Moral'], fase: 'Validación de Contratos y Pagarés Firmados' },
-  { tipoDocumento: 'Pagaré firmado', aplicaPersona: ['Física', 'Moral'], fase: 'Validación de Contratos y Pagarés Firmados' },
+  { tipoDocumento: 'Poder notarial', aplicaPersona: ['Moral'], fase: 'Integración del Expediente' },
+  // Persona Física con Actividad Empresarial
+  { tipoDocumento: 'Credencial de elector', aplicaPersona: ['Fís. c/Act. Emp.'], fase: 'Integración del Expediente' },
+  { tipoDocumento: 'Alta en SHCP (SAT)', aplicaPersona: ['Fís. c/Act. Emp.'], fase: 'Integración del Expediente' },
+  // Todos los tipos
+  { tipoDocumento: 'Comprobante de domicilio', aplicaPersona: ['Física', 'Moral', 'Fís. c/Act. Emp.'], fase: 'Integración del Expediente' },
+  { tipoDocumento: 'Estado de cuenta bancario', aplicaPersona: ['Física', 'Moral', 'Fís. c/Act. Emp.'], fase: 'Integración del Expediente' },
+  { tipoDocumento: 'Constancia de situación fiscal', aplicaPersona: ['Física', 'Moral', 'Fís. c/Act. Emp.'], fase: 'Integración del Expediente' },
+  // ── FASE 2: Análisis de Expediente Operativo ──
+  { tipoDocumento: 'Avalúo', aplicaPersona: ['Física', 'Moral', 'Fís. c/Act. Emp.'], fase: 'Análisis de Expediente Operativo' },
+  // ── FASE 3: Análisis de Expediente Jurídico ──
+  { tipoDocumento: 'Carta de autorización', aplicaPersona: ['Física', 'Moral', 'Fís. c/Act. Emp.'], fase: 'Análisis de Expediente Jurídico' },
+  // ── FASE 5: Validación de Contratos y Pagarés Firmados ──
+  { tipoDocumento: 'Contrato firmado', aplicaPersona: ['Física', 'Moral', 'Fís. c/Act. Emp.'], fase: 'Validación de Contratos y Pagarés Firmados' },
+  { tipoDocumento: 'Pagaré firmado', aplicaPersona: ['Física', 'Moral', 'Fís. c/Act. Emp.'], fase: 'Validación de Contratos y Pagarés Firmados' },
 ];
 
 export function getSiguienteFase(fase: FaseOriginacion): FaseOriginacion | null {
