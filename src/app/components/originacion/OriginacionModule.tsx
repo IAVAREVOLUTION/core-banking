@@ -668,12 +668,6 @@ function OriginacionForm({ mode, originacionId, onCancel, onSave, onActivarCuent
     setFd(p => ({ ...p, subEstatus: nuevaFase }));
   }, []);
 
-  const handleActualizarEstatus = useCallback((estatus: string) => {
-    setFd(p => ({ ...p, estatus }));
-    // Participa en el trigger de FASE 7 cuando estatus = 'Autorizada'
-    if (estatus === 'Autorizada') triggerFase7DB({ sol: estatus });
-  }, [triggerFase7DB]);
-
   // Acumula los 4 campos de FASE 7 para disparar DB update cuando todos lleguen
   const fase7StatusRef = useRef<{ sol?: string; cuenta?: string; pago?: string; cartera?: string }>({});
 
@@ -684,6 +678,12 @@ function OriginacionForm({ mode, originacionId, onCancel, onSave, onActivarCuent
       onActivarCuentaDB({ estatusSolicitud: sol, estatusCuenta: cuenta, estatusPago: pago, estatusCartera: cartera });
     }
   }, [onActivarCuentaDB]);
+
+  const handleActualizarEstatus = useCallback((estatus: string) => {
+    setFd(p => ({ ...p, estatus }));
+    // Participa en el trigger de FASE 7 cuando estatus = 'Autorizada'
+    if (estatus === 'Autorizada') triggerFase7DB({ sol: estatus });
+  }, [triggerFase7DB]);
 
   const handleActualizarEstatusCuenta = useCallback((estatus: string) => {
     setFd(p => ({ ...p, estatusSC: estatus }));
