@@ -13,7 +13,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { toast } from 'sonner';
 import {
-  SolicitudFormData, EMPTY_FORM, MOCK_FORMS,
+  SolicitudFormData, EMPTY_FORM, MOCK_FORMS, SOLICITUDES_LISTA,
   saveToSession, loadFromSession, loadFromSavedStore, saveToSavedStore, commitAndClearSession, clearSession,
   formatCurrency, parseCurrency, generateNoSol, consumeNoSol, getFechaSolicitudNow,
   CAT_LINEA_PRODUCTO, CAT_TIPO_PRODUCTO, CAT_TIPO_PERSONA, CAT_PRODUCTOS,
@@ -163,10 +163,22 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
     const dd = String(today.getDate()).padStart(2, '0');
     const mm = String(today.getMonth() + 1).padStart(2, '0');
     const yy = String(today.getFullYear()).slice(-2);
+
+    const clienteNombre = `${formData.nombrePersona || ''} ${formData.apellidoPaternoPersona || ''} ${formData.apellidoMaternoPersona || ''}`.trim() || 'Sin nombre';
+
+    // Actualizar SOLICITUDES_LISTA para que OriginacionModule lo vea en tiempo real
+    const listItem = SOLICITUDES_LISTA.find(s =>
+      s.noSol === formData.noSol || String(s.id) === String(storageId)
+    );
+    if (listItem) {
+      listItem.estatusSolicitud = 'En proceso';
+    }
+
+    // Bridge local para cuando OriginacionModule ya estaba montado
     addOriginacionItem({
       noSolicitud: formData.noSol || `SC-${storageId}`,
       noCliente: '',
-      cliente: `${formData.nombrePersona || ''} ${formData.apellidoPaternoPersona || ''} ${formData.apellidoMaternoPersona || ''}`.trim() || 'Sin nombre',
+      cliente: clienteNombre,
       fechaSolicitud: `${dd}/${mm}/${yy}`,
       montoSolicitado: parseFloat(parseCurrency(formData.montoSolicitado || '0')) || 0,
       montoAutorizado: 0,

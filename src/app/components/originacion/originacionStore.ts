@@ -396,67 +396,159 @@ export interface OriginacionListItem {
   responsable: string;
 }
 
-// ── Mock data (8 registros provenientes de Solicitud de Crédito) ──
-export const MOCK_ORIGINACIONES: OriginacionListItem[] = [
-  { id: 1, noOriginacion: 'OR-001', noSolicitud: 'SC-001', noCliente: 'CL-001', cliente: 'Juan Pérez Gómez', fechaSolicitud: '05/01/26', montoSolicitado: 150000, montoAutorizado: 150000, sublinea: 'Crédito Personal', producto: 'Crédito Simple', sucursal: 'CDMX', estatus: 'En Proceso', subEstatus: 'Integración del Expediente', responsable: 'Ana López' },
-  { id: 2, noOriginacion: 'OR-002', noSolicitud: 'SC-002', noCliente: 'CL-002', cliente: 'María García López', fechaSolicitud: '08/01/26', montoSolicitado: 500000, montoAutorizado: 480000, sublinea: 'Crédito Empresarial', producto: 'Línea de Crédito', sucursal: 'Monterrey', estatus: 'En Proceso', subEstatus: 'Análisis de Crédito', responsable: 'Carlos Ruiz' },
-  { id: 3, noOriginacion: 'OR-003', noSolicitud: 'SC-003', noCliente: 'CL-003', cliente: 'Carlos Martínez Sánchez', fechaSolicitud: '12/01/26', montoSolicitado: 80000, montoAutorizado: 80000, sublinea: 'Crédito Automotriz', producto: 'Crédito Simple', sucursal: 'Guadalajara', estatus: 'En Proceso', subEstatus: 'Jurídico', responsable: 'Laura Torres' },
-  { id: 4, noOriginacion: 'OR-004', noSolicitud: 'SC-004', noCliente: 'CL-004', cliente: 'HELVEX, S.A. DE C.V', fechaSolicitud: '15/01/26', montoSolicitado: 1200000, montoAutorizado: 1200000, sublinea: 'Crédito Empresarial', producto: 'Línea de Crédito', sucursal: 'Querétaro', estatus: 'En Proceso', subEstatus: 'Liberación', responsable: 'Pedro Vega' },
-  { id: 5, noOriginacion: 'OR-005', noSolicitud: 'SC-005', noCliente: 'CL-005', cliente: 'Sofía Reyes López', fechaSolicitud: '20/01/26', montoSolicitado: 45000, montoAutorizado: 0, sublinea: 'Crédito Personal', producto: 'Crédito Simple', sucursal: 'CDMX', estatus: 'Pendiente', subEstatus: 'Integración del Expediente', responsable: 'Ana López' },
-  { id: 6, noOriginacion: 'OR-006', noSolicitud: 'SC-006', noCliente: 'CL-001', cliente: 'Juan Pérez Gómez', fechaSolicitud: '22/01/26', montoSolicitado: 300000, montoAutorizado: 300000, sublinea: 'Crédito Hipotecario', producto: 'Crédito Simple', sucursal: 'Toluca', estatus: 'Aprobado', subEstatus: 'Liberación', responsable: 'Carlos Ruiz' },
-  { id: 7, noOriginacion: 'OR-007', noSolicitud: 'SC-007', noCliente: 'CL-003', cliente: 'Carlos Martínez Sánchez', fechaSolicitud: '25/01/26', montoSolicitado: 95000, montoAutorizado: 90000, sublinea: 'Crédito Personal', producto: 'Crédito Revolvente', sucursal: 'CDMX', estatus: 'En Proceso', subEstatus: 'Análisis de Crédito', responsable: 'Laura Torres' },
-  { id: 8, noOriginacion: 'OR-008', noSolicitud: 'SC-008', noCliente: 'CL-002', cliente: 'María García López', fechaSolicitud: '28/01/26', montoSolicitado: 750000, montoAutorizado: 0, sublinea: 'Crédito Empresarial', producto: 'Línea de Crédito', sucursal: 'Monterrey', estatus: 'Pendiente', subEstatus: 'Integración del Expediente', responsable: 'Pedro Vega' },
-];
+// ── Removed: MOCK_ORIGINACIONES — Originación carga exclusivamente desde Fin_Corp_Accnt (Supabase) ──
+// El módulo OriginacionModule usa useSolicitudesDB() como fuente de datos.
 
-// ── Pre-seed SAVED_DATA from mock records so Editar/Ver loads correct data ──
-function buildFormFromMock(m: OriginacionListItem): OriginacionFormData {
-  const clienteVal = CAT_CLIENTES.find(c => c.value.includes(m.cliente))?.value || m.cliente;
+/** Construye OriginacionFormData desde un OriginacionListItem (sin datos de prueba) */
+function buildFormFromListItem(m: OriginacionListItem): OriginacionFormData {
   return {
     ...EMPTY_FORM,
     noOriginacion: m.noOriginacion,
     noSolicitud: m.noSolicitud,
-    cliente: clienteVal,
+    cliente: m.cliente,
     noCliente: m.noCliente,
     fechaSolicitud: m.fechaSolicitud,
     sucursal: m.sucursal,
-    montoSolicitado: m.montoSolicitado.toFixed(2),
-    montoAutorizado: m.montoAutorizado.toFixed(2),
+    montoSolicitado: m.montoSolicitado ? String(m.montoSolicitado) : '',
+    montoAutorizado: m.montoAutorizado ? String(m.montoAutorizado) : '',
     sublinea: m.sublinea,
     producto: m.producto,
     estatus: m.estatus,
     subEstatus: m.subEstatus,
     responsable: m.responsable,
-    periodo: 'Mensual',
-    plazos: '24',
-    destinoCredito: 'Capital de trabajo',
-    tasaAutorizada: '14.5000',
   };
 }
 
-// Seed on module load
-MOCK_ORIGINACIONES.forEach(m => {
-  saveToSavedStore(m.id, 'form', buildFormFromMock(m));
-});
+/**
+ * Construye OriginacionFormData a partir de un SolicitudListItem real (DB).
+ * Extrae datos del JSONB data.solicitud.* — sin valores de prueba.
+ */
+export function buildFormFromSolicitudItem(item: Record<string, any>): OriginacionFormData {
+  const d = item._data || {};
+  const sol = d.solicitud || {};
+  const hdr = sol.header || {};
+  const terminos = sol.terminos_condiciones?.parametros_simulacion || {};
 
-// ── Dynamic list: solicitudes enviadas desde el módulo de Solicitudes ──
+  const nombreCompleto = [hdr.nombre_persona, hdr.apellido_paterno_persona, hdr.apellido_materno_persona]
+    .filter(Boolean).join(' ').trim() || item.nombreCompleto || '';
+
+  return {
+    ...EMPTY_FORM,
+    noOriginacion: item.noSol || String(item.id || ''),
+    noSolicitud: item.noSol || '',
+    noCliente: item._clienteId || '',
+    cliente: nombreCompleto,
+    fechaSolicitud: item.fechaSolicitud || hdr.fecha_solicitud || '',
+    sucursal: item.sucursal || hdr.sucursal || '',
+    montoSolicitado: item.montoSolicitado ? String(item.montoSolicitado) : '',
+    montoAutorizado: item.montoAutorizado ? String(item.montoAutorizado) : '',
+    lineaProducto: item._lineaProducto || hdr.linea_producto || 'Crédito',
+    sublinea: item.tipoProducto || hdr.tipo_producto || '',
+    producto: item.nombreProducto || hdr.nombre_producto || '',
+    estatus: item.estatusSolicitud || hdr.estatus || 'En Proceso',
+    subEstatus: item.faseDescripcion || hdr.descripcion_fase || 'Integración del Expediente',
+    periodo: terminos.periodicidad || '',
+    plazos: String(terminos.plazo || ''),
+    tasaAutorizada: String(terminos.tasa_interes || ''),
+    fechaInicio: hdr.fecha_inicio || '',
+    fechaFin: hdr.fecha_fin || '',
+    moneda: terminos.moneda || 'MXN',
+    destinoCredito: hdr.destino_credito || '',
+    responsable: hdr.responsable || '',
+  };
+}
+
+/**
+ * Siembra el store de Originación con datos reales del item de Solicitud (DB).
+ * Solo siembra si aún no hay datos propios del módulo de Originación para este ID.
+ * Preserva cambios que el usuario haya hecho dentro de Originación.
+ */
+export function seedOriginacionFromSolicitudItem(origId: number | string, item: Record<string, any>): void {
+  // No sobrescribir si ya fue sembrado Y el usuario tiene cambios guardados
+  if (loadFromSavedStore(origId, '_seeded')) return;
+
+  const form = buildFormFromSolicitudItem(item);
+  saveToSavedStore(origId, 'form', form);
+  saveToSavedStore(origId, '_seeded', true);
+
+  const d = item._data || {};
+  const sol = d.solicitud || {};
+
+  // Expediente electrónico → expedientes de originación
+  const docs: any[] = sol.expediente_electronico || [];
+  if (docs.length > 0) {
+    const expedientes = docs.map((doc: any) => ({
+      id: doc.id || generateId(),
+      fechaHora: doc.fecha || doc.fecha_hora || '',
+      usuario: doc.usuario || '',
+      tipoDocumento: doc.tipo_documento || doc.tipoDocumento || '',
+      archivo: doc.archivo || '',
+      descripcion: doc.nota || doc.descripcion || '',
+      estatus: doc.estatus === 'Validado' ? 'Aprobado' : (doc.estatus || 'Pendiente'),
+      observaciones: doc.observaciones || '',
+      fileData: doc.fileData || doc.file_data,
+    }));
+    saveToSavedStore(origId, 'expedientes', expedientes);
+  }
+
+  // Garantías
+  const gars: any[] = sol.garantias || [];
+  if (gars.length > 0) {
+    const garantias = gars.map((g: any) => ({
+      id: g.id || generateId(),
+      tipo: g.tipo || '',
+      subtipo: g.subtipo || '',
+      descripcion: g.descripcion || '',
+      valorNominal: g.valor_garantia || g.valorNominal || g.valor_nominal || 0,
+      ubicacion: g.ubicacion || '',
+      estatus: g.estatus || 'Vigente',
+    }));
+    saveToSavedStore(origId, 'garantias', garantias);
+  }
+
+  // Notas → formato Originación (fechaCreacion: Date, contenido: string)
+  const nts: any[] = sol.notas || [];
+  if (nts.length > 0) {
+    const notas = nts.map((n: any) => ({
+      id: n.id || generateId(),
+      fechaCreacion: new Date(n.fecha || n.fecha_creacion || Date.now()),
+      usuario: n.usuario || '',
+      contenido: n.nota || n.contenido || '',
+    }));
+    saveToSavedStore(origId, 'notas', notas);
+  }
+
+  // Autorizaciones → comités
+  const auths: any[] = sol.autorizaciones || [];
+  if (auths.length > 0) {
+    const comites = auths.map((a: any) => ({
+      autoridad: a.usuario || a.area || '',
+      estatus: a.estado_autorizacion || a.estatus || 'Pendiente',
+    }));
+    saveToSavedStore(origId, 'comites', comites);
+  }
+}
+
+// ── Bridge: solicitudes enviadas desde Solicitudes pero aún sin refetch de DB ──
 const _originacionesDinamicas: OriginacionListItem[] = [];
 
 export function addOriginacionItem(item: Omit<OriginacionListItem, 'id' | 'noOriginacion'>): void {
   const newId = Date.now();
-  const nextNum = MOCK_ORIGINACIONES.length + _originacionesDinamicas.length + 1;
+  const nextNum = _originacionesDinamicas.length + 1;
   const newItem: OriginacionListItem = {
     id: newId,
     noOriginacion: `OR-${String(nextNum).padStart(3, '0')}`,
     ...item,
   };
   _originacionesDinamicas.push(newItem);
-  saveToSavedStore(newId, 'form', buildFormFromMock(newItem));
+  // Guardar form sin datos de prueba — solo lo que viene del item real
+  saveToSavedStore(newId, 'form', buildFormFromListItem(newItem));
 }
 
-/** Devuelve solo originaciones con estatus ≠ "Pendiente" (regla de negocio) */
+/**
+ * Devuelve items locales (bridge) — sin datos de prueba.
+ * La lista principal de Originación la provee useSolicitudesDB() en OriginacionModule.
+ */
 export function getOriginaciones(): OriginacionListItem[] {
-  return [
-    ...MOCK_ORIGINACIONES.filter(i => i.estatus !== 'Pendiente'),
-    ..._originacionesDinamicas,
-  ];
+  return [..._originacionesDinamicas];
 }

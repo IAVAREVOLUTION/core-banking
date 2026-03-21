@@ -5,7 +5,7 @@ import { DatePicker } from '../clientes/DatePicker';
 import {
   OriginacionFormData, OriginacionListItem,
   OriginacionAutorizacion, OriginacionGarantia, OriginacionCargo, OriginacionAviso,
-  CotizacionRow, EMPTY_FORM, MOCK_ORIGINACIONES,
+  CotizacionRow, EMPTY_FORM,
   saveToSession, loadFromSession, loadFromSavedStore, saveToSavedStore,
   clearSession, commitAndClearSession, generateId,
   formatCurrency, parseCurrency,
@@ -14,8 +14,9 @@ import {
   CAT_MONEDA, CAT_ESTATUS_AUTORIZACION,
   CAT_TIPO_GARANTIA, CAT_TIPO_CARGO, CAT_ESTATUS_CARGO, CAT_TIPO_AVISO, CAT_ESTATUS_AVISO,
   CAT_ESTATUS_SC, CAT_ESTATUS_CLIENTE, CAT_ESTATUS_LISTA_NEGRA,
-  getOriginaciones,
+  getOriginaciones, seedOriginacionFromSolicitudItem,
 } from './originacionStore';
+import { useSolicitudesDB } from '../../hooks/useSolicitudesDB';
 import { ExpedientesSection } from './ExpedientesSection';
 import {
   ejecutarReglasFase,
@@ -27,7 +28,7 @@ import { FlujoTrabajo } from './FlujoTrabajo';
 // ═══════════════════════════════════════════════════════════════════
 // VIEW STATE — Solo consulta: editar | ver (sin nuevo)
 // ═══════════════════════════════════════════════════════════════════
-type ViewState = { type: 'dashboard' } | { type: 'list' } | { type: 'form'; mode: 'editar' | 'ver'; id: number };
+type ViewState = { type: 'dashboard' } | { type: 'list' } | { type: 'form'; mode: 'editar' | 'ver'; id: number | string };
 
 function parseDate(d: string): Date {
   const [day, month, year] = d.split('/');
@@ -42,16 +43,60 @@ const fmtCur = (v: number) => `$${v.toLocaleString('es-MX', { minimumFractionDig
 // ═══════════════════════════════════════════════════════════════════
 export function OriginacionModule() {
   const [view, setView] = useState<ViewState>({ type: 'dashboard' });
-  // Solo solicitudes con estatus ≠ "Pendiente" (regla de negocio)
+  // Bridge: items locales enviados desde Solicitudes aún no en DB
   const [items, setItems] = useState<OriginacionListItem[]>(() => getOriginaciones());
+
+  // ── Fuente de datos real: Fin_Corp_Accnt (Supabase) ──
+  const { solicitudes: solicitudesDB, backendStatus } = useSolicitudesDB(true);
+
+  // Mapear SolicitudListItem → OriginacionListItem
+  const mapSolToOrig = useCallback((sol: Record<string, any>): OriginacionListItem => ({
+    id: sol.id,
+    noOriginacion: sol.noSol || String(sol.id),
+    noSolicitud: sol.noSol || '',
+    noCliente: sol._clienteId || '',
+    cliente: sol.nombreCompleto || '',
+    fechaSolicitud: sol.fechaSolicitud || '',
+    montoSolicitado: sol.montoSolicitado || 0,
+    montoAutorizado: sol.montoAutorizado || 0,
+    sublinea: sol.tipoProducto || '',
+    producto: sol.nombreProducto || '',
+    sucursal: sol.sucursal || '',
+    estatus: sol.estatusSolicitud || '',
+    subEstatus: sol.faseDescripcion || '',
+    responsable: sol._data?.solicitud?.header?.responsable || '',
+  }), []);
+
+  // Sincronizar lista desde DB cuando lleguen datos — filtro: EstatusSolicitud ≠ "Pendiente"
+  useEffect(() => {
+    if (backendStatus === 'ready' || backendStatus === 'empty') {
+      const dbItems = (solicitudesDB as Record<string, any>[])
+        .filter(s => s.estatusSolicitud !== 'Pendiente')
+        .map(mapSolToOrig);
+      // Agregar bridge items que aún no estén en DB (por noSolicitud)
+      const dbNoSols = new Set(dbItems.map(i => i.noSolicitud));
+      const bridgeItems = getOriginaciones().filter(i => !dbNoSols.has(i.noSolicitud));
+      setItems([...dbItems, ...bridgeItems]);
+    }
+  }, [solicitudesDB, backendStatus, mapSolToOrig]);
 
   const goToDashboard = () => { setView({ type: 'dashboard' }); };
   const goToList = () => { setView({ type: 'list' }); };
 
-  const handleEditar = (i: OriginacionListItem) => { clearSession(i.id); setView({ type: 'form', mode: 'editar', id: i.id }); };
-  const handleVer = (i: OriginacionListItem) => { setView({ type: 'form', mode: 'ver', id: i.id }); };
+  // Antes de abrir el form, sembrar datos reales desde DB si no están en el store de Originación
+  const seedAndOpen = useCallback((i: OriginacionListItem, mode: 'editar' | 'ver') => {
+    const solItem = (solicitudesDB as Record<string, any>[]).find(s => s.id === i.id || s.noSol === i.noSolicitud);
+    if (solItem) {
+      seedOriginacionFromSolicitudItem(i.id, solItem);
+    }
+    if (mode === 'editar') clearSession(i.id);
+    setView({ type: 'form', mode, id: i.id });
+  }, [solicitudesDB]);
 
-  const handleSave = (data: OriginacionFormData, id: number) => {
+  const handleEditar = (i: OriginacionListItem) => { seedAndOpen(i, 'editar'); };
+  const handleVer = (i: OriginacionListItem) => { seedAndOpen(i, 'ver'); };
+
+  const handleSave = (data: OriginacionFormData, id: number | string) => {
     const ms = parseFloat(parseCurrency(data.montoSolicitado || '0')) || 0;
     const ma = parseFloat(parseCurrency(data.montoAutorizado || '0')) || 0;
     const fmtDt = (d: string) => { if (!d) return ''; const p = d.split('/'); if (p.length !== 3) return d; return p[2].length <= 2 ? d : `${p[0]}/${p[1]}/${p[2].slice(-2)}`; };
@@ -533,7 +578,7 @@ function OriginacionList({ items, onEditar, onVer }: {
 // FORM COMPONENT — Solo editar | ver (sin nuevo)
 // ═══════════════════════════════════════════════════════════════════
 function OriginacionForm({ mode, originacionId, onCancel, onSave }: {
-  mode: 'editar' | 'ver'; originacionId: number;
+  mode: 'editar' | 'ver'; originacionId: number | string;
   onCancel: () => void; onSave: (d: OriginacionFormData) => void;
 }) {
   const isRO = mode === 'ver';
