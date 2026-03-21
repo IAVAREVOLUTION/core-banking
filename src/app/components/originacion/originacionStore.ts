@@ -437,3 +437,26 @@ function buildFormFromMock(m: OriginacionListItem): OriginacionFormData {
 MOCK_ORIGINACIONES.forEach(m => {
   saveToSavedStore(m.id, 'form', buildFormFromMock(m));
 });
+
+// ── Dynamic list: solicitudes enviadas desde el módulo de Solicitudes ──
+const _originacionesDinamicas: OriginacionListItem[] = [];
+
+export function addOriginacionItem(item: Omit<OriginacionListItem, 'id' | 'noOriginacion'>): void {
+  const newId = Date.now();
+  const nextNum = MOCK_ORIGINACIONES.length + _originacionesDinamicas.length + 1;
+  const newItem: OriginacionListItem = {
+    id: newId,
+    noOriginacion: `OR-${String(nextNum).padStart(3, '0')}`,
+    ...item,
+  };
+  _originacionesDinamicas.push(newItem);
+  saveToSavedStore(newId, 'form', buildFormFromMock(newItem));
+}
+
+/** Devuelve solo originaciones con estatus ≠ "Pendiente" (regla de negocio) */
+export function getOriginaciones(): OriginacionListItem[] {
+  return [
+    ...MOCK_ORIGINACIONES.filter(i => i.estatus !== 'Pendiente'),
+    ..._originacionesDinamicas,
+  ];
+}

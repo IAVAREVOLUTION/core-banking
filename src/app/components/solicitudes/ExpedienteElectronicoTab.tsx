@@ -322,9 +322,10 @@ interface Props {
   productoId?: string;
   nombreSolicitante?: string;
   fasePromptIA?: string;
+  onEnviarSolicitud?: () => void;
 }
 
-export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, productoId, nombreSolicitante, fasePromptIA }: Props) {
+export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, productoId, nombreSolicitante, fasePromptIA, onEnviarSolicitud }: Props) {
   // ── State: requisitos del producto (desde DB) ──
   const [requisitosDB, setRequisitosDB] = useState<RequisitoProducto[]>([]);
   const [loadingReqs, setLoadingReqs] = useState(false);
@@ -1176,6 +1177,7 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
           <div className="mt-3 flex items-center gap-3">
             <button
               disabled={!canAdvance}
+              onClick={() => { if (canAdvance && onEnviarSolicitud) onEnviarSolicitud(); }}
               className={`px-4 py-1.5 rounded text-xs font-medium transition-colors ${
                 canAdvance
                   ? 'bg-green-600 text-white hover:bg-green-700'
