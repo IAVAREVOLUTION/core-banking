@@ -47,7 +47,7 @@ export function OriginacionModule() {
   const [items, setItems] = useState<OriginacionListItem[]>(() => getOriginaciones());
 
   // ── Fuente de datos real: Fin_Corp_Accnt (Supabase) ──
-  const { solicitudes: solicitudesDB, backendStatus } = useSolicitudesDB(true);
+  const { solicitudes: solicitudesDB, backendStatus, saveSolicitud } = useSolicitudesDB(true);
 
   // Mapear SolicitudListItem → OriginacionListItem
   const mapSolToOrig = useCallback((sol: Record<string, any>): OriginacionListItem => ({
@@ -112,9 +112,50 @@ export function OriginacionModule() {
     goToList();
   };
 
+  // Callback FASE 7: actualiza DB cuando se activa la cuenta
+  const handleActivarCuentaDB = useCallback(async (origId: number | string, estatusSolicitud: string, estatusCuenta: string, estatusPago: string, estatusCartera: string) => {
+    const solItem = (solicitudesDB as Record<string, any>[]).find(s => s.id === origId || s.noSol === String(origId));
+    if (!solItem) return;
+    const dbId: string | undefined = solItem._dbId || (typeof solItem.id === 'string' ? solItem.id : undefined);
+    if (!dbId) return;
+    try {
+      // Construir SolicitudFormData mínimo con los estatus actualizados
+      const d = solItem._data || {};
+      const hdr = d.solicitud?.header || {};
+      const formForSave = {
+        id: dbId, noSol: solItem.noSol || '', cotizacionId: '',
+        lineaProducto: solItem._lineaProducto || hdr.linea_producto || 'Crédito',
+        tipoProducto: solItem.tipoProducto || hdr.tipo_producto || '',
+        tipoPersona: hdr.tipo_persona || '',
+        nombrePersona: hdr.nombre_persona || '',
+        apellidoPaternoPersona: hdr.apellido_paterno_persona || '',
+        apellidoMaternoPersona: hdr.apellido_materno_persona || '',
+        productoId: hdr.producto_id || '',
+        nombreProducto: solItem.nombreProducto || '',
+        fechaSolicitud: solItem.fechaSolicitud || '',
+        descripcion: hdr.descripcion || '',
+        faseId: hdr.fase_id || '7',
+        descripcionFase: 'Activación de Cuenta Financiera',
+        estatusSolicitud,
+        sucursal: solItem.sucursal || '',
+        montoSolicitado: String(solItem.montoSolicitado || ''),
+        montoAutorizado: String(solItem.montoAutorizado || ''),
+      } as import('../solicitudes/solicitudCreditoStore').SolicitudFormData;
+      await saveSolicitud(formForSave, dbId);
+    } catch (err) {
+      console.warn('[Originación] FASE 7 DB update falló:', err);
+    }
+  }, [solicitudesDB, saveSolicitud]);
+
   // ── FORM VIEW ──
   if (view.type === 'form') {
-    return <OriginacionForm mode={view.mode} originacionId={view.id} onCancel={goToList} onSave={(d) => handleSave(d, view.id)} />;
+    return <OriginacionForm
+      mode={view.mode}
+      originacionId={view.id}
+      onCancel={goToList}
+      onSave={(d) => handleSave(d, view.id)}
+      onActivarCuentaDB={(statuses) => handleActivarCuentaDB(view.id, statuses.estatusSolicitud, statuses.estatusCuenta, statuses.estatusPago, statuses.estatusCartera)}
+    />;
   }
 
   // ═══════════════════════════════════════════════════════════════
@@ -577,9 +618,10 @@ function OriginacionList({ items, onEditar, onVer }: {
 // ═══════════════════════════════════════════════════════════════════
 // FORM COMPONENT — Solo editar | ver (sin nuevo)
 // ═══════════════════════════════════════════════════════════════════
-function OriginacionForm({ mode, originacionId, onCancel, onSave }: {
+function OriginacionForm({ mode, originacionId, onCancel, onSave, onActivarCuentaDB }: {
   mode: 'editar' | 'ver'; originacionId: number | string;
   onCancel: () => void; onSave: (d: OriginacionFormData) => void;
+  onActivarCuentaDB?: (statuses: { estatusSolicitud: string; estatusCuenta: string; estatusPago: string; estatusCartera: string }) => void;
 }) {
   const isRO = mode === 'ver';
 
@@ -600,6 +642,9 @@ function OriginacionForm({ mode, originacionId, onCancel, onSave }: {
     loadFromSession(originacionId, 'beneficiarios') || loadFromSavedStore(originacionId, 'beneficiarios') || []);
   const [solicitudActivacion, setSolicitudActivacion] = useState<{ estatusPago: string; monto: number } | undefined>(() =>
     loadFromSession(originacionId, 'solicitudActivacion') || loadFromSavedStore(originacionId, 'solicitudActivacion') || undefined);
+  // Cargos: leídos para pasar al contexto de FASE 6 (CxP/CxC)
+  const [cargosCtx, setCargosCtx] = useState<OriginacionCargo[]>(() =>
+    loadFromSession(originacionId, 'cargos') || loadFromSavedStore(originacionId, 'cargos') || []);
 
   useEffect(() => {
     if (!isRO) {
@@ -613,25 +658,47 @@ function OriginacionForm({ mode, originacionId, onCancel, onSave }: {
     }
   }, [expedientes, notas, garantias, autorizaciones, comites, beneficiarios, solicitudActivacion, originacionId, isRO]);
 
+  // Sincronizar cargosCtx cuando CargosSection los actualiza en session
+  useEffect(() => {
+    const fresh = loadFromSession<OriginacionCargo[]>(originacionId, 'cargos');
+    if (fresh) setCargosCtx(fresh);
+  }, [originacionId]);
+
   const handleActualizarFase = useCallback((nuevaFase: FaseOriginacion) => {
     setFd(p => ({ ...p, subEstatus: nuevaFase }));
   }, []);
 
   const handleActualizarEstatus = useCallback((estatus: string) => {
     setFd(p => ({ ...p, estatus }));
-  }, []);
+    // Participa en el trigger de FASE 7 cuando estatus = 'Autorizada'
+    if (estatus === 'Autorizada') triggerFase7DB({ sol: estatus });
+  }, [triggerFase7DB]);
+
+  // Acumula los 4 campos de FASE 7 para disparar DB update cuando todos lleguen
+  const fase7StatusRef = useRef<{ sol?: string; cuenta?: string; pago?: string; cartera?: string }>({});
+
+  const triggerFase7DB = useCallback((updates: { sol?: string; cuenta?: string; pago?: string; cartera?: string }) => {
+    fase7StatusRef.current = { ...fase7StatusRef.current, ...updates };
+    const { sol, cuenta, pago, cartera } = fase7StatusRef.current;
+    if (sol && cuenta && pago && cartera && onActivarCuentaDB) {
+      onActivarCuentaDB({ estatusSolicitud: sol, estatusCuenta: cuenta, estatusPago: pago, estatusCartera: cartera });
+    }
+  }, [onActivarCuentaDB]);
 
   const handleActualizarEstatusCuenta = useCallback((estatus: string) => {
     setFd(p => ({ ...p, estatusSC: estatus }));
-  }, []);
+    triggerFase7DB({ cuenta: estatus });
+  }, [triggerFase7DB]);
 
   const handleActualizarEstatusPago = useCallback((estatus: string) => {
     setFd(p => ({ ...p, estatusPago: estatus }));
-  }, []);
+    triggerFase7DB({ pago: estatus });
+  }, [triggerFase7DB]);
 
   const handleActualizarEstatusCartera = useCallback((estatus: string) => {
     setFd(p => ({ ...p, estatusCartera: estatus }));
-  }, []);
+    triggerFase7DB({ cartera: estatus });
+  }, [triggerFase7DB]);
 
   const handleGenerarContrato = useCallback(() => {
     toast.success('Contrato y pagaré generados', { description: 'Documentos listos para formalización' });
@@ -741,6 +808,7 @@ function OriginacionForm({ mode, originacionId, onCancel, onSave }: {
         comites={comites}
         beneficiarios={beneficiarios}
         solicitudActivacion={solicitudActivacion}
+        cargos={cargosCtx}
         formData={fd}
         onActualizarFase={handleActualizarFase}
         onActualizarEstatus={handleActualizarEstatus}
@@ -1007,6 +1075,7 @@ interface FaseActionBarProps {
   comites: { autoridad: string; estatus: string }[];
   beneficiarios: { id: number; nombre: string; firma: boolean }[];
   solicitudActivacion?: { estatusPago: string; monto: number };
+  cargos: OriginacionCargo[];
   formData: OriginacionFormData;
   onActualizarFase: (fase: FaseOriginacion) => void;
   onActualizarEstatus: (estatus: string) => void;
@@ -1026,6 +1095,7 @@ function FaseActionBar({
   comites,
   beneficiarios,
   solicitudActivacion,
+  cargos,
   formData,
   onActualizarFase,
   onActualizarEstatus,
@@ -1038,9 +1108,29 @@ function FaseActionBar({
   const [contratoModal, setContratoModal] = useState<{ contrato: any; lineaProducto: string; tipoProducto: string; noOriginacion: string } | null>(null);
 
   const ejecutarAccion = useCallback((accion: AccionFase) => {
-    const tipoPersona = formData.cliente.includes('S.A.') || formData.cliente.includes('S. de R.L.') || formData.cliente.includes('S.C.') ? 'Moral' : 'Física';
+    // Detectar tipo de persona: Moral, Fís. c/Act. Emp. o Física
+    const cli = formData.cliente || '';
+    const tipoPersona: import('./originacionRules').TipoPersona =
+      (cli.includes('S.A.') || cli.includes('S. de R.L.') || cli.includes('S.C.') || cli.includes('S.A.P.I.'))
+        ? 'Moral'
+        : (formData.lineaProducto === 'Crédito' && (cli.includes('Act. Emp') || cli.includes('Empresarial')))
+        ? 'Fís. c/Act. Emp.'
+        : 'Física';
 
     const montoAutorizadoNum = parseFloat(formData.montoAutorizado) || 0;
+
+    // Mapear cargos → formato esperado por las reglas (CargoItem)
+    const cargosCtxMapped = cargos.map(c => ({
+      cveSubproducto: c.tipoCargo || 'Capital',
+      descSubproducto: c.descripcion || c.tipoCargo || 'Capital',
+      cantidad: 1,
+      monto: c.monto || 0,
+      impuesto: 0,
+      moneda: 'MXN',
+      subTotal: c.monto || 0,
+      estatus: c.estatus || 'Pendiente',
+    }));
+
     const context = {
       id: 0,
       estatusSolicitud: formData.estatus,
@@ -1054,6 +1144,7 @@ function FaseActionBar({
       comites,
       beneficiarios,
       solicitudActivacion,
+      cargos: cargosCtxMapped,
       // Si hay garantías o comités registrados, se considera que el producto los requiere
       requiereGarantia: garantias.length > 0,
       requiereComite: comites.length > 0,

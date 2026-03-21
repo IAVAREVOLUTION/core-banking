@@ -527,6 +527,21 @@ export function seedOriginacionFromSolicitudItem(origId: number | string, item: 
     }));
     saveToSavedStore(origId, 'comites', comites);
   }
+
+  // Comisiones → cargos (necesario para FASE 6: CxP/CxC DETAIL)
+  const comisiones: any[] = sol.comisiones || [];
+  if (comisiones.length > 0) {
+    const cargos = comisiones.map((c: any) => ({
+      id: c.id || generateId(),
+      tipoCargo: c.tipo_comision || c.tipoCargo || 'Capital',
+      descripcion: c.descripcion || c.tipo_comision || '',
+      monto: typeof c.monto === 'number' ? c.monto : (c.montoCalculado || 0),
+      fechaCargo: c.fecha || '',
+      estatus: c.estatus || 'Pendiente',
+      notas: '',
+    }));
+    saveToSavedStore(origId, 'cargos', cargos);
+  }
 }
 
 // ── Bridge: solicitudes enviadas desde Solicitudes pero aún sin refetch de DB ──
