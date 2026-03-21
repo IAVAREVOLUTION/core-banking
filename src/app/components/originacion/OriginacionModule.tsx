@@ -995,6 +995,7 @@ function FaseActionBar({
   const ejecutarAccion = useCallback((accion: AccionFase) => {
     const tipoPersona = formData.cliente.includes('S.A.') || formData.cliente.includes('S. de R.L.') || formData.cliente.includes('S.C.') ? 'Moral' : 'Física';
 
+    const montoAutorizadoNum = parseFloat(formData.montoAutorizado) || 0;
     const context = {
       id: 0,
       estatusSolicitud: formData.estatus,
@@ -1008,16 +1009,21 @@ function FaseActionBar({
       comites,
       beneficiarios,
       solicitudActivacion,
+      // Si hay garantías o comités registrados, se considera que el producto los requiere
+      requiereGarantia: garantias.length > 0,
+      requiereComite: comites.length > 0,
       header: {
+        solicitudId: formData.noOriginacion,
         cliente: formData.cliente,
         noCuenta: formData.noOriginacion,
         tasa: formData.tasaAutorizada,
         plazo: formData.plazos,
         periodicidad: formData.periodo,
-        montoAutorizado: parseFloat(formData.montoAutorizado) || 0,
+        montoAutorizado: montoAutorizadoNum,
         fechaInicio: formData.fechaInicio,
         fechaFin: formData.fechaFin,
         tipoAmortizacion: formData.tipoAmortizacion,
+        moneda: 'MXN',
       },
     };
 
@@ -1063,8 +1069,8 @@ function FaseActionBar({
     ) : null;
   }
 
-  // "Enviar de Fase" está disponible en todas las fases excepto la última (Activación)
-  const puedeEnviar = fase !== 'Activación de Cuenta Financiera';
+  // "Enviar de Fase" no aplica en FASE 6 (usa "Solicitud de Activación") ni en la última fase
+  const puedeEnviar = !['Solicitud de Activación de Cuenta Financiera', 'Activación de Cuenta Financiera'].includes(fase);
   const puedeRegresar = !['Integración del Expediente'].includes(fase);
   const puedeFormalizar = fase === 'Formalización de Cuenta Financiera';
   const puedeSolicitarActivacion = fase === 'Solicitud de Activación de Cuenta Financiera';
