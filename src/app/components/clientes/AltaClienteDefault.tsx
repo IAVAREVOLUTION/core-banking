@@ -3243,6 +3243,10 @@ export function AltaClienteDefault({ onBack, onSave, mode, cliente, onNavigateTo
                   personasRelacionadas={personasRelacionadas}
                   setPersonasRelacionadas={setPersonasRelacionadas}
                   parClienteId={(cliente as any)?.par_cliente_id || null}
+                  onChange={(updatedItems) => {
+                    console.log('[AltaCliente] Personas Relacionadas cambiaron - persistiendo...');
+                    setPersonasRelacionadas(updatedItems);
+                  }}
                 />
               )}
 

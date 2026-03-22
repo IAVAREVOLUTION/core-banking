@@ -89,6 +89,8 @@ interface PersonasRelacionadasProps {
   parClienteId?: string | null;
   /** Callback para propagar cambio de par_cliente_id al parent */
   onParClienteIdChange?: (newParClienteId: string | null) => void;
+  /** Callback para notificar cambios (para persistencia DB) */
+  onChange?: (items: PersonaRelacionada[]) => void;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -366,7 +368,9 @@ export function PersonasRelacionadas({
   setPersonasRelacionadas,
   parClienteId,
   onParClienteIdChange,
+  onChange,
 }: PersonasRelacionadasProps) {
+  console.log('[PersonasRelacionadas] Render - items:', personasRelacionadas?.length, '| clienteId:', clienteId, '| mode:', mode);
   // ── Modal state ──
   const [showModal, setShowModal] = useState(false);
   const [clientesDisponibles, setClientesDisponibles] = useState<ClienteDisponible[]>([]);
@@ -562,7 +566,14 @@ export function PersonasRelacionadas({
     setPersonasRelacionadas([...items, nuevaPersona]);
     setShowModal(false);
     toast.success(`${cliente.nombreCompleto} agregado como persona relacionada`);
-  }, [items, clienteUuid, setPersonasRelacionadas]);
+    
+    // Notificar al parent para persistencia DB
+    if (onChange) {
+      const updatedItems = [...items, nuevaPersona];
+      console.log('[PersonasRelacionadas] Notificando onChange - total items:', updatedItems.length);
+      onChange(updatedItems);
+    }
+  }, [items, clienteUuid, setPersonasRelacionadas, onChange]);
 
   // ═══════════════════════════════════════════════════════════════════
   // ELIMINAR personas seleccionadas — spec §7
@@ -584,9 +595,15 @@ export function PersonasRelacionadas({
       console.log('[PersonasRelacionadas] Relación principal eliminada → par_cliente_id = NULL');
     }
 
-    setPersonasRelacionadas(items.filter(i => !i.seleccionada));
+    const updatedItems = items.filter(i => !i.seleccionada);
+    setPersonasRelacionadas(updatedItems);
     toast.success(`${seleccionadas.length} relación(es) eliminada(s)`);
-  }, [items, setPersonasRelacionadas, onParClienteIdChange]);
+    
+    if (onChange) {
+      console.log('[PersonasRelacionadas] Notificando onChange - eliminar');
+      onChange(updatedItems);
+    }
+  }, [items, setPersonasRelacionadas, onParClienteIdChange, onChange]);
 
   // ═══════════════════════════════════════════════════════════════════
   // MARCAR COMO PRINCIPAL — spec §5.1 (par_cliente_id)
@@ -618,7 +635,12 @@ export function PersonasRelacionadas({
         ? `${persona.nombreCliente || persona.nombre} marcado como relación principal (par_cliente_id)`
         : 'Relación principal desmarcada'
     );
-  }, [items, setPersonasRelacionadas, onParClienteIdChange]);
+
+    if (onChange) {
+      console.log('[PersonasRelacionadas] Notificando onChange - toggle principal');
+      onChange(updated);
+    }
+  }, [items, setPersonasRelacionadas, onParClienteIdChange, onChange]);
 
   // ═══════════════════════════════════════════════════════════════════
   // SELECCIÓN
@@ -637,10 +659,16 @@ export function PersonasRelacionadas({
   // EDICIÓN INLINE — spec §6.2
   // ═══════════════════════════════════════════════════════════════════
   const handleUpdateField = useCallback((id: number, field: string, value: string) => {
-    setPersonasRelacionadas(items.map(p =>
+    const updated = items.map(p =>
       p.id === id ? { ...p, [field]: value } : p
-    ));
-  }, [items, setPersonasRelacionadas]);
+    );
+    setPersonasRelacionadas(updated);
+    
+    if (onChange) {
+      console.log('[PersonasRelacionadas] Notificando onChange - update field:', field);
+      onChange(updated);
+    }
+  }, [items, setPersonasRelacionadas, onChange]);
 
   // ═══════════════════════════════════════════════════════════════════
   // RENDER HELPERS
@@ -833,118 +861,151 @@ export function PersonasRelacionadas({
       )}
 
       {/* ══════════════════════════════════════════════════════════════
-          MODAL: Buscar y Agregar Persona Relacionada — spec §4
+          MODAL: Buscar y Agregar Persona Relacionada
           ══════════════════════════════════════════════════════════════ */}
       {showModal && (
-        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl w-[900px] max-h-[85vh] flex flex-col">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[9999]" onClick={() => setShowModal(false)}>
+          <div className="bg-white rounded-lg shadow-2xl w-full max-w-3xl mx-4 overflow-hidden animate-in fade-in zoom-in-95" onClick={e => e.stopPropagation()}>
             {/* Header */}
-            <div className="bg-primary-theme px-5 py-3 flex items-center justify-between rounded-t-lg">
+            <div className="bg-[#4A6FA5] px-5 py-3 flex items-center justify-between">
               <h2 className="text-white text-sm font-semibold flex items-center gap-2">
                 <UserPlus className="w-4 h-4" />
-                Buscar Cliente — Nueva Persona Relacionada
+                Agregar Persona Relacionada
               </h2>
               <button
                 onClick={() => setShowModal(false)}
-                className="text-white hover:text-gray-200 transition-colors"
+                className="text-white/80 hover:text-white hover:bg-white/20 rounded-full w-6 h-6 flex items-center justify-center transition-colors"
               >
-                <X className="w-5 h-5" />
+                <X className="w-4 h-4" />
               </button>
             </div>
 
+            {/* Info Banner */}
+            <div className="px-5 py-2 bg-blue-50 border-b border-blue-100">
+              <p className="text-xs text-blue-700">
+                Seleccione un cliente existente para relacionarlo con este cliente.
+                La relación se guardará automáticamente.
+              </p>
+            </div>
+
             {/* Filtros */}
-            <div className="px-5 py-3 border-b border-gray-200 space-y-2">
+            <div className="px-5 py-3 border-b border-gray-200 bg-gray-50">
               <div className="flex items-center gap-3">
                 <select
                   value={filterTipo}
                   onChange={(e) => setFilterTipo(e.target.value)}
-                  className="w-48 px-2 py-1.5 text-xs border border-gray-300 rounded"
+                  className="px-3 py-2 text-xs border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-[#4A6FA5]"
                 >
                   <option>-Todos-</option>
                   <option>Persona Física</option>
                   <option>Persona Moral</option>
                 </select>
 
-                <div className="flex-1 flex items-center gap-2">
-                  <div className="relative flex-1">
-                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
-                    <input
-                      type="text"
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      placeholder="Buscar por nombre, RFC, CURP o clave..."
-                      className="w-full pl-8 pr-3 py-1.5 text-xs border border-gray-300 rounded"
-                      autoFocus
-                    />
-                  </div>
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <input
+                    type="text"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    placeholder="Buscar por nombre, RFC, CURP o clave..."
+                    className="w-full pl-9 pr-3 py-2 text-xs border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-[#4A6FA5]"
+                    autoFocus
+                  />
                 </div>
               </div>
 
-              <div className="text-[10px] text-gray-500">
-                {loadingClientes
-                  ? 'Consultando J_CLIENTES...'
-                  : `${clientesFiltrados.length} cliente(s) disponible(s) de ${clientesDisponibles.length} total`}
+              <div className="mt-2 flex items-center justify-between">
+                <span className="text-[11px] text-gray-500">
+                  {loadingClientes
+                    ? 'Consultando clientes...'
+                    : `${clientesFiltrados.length} cliente(s) encontrado(s)`}
+                </span>
+                {clientesDisponibles.length > 0 && (
+                  <span className="text-[10px] text-gray-400">
+                    de {clientesDisponibles.length} clientes en base de datos
+                  </span>
+                )}
               </div>
             </div>
 
             {/* Tabla de resultados */}
-            <div className="flex-1 overflow-auto px-5 py-3">
+            <div className="max-h-[400px] overflow-auto">
               {loadingClientes ? (
-                <div className="flex items-center justify-center py-12 text-gray-500 text-xs">
-                  <Loader2 className="w-6 h-6 animate-spin mr-2" />
-                  Cargando clientes...
+                <div className="flex items-center justify-center py-16 text-gray-500">
+                  <Loader2 className="w-8 h-8 animate-spin mr-3 text-[#4A6FA5]" />
+                  <span className="text-sm">Cargando clientes disponibles...</span>
                 </div>
               ) : clientesFiltrados.length === 0 ? (
-                <div className="text-center py-12 text-gray-500 text-xs">
-                  {clientesDisponibles.length === 0
-                    ? 'No hay clientes disponibles. Verifique la conexión a la base de datos.'
-                    : 'No se encontraron clientes con los criterios de búsqueda.'}
+                <div className="text-center py-12 px-6">
+                  <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <Users className="w-8 h-8 text-gray-400" />
+                  </div>
+                  <p className="text-sm text-gray-600 mb-1">
+                    {clientesDisponibles.length === 0
+                      ? 'No hay clientes en la base de datos'
+                      : 'No se encontraron clientes'}
+                  </p>
+                  <p className="text-xs text-gray-400">
+                    {clientesDisponibles.length === 0
+                      ? 'Verifique la conexión a la base de datos'
+                      : 'Intente con otros términos de búsqueda'}
+                  </p>
                 </div>
               ) : (
                 <table className="w-full text-xs">
-                  <thead>
-                    <tr className="border-b border-gray-300 bg-gray-50">
-                      <th className="px-3 py-2 text-left text-gray-600">Clave</th>
-                      <th className="px-3 py-2 text-left text-gray-600">Nombre</th>
-                      <th className="px-3 py-2 text-left text-gray-600">RFC</th>
-                      <th className="px-3 py-2 text-left text-gray-600">Tipo</th>
-                      <th className="px-3 py-2 text-left text-gray-600">Estatus</th>
-                      <th className="px-3 py-2 text-center text-gray-600">Acción</th>
+                  <thead className="bg-gray-100 sticky top-0">
+                    <tr>
+                      <th className="px-4 py-2 text-left font-semibold text-gray-600">Clave</th>
+                      <th className="px-4 py-2 text-left font-semibold text-gray-600">Nombre Completo</th>
+                      <th className="px-4 py-2 text-left font-semibold text-gray-600">RFC</th>
+                      <th className="px-4 py-2 text-left font-semibold text-gray-600">Tipo</th>
+                      <th className="px-4 py-2 text-center font-semibold text-gray-600">Estatus</th>
+                      <th className="px-4 py-2 text-center font-semibold text-gray-600">Acción</th>
                     </tr>
                   </thead>
-                  <tbody>
+                  <tbody className="divide-y divide-gray-100">
                     {clientesFiltrados.map((cliente) => {
                       const isAlreadyRelated = items.some(p => p.clienteUuid === cliente.dbUuid);
                       const isSelf = cliente.dbUuid === clienteUuid;
+                      const isDisabled = isAlreadyRelated || isSelf;
+                      
                       return (
                         <tr
                           key={cliente.dbUuid}
-                          className={`border-b border-gray-200 hover:bg-gray-50 ${isAlreadyRelated || isSelf ? 'opacity-50' : ''}`}
+                          className={`hover:bg-blue-50/50 transition-colors ${isDisabled ? 'bg-gray-50/50' : ''}`}
                         >
-                          <td className="px-3 py-2">{cliente.idCliente}</td>
-                          <td className="px-3 py-2">{cliente.nombreCompleto}</td>
-                          <td className="px-3 py-2">{cliente.rfc}</td>
-                          <td className="px-3 py-2">{cliente.personalidad}</td>
-                          <td className="px-3 py-2">
-                            <span className={`px-1.5 py-0.5 rounded text-[10px] ${
+                          <td className="px-4 py-2.5 font-medium text-gray-700">{cliente.idCliente}</td>
+                          <td className="px-4 py-2.5 text-gray-800">{cliente.nombreCompleto}</td>
+                          <td className="px-4 py-2.5 text-gray-600 font-mono">{cliente.rfc}</td>
+                          <td className="px-4 py-2.5">
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-medium ${
+                              cliente.personalidad?.toLowerCase().includes('física') || cliente.personalidad?.toLowerCase().includes('fisica')
+                                ? 'bg-blue-100 text-blue-700'
+                                : 'bg-purple-100 text-purple-700'
+                            }`}>
+                              {cliente.personalidad || '—'}
+                            </span>
+                          </td>
+                          <td className="px-4 py-2.5 text-center">
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-medium ${
                               cliente.estatus === 'Activo' ? 'bg-green-100 text-green-700' :
                               cliente.estatus === 'Inactivo' ? 'bg-red-100 text-red-700' :
                               'bg-gray-100 text-gray-600'
                             }`}>
-                              {cliente.estatus}
+                              {cliente.estatus || '—'}
                             </span>
                           </td>
-                          <td className="px-3 py-2 text-center">
+                          <td className="px-4 py-2.5 text-center">
                             <button
-                              onClick={() => handleAgregarPersona(cliente)}
-                              disabled={isAlreadyRelated || isSelf}
-                              className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
-                                isAlreadyRelated || isSelf
+                              onClick={() => handleAgregar(cliente)}
+                              disabled={isDisabled}
+                              className={`px-4 py-1.5 rounded text-xs font-medium transition-all ${
+                                isDisabled
                                   ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                                  : 'bg-primary-theme text-white hover:bg-primary-hover-theme'
+                                  : 'bg-[#4A6FA5] text-white hover:bg-[#3E5C91] shadow-sm hover:shadow'
                               }`}
                             >
-                              {isAlreadyRelated ? 'Ya agregado' : isSelf ? 'Auto-ref' : 'Agregar'}
+                              {isAlreadyRelated ? 'Ya agregado' : isSelf ? 'Auto-ref' : '+ Agregar'}
                             </button>
                           </td>
                         </tr>
@@ -953,6 +1014,16 @@ export function PersonasRelacionadas({
                   </tbody>
                 </table>
               )}
+            </div>
+
+            {/* Footer */}
+            <div className="px-5 py-3 bg-gray-50 border-t border-gray-200 flex justify-end">
+              <button
+                onClick={() => setShowModal(false)}
+                className="px-4 py-2 text-xs font-medium text-gray-600 border border-gray-300 rounded hover:bg-gray-100 transition-colors"
+              >
+                Cerrar
+              </button>
             </div>
           </div>
         </div>

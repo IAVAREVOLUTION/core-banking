@@ -22,6 +22,8 @@ export interface SolicitudFormData {
   descripcion: string;             // Textarea 1024 chars
   faseId: string;                  // Mínimo FASE_ID del producto
   descripcionFase: string;
+  area: string;
+  promptIAFase: string;            // Prompt IA de la fase actual
   estatusSolicitud: string;
 
   // Campos compatibilidad lista
@@ -555,6 +557,8 @@ export const EMPTY_FORM: SolicitudFormData = {
   descripcion: '',
   faseId: '1',
   descripcionFase: 'Fase 1 — Recepción de Documentos',
+  area: 'INTEGRACIÓN',
+  promptIAFase: '',
   estatusSolicitud: 'Pendiente',
   sucursal: '',
   montoSolicitado: '',

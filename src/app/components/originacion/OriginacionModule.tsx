@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { toast } from 'sonner';
 import { BarChart, Bar, PieChart, Pie, Cell, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { DatePicker } from '../clientes/DatePicker';
@@ -17,6 +17,7 @@ import {
   getOriginaciones, seedOriginacionFromSolicitudItem,
 } from './originacionStore';
 import { useSolicitudesDB } from '../../hooks/useSolicitudesDB';
+import { useProductosCatalogoDB } from '../../hooks/useProductosCatalogoDB';
 import { ExpedientesSection } from './ExpedientesSection';
 import {
   ejecutarReglasFase,
@@ -24,6 +25,11 @@ import {
   ReglaValidacionResult,
 } from './originacionRules';
 import { FlujoTrabajo } from './FlujoTrabajo';
+import { FasesOriginacionTab } from './tabs/FasesOriginacionTab';
+import { PartesRelacionadasTab } from '../solicitudes/tabs/PartesRelacionadasTab';
+import { TerminosCondicionesTab } from '../solicitudes/TerminosCondicionesTab';
+import { SimulacionTab } from '../solicitudes/SimulacionTab';
+import { ComisionesTab } from '../solicitudes/ComisionesTab';
 
 // ═══════════════════════════════════════════════════════════════════
 // VIEW STATE — Solo consulta: editar | ver (sin nuevo)
@@ -37,6 +43,48 @@ function parseDate(d: string): Date {
 }
 
 const fmtCur = (v: number) => `$${v.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+// Mapeo de subEstatus → índice de fase (para FasesOriginacionTab)
+const FASE_INDEX: Record<string, number> = {
+  'Integración del Expediente': 1,
+  'Análisis de Expediente Operativo': 2,
+  'Análisis de Expediente Jurídico': 3,
+  'Formalización de Cuenta Financiera': 4,
+  'Validación de Contratos y Pagarés Firmados': 5,
+  'Solicitud de Activación de Cuenta Financiera': 6,
+  'Activación de Cuenta Financiera': 7,
+};
+
+// Fases de Originación para el listado en Default
+const ORIGINACION_FASES = [
+  { id: 'integracion', label: 'Integración del Expediente', area: 'INTEGRACIÓN', promptIA: '' },
+  { id: 'analisis_op', label: 'Análisis de Expediente Operativo', area: 'ANÁLISIS', promptIA: '' },
+  { id: 'analisis_jur', label: 'Análisis de Expediente Jurídico', area: 'ANÁLISIS', promptIA: '' },
+  { id: 'formalizacion', label: 'Formalización de Cuenta Financiera', area: 'LIBERACIÓN', promptIA: '' },
+  { id: 'contratos', label: 'Validación de Contratos y Pagarés Firmados', area: 'LIBERACIÓN', promptIA: '' },
+  { id: 'solic_activacion', label: 'Solicitud de Activación de Cuenta Financiera', area: 'LIBERACIÓN', promptIA: '' },
+  { id: 'activacion', label: 'Activación de Cuenta Financiera', area: 'LIBERACIÓN', promptIA: '' },
+];
+
+function getCurrentFaseData(subEstatus: string) {
+  const faseIndex = parseInt(getFaseIdFromSubEstatus(subEstatus)) - 1;
+  return ORIGINACION_FASES[faseIndex] || ORIGINACION_FASES[0];
+}
+
+function getFaseIdFromSubEstatus(subEstatus: string): string {
+  if (FASE_INDEX[subEstatus] !== undefined) {
+    return String(FASE_INDEX[subEstatus]);
+  }
+  const lower = subEstatus.toLowerCase();
+  if (lower.includes('integraci')) return '1';
+  if (lower.includes('operativo') || (lower.includes('análisis') && lower.includes('oper'))) return '2';
+  if (lower.includes('jurídi')) return '3';
+  if (lower.includes('formaliz')) return '4';
+  if (lower.includes('contrato') || lower.includes('validaci')) return '5';
+  if (lower.includes('solic') && lower.includes('activ')) return '6';
+  if (lower.includes('activac')) return '7';
+  return '1';
+}
 
 // ═══════════════════════════════════════════════════════════════════
 // MAIN MODULE — 100% Consulta, sin botón Nuevo
@@ -664,20 +712,29 @@ function OriginacionForm({ mode, originacionId, onCancel, onSave, onActivarCuent
     if (fresh) setCargosCtx(fresh);
   }, [originacionId]);
 
-  const handleActualizarFase = useCallback((nuevaFase: FaseOriginacion) => {
-    // Asignar área según la fase
-    let area = '';
+  const handleActualizarFase = useCallback((nuevaFaseOrFaseId: FaseOriginacion | string, descripcion?: string, area?: string, _promptIA?: string) => {
+    // Sobrecarga 1: FasesOriginacionTab llama con (faseId, descripcion, area, promptIA)
+    if (descripcion !== undefined) {
+      const areaFinal = area || '';
+      setFd(p => ({ ...p, subEstatus: descripcion, area: areaFinal }));
+      toast.success('Fase actualizada', { description: `${descripcion}${areaFinal ? ` — Área: ${areaFinal}` : ''}` });
+      return;
+    }
+    
+    // Sobrecarga 2: FaseActionBar llama con (FaseOriginacion)
+    const nuevaFase = nuevaFaseOrFaseId as FaseOriginacion;
+    let areaResult = '';
     const faseLower = nuevaFase.toLowerCase();
     if (faseLower.includes('integración') || faseLower.includes('integracion')) {
-      area = 'INTEGRACIÓN';
+      areaResult = 'INTEGRACIÓN';
     } else if (faseLower.includes('análisis') || faseLower.includes('analisis')) {
-      area = 'ANÁLISIS';
+      areaResult = 'ANÁLISIS';
     } else if (faseLower.includes('jurídico') || faseLower.includes('juridico')) {
-      area = 'JURÍDICO';
+      areaResult = 'JURÍDICO';
     } else if (faseLower.includes('liberación') || faseLower.includes('liberacion')) {
-      area = 'LIBERACIÓN';
+      areaResult = 'LIBERACIÓN';
     }
-    setFd(p => ({ ...p, subEstatus: nuevaFase, area: area || p.area }));
+    setFd(p => ({ ...p, subEstatus: nuevaFase, area: areaResult || p.area }));
   }, []);
 
   // Acumula los 4 campos de FASE 7 para disparar DB update cuando todos lleguen
@@ -736,6 +793,54 @@ function OriginacionForm({ mode, originacionId, onCancel, onSave, onActivarCuent
   const [showDebug, setShowDebug] = useState(false);
   const [lastResult, setLastResult] = useState<any>(null);
 
+  // Producto seleccionado para obtener fases
+  const { productos: productosDB } = useProductosCatalogoDB(true);
+  
+  const productoSeleccionado = useMemo(() => {
+    if (!fd.producto) return undefined;
+    return productosDB.find(p => p.id === fd.producto || p.nombreProducto === fd.producto);
+  }, [fd.producto, productosDB]);
+  
+  // Fases del producto seleccionado
+  const fasesDelProducto = useMemo(() => {
+    if (!productoSeleccionado) return [];
+    const rd = productoSeleccionado.rawData;
+    const raw = rd?.fases ?? rd?.fasesRegistros ?? rd?.fase;
+    if (Array.isArray(raw) && raw.length > 0) {
+      return raw.map((f: any) => ({
+        faseId: String(f.seq ?? f.id ?? '1'),
+        fase: f.fase || '',
+        area: f.area || '',
+        notes: f.notes || '',
+        promptIA: f.promptIA || '',
+      }));
+    }
+    return [];
+  }, [productoSeleccionado]);
+  
+  // Fase actual basada en subEstatus
+  const currentFase = useMemo(() => {
+    const faseIndex = parseInt(getFaseIdFromSubEstatus(fd.subEstatus)) - 1;
+    return fasesDelProducto[faseIndex] || null;
+  }, [fasesDelProducto, fd.subEstatus]);
+
+  // Sync fase data when productoSeleccionado becomes available
+  useEffect(() => {
+    if (!productoSeleccionado || fasesDelProducto.length === 0) return;
+    
+    const faseIndex = parseInt(getFaseIdFromSubEstatus(fd.subEstatus)) - 1;
+    const fase = fasesDelProducto[faseIndex] || fasesDelProducto[0];
+    
+    if (fase && fase.fase) {
+      console.log('[OrigForm] Syncing fase from product:', fase);
+      setFd(prev => ({
+        ...prev,
+        area: fase.area || prev.area,
+        notasFase: fase.notes || fase.fase || prev.notasFase,
+      }));
+    }
+  }, [productoSeleccionado, fasesDelProducto.length]);
+
   useEffect(() => { if (!isRO) saveToSession(sid, 'form', fd); }, [fd, sid, isRO]);
 
   const set = (f: keyof OriginacionFormData, v: string) => {
@@ -781,11 +886,15 @@ function OriginacionForm({ mode, originacionId, onCancel, onSave, onActivarCuent
   );
 
   const sections = [
-    { id: 'flujo', label: 'Flujo de Trabajo' }, { id: 'default', label: 'Default' },
-    { id: 'montos', label: 'Montos/Plazos' }, { id: 'tasas', label: 'Tasas' },
-    { id: 'cotizacion', label: 'Cotización' }, { id: 'expedientes', label: 'Expedientes Electrónicos' },
-    { id: 'autorizacion', label: 'Autorización' }, { id: 'garantias', label: 'Garantías' },
-    { id: 'cargos', label: 'Cargos' }, { id: 'avisos', label: 'Avisos' },
+    { id: 'default', label: 'Default' },
+    { id: 'fases', label: 'Fases' },
+    { id: 'partesRelacionadas', label: 'Partes Relacionadas' },
+    { id: 'terminos', label: 'Términos y Condiciones' },
+    { id: 'simulacion', label: 'Simulación' },
+    { id: 'expedientes', label: 'Expediente Electrónico' },
+    { id: 'garantias', label: 'Garantías' },
+    { id: 'comisiones', label: 'Comisiones' },
+    { id: 'autorizacion', label: 'Autorizaciones' },
     { id: 'notas', label: 'Notas' },
   ];
 
@@ -1006,7 +1115,7 @@ function OriginacionForm({ mode, originacionId, onCancel, onSave, onActivarCuent
       </div>
 
       <div className="px-6 py-6">
-        <div className="bg-[#D9E2F3] border-l-4 border-[#4A6FA5] px-4 py-2 mb-5"><h3 className="text-sm text-gray-800 uppercase">Información Principal</h3></div>
+        <div className="bg-[#D9E2F3] border-l-4 border-[#4A6FA5] px-4 py-2 mb-5"><h3 className="text-sm text-gray-800 uppercase">Información de Originación</h3></div>
         <div className="grid grid-cols-3 gap-x-6 gap-y-3 mb-8">
           <div className="space-y-3">
             <div><Lbl req>N° Originación</Lbl><input type="text" value={fd.noOriginacion} disabled className={ic(false, true)} /></div>
@@ -1046,32 +1155,138 @@ function OriginacionForm({ mode, originacionId, onCancel, onSave, onActivarCuent
             </button>
             {activeSec === sec.id && (
               <div className="border border-gray-300 border-t-0 px-4 py-4 bg-gray-50">
-                {sec.id === 'flujo' && (
-                  <div className="bg-white rounded-lg p-4">
-                    <div className="mb-4 flex items-center justify-between">
-                      <div>
-                        <h4 className="text-sm font-semibold text-gray-800">Flujo de Trabajo</h4>
-                        <p className="text-xs text-gray-500">Visualización del proceso de originación según el sub-estatus actual</p>
-                      </div>
-                      {fd.area && (
-                        <div className="px-3 py-1.5 bg-cyan-100 text-cyan-700 rounded-lg text-xs font-medium">
-                          Área: {fd.area}
+                {sec.id === 'default' && (
+                  <div className="bg-white border border-gray-200 p-4 space-y-4">
+                    {/* ── 1. INFORMACIÓN DE LA FASE ACTUAL (del producto) ── */}
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                      <h4 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+                        </svg>
+                        Fase Actual
+                        <span className="ml-2 text-xs font-normal text-gray-500">
+                          — {currentFase?.fase || fd.subEstatus || 'Sin fase'}
+                        </span>
+                      </h4>
+                      <div className="grid grid-cols-3 gap-4">
+                        {/* Número de Fase (seq) */}
+                        <div>
+                          <label className="text-[10px] font-medium text-gray-500 uppercase">Seq</label>
+                          <div className="mt-1 px-3 py-2 bg-white border border-blue-200 rounded text-sm font-semibold text-blue-700">
+                            {currentFase?.faseId || getFaseIdFromSubEstatus(fd.subEstatus) || '—'}
+                          </div>
                         </div>
-                      )}
+                        
+                        {/* Área */}
+                        <div>
+                          <label className="text-[10px] font-medium text-gray-500 uppercase">Área</label>
+                          <div className="mt-1 px-3 py-2 bg-white border border-blue-200 rounded text-sm">
+                            <span className="inline-flex items-center px-2 py-0.5 bg-cyan-100 text-cyan-700 rounded-full text-xs font-medium">
+                              {currentFase?.area || fd.area || '—'}
+                            </span>
+                          </div>
+                        </div>
+                        
+                        {/* Título */}
+                        <div>
+                          <label className="text-[10px] font-medium text-gray-500 uppercase">Título</label>
+                          <div className="mt-1 px-3 py-2 bg-white border border-blue-200 rounded text-sm text-gray-700">
+                            {currentFase?.fase || fd.subEstatus || '—'}
+                          </div>
+                        </div>
+                      </div>
+                      
+                      {/* Notas */}
+                      <div className="mt-3">
+                        <label className="text-[10px] font-medium text-gray-500 uppercase">Notas</label>
+                        <div className="mt-1 px-3 py-2 bg-white border border-blue-200 rounded text-sm text-gray-600">
+                          {currentFase?.notes || fd.notasFase || '—'}
+                        </div>
+                      </div>
                     </div>
-                    <FlujoTrabajo subEstatus={fd.subEstatus} />
+
+                    {/* ── 2. ESTATUS DE LA ORIGINACIÓN ── */}
+                    <div className="bg-gray-50 rounded-lg border border-gray-200 p-4">
+                      <h4 className="text-sm font-semibold text-gray-700 mb-3">Estatus de la Originación</h4>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="text-[10px] font-medium text-gray-500 uppercase">Estatus</label>
+                          <select 
+                            value={fd.estatus} 
+                            onChange={e => set('estatus', e.target.value)} 
+                            disabled={isRO} 
+                            className="w-full mt-1 px-2 py-1.5 text-xs border border-gray-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-[#4A6FA5] disabled:bg-gray-100"
+                          >
+                            {CAT_ESTATUS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-medium text-gray-500 uppercase">Responsable</label>
+                          <input 
+                            type="text" 
+                            value={fd.responsable} 
+                            onChange={e => set('responsable', e.target.value)} 
+                            disabled={isRO} 
+                            placeholder="Nombre del responsable" 
+                            className="w-full mt-1 px-2 py-1.5 text-xs border border-gray-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-[#4A6FA5] disabled:bg-gray-100"
+                          />
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 )}
-                {sec.id === 'default' && <DefaultSection fd={fd} set={set} isRO={isRO} />}
-                {sec.id === 'montos' && <MontosSection fd={fd} set={set} isRO={isRO} />}
-                {sec.id === 'tasas' && <TasasSection fd={fd} set={set} isRO={isRO} />}
-                {sec.id === 'cotizacion' && <CotizacionSection sid={sid} mode={mode} fd={fd} isRO={isRO} />}
-                {sec.id === 'expedientes' && <ExpedientesSection sid={sid} mode={mode} isRO={isRO} />}
-                {sec.id === 'autorizacion' && <AutorizacionSection sid={sid} mode={mode} isRO={isRO} />}
-                {sec.id === 'garantias' && <GarantiasSection sid={sid} mode={mode} isRO={isRO} />}
-                {sec.id === 'cargos' && <CargosSection sid={sid} mode={mode} isRO={isRO} />}
-                {sec.id === 'avisos' && <AvisosSection sid={sid} mode={mode} isRO={isRO} />}
-                {sec.id === 'notas' && <NotasSection notas={notas} setNotas={setNotas} isRO={isRO} />}
+                {sec.id === 'fases' && (
+                  <FasesOriginacionTab
+                    mode={mode}
+                    productoId={fd.producto}
+                    faseIdActual={getFaseIdFromSubEstatus(fd.subEstatus)}
+                    onFaseChange={handleActualizarFase}
+                  />
+                )}
+                {sec.id === 'partesRelacionadas' && (
+                  <PartesRelacionadasTab
+                    mode={mode}
+                    solicitudId={sid}
+                    montoSolicitado={fd.montoSolicitado}
+                    clienteNombre={fd.cliente}
+                  />
+                )}
+                {sec.id === 'terminos' && (
+                  <TerminosCondicionesTab
+                    mode={mode}
+                    solicitudId={sid}
+                    lineaProducto={fd.lineaProducto}
+                    productoSeleccionado={undefined}
+                    montoSolicitadoHeader={fd.montoSolicitado}
+                  />
+                )}
+                {sec.id === 'simulacion' && (
+                  <SimulacionTab
+                    mode={mode}
+                    solicitudId={sid}
+                    lineaProducto={fd.lineaProducto}
+                  />
+                )}
+                {sec.id === 'expedientes' && (
+                  <ExpedientesSection sid={sid} mode={mode} isRO={isRO} />
+                )}
+                {sec.id === 'garantias' && (
+                  <GarantiasSection sid={sid} mode={mode} isRO={isRO} />
+                )}
+                {sec.id === 'comisiones' && (
+                  <ComisionesTab
+                    mode={mode}
+                    solicitudId={sid}
+                    montoSolicitado={fd.montoSolicitado}
+                    productoId={fd.producto}
+                  />
+                )}
+                {sec.id === 'autorizacion' && (
+                  <AutorizacionSection sid={sid} mode={mode} isRO={isRO} />
+                )}
+                {sec.id === 'notas' && (
+                  <NotasSection notas={notas} setNotas={setNotas} isRO={isRO} />
+                )}
               </div>
             )}
           </div>

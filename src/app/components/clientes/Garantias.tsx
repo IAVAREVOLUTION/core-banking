@@ -9,7 +9,6 @@
  *   - Sin botones de Asociar / Desasociar / Nuevo / Eliminar
  * ═══════════════════════════════════════════════════════════════════
  */
-import { useMemo } from 'react';
 import { useGarantiasDB } from '@/app/hooks/useGarantiasDB';
 
 interface GarantiasProps {
@@ -21,18 +20,12 @@ interface GarantiasProps {
 export function Garantias({ onBack: _onBack, mode: _mode, clienteId }: GarantiasProps) {
   const clienteIdStr = clienteId?.toString() || '';
 
-  // ── Hook DB — trae TODAS las garantías de J_GARANTIAS ──
+  // ── Hook DB — trae garantías del cliente de J_GARANTIAS ──
   const {
-    garantias: todasGarantias,
+    garantias: garantiasCliente,
     loading,
     backendStatus,
-  } = useGarantiasDB(true);
-
-  // ── Garantías del cliente actual ──
-  const garantiasCliente = useMemo(() => {
-    if (!clienteIdStr) return [];
-    return todasGarantias.filter(g => g.cliente_id === clienteIdStr);
-  }, [todasGarantias, clienteIdStr]);
+  } = useGarantiasDB(clienteIdStr || undefined);
 
   // ── Formateo ──
   const formatDate = (dateString: string) => {

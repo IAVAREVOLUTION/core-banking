@@ -276,7 +276,7 @@ async function deleteGarantiaDB(id: string): Promise<{ ok: boolean; error?: stri
 // ═══════════════════════════════════════════════════════════════════
 // HOOK PRINCIPAL
 // ═══════════════════════════════════════════════════════════════════
-export function useGarantiasDB(active: boolean) {
+export function useGarantiasDB(clienteId?: string | null) {
   const [garantias, setGarantias] = useState<Garantia[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -286,14 +286,18 @@ export function useGarantiasDB(active: boolean) {
   );
   const hasFetched = useRef(false);
 
-  // ── FETCH ALL ──
+  // ── FETCH ALL (filtrado por cliente si se proporciona) ──
   const fetchGarantias = useCallback(async () => {
     console.log(`${LOG} ═══ fetchGarantias() START ═══`);
     setLoading(true);
     setError(null);
 
     if (!DB_AVAILABLE) {
-      const local = loadFromSession();
+      let local = loadFromSession();
+      // Filtrar por cliente si se proporciona
+      if (clienteId) {
+        local = local.filter(g => g.cliente_id === clienteId);
+      }
       setGarantias(local);
       setBackendStatus('local-only');
       setLoading(false);
@@ -303,9 +307,24 @@ export function useGarantiasDB(active: boolean) {
     try {
       const result = await tryRPC();
       if (result.ok) {
-        const mapped = result.rows.map(mapRowToGarantia);
+        let mapped = result.rows.map(mapRowToGarantia);
+        let local = loadFromSession();
+        
+        console.log(`${LOG} Raw mapped (before filter):`, mapped.length, '| clienteId:', clienteId);
+        
+        // Filtrar por cliente si se proporciona
+        if (clienteId) {
+          const beforeCount = mapped.length;
+          mapped = mapped.filter(g => {
+            const match = String(g.cliente_id || '') === String(clienteId || '');
+            if (!match) console.log(`${LOG} Filter mismatch: g.cliente_id="${g.cliente_id}" vs clienteId="${clienteId}"`);
+            return match;
+          });
+          local = local.filter(g => String(g.cliente_id || '') === String(clienteId || ''));
+          console.log(`${LOG} After filter: ${beforeCount} -> ${mapped.length}`);
+        }
+        
         // ── MERGE: si DB retorna vacío pero hay datos locales, conservarlos ──
-        const local = loadFromSession();
         if (mapped.length > 0) {
           // DB tiene datos reales → usarlos como fuente de verdad
           setGarantias(mapped);
@@ -324,7 +343,10 @@ export function useGarantiasDB(active: boolean) {
         console.log(`${LOG} ═══ fetchGarantias() END — ${mapped.length} DB + ${local.length} local ═══`);
       } else {
         console.warn(`${LOG} RPC falló — fallback a sessionStorage`);
-        const local = loadFromSession();
+        let local = loadFromSession();
+        if (clienteId) {
+          local = local.filter(g => g.cliente_id === clienteId);
+        }
         setGarantias(local);
         setBackendStatus('pending-deploy');
         setError(result.error || null);
@@ -333,7 +355,10 @@ export function useGarantiasDB(active: boolean) {
       const msg = err instanceof Error ? err.message : String(err);
       setError(msg);
       setBackendStatus('error');
-      const local = loadFromSession();
+      let local = loadFromSession();
+      if (clienteId) {
+        local = local.filter(g => g.cliente_id === clienteId);
+      }
       if (local.length > 0) setGarantias(local);
     } finally {
       setLoading(false);
@@ -469,11 +494,9 @@ export function useGarantiasDB(active: boolean) {
 
   // ── Auto-fetch ──
   useEffect(() => {
-    if (active && !hasFetched.current) {
-      hasFetched.current = true;
-      fetchGarantias();
-    }
-  }, [active, fetchGarantias]);
+    console.log(`${LOG} Auto-fetch triggered, clienteId:`, clienteId);
+    fetchGarantias();
+  }, [clienteId]);
 
   return {
     garantias,

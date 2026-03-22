@@ -1,50 +1,39 @@
 /**
  * GarantiasTab.tsx — Spec: Garantías de Solicitud de Crédito
  *
- * Sección 1: Garantías exigidas por el Producto (desde J_PRODUCTOS.data.garantias)
- *   - Tabla de solo lectura que refleja EXACTAMENTE lo configurado en PRODUCTO → GARANTÍAS
- *   - Campos: Tipo, Subtipo, Descripción, Aforo (%), Estatus de cumplimiento
+ * Sección 1: Garantías del Cliente (desde J_GARANTIAS filtradas por cliente_id)
+ *   - Tabla de solo lectura con las garantías registradas del cliente
+ *   - Campos: Tipo, Subtipo, Descripción, Valor Nominal, Ubicación, Estatus
  *
- * Sección 2: Garantías registradas por el usuario para la Solicitud actual
- *   - Editables, filtradas por solicitudId + usuario
+ * Sección 2: Garantías registradas para la Solicitud actual
+ *   - Editables, asociadas a esta solicitud
  *   - Campos: Fecha, Usuario, Tipo, Subtipo, Descripción, Valor Nominal, Ubicación, Nota, Fase, Área, Estatus
- *   - Solo se permiten tipos de garantía configurados en el producto
  */
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { toast } from 'sonner';
-import { projectId, publicAnonKey } from '/utils/supabase/info';
 import {
-  Garantia, GarantiaProducto,
+  Garantia,
   saveToSession, loadFromSession, loadFromSavedStore, generateId,
-  MOCK_GARANTIAS, CAT_TIPO_GARANTIA, formatCurrency, CAT_FASES,
+  CAT_TIPO_GARANTIA, formatCurrency,
 } from './solicitudCreditoStore';
+import { useGarantiasDB } from '../../hooks/useGarantiasDB';
 
-const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-7e2d13d9`;
 const LOG = '[GarantiasTab]';
-// TODO: reemplazar con usuario real de sesión cuando se implemente auth
 const CURRENT_USER = '(sesión pendiente)';
 
 interface Props {
   mode: 'nuevo' | 'editar' | 'ver';
   solicitudId: number | string | 'new';
   montoSolicitado?: string;
-  productoId?: string;
+  clienteId?: string;
   faseIdActual?: number;
 }
 
-/** Fallback estático cuando no hay productoId o falla el fetch */
-// ELIMINADO: MOCK_GARANTIAS_PRODUCTO — no se deben mostrar datos inventados como reales
-// const MOCK_GARANTIAS_PRODUCTO: GarantiaProducto[] = [
-//   { id: 1, tipo: 'Inmueble', subtipo: 'Terreno', descripcion: 'Terreno urbano con servicios de 500 m2', aforo: '300.00' },
-//   { id: 2, tipo: 'Inmueble', subtipo: 'Departamento', descripcion: 'Casa habitación de 3 recámaras, 2 baños', aforo: '200.00' },
-//   { id: 3, tipo: 'Mueble', subtipo: 'Automóvil', descripcion: 'Inventario completo de mercancía en tienda', aforo: '100.00' },
-// ];
-
-export function GarantiasTab({ mode, solicitudId, montoSolicitado, productoId, faseIdActual = 1 }: Props) {
-  // ── State: Garantías del producto (desde DB) ──
-  const [garantiasProducto, setGarantiasProducto] = useState<GarantiaProducto[]>([]);
-  const [loadingProducto, setLoadingProducto] = useState(false);
-  const [reqSource, setReqSource] = useState<'db' | 'fallback' | 'none'>('none');
+export function GarantiasTab({ mode, solicitudId, montoSolicitado, clienteId, faseIdActual = 1 }: Props) {
+  console.log('[GarantiasTab] clienteId:', clienteId, '| solicitudId:', solicitudId);
+  
+  // ── Garantías del Cliente desde DB ──
+  const { garantias: garantiasCliente, loading: loadingCliente } = useGarantiasDB(clienteId);
 
   // ── State: Garantías registradas por el usuario ──
   const getInitItems = useCallback((): Garantia[] => {
@@ -53,7 +42,6 @@ export function GarantiasTab({ mode, solicitudId, montoSolicitado, productoId, f
     if (mode === 'nuevo') return [];
     const saved = loadFromSavedStore<Garantia[]>(solicitudId, 'garantias');
     if (saved) return saved;
-    // NO cargar MOCK: si la BD no tiene datos, el array queda vacío
     return [];
   }, [solicitudId, mode]);
 
@@ -71,89 +59,21 @@ export function GarantiasTab({ mode, solicitudId, montoSolicitado, productoId, f
   // ══════════════════════════════════════════════════════════════════
   // FETCH: Garantías configuradas en el producto (J_PRODUCTOS.data.garantias)
   // ══════════════════════════════════════════════════════════════════
-  useEffect(() => {
-    if (!productoId) {
-      console.log(`${LOG} Sin productoId — sin garantías de producto configuradas`);
-      return;
-    }
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    if (!uuidRegex.test(productoId)) {
-      console.log(`${LOG} productoId '${productoId}' no es UUID — omitiendo consulta BD`);
-      return;
-    }
-
-    let cancelled = false;
-    const fetchGarantias = async () => {
-      setLoadingProducto(true);
-      const headers = { 'Authorization': `Bearer ${publicAnonKey}` };
-
-      try {
-        console.log(`${LOG} Consultando garantías del producto ${productoId}...`);
-        const res = await fetch(`${API_BASE}/productos/${productoId}`, { headers });
-        const json = await res.json();
-
-        if (cancelled) return;
-
-        if (!res.ok || json.error) {
-          throw new Error(json.error || `HTTP ${res.status}`);
-        }
-
-        const productData = json.data?.data || {};
-        const rawGarantias: GarantiaProducto[] = Array.isArray(productData.garantias) ? productData.garantias : [];
-
-        if (rawGarantias.length === 0) {
-          console.log(`${LOG} Producto ${productoId} no tiene garantías configuradas`);
-          setGarantiasProducto([]);
-          setReqSource('db');
-          setLoadingProducto(false);
-          return;
-        }
-
-        console.log(`${LOG} ${rawGarantias.length} garantías encontradas en el producto`);
-        setGarantiasProducto(rawGarantias);
-        setReqSource('db');
-      } catch (err: any) {
-        if (cancelled) return;
-        const msg = err instanceof Error ? err.message : String(err);
-        console.warn(`${LOG} Error al cargar garantías del producto: ${msg}`);
-        // setGarantiasProducto(MOCK_GARANTIAS_PRODUCTO);
-        // setReqSource('fallback');
-      } finally {
-        if (!cancelled) setLoadingProducto(false);
-      }
-    };
-
-    fetchGarantias();
-    return () => { cancelled = true; };
-  }, [productoId]);
-
   // ── Derivados ──
-  // TODO: cuando se implemente auth, filtrar por usuario real de sesión
-  // Por ahora se muestran TODAS las garantías de la solicitud (sin filtrar por usuario)
   const itemsFiltrados = useMemo(() => items, [items]);
+
+  const totalGarantiasCliente = useMemo(() => {
+    return garantiasCliente.reduce((s, g) => s + (g.valorNominal || 0), 0);
+  }, [garantiasCliente]);
 
   const totalGarantias = itemsFiltrados.reduce((s, g) => s + (g.valorNominal || 0), 0);
   const montoReq = parseFloat((montoSolicitado || '0').replace(/[^0-9.-]/g, ''));
-  const garantiaSuficiente = montoReq <= 0 || totalGarantias >= montoReq;
+  const garantiaSuficiente = montoReq <= 0 || (totalGarantiasCliente + totalGarantias) >= montoReq;
 
-  // Tipos disponibles = los configurados en el producto (no se permiten otros)
+  // Tipos disponibles = los del catálogo
   const tiposPermitidos = useMemo(() => {
-    if (garantiasProducto.length > 0) {
-      return [...new Set(garantiasProducto.map(g => g.tipo))];
-    }
     return CAT_TIPO_GARANTIA.map(t => t.value);
-  }, [garantiasProducto]);
-
-  // Match: para cada garantía del producto, ¿cuánto se ha cubierto?
-  const matchProductoUsuario = useMemo(() => {
-    return garantiasProducto.map(gp => {
-      const registradas = itemsFiltrados.filter(
-        g => g.tipo === gp.tipo && g.subtipo === gp.subtipo
-      );
-      const totalRegistrado = registradas.reduce((s, g) => s + (g.valorNominal || 0), 0);
-      return { ...gp, registradas: registradas.length, totalRegistrado };
-    });
-  }, [garantiasProducto, itemsFiltrados]);
+  }, []);
 
   // ── Handlers ──
   const handleAddGarantia = () => {
@@ -221,51 +141,40 @@ export function GarantiasTab({ mode, solicitudId, montoSolicitado, productoId, f
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-3">
             <h4 className="text-sm font-medium text-gray-800">
-              Garantías del Producto
+              Garantías del Cliente
             </h4>
-            {reqSource === 'db' && (
-              <span className="inline-flex items-center gap-1 text-[10px] text-green-700 bg-green-50 px-1.5 py-0.5 rounded border border-green-200">
-                <svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 4l2 2 4-4" /></svg>
-                DB
-              </span>
-            )}
-            {reqSource === 'fallback' && (
-              <span className="inline-flex items-center text-[10px] text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
-                Fallback
-              </span>
-            )}
           </div>
-          <span className="text-[10px] text-gray-500">{garantiasProducto.length} garantía(s) configuradas</span>
+          <span className="text-[10px] text-gray-500">{garantiasCliente.length} garantía(s) del cliente</span>
         </div>
 
         {/* Loading */}
-        {loadingProducto && (
+        {loadingCliente && (
           <div className="flex items-center gap-2 py-6 justify-center text-gray-500 text-xs">
             <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <circle cx="12" cy="12" r="10" strokeOpacity="0.25" />
               <path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round" />
             </svg>
-            Cargando garantías del producto...
+            Cargando garantías del cliente...
           </div>
         )}
 
         {/* Empty state */}
-        {!loadingProducto && garantiasProducto.length === 0 && (
+        {!loadingCliente && garantiasCliente.length === 0 && (
           <div className="text-center py-8 border border-gray-200 rounded bg-gray-50">
             <svg className="mx-auto mb-2" width="32" height="32" viewBox="0 0 32 32" fill="none" stroke="#9CA3AF" strokeWidth="1.5">
               <rect x="4" y="8" width="24" height="16" rx="2" />
               <path d="M4 14h24M10 8v-3M22 8v-3" />
             </svg>
             <p className="text-xs text-gray-500">
-              {productoId
-                ? 'El producto seleccionado no tiene garantías configuradas.'
-                : 'Seleccione un producto en el header para ver sus garantías requeridas.'}
+              {clienteId
+                ? 'Este cliente no tiene garantías registradas.'
+                : 'No hay cliente asociado a esta solicitud.'}
             </p>
           </div>
         )}
 
-        {/* Tabla de garantías del producto */}
-        {!loadingProducto && garantiasProducto.length > 0 && (
+        {/* Tabla de garantías del cliente */}
+        {!loadingCliente && garantiasCliente.length > 0 && (
           <div className="border border-gray-300 overflow-hidden rounded">
             <table className="w-full text-xs">
               <thead className="bg-[#2E5C91] text-white">
@@ -273,71 +182,44 @@ export function GarantiasTab({ mode, solicitudId, montoSolicitado, productoId, f
                   <th className="px-3 py-2 text-left font-medium w-28">Tipo</th>
                   <th className="px-3 py-2 text-left font-medium w-32">Subtipo</th>
                   <th className="px-3 py-2 text-left font-medium">Descripción</th>
-                  <th className="px-3 py-2 text-right font-medium w-24">Aforo (%)</th>
-                  <th className="px-3 py-2 text-center font-medium w-24">Registradas</th>
-                  <th className="px-3 py-2 text-right font-medium w-32">Monto Cubierto</th>
+                  <th className="px-3 py-2 text-right font-medium w-32">Valor Nominal</th>
+                  <th className="px-3 py-2 text-left font-medium w-32">Ubicación</th>
                   <th className="px-3 py-2 text-center font-medium w-24">Estatus</th>
                 </tr>
               </thead>
               <tbody>
-                {matchProductoUsuario.map((gp, idx) => {
-                  const cubierta = gp.registradas > 0;
-                  return (
-                    <tr
-                      key={`gp-${gp.id}-${idx}`}
-                      className="border-b border-gray-200"
-                      style={{ backgroundColor: idx % 2 === 1 ? '#F5F5F5' : '#FFFFFF' }}
-                    >
-                      <td className="px-3 py-1.5 text-gray-700 font-medium">{gp.tipo}</td>
-                      <td className="px-3 py-1.5 text-gray-700">{gp.subtipo}</td>
-                      <td className="px-3 py-1.5 text-gray-600">{gp.descripcion || <span className="text-gray-400 italic">Sin descripción</span>}</td>
-                      <td className="px-3 py-1.5 text-right text-gray-700">{gp.aforo}%</td>
-                      <td className="px-3 py-1.5 text-center">
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] border ${
-                          cubierta
-                            ? 'text-blue-700 bg-blue-50 border-blue-200'
-                            : 'text-gray-500 bg-gray-50 border-gray-200'
-                        }`}>
-                          {gp.registradas}
-                        </span>
-                      </td>
-                      <td className="px-3 py-1.5 text-right text-gray-700">
-                        {cubierta ? formatCurrency(gp.totalRegistrado) : <span className="text-gray-400">--</span>}
-                      </td>
-                      <td className="px-3 py-1.5 text-center">
-                        {cubierta ? (
-                          <span className="inline-flex items-center gap-1 text-green-700 bg-green-50 px-2 py-0.5 rounded text-[10px] border border-green-200">
-                            <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="2"><path d="M2 5l2 2 4-4" /></svg>
-                            Cubierta
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center text-gray-500 bg-gray-50 px-2 py-0.5 rounded text-[10px] border border-gray-200">
-                            Pendiente
-                          </span>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
+                {garantiasCliente.map((gc, idx) => (
+                  <tr
+                    key={`gc-${gc.id}-${idx}`}
+                    className="border-b border-gray-200"
+                    style={{ backgroundColor: idx % 2 === 1 ? '#F5F5F5' : '#FFFFFF' }}
+                  >
+                    <td className="px-3 py-1.5 text-gray-700 font-medium">{gc.tipo}</td>
+                    <td className="px-3 py-1.5 text-gray-700">{gc.subtipo || '—'}</td>
+                    <td className="px-3 py-1.5 text-gray-600">{gc.descripcion || '—'}</td>
+                    <td className="px-3 py-1.5 text-right text-gray-700">{gc.valorNominal ? formatCurrency(gc.valorNominal) : '—'}</td>
+                    <td className="px-3 py-1.5 text-gray-600">{gc.ubicacion || '—'}</td>
+                    <td className="px-3 py-1.5 text-center">
+                      <span className="inline-flex items-center gap-1 text-green-700 bg-green-50 px-2 py-0.5 rounded text-[10px] border border-green-200">
+                        {gc.estatus || 'Vigente'}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
               </tbody>
+              <tfoot>
+                <tr className="bg-gray-100 font-medium">
+                  <td colSpan={3} className="px-3 py-2 text-gray-700">Total:</td>
+                  <td className="px-3 py-2 text-right text-gray-800">{formatCurrency(totalGarantiasCliente)}</td>
+                  <td colSpan={2}></td>
+                </tr>
+              </tfoot>
             </table>
-          </div>
-        )}
-
-        {/* Leyenda */}
-        {!loadingProducto && garantiasProducto.length > 0 && (
-          <div className="mt-2 flex items-center gap-4 text-[10px] text-gray-500">
-            <span className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-green-500" /> Cubierta (usuario ha registrado garantía de este tipo)
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-gray-300" /> Pendiente
-            </span>
           </div>
         )}
       </div>
 
-      {/* ═══ SECCIÓN 2 — Garantías Registradas por el Usuario ═══ */}
+      {/* ═══ SECCIÓN 2 — Garantías Registradas para esta Solicitud ═══ */}
       <div className="p-5">
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">

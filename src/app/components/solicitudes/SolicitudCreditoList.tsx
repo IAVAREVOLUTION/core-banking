@@ -221,6 +221,7 @@ export function SolicitudCreditoList({ cotizacionParaSolicitud, onCotizacionCons
       montoAutorizado: hdr.monto_autorizado
         || (typeof s.montoAutorizado === 'number' && s.montoAutorizado > 0 ? s.montoAutorizado.toFixed(2) : null)
         || d.montoAutorizado || '0.00',
+      _clienteId: extra._clienteId || hdr.cliente_id || d._clienteId || '',
     };
   };
 
