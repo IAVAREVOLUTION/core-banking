@@ -340,15 +340,26 @@ export function ejecutarReglasFase(
 }
 
 function validarFase1Integracion(context: OriginacionContext): ReglaValidacionResult {
-  const { fase, tipoPersona, documentos, header } = context;
-  const docsValidacion = validarDocumentosObligatorios(fase, tipoPersona, documentos);
+  const { fase, tipoPersona, documentos } = context;
 
-  if (!docsValidacion.valido) {
+  // Sección 1: catálogo de documentos obligatorios para este tipo de persona y fase
+  const requeridosSec1 = DOCUMENTOS_POR_FASE
+    .filter(d => d.fase === fase && d.aplicaPersona.includes(tipoPersona))
+    .map(d => d.tipoDocumento);
+
+  // Sección 2: documentos cargados en el Expediente Electrónico con estatus = 'Validado' (IA)
+  // `documentos` ya viene pre-filtrado por estatus === 'Validado' desde FaseActionBar
+  const faltantesOSinValidar = requeridosSec1.filter(doc => !documentos.includes(doc));
+
+  if (faltantesOSinValidar.length > 0) {
     return {
       accionPermitida: false,
       fase,
       faseDestino: null,
-      motivos: [`Documentos obligatorios faltantes: ${docsValidacion.faltantes.join(', ')}`],
+      motivos: [
+        `Documentos obligatorios pendientes para ${tipoPersona}: ${faltantesOSinValidar.join(', ')}.`,
+        'Asegúrese de que todos los documentos estén cargados en el Expediente Electrónico con estatus "Validado" (validación IA).',
+      ],
       validaciones: {
         documentosCompletos: false,
         notaReciente: true,
@@ -358,7 +369,7 @@ function validarFase1Integracion(context: OriginacionContext): ReglaValidacionRe
         solicitudPagoCompletado: true,
       },
       actualizaciones: [],
-      documentosFaltantes: docsValidacion.faltantes,
+      documentosFaltantes: faltantesOSinValidar,
     };
   }
 
@@ -367,7 +378,7 @@ function validarFase1Integracion(context: OriginacionContext): ReglaValidacionRe
     accionPermitida: true,
     fase,
     faseDestino,
-    motivos: ['Documentación completa. Avanzando a la siguiente fase.'],
+    motivos: [`Integración de expediente completa (${requeridosSec1.length} doc(s) validados por IA). Avanzando a: ${faseDestino}`],
     validaciones: {
       documentosCompletos: true,
       notaReciente: true,

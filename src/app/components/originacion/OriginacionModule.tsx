@@ -723,18 +723,11 @@ function OriginacionForm({ mode, originacionId, onCancel, onSave, onActivarCuent
     
     // Sobrecarga 2: FaseActionBar llama con (FaseOriginacion)
     const nuevaFase = nuevaFaseOrFaseId as FaseOriginacion;
-    let areaResult = '';
-    const faseLower = nuevaFase.toLowerCase();
-    if (faseLower.includes('integración') || faseLower.includes('integracion')) {
-      areaResult = 'INTEGRACIÓN';
-    } else if (faseLower.includes('análisis') || faseLower.includes('analisis')) {
-      areaResult = 'ANÁLISIS';
-    } else if (faseLower.includes('jurídico') || faseLower.includes('juridico')) {
-      areaResult = 'JURÍDICO';
-    } else if (faseLower.includes('liberación') || faseLower.includes('liberacion')) {
-      areaResult = 'LIBERACIÓN';
-    }
+    // Buscar el área directamente en la tabla de fases de originación
+    const faseDef = ORIGINACION_FASES.find(f => f.label === nuevaFase);
+    const areaResult = faseDef?.area || '';
     setFd(p => ({ ...p, subEstatus: nuevaFase, area: areaResult || p.area }));
+    toast.success('Fase actualizada', { description: `${nuevaFase}${areaResult ? ` — Área: ${areaResult}` : ''}` });
   }, []);
 
   // Acumula los 4 campos de FASE 7 para disparar DB update cuando todos lleguen
@@ -920,10 +913,15 @@ function OriginacionForm({ mode, originacionId, onCancel, onSave, onActivarCuent
         {isRO && <button onClick={handleCancel} className="px-5 py-1.5 bg-white border border-gray-400 text-gray-700 rounded text-sm hover:bg-gray-50">Cerrar</button>}
       </div>
 
+      {/* ── Flujo de Trabajo — 7 fases ── */}
+      <div className="px-6 py-3 border-b border-gray-200 bg-gray-50">
+        <FlujoTrabajo subEstatus={fd.subEstatus} faseActual={fd.subEstatus} />
+      </div>
+
       <FaseActionBar
         fase={fd.subEstatus as FaseOriginacion}
         estatus={fd.estatus}
-        documentos={expedientes.filter(e => e.estatus === 'Aprobado').map(e => e.tipoDocumento)}
+        documentos={expedientes.filter(e => e.estatus === 'Validado').map(e => e.tipoDocumento)}
         notas={notas}
         garantias={garantias}
         comites={comites}
@@ -1005,7 +1003,7 @@ function OriginacionForm({ mode, originacionId, onCancel, onSave, onActivarCuent
             <div className="flex flex-wrap gap-2 mb-4">
               <button
                 onClick={() => {
-                  const newDoc = { id: Date.now(), fechaHora: new Date().toLocaleString(), usuario: 'Test', tipoDocumento: 'Credencial de elector', archivo: 'test.pdf', descripcion: 'Doc prueba', estatus: 'Aprobado', observaciones: '' };
+                  const newDoc = { id: Date.now(), fechaHora: new Date().toLocaleString(), usuario: 'Test', tipoDocumento: 'Credencial de elector', archivo: 'test.pdf', descripcion: 'Doc prueba', estatus: 'Validado', observaciones: '' };
                   setExpedientes([...expedientes, newDoc]);
                   toast.success('Documento añadido');
                 }}
