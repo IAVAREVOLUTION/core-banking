@@ -1,34 +1,23 @@
 /**
  * AutorizacionTab.tsx — Spec: Solicitudes de Crédito §9 (Autorizaciones)
  *
- * Sección 1: Autorizadores configurados en PRODUCTO → AUTORIZACIÓN
- *   - Se obtienen de J_PRODUCTOS.data.autorizacion vía GET /productos/:id
- *   - Los usuarios se filtran según MONTO_SOLICITADO (rango montoMinimo–montoMaximo)
- *   - Fallback a MOCK_AUTORIZADORES si no hay datos en DB
+ * Sección 1: Catálogo de Puestos de Trabajo (J_CATALOGOS type=PuestoTrabajo)
+ *   - Se obtienen del catálogo institucional
+ *   - Los puestos se filtran según MONTO_SOLICITADO (rango montoMinimo–montoMaximo)
  *
  * Sección 2: Autorizaciones registradas para la solicitud actual
  *   - Editables, filtradas por solicitudId
- *   - El botón "Auto-cargar" genera autorizaciones desde la configuración del producto
+ *   - El botón "Auto-cargar" genera autorizaciones desde el catálogo de puestos
  */
 import { useState, useEffect, useMemo } from 'react';
 import { toast } from 'sonner';
-import { projectId, publicAnonKey } from '/utils/supabase/info';
 import {
   Autorizacion, saveToSession, loadFromSession, loadFromSavedStore, generateId,
-  MOCK_AUTORIZACIONES, MOCK_AUTORIZADORES, CAT_ESTATUS_AUTORIZACION,
+  CAT_ESTATUS_AUTORIZACION,
 } from './solicitudCreditoStore';
+import { usePuestosTrabajoDB, PuestoTrabajo } from '../../hooks/usePuestosTrabajoDB';
 
-const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-7e2d13d9`;
 const LOG = '[AutorizacionTab]';
-
-/** Estructura de autorizador en el JSONB del producto */
-interface AutorizadorProductoDB {
-  usuario: string;
-  puesto: string;
-  area: string;
-  montoMinimo: number;
-  montoMaximo: number;
-}
 
 interface Props {
   mode: 'nuevo' | 'editar' | 'ver';
@@ -38,10 +27,8 @@ interface Props {
 }
 
 export function AutorizacionTab({ mode, solicitudId, montoSolicitado, productoId }: Props) {
-  // ── State: Autorizadores del producto ──
-  const [autorizadoresProducto, setAutorizadoresProducto] = useState<AutorizadorProductoDB[]>([]);
-  const [loadingProducto, setLoadingProducto] = useState(false);
-  const [reqSource, setReqSource] = useState<'db' | 'fallback' | 'none'>('none');
+  // ── State: Puestos de Trabajo del Catálogo ──
+  const { puestos, loading: loadingPuestos } = usePuestosTrabajoDB();
 
   // ── State: Autorizaciones registradas ──
   const getInit = (): Autorizacion[] => {
@@ -50,7 +37,6 @@ export function AutorizacionTab({ mode, solicitudId, montoSolicitado, productoId
     if (mode === 'nuevo') return [];
     const saved = loadFromSavedStore<Autorizacion[]>(solicitudId, 'autorizaciones');
     if (saved) return saved;
-    // NO cargar MOCK: si la BD no tiene datos, el array queda vacío
     return [];
   };
 
@@ -62,74 +48,14 @@ export function AutorizacionTab({ mode, solicitudId, montoSolicitado, productoId
     if (!isRO) saveToSession(solicitudId, 'autorizaciones', items);
   }, [items, solicitudId, isRO]);
 
-  // ══════════════════════════════════════════════════════════════════
-  // FETCH: Autorizadores configurados en el producto (J_PRODUCTOS.data.autorizacion)
-  // ══════════════════════════════════════════════════════════════════
-  useEffect(() => {
-    if (!productoId) {
-      console.log(`${LOG} Sin productoId — sin autorizadores`);
-      return;
-    }
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    if (!uuidRegex.test(productoId)) {
-      console.log(`${LOG} productoId '${productoId}' no es UUID — omitiendo consulta BD`);
-      return;
-    }
-
-    let cancelled = false;
-    const fetchAutorizadores = async () => {
-      setLoadingProducto(true);
-      const headers = { 'Authorization': `Bearer ${publicAnonKey}` };
-
-      try {
-        console.log(`${LOG} Consultando autorizadores del producto ${productoId}...`);
-        const res = await fetch(`${API_BASE}/productos/${productoId}`, { headers });
-        const json = await res.json();
-
-        if (cancelled) return;
-
-        if (!res.ok || json.error) {
-          throw new Error(json.error || `HTTP ${res.status}`);
-        }
-
-        const productData = json.data?.data || {};
-        const rawAuth: AutorizadorProductoDB[] = Array.isArray(productData.autorizacion) ? productData.autorizacion : [];
-
-        if (rawAuth.length === 0) {
-          console.log(`${LOG} Producto ${productoId} no tiene autorizadores configurados`);
-          setAutorizadoresProducto([]);
-          setReqSource('db');
-          setLoadingProducto(false);
-          return;
-        }
-
-        console.log(`${LOG} ${rawAuth.length} autorizadores encontrados en el producto`);
-        setAutorizadoresProducto(rawAuth);
-        setReqSource('db');
-      } catch (err: any) {
-        if (cancelled) return;
-        const msg = err instanceof Error ? err.message : String(err);
-        console.warn(`${LOG} Error al cargar autorizadores del producto: ${msg}`);
-        // NO fallback a mocks — si falla, queda vacío
-        // setAutorizadoresProducto(MOCK_AUTORIZADORES);
-        // setReqSource('fallback');
-      } finally {
-        if (!cancelled) setLoadingProducto(false);
-      }
-    };
-
-    fetchAutorizadores();
-    return () => { cancelled = true; };
-  }, [productoId]);
-
   // ── Derivados ──
   const montoNum = parseFloat((montoSolicitado || '0').replace(/[^0-9.-]/g, ''));
 
-  // Filtrar autorizadores aplicables según el monto solicitado
-  const autorizadoresAplicables = useMemo(() => {
-    if (montoNum <= 0) return autorizadoresProducto;
-    return autorizadoresProducto.filter(a => montoNum >= a.montoMinimo && montoNum <= a.montoMaximo);
-  }, [autorizadoresProducto, montoNum]);
+  // Filtrar puestos aplicables según el monto solicitado
+  const puestosAplicables = useMemo(() => {
+    if (montoNum <= 0) return puestos;
+    return puestos.filter(a => montoNum >= a.montoMinimo && montoNum <= a.montoMaximo);
+  }, [puestos, montoNum]);
 
   // ── Handlers ──
   const handleNuevo = () => {
@@ -140,34 +66,34 @@ export function AutorizacionTab({ mode, solicitudId, montoSolicitado, productoId
     toast.success('Autorización agregada');
   };
 
-  /** Auto-poblar autorizadores según PRODUCTO_ID y MONTO_SOLICITADO — spec §10 */
+  /** Auto-poblar autorizaciones según catálogo de puestos y MONTO_SOLICITADO */
   const handleAutoCargar = () => {
     if (montoNum <= 0) {
       toast.error('Monto inválido', { description: 'Capture el monto solicitado en el header antes de cargar autorizadores.' });
       return;
     }
 
-    if (autorizadoresAplicables.length === 0) {
-      toast.error('Sin autorizadores', { description: 'No se encontraron autorizadores configurados para este rango de monto.' });
+    if (puestosAplicables.length === 0) {
+      toast.error('Sin puestos aplicables', { description: 'No se encontraron puestos configurados para este rango de monto.' });
       return;
     }
 
     const now = new Date();
     const fh = `${now.getDate().toString().padStart(2, '0')}/${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getFullYear()} ${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
-    const autorizadores = autorizadoresAplicables.map(a => ({
+    const autorizaciones = puestosAplicables.map(a => ({
       id: generateId(),
       fechaHora: fh,
-      usuario: a.usuario,
+      usuario: a.nombre,
       puesto: a.puesto,
       area: a.area,
-      descripcion: `Autorización para ${productoId || 'producto'} — monto $${montoNum.toLocaleString('es-MX', { minimumFractionDigits: 2 })}`,
+      descripcion: `Autorización para ${productoId || 'solicitud'} — monto $${montoNum.toLocaleString('es-MX', { minimumFractionDigits: 2 })}`,
       observaciones: '',
       estatus: 'Pendiente',
     }));
 
-    setItems(autorizadores);
-    toast.success(`${autorizadores.length} autorizadores cargados`, {
-      description: `Según configuración del producto${reqSource === 'db' ? ' (DB)' : ' (fallback)'} para monto $${montoNum.toLocaleString('es-MX', { minimumFractionDigits: 2 })}`
+    setItems(autorizaciones);
+    toast.success(`${autorizaciones.length} autorizadores cargados`, {
+      description: `Según catálogo de puestos para monto $${montoNum.toLocaleString('es-MX', { minimumFractionDigits: 2 })}`
     });
   };
 
@@ -189,79 +115,65 @@ export function AutorizacionTab({ mode, solicitudId, montoSolicitado, productoId
 
   return (
     <div className="border border-gray-200 bg-white">
-      {/* ═══ SECCIÓN 1 — Autorizadores del Producto ═══ */}
+      {/* ═══ SECCIÓN 1 — Catálogo de Puestos de Trabajo ═══ */}
       <div className="p-5 border-b border-gray-200">
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-3">
-            <h4 className="text-sm font-medium text-gray-800">Autorizadores del Producto</h4>
-            {reqSource === 'db' && (
-              <span className="inline-flex items-center gap-1 text-[10px] text-green-700 bg-green-50 px-1.5 py-0.5 rounded border border-green-200">
-                <svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 4l2 2 4-4" /></svg>
-                DB
-              </span>
-            )}
-            {reqSource === 'fallback' && (
-              <span className="inline-flex items-center text-[10px] text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
-                Fallback
-              </span>
-            )}
+            <h4 className="text-sm font-medium text-gray-800">Catálogo de Puestos de Trabajo</h4>
           </div>
           <span className="text-[10px] text-gray-500">
-            {autorizadoresProducto.length} autorizador(es) configurados
-            {montoNum > 0 && ` | ${autorizadoresAplicables.length} aplicable(s) para monto ${fmtCurrency(montoNum)}`}
+            {puestos.length} puesto(s) configurados
+            {montoNum > 0 && ` | ${puestosAplicables.length} aplicable(s) para monto ${fmtCurrency(montoNum)}`}
           </span>
         </div>
 
-        {loadingProducto && (
+        {loadingPuestos && (
           <div className="flex items-center gap-2 py-6 justify-center text-gray-500 text-xs">
             <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <circle cx="12" cy="12" r="10" strokeOpacity="0.25" />
               <path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round" />
             </svg>
-            Cargando autorizadores del producto...
+            Cargando puestos de trabajo...
           </div>
         )}
 
-        {!loadingProducto && autorizadoresProducto.length === 0 && (
+        {!loadingPuestos && puestos.length === 0 && (
           <div className="text-center py-8 border border-gray-200 rounded bg-gray-50">
             <svg className="mx-auto mb-2" width="32" height="32" viewBox="0 0 32 32" fill="none" stroke="#9CA3AF" strokeWidth="1.5">
               <circle cx="16" cy="12" r="5" />
               <path d="M8 26c0-4.4 3.6-8 8-8s8 3.6 8 8" />
             </svg>
             <p className="text-xs text-gray-500">
-              {productoId
-                ? 'El producto seleccionado no tiene autorizadores configurados.'
-                : 'Seleccione un producto en el header para ver sus autorizadores.'}
+              No hay puestos de trabajo configurados en el catálogo.
             </p>
           </div>
         )}
 
-        {!loadingProducto && autorizadoresProducto.length > 0 && (
+        {!loadingPuestos && puestos.length > 0 && (
           <div className="border border-gray-300 overflow-hidden rounded">
             <table className="w-full text-xs">
               <thead className="bg-[#2E5C91] text-white">
                 <tr>
-                  <th className="px-3 py-2 text-left font-medium">Usuario / Puesto</th>
-                  <th className="px-3 py-2 text-left font-medium w-28">Área</th>
-                  <th className="px-3 py-2 text-right font-medium w-32">Monto Mínimo</th>
-                  <th className="px-3 py-2 text-right font-medium w-32">Monto Máximo</th>
+                  <th className="px-3 py-2 text-left font-medium">Puesto</th>
+                  <th className="px-3 py-2 text-left font-medium">Nombre</th>
+                  <th className="px-3 py-2 text-right font-medium w-32">Monto Desde</th>
+                  <th className="px-3 py-2 text-right font-medium w-32">Monto Hasta</th>
                   <th className="px-3 py-2 text-center font-medium w-24">Aplica</th>
                 </tr>
               </thead>
               <tbody>
-                {autorizadoresProducto.map((a, idx) => {
+                {puestos.map((a, idx) => {
                   const aplica = montoNum > 0 && montoNum >= a.montoMinimo && montoNum <= a.montoMaximo;
                   return (
                     <tr
-                      key={`auth-${idx}`}
+                      key={`puesto-${a.id}`}
                       className="border-b border-gray-200"
                       style={{ backgroundColor: idx % 2 === 1 ? '#F5F5F5' : '#FFFFFF' }}
                     >
                       <td className="px-3 py-1.5">
-                        <span className="text-gray-800 font-medium">{a.usuario}</span>
-                        <span className="text-gray-500 ml-1.5 text-[10px]">({a.puesto})</span>
+                        <span className="text-gray-800 font-medium">{a.puesto || '—'}</span>
                       </td>
-                      <td className="px-3 py-1.5 text-gray-700">{a.area}</td>
+                      <td className="px-3 py-1.5 text-gray-700">{a.nombre || '—'}</td>
                       <td className="px-3 py-1.5 text-right text-gray-700">{fmtCurrency(a.montoMinimo)}</td>
                       <td className="px-3 py-1.5 text-right text-gray-700">{fmtCurrency(a.montoMaximo)}</td>
                       <td className="px-3 py-1.5 text-center">

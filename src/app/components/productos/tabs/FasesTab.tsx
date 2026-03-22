@@ -1,18 +1,27 @@
 import { useState, forwardRef, useImperativeHandle } from 'react';
 import { toast } from 'sonner';
-import { K_PHASES } from '@/app/data/mockData';
 import { useTabPersistence } from '@/app/hooks/useProductoPersistence';
 
 interface Fase {
   id: number;
-  productId: number;
   seq: string;
-  phaseId: number;
-  phaseName: string;
+  fase: string;
+  area: string;
   notes: string;
   assetBoolean: boolean;
   promptIA?: string;
 }
+
+const CAT_AREA = [
+  { value: '', label: '(Sin área)' },
+  { value: 'INTEGRACIÓN', label: 'Integración' },
+  { value: 'ANÁLISIS', label: 'Análisis' },
+  { value: 'JURÍDICO', label: 'Jurídico' },
+  { value: 'LIBERACIÓN', label: 'Liberación' },
+  { value: 'COBRANZA', label: 'Cobranza' },
+  { value: 'OPERACIONES', label: 'Operaciones' },
+  { value: 'ADMINISTRACIÓN', label: 'Administración' },
+];
 
 interface FasesTabProps {
   mode: 'create' | 'edit' | 'view' | 'nuevo' | 'editar' | 'ver';
@@ -21,27 +30,6 @@ interface FasesTabProps {
   persistToStorage?: boolean;
   storagePrefix?: string;
 }
-
-const generateDefaultFases = (productId: number | string): Fase[] => {
-  const notasPorFase: Record<string, string> = {
-    'Análisis': 'Evaluación de capacidad de pago y riesgo crediticio del solicitante',
-    'Aprobación': 'Revisión y aprobación por comité de crédito según políticas vigentes',
-    'Desembolso': 'Liberación de fondos según cronograma y condiciones aprobadas',
-    'Seguimiento': 'Monitoreo continuo del cumplimiento de obligaciones contractuales',
-    'Cobranza': 'Gestión de recuperación de cartera y control de morosidad',
-    'Cierre': 'Liquidación total del crédito y archivo de expediente',
-  };
-  
-  return K_PHASES.map((phase, index) => ({
-    id: index + 1,
-    productId: typeof productId === 'number' ? productId : 0,
-    seq: (index + 1).toString(),
-    phaseId: phase.id,
-    phaseName: phase.descripcion,
-    notes: notasPorFase[phase.descripcion] || `Nota para fase ${phase.descripcion}`,
-    assetBoolean: true,
-  }));
-};
 
 export const FasesTab = forwardRef<{ getData: () => Fase[] }, FasesTabProps>(
   ({ mode, productId, initialData, persistToStorage, storagePrefix }, ref) => {
@@ -125,13 +113,25 @@ export const FasesTab = forwardRef<{ getData: () => Fase[] }, FasesTabProps>(
       if (formMode === 'create') {
         const newItem: Fase = {
           id: Math.max(...data.map(d => d.id), 0) + 1,
-          productId: typeof productId === 'number' ? productId : 0,
-          ...formData
+          seq: formData.seq,
+          fase: formData.fase,
+          area: formData.area || '',
+          notes: formData.notes,
+          assetBoolean: formData.assetBoolean,
+          promptIA: formData.promptIA || '',
         };
         setData([...data, newItem]);
         toast.success('Fase creada correctamente');
       } else if (formMode === 'edit') {
-        setData(data.map(d => d.id === selectedItem?.id ? { ...d, ...formData } : d));
+        setData(data.map(d => d.id === selectedItem?.id ? { 
+          ...d, 
+          seq: formData.seq,
+          fase: formData.fase,
+          area: formData.area || '',
+          notes: formData.notes,
+          assetBoolean: formData.assetBoolean,
+          promptIA: formData.promptIA || '',
+        } : d));
         toast.success('Fase actualizada correctamente');
       }
       setShowFormModal(false);
@@ -223,6 +223,7 @@ export const FasesTab = forwardRef<{ getData: () => Fase[] }, FasesTabProps>(
                   )}
                   <th className="text-center px-3 py-2 font-semibold text-white/90 text-[11px] uppercase tracking-wide w-16">Seq</th>
                   <th className="text-left px-3 py-2 font-semibold text-white/90 text-[11px] uppercase tracking-wide w-36">Fase</th>
+                  <th className="text-center px-3 py-2 font-semibold text-white/90 text-[11px] uppercase tracking-wide w-28">Área</th>
                   <th className="text-left px-3 py-2 font-semibold text-white/90 text-[11px] uppercase tracking-wide">Nota</th>
                   <th className="text-center px-3 py-2 font-semibold text-white/90 text-[11px] uppercase tracking-wide w-20">Prompt IA</th>
                   <th className="text-center px-3 py-2 font-semibold text-white/90 text-[11px] uppercase tracking-wide w-24">Activo</th>
@@ -231,7 +232,7 @@ export const FasesTab = forwardRef<{ getData: () => Fase[] }, FasesTabProps>(
               <tbody>
                 {data.length === 0 ? (
                   <tr>
-                    <td colSpan={deleteMode && !isViewMode ? 6 : 5} className="px-3 py-10 text-center text-gray-400 text-xs">
+                    <td colSpan={deleteMode && !isViewMode ? 7 : 6} className="px-3 py-10 text-center text-gray-400 text-xs">
                       <div className="flex flex-col items-center gap-2">
                         <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-gray-300">
                           <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" strokeLinecap="round" strokeLinejoin="round"/>
@@ -275,7 +276,20 @@ export const FasesTab = forwardRef<{ getData: () => Fase[] }, FasesTabProps>(
                           {item.seq}
                         </span>
                       </td>
-                      <td className="px-3 py-2 border-b border-gray-200 font-medium text-gray-700">{item.phaseName || item.phaseId || '—'}</td>
+                      <td className="px-3 py-2 border-b border-gray-200 font-medium text-gray-700">{item.fase || '—'}</td>
+                      <td className="px-3 py-2 border-b border-gray-200 text-center">
+                        {item.area ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-cyan-100 text-cyan-700 rounded-full text-[10px] font-medium">
+                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+                              <polyline points="9 22 9 12 15 12 15 22"/>
+                            </svg>
+                            {item.area}
+                          </span>
+                        ) : (
+                          <span className="text-[10px] text-gray-400">—</span>
+                        )}
+                      </td>
                       <td className="px-3 py-2 border-b border-gray-200 text-gray-600">{item.notes}</td>
                       <td className="px-3 py-2 border-b border-gray-200 text-center">
                         {item.promptIA ? (
@@ -385,24 +399,19 @@ function FormModal({ mode, item, productId, existingData, onSave, onClose }: For
 
   // Auto-seq: al crear, calcular siguiente número secuencial
   const autoSeq = (() => {
-    if (item?.seq) return item.seq; // editar/ver: conservar valor original
+    if (item?.seq) return item.seq;
     const nums = existingData.map(d => parseInt(d.seq, 10)).filter(n => !isNaN(n));
     return nums.length > 0 ? (Math.max(...nums) + 1).toString() : '1';
   })();
 
   const [formData, setFormData] = useState({
     seq: autoSeq,
-    phaseId: item?.phaseId?.toString() || '',
-    phaseName: item?.phaseName || item?.phaseId?.toString() || '',
+    fase: item?.fase || '',
     notes: item?.notes || '',
     assetBoolean: item?.assetBoolean !== undefined ? item.assetBoolean : true,
     promptIA: item?.promptIA || '',
+    area: item?.area || '',
   });
-
-  // Filtrar fases ya usadas (en modo crear, excluir las que ya están en la tabla)
-  const availablePhases = mode === 'create'
-    ? K_PHASES.filter(p => !existingData.some(d => d.phaseId === p.id))
-    : K_PHASES;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -411,25 +420,13 @@ function FormModal({ mode, item, productId, existingData, onSave, onClose }: For
       return;
     }
 
-    const requiredFields = [
-      { field: 'seq', label: 'Seq' },
-      { field: 'phaseId', label: 'Fase' },
-      { field: 'notes', label: 'Nota' },
-    ];
+    if (!formData.fase.trim()) {
+      toast.error('Campo requerido', { description: 'Ingrese el nombre de la fase' });
+      return;
+    }
 
-    const emptyFields = requiredFields.filter(({ field }) => {
-      const value = formData[field as keyof typeof formData];
-      if (typeof value === 'string') {
-        return value.trim() === '';
-      }
-      return value === 0 || value === null || value === undefined;
-    });
-
-    if (emptyFields.length > 0) {
-      const fieldNames = emptyFields.map(({ label }) => label).join(', ');
-      toast.error('Campos requeridos faltantes', {
-        description: `Por favor complete: ${fieldNames}`,
-      });
+    if (!formData.notes.trim()) {
+      toast.error('Campo requerido', { description: 'Ingrese una nota para la fase' });
       return;
     }
 
@@ -450,8 +447,7 @@ function FormModal({ mode, item, productId, existingData, onSave, onClose }: For
 
     // Validar duplicado de fase (en modo crear)
     if (mode === 'create') {
-      const phaseIdNum = parseInt(formData.phaseId);
-      if (existingData.some(d => d.phaseId === phaseIdNum)) {
+      if (existingData.some(d => d.fase.toLowerCase() === formData.fase.toLowerCase())) {
         toast.error('Fase duplicada', { description: 'Esta fase ya está asignada al producto' });
         return;
       }
@@ -462,17 +458,6 @@ function FormModal({ mode, item, productId, existingData, onSave, onClose }: For
 
   const handleChange = (field: string, value: any) => {
     setFormData(prev => ({ ...prev, [field]: value }));
-    
-    if (field === 'phaseId') {
-      // El campo "Fase" es texto libre. Siempre sincronizar phaseName
-      // con el valor ingresado (ya no depende de K_PHASES lookup).
-      const phase = K_PHASES.find(p => p.id === parseInt(value));
-      setFormData(prev => ({ 
-        ...prev, 
-        phaseId: value,
-        phaseName: phase ? phase.descripcion : value
-      }));
-    }
   };
 
   const inputClassName = () => {
@@ -533,13 +518,30 @@ function FormModal({ mode, item, productId, existingData, onSave, onClose }: For
                   <input
                     type="text"
                     maxLength={30}
-                    value={formData.phaseId} 
-                    onChange={(e) => handleChange('phaseId', e.target.value)} 
+                    value={formData.fase} 
+                    onChange={(e) => handleChange('fase', e.target.value)} 
                     disabled={isViewMode} 
                     placeholder="Ingrese nombre de fase..."
                     className={inputClassName()}
                   />
                   <span className="text-[10px] text-gray-400 mt-0.5 block">Máximo 30 caracteres</span>
+                </div>
+
+                {/* Área */}
+                <div>
+                  <label className="block text-[11px] font-semibold text-gray-600 uppercase tracking-wide mb-1.5">
+                    Área
+                  </label>
+                  <select
+                    value={formData.area || ''}
+                    onChange={(e) => handleChange('area', e.target.value)}
+                    disabled={isViewMode}
+                    className={inputClassName()}
+                  >
+                    {CAT_AREA.map(a => (
+                      <option key={a.value} value={a.value}>{a.label}</option>
+                    ))}
+                  </select>
                 </div>
 
                 {/* Nota */}

@@ -7,7 +7,7 @@ import { useGarantiasDB } from '@/app/hooks/useGarantiasDB';
 import { toast } from 'sonner';
 
 export function Garantias() {
-  // ── Hook DB (RPC-based) — datos reales de J_GARANTIAS ──
+  // ── Hook DB (RPC-based) — datos reales de J_GARANTIAS (todas) ──
   const {
     garantias,
     loading,
@@ -15,7 +15,7 @@ export function Garantias() {
     backendStatus,
     saveGarantia,
     refetch,
-  } = useGarantiasDB(true);
+  } = useGarantiasDB();
 
   const [currentView, setCurrentView] = useState<'list' | 'form'>('list');
   const [selectedGarantia, setSelectedGarantia] = useState<Garantia | undefined>(undefined);

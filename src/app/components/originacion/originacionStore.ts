@@ -27,6 +27,8 @@ export interface OriginacionFormData {
   fechaFin: string;
   responsable: string;
   area: string;
+  promptIAFase: string;
+  notasFase: string;
   // Default sub-tab
   estatusSC: string;
   estatusPago?: string;
@@ -373,6 +375,8 @@ export const EMPTY_FORM: OriginacionFormData = {
   fechaFin: '',
   responsable: '',
   area: '',
+  promptIAFase: '',
+  notasFase: '',
   estatusSC: '',
   estatusPago: '',
   estatusCartera: '',
@@ -435,6 +439,7 @@ function buildFormFromListItem(m: OriginacionListItem): OriginacionFormData {
 /**
  * Construye OriginacionFormData a partir de un SolicitudListItem real (DB).
  * Extrae datos del JSONB data.solicitud.* — sin valores de prueba.
+ * Sincronizado con SolicitudCreditoForm para mostrar los mismos campos.
  */
 export function buildFormFromSolicitudItem(item: Record<string, any>): OriginacionFormData {
   const d = item._data || {};
@@ -445,6 +450,17 @@ export function buildFormFromSolicitudItem(item: Record<string, any>): Originaci
   const nombreCompleto = [hdr.nombre_persona, hdr.apellido_paterno_persona, hdr.apellido_materno_persona]
     .filter(Boolean).join(' ').trim() || item.nombreCompleto || '';
 
+  const faseId = item.faseId || hdr.faseId || '1';
+  const faseDescripcion = item.descripcionFase || hdr.descripcion_fase || 'Integración del Expediente';
+
+  let area = item.area || hdr.area || '';
+  if (!area && faseDescripcion) {
+    if (faseDescripcion.toLowerCase().includes('integraci')) area = 'INTEGRACIÓN';
+    else if (faseDescripcion.toLowerCase().includes('análisis') || faseDescripcion.toLowerCase().includes('operativo')) area = 'ANÁLISIS';
+    else if (faseDescripcion.toLowerCase().includes('jurídi')) area = 'JURÍDICO';
+    else if (faseDescripcion.toLowerCase().includes('formaliz') || faseDescripcion.toLowerCase().includes('liberac')) area = 'LIBERACIÓN';
+  }
+
   return {
     ...EMPTY_FORM,
     noOriginacion: item.noSol || String(item.id || ''),
@@ -452,22 +468,29 @@ export function buildFormFromSolicitudItem(item: Record<string, any>): Originaci
     noCliente: item._clienteId || '',
     cliente: nombreCompleto,
     fechaSolicitud: item.fechaSolicitud || hdr.fecha_solicitud || '',
+    empresaFondeadora: item.empresaFondeadora || hdr.empresa_fondeadora || '',
     sucursal: item.sucursal || hdr.sucursal || '',
     montoSolicitado: item.montoSolicitado ? String(item.montoSolicitado) : '',
     montoAutorizado: item.montoAutorizado ? String(item.montoAutorizado) : '',
     lineaProducto: item._lineaProducto || hdr.linea_producto || 'Crédito',
     sublinea: item.tipoProducto || hdr.tipo_producto || '',
     producto: item.nombreProducto || hdr.nombre_producto || '',
-    estatus: item.estatusSolicitud || hdr.estatus || 'En Proceso',
-    subEstatus: item.faseDescripcion || hdr.descripcion_fase || 'Integración del Expediente',
     periodo: terminos.periodicidad || '',
     plazos: String(terminos.plazo || ''),
+    destinoCredito: hdr.destino_credito || '',
+    estatus: item.estatusSolicitud || hdr.estatus || 'En Proceso',
+    subEstatus: faseDescripcion,
+    responsable: hdr.responsable || '',
+    area: area,
+    promptIAFase: item.promptIAFase || hdr.prompt_ia || '',
+    notasFase: item.notasFase || hdr.notas_fase || faseDescripcion,
     tasaAutorizada: String(terminos.tasa_interes || ''),
     fechaInicio: hdr.fecha_inicio || '',
     fechaFin: hdr.fecha_fin || '',
     moneda: terminos.moneda || 'MXN',
-    destinoCredito: hdr.destino_credito || '',
-    responsable: hdr.responsable || '',
+    estatusCliente: item.estatusCliente || hdr.estatus_cliente || '',
+    direccionPrincipal: hdr.direccion || item.direccion || '',
+    estatusListaNegra: item.estatusListaNegra || hdr.estatus_lista_negra || 'POSITIVO',
   };
 }
 

@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { toast } from 'sonner';
+import { usePersonasRelacionadasDB } from '../../../hooks/usePersonasRelacionadasDB';
 
 interface ParteRelacionada {
   id: number;
@@ -41,7 +42,7 @@ function getRolPorMonto(monto: number): { rol: string; nombre: string } {
   return config || ROLES_POR_MONTO[0];
 }
 
-interface PersonaRelacionada {
+interface PersonaRelacionadaDropdown {
   id: string;
   nombreCompleto: string;
   tipoPersona: string;
@@ -49,22 +50,19 @@ interface PersonaRelacionada {
   email?: string;
   curp?: string;
   rfc?: string;
-  relaciones?: { tipo: string; relacionadoCon?: string }[];
 }
 
-const MOCK_PERSONAS_RELACIONADAS: PersonaRelacionada[] = [
-  { id: 'p1', nombreCompleto: 'García López María del Rosario', tipoPersona: 'Física', telefono: '55-1234-5678', curp: 'GALM801021HMCRPR05', rfc: 'GALM801021XXX' },
-  { id: 'p2', nombreCompleto: 'Hernández Ramírez Carlos', tipoPersona: 'Física', telefono: '55-2345-6789', curp: 'HERC750312HJCMLR02', rfc: 'HERC750312YYY' },
-  { id: 'p3', nombreCompleto: 'Martínez Sánchez Ana Isabel', tipoPersona: 'Física', telefono: '55-3456-7890', curp: 'MASA820615MJCRNN08', rfc: 'MASA820615ZZZ' },
-  { id: 'p4', nombreCompleto: 'Constructora XYZ S.A. de C.V.', tipoPersona: 'Moral', telefono: '55-4567-8901', rfc: 'CXY980312ABC' },
-];
-
 export function PartesRelacionadasTab({ mode, solicitudId, montoSolicitado, clienteNombre, clienteId }: PartesRelacionadasTabProps) {
+  console.log('[PartesRelacionadasTab] Render - clienteId:', clienteId, '| clienteNombre:', clienteNombre);
+  
   const [partes, setPartes] = useState<ParteRelacionada[]>([]);
   const [showModal, setShowModal] = useState(false);
   const [editIndex, setEditIndex] = useState<number | null>(null);
-  const [personasDisponibles, setPersonasDisponibles] = useState<PersonaRelacionada[]>([]);
-  const [loadingPersonas, setLoadingPersonas] = useState(false);
+  const [personasDisponibles, setPersonasDisponibles] = useState<PersonaRelacionadaDropdown[]>([]);
+
+  // Cargar personas relacionadas del cliente desde DB
+  const { personas: personasDB, loading: loadingPersonas } = usePersonasRelacionadasDB(clienteId);
+  console.log('[PartesRelacionadasTab] personasDB:', personasDB.length, 'loading:', loadingPersonas);
 
   const isViewMode = mode === 'ver';
 
@@ -92,30 +90,34 @@ export function PartesRelacionadasTab({ mode, solicitudId, montoSolicitado, clie
     } catch { /* ignore */ }
   }, [partes, solicitudId]);
 
-  const cargarPersonasDisponibles = async () => {
-    setLoadingPersonas(true);
-    try {
-      // Simular carga de personas del cliente
-      // En producción, esto vendría del módulo de Clientes
-      await new Promise(resolve => setTimeout(resolve, 300));
-      setPersonasDisponibles(MOCK_PERSONAS_RELACIONADAS);
-    } catch (err) {
-      console.error('[PartesRel] Error cargando personas:', err);
-      toast.error('Error al cargar personas relacionadas');
-    } finally {
-      setLoadingPersonas(false);
+  // Actualizar personas disponibles cuando cambian los datos de DB
+  useEffect(() => {
+    console.log('[PartesRelacionadasTab] useEffect personasDB:', personasDB.length, personasDB);
+    if (personasDB && personasDB.length > 0) {
+      const mapped = personasDB.map(p => ({
+        id: p.id,
+        nombreCompleto: p.nombreCompleto || p.nombre || '',
+        tipoPersona: p.personalidad || p.tipoRelacion || 'Persona Física',
+        telefono: p.telefono || '',
+        email: p.email || '',
+        curp: p.curp || '',
+        rfc: p.rfc || '',
+      }));
+      console.log('[PartesRelacionadasTab] mapped personasDisponibles:', mapped);
+      setPersonasDisponibles(mapped);
+    } else {
+      console.log('[PartesRelacionadasTab] personasDB is empty, clearing personasDisponibles');
+      setPersonasDisponibles([]);
     }
-  };
+  }, [personasDB]);
 
-  const handleNuevaParte = async () => {
+  const handleNuevaParte = () => {
     setEditIndex(null);
-    await cargarPersonasDisponibles();
     setShowModal(true);
   };
 
   const handleEditarParte = (index: number) => {
     setEditIndex(index);
-    cargarPersonasDisponibles();
     setShowModal(true);
   };
 
@@ -247,7 +249,7 @@ export function PartesRelacionadasTab({ mode, solicitudId, montoSolicitado, clie
 
 interface ModalProps {
   parte: ParteRelacionada | null;
-  personasDisponibles: PersonaRelacionada[];
+  personasDisponibles: PersonaRelacionadaDropdown[];
   loadingPersonas: boolean;
   rolAsignado: { rol: string; nombre: string };
   onSave: (parte: ParteRelacionada) => void;
@@ -267,7 +269,12 @@ function ModalParteRelacionada({ parte, personasDisponibles, loadingPersonas, ro
   });
 
   const handlePersonaSelect = (personaId: string) => {
-    const persona = personasDisponibles.find(p => p.id === personaId);
+    console.log('[Modal] handlePersonaSelect - personaId:', personaId);
+    console.log('[Modal] personasDisponibles:', personasDisponibles);
+    
+    const persona = personasDisponibles.find(p => String(p.id) === String(personaId));
+    console.log('[Modal] persona found:', persona);
+    
     if (persona) {
       setFormData(prev => ({
         ...prev,
@@ -324,18 +331,6 @@ function ModalParteRelacionada({ parte, personasDisponibles, loadingPersonas, ro
 
         {/* Body */}
         <form onSubmit={handleSubmit} className="p-5">
-          {/* Rol automático */}
-          <div className="mb-4 p-3 bg-blue-50 rounded border border-blue-200">
-            <div className="text-[10px] font-medium text-blue-700 mb-1">Rol Asignado Automáticamente</div>
-            <div className="flex items-center gap-2">
-              <span className="font-semibold text-blue-800">{rolAsignado.nombre}</span>
-              <span className="text-xs text-blue-600">({rolAsignado.rol})</span>
-            </div>
-            <p className="text-[10px] text-blue-600 mt-1">
-              Asignado según el monto de la solicitud.
-            </p>
-          </div>
-
           <div className="space-y-4">
             {/* Tipo de relación */}
             <div>

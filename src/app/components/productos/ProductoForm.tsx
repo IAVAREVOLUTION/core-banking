@@ -40,6 +40,7 @@ import { ExpedientesProductoTab } from './tabs/ExpedientesProductoTab';
 import { RequisitosTab } from './tabs/RequisitosTab';
 import { useProductoPersistence, useProductoTabs } from '../../hooks/useProductoPersistence';
 import { syncToJProducts } from '../../hooks/useSyncJProducts';
+import { usePuestosTrabajoDB } from '../../hooks/usePuestosTrabajoDB';
 
 // ═══════════════════════════════════════════════════════════════════
 // Datos estáticos de subtabs → se usan en render Y en save para J_PRODUCTOS
@@ -612,6 +613,9 @@ export function ProductoForm({
     return product?.eventoContable && product.eventoContable.length > 0 ? product.eventoContable : [];
   });
   const efectivoEventoContable = eventoContableState;
+
+  // Cargar puestos de trabajo desde J_Catalogos (type=PuestoTrabajo)
+  const { puestos, loading: loadingPuestos } = usePuestosTrabajoDB();
 
   return (
     <div className="bg-[#F0F0F0] min-h-screen">
@@ -1205,48 +1209,55 @@ export function ProductoForm({
             {activeTab === 'autorizacion' && (
               <div>
                 <div className="bg-[#E8E8E8] px-3 py-1.5 mb-3 text-xs font-medium text-gray-700 flex items-center justify-between">
-                  <span>NIVELES DE AUTORIZACIÓN — Escalamiento por monto de crédito</span>
-                  {!isView && efectivoAutorizacion.length === 0 && (
-                    <button
-                      onClick={() => setAutorizacionState(AUTORIZACION_DATA.map(r => ({ ...r })))}
-                      className="px-3 py-1 bg-[#4A6FA5] text-white text-[10px] hover:bg-[#3E5C91] rounded font-medium transition-colors"
-                    >
-                      Cargar Plantilla
-                    </button>
-                  )}
+                  <span>Catálogo de Puestos de Trabajo</span>
                 </div>
-                <div className="border border-gray-300">
-                  <table className="w-full text-xs">
-                    <thead className="bg-[#E8E8E8]">
-                      <tr>
-                        <th className="text-left px-3 py-1.5 font-medium text-gray-700 border-b border-gray-300">Nivel</th>
-                        <th className="text-left px-3 py-1.5 font-medium text-gray-700 border-b border-gray-300">Puesto / Rol</th>
-                        <th className="text-right px-3 py-1.5 font-medium text-gray-700 border-b border-gray-300">Monto Desde</th>
-                        <th className="text-right px-3 py-1.5 font-medium text-gray-700 border-b border-gray-300">Monto Hasta</th>
-                        <th className="text-center px-3 py-1.5 font-medium text-gray-700 border-b border-gray-300">Requiere Firma</th>
-                        <th className="text-center px-3 py-1.5 font-medium text-gray-700 border-b border-gray-300">Activo</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {efectivoAutorizacion.length === 0 ? (
-                        <tr><td colSpan={6} className="px-3 py-6 text-center text-gray-500 text-xs">
-                          No hay niveles de autorización configurados.
-                          {!isView && <span className="block mt-1 text-blue-600">Use el botón "Cargar Plantilla" para inicializar los niveles estándar.</span>}
-                        </td></tr>
-                      ) : efectivoAutorizacion.map((row: any, i: number) => (
-                        <tr key={row.nivel ?? i} className={`${i % 2 === 0 ? 'bg-white' : 'bg-gray-50'} hover:bg-blue-50`}>
-                          <td className="px-3 py-1.5 border-b border-gray-200 text-center font-medium">{row.nivel}</td>
-                          <td className="px-3 py-1.5 border-b border-gray-200">{row.puesto}</td>
-                          <td className="px-3 py-1.5 border-b border-gray-200 text-right">{row.desde}</td>
-                          <td className="px-3 py-1.5 border-b border-gray-200 text-right">{row.hasta}</td>
-                          <td className="px-3 py-1.5 border-b border-gray-200 text-center">{row.firma ? '✓' : '—'}</td>
-                          <td className="px-3 py-1.5 border-b border-gray-200 text-center"><span className={`px-2 py-0.5 rounded text-[10px] ${row.activo ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-500'}`}>{row.activo ? 'Activo' : 'Inactivo'}</span></td>
+                
+                {loadingPuestos ? (
+                  <div className="flex items-center justify-center py-8 text-gray-500 text-xs">
+                    <svg className="animate-spin h-5 w-5 mr-2" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <circle cx="12" cy="12" r="10" strokeOpacity="0.25" />
+                      <path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round" />
+                    </svg>
+                    Cargando puestos de trabajo...
+                  </div>
+                ) : puestos.length === 0 ? (
+                  <div className="border border-gray-300 rounded p-6 text-center text-gray-500 text-xs">
+                    No hay puestos de trabajo configurados en J_Catalogos (type=PuestoTrabajo).
+                  </div>
+                ) : (
+                  <div className="border border-gray-300">
+                    <table className="w-full text-xs">
+                      <thead className="bg-[#4A6FA5] text-white">
+                        <tr>
+                          <th className="text-left px-3 py-2 font-medium">Puesto</th>
+                          <th className="text-left px-3 py-2 font-medium">Nombre</th>
+                          <th className="text-right px-3 py-2 font-medium">Monto Desde</th>
+                          <th className="text-right px-3 py-2 font-medium">Monto Hasta</th>
+                          <th className="text-center px-3 py-2 font-medium">Activo</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody>
+                        {puestos.map((puesto, i) => (
+                          <tr key={puesto.id} className={`${i % 2 === 0 ? 'bg-white' : 'bg-gray-50'} hover:bg-blue-50`}>
+                            <td className="px-3 py-2 border-b border-gray-200 font-medium">{puesto.puesto || '—'}</td>
+                            <td className="px-3 py-2 border-b border-gray-200">{puesto.nombre || '—'}</td>
+                            <td className="px-3 py-2 border-b border-gray-200 text-right">${puesto.montoMinimo.toLocaleString('es-MX', { minimumFractionDigits: 2 })}</td>
+                            <td className="px-3 py-2 border-b border-gray-200 text-right">${puesto.montoMaximo.toLocaleString('es-MX', { minimumFractionDigits: 2 })}</td>
+                            <td className="px-3 py-2 border-b border-gray-200 text-center">
+                              <span className={`px-2 py-0.5 rounded text-[10px] ${puesto.activo ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-500'}`}>
+                                {puesto.activo ? 'Activo' : 'Inactivo'}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+                
+                <div className="mt-3 text-xs text-gray-500">
+                  Total: {puestos.length} puesto(s) de trabajo
                 </div>
-                <div className="mt-2 text-xs text-gray-500">Contenido de Autorización</div>
               </div>
             )}
 

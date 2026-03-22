@@ -30,7 +30,8 @@ import { FasesSolicitudTab } from './tabs/FasesSolicitudTab';
 import { PartesRelacionadasTab } from './tabs/PartesRelacionadasTab';
 import { useProductosCatalogoDB, type ProductoCatalogo } from '../../hooks/useProductosCatalogoDB';
 import { fetchNextNoSol } from '../../hooks/useSolicitudesDB';
-import { addOriginacionItem } from '../originacion/originacionStore';
+import { addOriginacionItem, CAT_AREA } from '../originacion/originacionStore';
+import { FlujoTrabajo } from '../originacion/FlujoTrabajo';
 
 type FormMode = 'nuevo' | 'editar' | 'ver';
 
@@ -213,48 +214,116 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
     return productosDB.find(p => p.id === formData.productoId);
   }, [formData.productoId, productosDB]);
 
-  // ── Fases del producto seleccionado (fallback a catálogo estático) ──
+  // ── Fases del producto seleccionado (mapea correctamente del JSON) ──
   const fasesDelProducto = useMemo(() => {
     const rd = productoSeleccionado?.rawData;
     // Buscar fases en múltiples keys posibles
     const raw = rd?.fases ?? rd?.fasesRegistros ?? rd?.fase;
     if (Array.isArray(raw) && raw.length > 0) {
       return raw.map((f: any) => ({
-        faseId: String(f.phaseId ?? f.faseId ?? f.id ?? ''),
-        descripcion: f.phaseName ?? f.descripcion ?? f.nombre ?? '',
+        faseId: String(f.seq ?? f.id ?? '1'),  // seq es el número de fase
+        fase: f.fase || f.phaseName || f.descripcion || '',  // nombre de la fase
+        area: f.area || '',
+        notes: f.notes || '',
         promptIA: f.promptIA || '',
       }));
     }
     return CAT_FASES;
   }, [productoSeleccionado]);
 
-  // When producto changes, fill nombreProducto (busca en DB primero, fallback catálogo estático)
+  // Sync fase data when productoSeleccionado becomes available (for editing existing solicitudes)
+  useEffect(() => {
+    if (!productoSeleccionado || loadingProductos) return;
+    
+    const rd = productoSeleccionado.rawData;
+    const raw = rd?.fases ?? rd?.fasesRegistros ?? rd?.fase;
+    if (!Array.isArray(raw) || raw.length === 0) return;
+
+    // Find matching fase by faseId
+    const fase = raw.find((f: any) => {
+      const seq = String(f.seq ?? f.id ?? '');
+      return seq === formData.faseId;
+    }) || raw[0];
+
+    const faseData = {
+      faseId: String(fase.seq ?? fase.id ?? '1'),
+      fase: fase.fase || fase.notes || '',
+      area: fase.area || '',
+      notes: fase.notes || '',
+      promptIA: fase.promptIA || '',
+    };
+
+    // Only update if different from current
+    if (faseData.fase && faseData.fase !== formData.descripcionFase) {
+      console.log('[SolicForm] Syncing fase from product:', faseData);
+      setFormData(prev => ({
+        ...prev,
+        faseId: faseData.faseId,
+        descripcionFase: faseData.fase,
+        area: faseData.area,
+        promptIAFase: faseData.promptIA,
+      }));
+    }
+  }, [productoSeleccionado, loadingProductos]);
+
+  // When producto changes, fill nombreProducto and fase data from product config
   const handleProductoChange = (productoId: string) => {
     const dbProd = productosDB.find(p => p.id === productoId);
     const staticProd = CAT_PRODUCTOS.find(p => p.value === productoId);
+    
+    // Get first fase from product config to initialize
+    const rd = dbProd?.rawData;
+    const rawFases = rd?.fases ?? rd?.fasesRegistros ?? rd?.fase;
+    const firstFase = Array.isArray(rawFases) && rawFases.length > 0 ? rawFases[0] : null;
+    
+    const faseId = firstFase ? String(firstFase.seq ?? firstFase.id ?? '1') : '1';
+    const faseNombre = firstFase?.fase || firstFase?.notes || 'Fase 1';
+    const faseArea = firstFase?.area || '';
+    
     setFormData(prev => ({
       ...prev,
       productoId,
       nombreProducto: dbProd?.nombreProducto || staticProd?.nombre || '',
       tipoProducto: dbProd?.sublineaProducto || prev.tipoProducto || '',
+      faseId,
+      descripcionFase: faseNombre,
+      area: faseArea,
     }));
   };
 
-  // When fase changes, fill descripcionFase and promptIA
+  // When fase changes, fill descripcionFase, area and promptIA
+  // Get current fase data from product config (usa 'fase' no 'descripcion')
+  const currentFase = useMemo(() => {
+    return fasesDelProducto.find(f => f.faseId === formData.faseId) || null;
+  }, [fasesDelProducto, formData.faseId]);
+
   const handleFaseChange = (faseId: string) => {
     const fase = fasesDelProducto.find(f => f.faseId === faseId);
+    const nombreFase = fase?.fase || fase?.descripcion || '';
+    const promptIAProducto = fase?.promptIA || '';
+    let area = fase?.area || '';
+    if (!area && nombreFase) {
+      const lower = nombreFase.toLowerCase();
+      if (lower.includes('integraci')) area = 'INTEGRACIÓN';
+      else if (lower.includes('análisis') || lower.includes('operativo')) area = 'ANÁLISIS';
+      else if (lower.includes('jurídi')) area = 'JURÍDICO';
+      else if (lower.includes('formaliz') || lower.includes('liberac')) area = 'LIBERACIÓN';
+    }
     setFormData(prev => ({
       ...prev,
       faseId,
-      descripcionFase: fase?.descripcion || '',
+      descripcionFase: nombreFase,
+      area,
+      promptIAFase: promptIAProducto,
     }));
   };
 
-  // Get promptIA for current phase
+  // Get promptIA for current phase (from form data or product config)
   const fasePromptIA = useMemo(() => {
+    if (formData.promptIAFase) return formData.promptIAFase;
     const fase = fasesDelProducto.find(f => f.faseId === formData.faseId);
     return fase?.promptIA || '';
-  }, [fasesDelProducto, formData.faseId]);
+  }, [fasesDelProducto, formData.faseId, formData.promptIAFase]);
 
   // Validation
   const validate = (): boolean => {
@@ -359,6 +428,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
   );
 
   const sections = [
+    { id: 'default', label: 'Default' },
     { id: 'fases', label: 'Fases' },
     { id: 'partesRelacionadas', label: 'Partes Relacionadas' },
     { id: 'terminos', label: 'Términos y Condiciones' },
@@ -605,20 +675,6 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
                 />
               </div>
             </div>
-            <div>
-              <Lbl>Fase</Lbl>
-              <select value={formData.faseId} onChange={e => handleFaseChange(e.target.value)} disabled={isRO || !formData.productoId} className={sc()}>
-                {!formData.productoId ? (
-                  <option value="">— Seleccione un producto primero —</option>
-                ) : (
-                  fasesDelProducto.map(f => <option key={f.faseId} value={f.faseId}>{f.descripcion}</option>)
-                )}
-              </select>
-            </div>
-            <div>
-              <Lbl>Descripción Fase</Lbl>
-              <input type="text" value={formData.descripcionFase} disabled className={ic(false, true)} />
-            </div>
           </div>
         </div>
 
@@ -658,6 +714,59 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
 
             {activeSection === sec.id && (
               <>
+                {sec.id === 'default' && (
+                  <div className="bg-white border border-gray-200 p-4 space-y-4">
+                    {/* ── FASE ACTUAL (datos del JSON) ── */}
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                      <h4 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+                        </svg>
+                        Fase Actual
+                        <span className="ml-2 text-xs font-normal text-gray-500">
+                          — {currentFase?.fase || formData.descripcionFase || 'Sin fase'}
+                        </span>
+                      </h4>
+                      
+                      <div className="grid grid-cols-3 gap-4">
+                        {/* Número de Fase (seq) */}
+                        <div>
+                          <label className="text-[10px] font-medium text-gray-500 uppercase">Seq</label>
+                          <div className="mt-1 px-3 py-2 bg-white border border-blue-200 rounded text-sm font-semibold text-blue-700">
+                            {currentFase?.faseId || formData.faseId || '—'}
+                          </div>
+                        </div>
+                        
+                        {/* Área */}
+                        <div>
+                          <label className="text-[10px] font-medium text-gray-500 uppercase">Área</label>
+                          <div className="mt-1 px-3 py-2 bg-white border border-blue-200 rounded text-sm">
+                            <span className="inline-flex items-center px-2 py-0.5 bg-cyan-100 text-cyan-700 rounded-full text-xs font-medium">
+                              {currentFase?.area || formData.area || '—'}
+                            </span>
+                          </div>
+                        </div>
+                        
+                        {/* Título */}
+                        <div>
+                          <label className="text-[10px] font-medium text-gray-500 uppercase">Título</label>
+                          <div className="mt-1 px-3 py-2 bg-white border border-blue-200 rounded text-sm text-gray-700">
+                            {currentFase?.fase || formData.descripcionFase || '—'}
+                          </div>
+                        </div>
+                      </div>
+                      
+                      {/* Notas */}
+                      <div className="mt-3">
+                        <label className="text-[10px] font-medium text-gray-500 uppercase">Notas</label>
+                        <div className="mt-1 px-3 py-2 bg-white border border-blue-200 rounded text-sm text-gray-600">
+                          {currentFase?.notes || '—'}
+                        </div>
+                      </div>
+                    </div>
+
+                  </div>
+                )}
                 {sec.id === 'fases' && (
                   <FasesSolicitudTab 
                     mode={mode}
@@ -671,6 +780,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
                     solicitudId={storageId}
                     montoSolicitado={formData.montoSolicitado}
                     clienteNombre={`${formData.nombrePersona || ''} ${formData.apellidoPaternoPersona || ''} ${formData.apellidoMaternoPersona || ''}`.trim()}
+                    clienteId={formData._clienteId}
                   />
                 )}
                 {sec.id === 'terminos' && (
@@ -691,7 +801,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
                   />
                 )}
                 {sec.id === 'garantias' && (
-                  <GarantiasTab mode={mode} solicitudId={storageId} montoSolicitado={formData.montoSolicitado} productoId={formData.productoId} faseIdActual={parseInt(formData.faseId) || 1} />
+                  <GarantiasTab mode={mode} solicitudId={storageId} montoSolicitado={formData.montoSolicitado} clienteId={formData._clienteId} faseIdActual={parseInt(formData.faseId) || 1} />
                 )}
                 {sec.id === 'comisiones' && (
                   <ComisionesTab mode={mode} solicitudId={storageId} montoSolicitado={formData.montoSolicitado} productoId={formData.productoId} />
