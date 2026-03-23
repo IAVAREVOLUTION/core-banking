@@ -93,7 +93,7 @@ export interface ReglaValidacionResult {
   documentosFaltantes?: string[];
 }
 
-const FASES: FaseOriginacion[] = [
+export const FASES: FaseOriginacion[] = [
   'Integración del Expediente',
   'Análisis de Expediente Operativo',
   'Análisis de Expediente Jurídico',
@@ -126,6 +126,16 @@ const DOCUMENTOS_POR_FASE: DocumentoObligatorio[] = [
   { tipoDocumento: 'Contrato firmado', aplicaPersona: ['Física', 'Moral', 'Fís. c/Act. Emp.'], fase: 'Validación de Contratos y Pagarés Firmados' },
   { tipoDocumento: 'Pagaré firmado', aplicaPersona: ['Física', 'Moral', 'Fís. c/Act. Emp.'], fase: 'Validación de Contratos y Pagarés Firmados' },
 ];
+
+/** Devuelve los tipos de documento obligatorios para la fase y tipo de persona dados. */
+export function getDocumentosObligatorios(
+  fase: FaseOriginacion,
+  tipoPersona: TipoPersona
+): string[] {
+  return DOCUMENTOS_POR_FASE
+    .filter(d => d.fase === fase && d.aplicaPersona.includes(tipoPersona))
+    .map(d => d.tipoDocumento);
+}
 
 export function getSiguienteFase(fase: FaseOriginacion): FaseOriginacion | null {
   const idx = FASES.indexOf(fase);

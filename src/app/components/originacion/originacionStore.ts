@@ -319,10 +319,10 @@ export const CAT_TIPO_DOCUMENTO = [
   // Análisis / Formalización
   'Carta de autorización', 'Avalúo',
   // Contratos (FASE 5)
-  'Contrato firmado', 'Pagaré firmado',
+  'Contrato firmado', 'Pagaré firmado', 'Documento web',
   'Otro',
 ];
-// Estatus del expediente: 'Validado' = aprobado por IA (requerido para avanzar FASE 1)
+// 'Validado' = validado por IA (requerido para avanzar FASE 1); 'Aprobado' = aprobado manualmente
 export const CAT_ESTATUS_EXPEDIENTE = ['Pendiente', 'Validado', 'Aprobado', 'Rechazado'];
 export const CAT_ESTATUS_AUTORIZACION = ['Pendiente', 'Autorizado', 'Rechazado', 'Condicionado'];
 export const CAT_TIPO_GARANTIA = [
