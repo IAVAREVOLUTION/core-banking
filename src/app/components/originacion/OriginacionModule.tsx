@@ -18,7 +18,6 @@ import {
 } from './originacionStore';
 import { useSolicitudesDB, updateFaseSolicitudDB } from '../../hooks/useSolicitudesDB';
 import { useProductosCatalogoDB } from '../../hooks/useProductosCatalogoDB';
-import { ExpedientesSection } from './ExpedientesSection';
 import {
   ejecutarReglasFase,
   FaseOriginacion,
@@ -32,6 +31,10 @@ import { PartesRelacionadasTab } from '../solicitudes/tabs/PartesRelacionadasTab
 import { TerminosCondicionesTab } from '../solicitudes/TerminosCondicionesTab';
 import { SimulacionTab } from '../solicitudes/SimulacionTab';
 import { ComisionesTab } from '../solicitudes/ComisionesTab';
+import { ExpedienteElectronicoTab } from '../solicitudes/ExpedienteElectronicoTab';
+import { GarantiasTab } from '../solicitudes/GarantiasTab';
+import { AutorizacionTab } from '../solicitudes/AutorizacionTab';
+import { NotasTab } from '../solicitudes/NotasTab';
 
 // ═══════════════════════════════════════════════════════════════════
 // VIEW STATE — Solo consulta: editar | ver (sin nuevo)
@@ -86,6 +89,22 @@ function getFaseIdFromSubEstatus(subEstatus: string): string {
   if (lower.includes('solic') && lower.includes('activ')) return '6';
   if (lower.includes('activac')) return '7';
   return '1';
+}
+
+// Función para normalizar el nombre de fase a la versión exacta usada en originacionRules.ts
+function normalizarFase(f: string): FaseOriginacion | null {
+  const faseLower = (f || '').toLowerCase().trim();
+  
+  // Orden importante: más específico primero
+  if (faseLower.includes('solicitud de activaci')) return 'Solicitud de Activación de Cuenta Financiera';
+  if (faseLower.includes('validaci') && faseLower.includes('contrat')) return 'Validación de Contratos y Pagarés Firmados';
+  if (faseLower.includes('formalizaci')) return 'Formalización de Cuenta Financiera';
+  if (faseLower.includes('análisis juríd') || faseLower.includes('analisis jurid')) return 'Análisis de Expediente Jurídico';
+  if (faseLower.includes('análisis operat') || faseLower.includes('analisis operat')) return 'Análisis de Expediente Operativo';
+  if (faseLower.includes('integraci')) return 'Integración del Expediente';
+  if (faseLower.includes('activaci')) return 'Activación de Cuenta Financiera';
+  
+  return null;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -901,12 +920,30 @@ function OriginacionForm({ mode, originacionId, onCancel, onSave, onActivarCuent
     { id: 'partesRelacionadas', label: 'Partes Relacionadas' },
     { id: 'terminos', label: 'Términos y Condiciones' },
     { id: 'simulacion', label: 'Simulación' },
-    { id: 'expedientes', label: 'Expediente Electrónico' },
+    { id: 'expediente', label: 'Expediente Electrónico' },
     { id: 'garantias', label: 'Garantías' },
     { id: 'comisiones', label: 'Comisiones' },
-    { id: 'autorizacion', label: 'Autorizaciones' },
+    { id: 'autorizaciones', label: 'Autorizaciones' },
     { id: 'notas', label: 'Notas' },
   ];
+
+  // Producto ID para tabs de Solicitudes
+  const productoIdActual = useMemo(() => {
+    if (!fd.producto || productosDB.length === 0) return undefined;
+    const prod = productosDB.find(p => p.nombreProducto === fd.producto || p.id === fd.producto);
+    return prod?.id;
+  }, [fd.producto, productosDB]);
+
+  // Fase ID actual (calculado del subEstatus)
+  const faseIdActual = useMemo(() => {
+    const faseIdx = normalizarFase(fd.subEstatus);
+    if (!faseIdx) return 1;
+    const idx = FASES.indexOf(faseIdx);
+    return idx >= 0 ? idx + 1 : 1;
+  }, [fd.subEstatus]);
+
+  // Nombre del solicitante
+  const nombreSolicitante = fd.cliente || '';
 
   return (
     <div className="flex-1 flex flex-col bg-white overflow-auto">
@@ -1283,25 +1320,42 @@ function OriginacionForm({ mode, originacionId, onCancel, onSave, onActivarCuent
                     lineaProducto={fd.lineaProducto}
                   />
                 )}
-                {sec.id === 'expedientes' && (
-                  <ExpedientesSection sid={sid} mode={mode} isRO={isRO} />
+                {sec.id === 'expediente' && (
+                  <ExpedienteElectronicoTab
+                    mode={mode}
+                    solicitudId={sid}
+                    faseIdActual={faseIdActual}
+                    productoId={productoIdActual}
+                    nombreSolicitante={nombreSolicitante}
+                    fasePromptIA={fd.promptIAFase}
+                  />
                 )}
                 {sec.id === 'garantias' && (
-                  <GarantiasSection sid={sid} mode={mode} isRO={isRO} />
+                  <GarantiasTab
+                    mode={mode}
+                    solicitudId={sid}
+                    montoSolicitado={fd.montoSolicitado}
+                    clienteId={fd.noCliente}
+                  />
                 )}
                 {sec.id === 'comisiones' && (
                   <ComisionesTab
                     mode={mode}
                     solicitudId={sid}
                     montoSolicitado={fd.montoSolicitado}
-                    productoId={fd.producto}
+                    productoId={productoIdActual}
                   />
                 )}
-                {sec.id === 'autorizacion' && (
-                  <AutorizacionSection sid={sid} mode={mode} isRO={isRO} />
+                {sec.id === 'autorizaciones' && (
+                  <AutorizacionTab
+                    mode={mode}
+                    solicitudId={sid}
+                    montoSolicitado={fd.montoSolicitado}
+                    productoId={productoIdActual}
+                  />
                 )}
                 {sec.id === 'notas' && (
-                  <NotasSection notas={notas} setNotas={setNotas} isRO={isRO} />
+                  <NotasTab mode={mode} solicitudId={sid} />
                 )}
               </div>
             )}
@@ -1361,7 +1415,17 @@ function FaseActionBar({
 }: FaseActionBarProps) {
   const [contratoModal, setContratoModal] = useState<{ contrato: any; lineaProducto: string; tipoProducto: string; noOriginacion: string } | null>(null);
 
+  // Normalizar fase para uso en todo el componente
+  const faseNormalizada = normalizarFase(fase) || fase;
+
   const ejecutarAccion = useCallback((accion: AccionFase) => {
+    // Validar fase normalizada
+    const faseValidada = normalizarFase(fase);
+    if (!faseValidada) {
+      toast.error('Fase no reconocida', { description: `No se pudo identificar la fase: "${fase}"` });
+      return;
+    }
+
     // Detectar tipo de persona: Moral, Fís. c/Act. Emp. o Física
     const cli = formData.cliente || '';
     const tipoPersona: import('./originacionRules').TipoPersona =
@@ -1373,9 +1437,12 @@ function FaseActionBar({
 
     const montoAutorizadoNum = parseFloat(formData.montoAutorizado) || 0;
 
+    // Usar faseValidada en lugar de fase para todas las validaciones
+    const faseParaValidacion = faseValidada;
+
     // ── FASE 1: Validación enriquecida — documentos presentes Y validados por IA ──
-    if (fase === 'Integración del Expediente' && accion === 'enviarFase') {
-      const docsRequeridos = getDocumentosObligatorios(fase, tipoPersona);
+    if (faseParaValidacion === 'Integración del Expediente' && accion === 'enviarFase') {
+      const docsRequeridos = getDocumentosObligatorios(faseParaValidacion, tipoPersona);
       const docsPresentes = expedientesData.map(e => e.tipoDocumento);
       const docsValidados = expedientesData
         .filter(e => e.estatus === 'Validado')
@@ -1434,11 +1501,12 @@ function FaseActionBar({
     const context = {
       id: 0,
       estatusSolicitud: formData.estatus,
-      fase,
+      fase: faseParaValidacion,
       lineaProducto: formData.lineaProducto as 'Crédito' | 'Captación' | 'Línea de Crédito',
       tipoProducto: formData.producto as 'Crédito Simple' | 'Crédito Revolvente' | 'Línea de Crédito',
       tipoPersona,
-      documentos,
+      // Pasar solo documentos con estatus 'Validado' para validación en originacionRules
+      documentos: expedientesData.filter(e => e.estatus === 'Validado').map(e => e.tipoDocumento),
       notas,
       garantias,
       comites,
@@ -1472,7 +1540,7 @@ function FaseActionBar({
       }
     } else {
       toast.success('Acción ejecutada', { description: result.motivos.join(' ') });
-      if (result.faseDestino && result.faseDestino !== fase) {
+      if (result.faseDestino && result.faseDestino !== faseParaValidacion) {
         onActualizarFase(result.faseDestino);
       }
       result.actualizaciones.forEach(update => {
@@ -1506,11 +1574,11 @@ function FaseActionBar({
   }
 
   // "Enviar de Fase" no aplica en FASE 6 (usa "Solicitud de Activación") ni en la última fase
-  const puedeEnviar = !['Solicitud de Activación de Cuenta Financiera', 'Activación de Cuenta Financiera'].includes(fase);
-  const puedeRegresar = !['Integración del Expediente'].includes(fase);
-  const puedeFormalizar = fase === 'Formalización de Cuenta Financiera';
-  const puedeSolicitarActivacion = fase === 'Solicitud de Activación de Cuenta Financiera';
-  const puedeActivar = fase === 'Activación de Cuenta Financiera';
+  const puedeEnviar = !['Solicitud de Activación de Cuenta Financiera', 'Activación de Cuenta Financiera'].includes(faseNormalizada);
+  const puedeRegresar = !['Integración del Expediente'].includes(faseNormalizada);
+  const puedeFormalizar = faseNormalizada === 'Formalización de Cuenta Financiera';
+  const puedeSolicitarActivacion = faseNormalizada === 'Solicitud de Activación de Cuenta Financiera';
+  const puedeActivar = faseNormalizada === 'Activación de Cuenta Financiera';
 
   return (<>
     <div className="bg-[#EBF3FB] border border-[#4A6FA5] rounded px-4 py-3 mb-4">
@@ -1574,7 +1642,7 @@ function FaseActionBar({
     </div>
 
     {/* Panel de estado documental — solo visible en Fase 1 */}
-    {fase === 'Integración del Expediente' && (() => {
+    {faseNormalizada === 'Integración del Expediente' && (() => {
       const cli = formData.cliente || '';
       const tp: import('./originacionRules').TipoPersona =
         (cli.includes('S.A.') || cli.includes('S. de R.L.') || cli.includes('S.C.') || cli.includes('S.A.P.I.'))
@@ -1582,7 +1650,7 @@ function FaseActionBar({
           : (formData.lineaProducto === 'Crédito' && (cli.includes('Act. Emp') || cli.includes('Empresarial')))
           ? 'Fís. c/Act. Emp.'
           : 'Física';
-      const requeridos = getDocumentosObligatorios(fase, tp);
+      const requeridos = getDocumentosObligatorios(faseNormalizada, tp);
       return (
         <div className="mb-4 border border-blue-200 rounded bg-blue-50 px-4 py-3">
           <p className="text-xs font-semibold text-blue-800 mb-2">

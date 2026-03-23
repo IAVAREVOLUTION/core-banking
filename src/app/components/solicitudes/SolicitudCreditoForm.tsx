@@ -359,13 +359,14 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
         return;
       }
 
-      const nuevaAreaActual = inferirAreaFase(sigFase.descripcion);
+      const sigFaseDescripcion = sigFase.fase || sigFase.descripcion || '';
+      const nuevaAreaActual = inferirAreaFase(sigFaseDescripcion);
 
       // ── 4. Actualizar estado local ──
       setFormData(prev => ({
         ...prev,
         faseId: sigFase.faseId,
-        descripcionFase: sigFase.descripcion,
+        descripcionFase: sigFaseDescripcion,
         estatusSolicitud: prev.estatusSolicitud === 'Pendiente' ? 'En proceso' : prev.estatusSolicitud,
       }));
 
@@ -374,14 +375,14 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
       const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
       if (dbId && UUID_RE.test(dbId)) {
         const nuevoEstatus = formData.estatusSolicitud === 'Pendiente' ? 'En proceso' : undefined;
-        const result = await updateFaseSolicitudDB(dbId, sigFase.faseId, sigFase.descripcion, nuevaAreaActual, nuevoEstatus);
+        const result = await updateFaseSolicitudDB(dbId, sigFase.faseId, sigFaseDescripcion, nuevaAreaActual, nuevoEstatus);
         if (result.ok) {
-          toast.success('Fase avanzada correctamente', { description: `${formData.descripcionFase} → ${sigFase.descripcion}` });
+          toast.success('Fase avanzada correctamente', { description: `${formData.descripcionFase} → ${sigFaseDescripcion}` });
         } else {
           toast.warning('Fase actualizada localmente (sin conexión BD)', { description: result.error || 'Sincronización pendiente' });
         }
       } else {
-        toast.success('Fase avanzada', { description: `${formData.descripcionFase} → ${sigFase.descripcion}. Guarda la solicitud para persistir.` });
+        toast.success('Fase avanzada', { description: `${formData.descripcionFase} → ${sigFaseDescripcion}. Guarda la solicitud para persistir.` });
       }
     } finally {
       setEnviandoFase(false);
@@ -640,18 +641,26 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
               })}
             </div>
           </div>
-          <button
-            onClick={handleEnviarFase}
-            disabled={enviandoFase}
-            className="px-4 py-1.5 bg-[#4A6FA5] text-white text-sm rounded hover:bg-[#3d5d8a] disabled:opacity-60 flex items-center gap-2"
-          >
-            {enviandoFase && (
-              <svg className="animate-spin" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2">
-                <circle cx="7" cy="7" r="5" strokeDasharray="20" strokeDashoffset="10" />
-              </svg>
-            )}
-            Enviar de Fase
-          </button>
+          <div className="flex items-center gap-3">
+            <ValidacionFasePanel
+              faseId={parseInt(formData.faseId) || 1}
+              tipoPersona={formData.tipoPersona}
+              productoRawData={productoSeleccionado?.rawData as Record<string, any>}
+              storageId={storageId}
+            />
+            <button
+              onClick={handleEnviarFase}
+              disabled={enviandoFase}
+              className="px-4 py-1.5 bg-[#4A6FA5] text-white text-sm rounded hover:bg-[#3d5d8a] disabled:opacity-60 flex items-center gap-2"
+            >
+              {enviandoFase && (
+                <svg className="animate-spin" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2">
+                  <circle cx="7" cy="7" r="5" strokeDasharray="20" strokeDashoffset="10" />
+                </svg>
+              )}
+              Enviar de Fase
+            </button>
+          </div>
         </div>
       )}
 
@@ -991,6 +1000,98 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
             )}
           </div>
         ))}
+      </div>
+    </div>
+  );
+}
+
+interface ValidacionFasePanelProps {
+  faseId: number;
+  tipoPersona: string;
+  productoRawData: Record<string, any> | undefined;
+  storageId: number | string | 'new';
+}
+
+function ValidacionFasePanel({ faseId, tipoPersona, productoRawData, storageId }: ValidacionFasePanelProps) {
+  const requisitos = getRequisitosObligatoriosFase(productoRawData, faseId, tipoPersona);
+  
+  const documentos: DocumentoCargado[] = useMemo(() =>
+    (loadFromSession<DocumentoCargado[]>(storageId, 'documentos') ||
+    loadFromSavedStore<DocumentoCargado[]>(storageId, 'documentos') ||
+    []),
+  [storageId]);
+  
+  const docsFase = documentos.filter(d => (d.faseId === faseId || d.faseId === 0 || !d.faseId));
+  const tiposPresentes = docsFase.map(d => d.tipoDocumento);
+  const tiposValidados = docsFase.filter(d => d.estatus === 'Validado').map(d => d.tipoDocumento);
+  
+  const faltanPresencia = requisitos.filter(r => !tiposPresentes.includes(r.tipoDocumento));
+  const noValidadosPorIA = requisitos.filter(r => tiposPresentes.includes(r.tipoDocumento) && !tiposValidados.includes(r.tipoDocumento));
+  const todosValidados = faltanPresencia.length === 0 && noValidadosPorIA.length === 0;
+  
+  if (requisitos.length === 0) return null;
+  
+  return (
+    <div className="relative group">
+      <button
+        type="button"
+        className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium transition-colors ${
+          todosValidados
+            ? 'bg-green-100 text-green-700 hover:bg-green-200'
+            : 'bg-red-100 text-red-700 hover:bg-red-200'
+        }`}
+        title="Ver estado de documentos obligatorios"
+      >
+        {todosValidados ? (
+          <>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
+            </svg>
+            Documentos OK
+          </>
+        ) : (
+          <>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+            </svg>
+            {faltanPresencia.length > 0 ? `${faltanPresencia.length} sin adjuntar` : `${noValidadosPorIA.length} sin validar`}
+          </>
+        )}
+      </button>
+      
+      {/* Tooltip con detalle */}
+      <div className="absolute right-0 top-full mt-1 hidden group-hover:block z-50 bg-white border border-gray-200 rounded-lg shadow-lg p-3 min-w-64 text-left">
+        <h4 className="text-xs font-semibold text-gray-700 mb-2">Documentos obligatorios — Fase {faseId}</h4>
+        <ul className="space-y-1">
+          {requisitos.map(r => {
+            const presente = tiposPresentes.includes(r.tipoDocumento);
+            const validado = tiposValidados.includes(r.tipoDocumento);
+            return (
+              <li key={r.tipoDocumento} className="flex items-start gap-2 text-[11px]">
+                {validado ? (
+                  <span className="text-green-600 mt-0.5">✓</span>
+                ) : presente ? (
+                  <span className="text-yellow-500 mt-0.5">⚠</span>
+                ) : (
+                  <span className="text-red-500 mt-0.5">✗</span>
+                )}
+                <span className={validado ? 'text-green-700' : presente ? 'text-yellow-700' : 'text-red-700'}>
+                  {r.tipoDocumento}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+        {!todosValidados && (
+          <p className="mt-2 text-[10px] text-gray-500 border-t pt-2">
+            {!todosValidados && faltanPresencia.length > 0 && (
+              <span className="block text-red-600">• {faltanPresencia.length} documento(s) faltante(s)</span>
+            )}
+            {!todosValidados && noValidadosPorIA.length > 0 && (
+              <span className="block text-yellow-600">• {noValidadosPorIA.length} pendiente(s) de validación IA</span>
+            )}
+          </p>
+        )}
       </div>
     </div>
   );

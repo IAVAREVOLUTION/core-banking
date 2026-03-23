@@ -164,7 +164,13 @@ export function validarNotaReciente(notas: Nota[], minutos: number = 30): boolea
   if (notas.length === 0) return false;
   const ahora = new Date();
   const limite = new Date(ahora.getTime() - minutos * 60 * 1000);
-  return notas.some(n => n.fechaCreacion >= limite);
+  
+  return notas.some(n => {
+    const fechaNota = n.fechaCreacion instanceof Date 
+      ? n.fechaCreacion 
+      : new Date(n.fechaCreacion);
+    return !isNaN(fechaNota.getTime()) && fechaNota >= limite;
+  });
 }
 
 export function validarGarantiasSuficientes(
