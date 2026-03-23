@@ -16,7 +16,7 @@ import {
   CAT_ESTATUS_SC, CAT_ESTATUS_CLIENTE, CAT_ESTATUS_LISTA_NEGRA,
   getOriginaciones, seedOriginacionFromSolicitudItem,
 } from './originacionStore';
-import { useSolicitudesDB } from '../../hooks/useSolicitudesDB';
+import { useSolicitudesDB, updateFaseSolicitudDB } from '../../hooks/useSolicitudesDB';
 import { useProductosCatalogoDB } from '../../hooks/useProductosCatalogoDB';
 import { ExpedientesSection } from './ExpedientesSection';
 import {
@@ -24,6 +24,7 @@ import {
   FaseOriginacion,
   ReglaValidacionResult,
   getDocumentosObligatorios,
+  FASES,
 } from './originacionRules';
 import { FlujoTrabajo } from './FlujoTrabajo';
 import { FasesOriginacionTab } from './tabs/FasesOriginacionTab';
@@ -713,23 +714,38 @@ function OriginacionForm({ mode, originacionId, onCancel, onSave, onActivarCuent
     if (fresh) setCargosCtx(fresh);
   }, [originacionId]);
 
-  const handleActualizarFase = useCallback((nuevaFaseOrFaseId: FaseOriginacion | string, descripcion?: string, area?: string, _promptIA?: string) => {
+  const handleActualizarFase = useCallback(async (nuevaFaseOrFaseId: FaseOriginacion | string, descripcion?: string, area?: string, _promptIA?: string) => {
     // Sobrecarga 1: FasesOriginacionTab llama con (faseId, descripcion, area, promptIA)
     if (descripcion !== undefined) {
       const areaFinal = area || '';
       setFd(p => ({ ...p, subEstatus: descripcion, area: areaFinal }));
       toast.success('Fase actualizada', { description: `${descripcion}${areaFinal ? ` — Área: ${areaFinal}` : ''}` });
+      // Persistir en DB
+      const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      const dbId = String(originacionId);
+      if (UUID_RE.test(dbId)) {
+        const faseNum = FASES.indexOf(descripcion as FaseOriginacion) + 1;
+        const faseId = faseNum > 0 ? String(faseNum) : '1';
+        await updateFaseSolicitudDB(dbId, faseId, descripcion, areaFinal);
+      }
       return;
     }
-    
+
     // Sobrecarga 2: FaseActionBar llama con (FaseOriginacion)
     const nuevaFase = nuevaFaseOrFaseId as FaseOriginacion;
-    // Buscar el área directamente en la tabla de fases de originación
     const faseDef = ORIGINACION_FASES.find(f => f.label === nuevaFase);
     const areaResult = faseDef?.area || '';
     setFd(p => ({ ...p, subEstatus: nuevaFase, area: areaResult || p.area }));
     toast.success('Fase actualizada', { description: `${nuevaFase}${areaResult ? ` — Área: ${areaResult}` : ''}` });
-  }, []);
+    // Persistir en DB
+    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const dbId = String(originacionId);
+    if (UUID_RE.test(dbId)) {
+      const faseNum = FASES.indexOf(nuevaFase) + 1;
+      const faseId = faseNum > 0 ? String(faseNum) : '1';
+      await updateFaseSolicitudDB(dbId, faseId, nuevaFase, areaResult);
+    }
+  }, [originacionId]);
 
   // Acumula los 4 campos de FASE 7 para disparar DB update cuando todos lleguen
   const fase7StatusRef = useRef<{ sol?: string; cuenta?: string; pago?: string; cartera?: string }>({});

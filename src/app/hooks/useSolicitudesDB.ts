@@ -583,6 +583,73 @@ export async function fetchNextNoSol(): Promise<string> {
 }
 
 // ══════════════════════════════════════════════════════════════════
+// UPDATE FASE — Actualiza SOLO los campos de fase (JSONB merge)
+// Entidad: Fin_Corp_Accnt  |  Campos: NoFaseActual, FaseActual, AreaActual
+// ══════════════════════════════════════════════════════════════════
+
+/**
+ * Actualiza los campos de fase en Fin_Corp_Accnt sin sobreescribir el resto del JSONB.
+ * Usa la RPC update_fase_solicitud (JSONB || merge) como estrategia primaria.
+ * Fallback: Edge Function con solo el campo fases (columna top-level).
+ *
+ * @param id              UUID del registro en J_CUENTAS_CORP_CLIENTES
+ * @param faseId          NoFaseActual — número de fase como string ('1', '2', …)
+ * @param descripcionFase FaseActual — nombre descriptivo de la fase
+ * @param areaActual      AreaActual — área responsable de la fase
+ * @param estatusSolicitud EstatusSolicitud — si cambia al avanzar (opcional)
+ */
+export async function updateFaseSolicitudDB(
+  id: string,
+  faseId: string,
+  descripcionFase: string,
+  areaActual: string = '',
+  estatusSolicitud?: string,
+): Promise<{ ok: boolean; error?: string }> {
+  if (!DB_AVAILABLE) return { ok: false, error: 'DB no disponible' };
+  if (!UUID_RE.test(id)) {
+    console.warn('[SolicDB] updateFase — ID no UUID:', id);
+    return { ok: false, error: 'ID inválido (no UUID)' };
+  }
+
+  // ── Intento 1: RPC update_fase_solicitud (JSONB merge — no pierde datos) ──
+  try {
+    const { error } = await supabase.rpc('update_fase_solicitud', {
+      p_id: id,
+      p_fase_id: faseId,
+      p_descripcion_fase: descripcionFase,
+      p_area_actual: areaActual || null,
+      p_estatus_sol: estatusSolicitud || null,
+    });
+    if (!error) {
+      console.log('[SolicDB] updateFase RPC OK — faseId:', faseId, '|', descripcionFase);
+      return { ok: true };
+    }
+    console.warn('[SolicDB] updateFase RPC FALLÓ:', error.message);
+  } catch (err: any) {
+    console.warn('[SolicDB] updateFase RPC EXCEPCIÓN:', err?.message);
+  }
+
+  // ── Intento 2: Edge Function (actualiza columna fases y estatus_sol top-level) ──
+  try {
+    const payload: Record<string, any> = { fases: faseId };
+    if (estatusSolicitud) payload.estatus_sol = estatusSolicitud;
+    const res = await fetch(`${API_BASE}/solicitudes-credito/${id}`, {
+      method: 'PUT',
+      headers: { 'Authorization': `Bearer ${publicAnonKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (res.ok) {
+      console.log('[SolicDB] updateFase Edge OK — faseId:', faseId);
+      return { ok: true };
+    }
+    const json = await res.json().catch(() => ({}));
+    return { ok: false, error: json.error || `HTTP ${res.status}` };
+  } catch (err: any) {
+    return { ok: false, error: err?.message || String(err) };
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════
 // HOOK PRINCIPAL
 // ═══════════════════════════════════════════════════════════════════
 export function useSolicitudesDB(active: boolean) {

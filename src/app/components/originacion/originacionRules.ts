@@ -93,7 +93,7 @@ export interface ReglaValidacionResult {
   documentosFaltantes?: string[];
 }
 
-const FASES: FaseOriginacion[] = [
+export const FASES: FaseOriginacion[] = [
   'Integración del Expediente',
   'Análisis de Expediente Operativo',
   'Análisis de Expediente Jurídico',
