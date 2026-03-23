@@ -127,6 +127,16 @@ const DOCUMENTOS_POR_FASE: DocumentoObligatorio[] = [
   { tipoDocumento: 'Pagaré firmado', aplicaPersona: ['Física', 'Moral', 'Fís. c/Act. Emp.'], fase: 'Validación de Contratos y Pagarés Firmados' },
 ];
 
+/** Devuelve los tipos de documento obligatorios para la fase y tipo de persona dados. */
+export function getDocumentosObligatorios(
+  fase: FaseOriginacion,
+  tipoPersona: TipoPersona
+): string[] {
+  return DOCUMENTOS_POR_FASE
+    .filter(d => d.fase === fase && d.aplicaPersona.includes(tipoPersona))
+    .map(d => d.tipoDocumento);
+}
+
 export function getSiguienteFase(fase: FaseOriginacion): FaseOriginacion | null {
   const idx = FASES.indexOf(fase);
   return idx >= 0 && idx < FASES.length - 1 ? FASES[idx + 1] : null;

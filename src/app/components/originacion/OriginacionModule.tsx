@@ -23,6 +23,7 @@ import {
   ejecutarReglasFase,
   FaseOriginacion,
   ReglaValidacionResult,
+  getDocumentosObligatorios,
 } from './originacionRules';
 import { FlujoTrabajo } from './FlujoTrabajo';
 import { FasesOriginacionTab } from './tabs/FasesOriginacionTab';
@@ -921,7 +922,8 @@ function OriginacionForm({ mode, originacionId, onCancel, onSave, onActivarCuent
       <FaseActionBar
         fase={fd.subEstatus as FaseOriginacion}
         estatus={fd.estatus}
-        documentos={expedientes.filter(e => e.estatus === 'Validado').map(e => e.tipoDocumento)}
+        documentos={expedientes.filter(e => e.estatus === 'Aprobado' || e.estatus === 'Validado').map(e => e.tipoDocumento)}
+        expedientesData={expedientes}
         notas={notas}
         garantias={garantias}
         comites={comites}
@@ -1303,6 +1305,8 @@ interface FaseActionBarProps {
   fase: FaseOriginacion;
   estatus: string;
   documentos: string[];
+  /** Objetos completos de expediente — usados para validar estatus "Validado" en Fase 1 */
+  expedientesData: { id: number; tipoDocumento: string; estatus: string }[];
   notas: { id: number; fechaCreacion: Date; usuario: string; contenido: string }[];
   garantias: OriginacionGarantia[];
   comites: { autoridad: string; estatus: string }[];
@@ -1323,6 +1327,7 @@ function FaseActionBar({
   fase,
   estatus,
   documentos,
+  expedientesData,
   notas,
   garantias,
   comites,
@@ -1351,6 +1356,52 @@ function FaseActionBar({
         : 'Física';
 
     const montoAutorizadoNum = parseFloat(formData.montoAutorizado) || 0;
+
+    // ── FASE 1: Validación enriquecida — documentos presentes Y validados por IA ──
+    if (fase === 'Integración del Expediente' && accion === 'enviarFase') {
+      const docsRequeridos = getDocumentosObligatorios(fase, tipoPersona);
+      const docsPresentes = expedientesData.map(e => e.tipoDocumento);
+      const docsValidados = expedientesData
+        .filter(e => e.estatus === 'Validado')
+        .map(e => e.tipoDocumento);
+
+      const faltanPresencia = docsRequeridos.filter(d => !docsPresentes.includes(d));
+      const noValidadosPorIA = docsRequeridos.filter(d => docsPresentes.includes(d) && !docsValidados.includes(d));
+
+      if (faltanPresencia.length > 0 || noValidadosPorIA.length > 0) {
+        if (faltanPresencia.length > 0) {
+          toast.error('Documentos obligatorios no adjuntados', {
+            description: faltanPresencia.join(', '),
+          });
+        }
+        if (noValidadosPorIA.length > 0) {
+          toast.error('Documentos pendientes de validación IA', {
+            description: `Los siguientes documentos deben tener estatus "Validado": ${noValidadosPorIA.join(', ')}`,
+          });
+        }
+        const failResult: ReglaValidacionResult = {
+          accionPermitida: false,
+          fase,
+          faseDestino: null,
+          motivos: [
+            ...faltanPresencia.map(d => `Documento no adjuntado: ${d}`),
+            ...noValidadosPorIA.map(d => `Sin validación IA: ${d}`),
+          ],
+          validaciones: {
+            documentosCompletos: false,
+            notaReciente: true,
+            garantiasSuficientes: true,
+            comitesAutorizados: true,
+            beneficiariosCompletos: true,
+            solicitudPagoCompletado: true,
+          },
+          actualizaciones: [],
+          documentosFaltantes: [...faltanPresencia, ...noValidadosPorIA],
+        };
+        onResult(failResult);
+        return;
+      }
+    }
 
     // Mapear cargos → formato esperado por las reglas (CargoItem)
     const cargosCtxMapped = cargos.map(c => ({
@@ -1425,7 +1476,7 @@ function FaseActionBar({
       }
     }
     onResult(result);
-  }, [fase, formData, documentos, notas, garantias, comites, beneficiarios, solicitudActivacion, onActualizarFase, onActualizarEstatus, onActualizarEstatusCuenta, onActualizarEstatusPago, onActualizarEstatusCartera, onResult]);
+  }, [fase, formData, documentos, expedientesData, notas, garantias, comites, beneficiarios, solicitudActivacion, onActualizarFase, onActualizarEstatus, onActualizarEstatusCuenta, onActualizarEstatusPago, onActualizarEstatusCartera, onResult]);
 
   if (isRO || estatus === 'Pendiente') {
     return fase === 'Activación de Cuenta Financiera' ? (
@@ -1505,6 +1556,52 @@ function FaseActionBar({
         </div>
       </div>
     </div>
+
+    {/* Panel de estado documental — solo visible en Fase 1 */}
+    {fase === 'Integración del Expediente' && (() => {
+      const cli = formData.cliente || '';
+      const tp: import('./originacionRules').TipoPersona =
+        (cli.includes('S.A.') || cli.includes('S. de R.L.') || cli.includes('S.C.') || cli.includes('S.A.P.I.'))
+          ? 'Moral'
+          : (formData.lineaProducto === 'Crédito' && (cli.includes('Act. Emp') || cli.includes('Empresarial')))
+          ? 'Fís. c/Act. Emp.'
+          : 'Física';
+      const requeridos = getDocumentosObligatorios(fase, tp);
+      return (
+        <div className="mb-4 border border-blue-200 rounded bg-blue-50 px-4 py-3">
+          <p className="text-xs font-semibold text-blue-800 mb-2">
+            Documentos obligatorios — Expediente Electrónico ({tp})
+          </p>
+          <ul className="space-y-1">
+            {requeridos.map(doc => {
+              const item = expedientesData.find(e => e.tipoDocumento === doc);
+              const validado = item?.estatus === 'Validado';
+              const presente = !!item;
+              return (
+                <li key={doc} className="flex items-center gap-2 text-xs">
+                  {validado
+                    ? <span className="text-green-600">✓</span>
+                    : presente
+                      ? <span className="text-yellow-600">⚠</span>
+                      : <span className="text-red-600">✗</span>}
+                  <span className={validado ? 'text-green-700' : presente ? 'text-yellow-700' : 'text-red-700'}>
+                    {doc}
+                  </span>
+                  {presente && !validado && (
+                    <span className="text-[10px] text-yellow-600 bg-yellow-100 px-1 rounded">
+                      {item.estatus} — requiere estatus Validado
+                    </span>
+                  )}
+                  {!presente && (
+                    <span className="text-[10px] text-red-600 bg-red-100 px-1 rounded">No adjuntado</span>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      );
+    })()}
 
     {/* Modal de Contrato/Pagaré — Formalización FASE 4 */}
     {contratoModal && (
