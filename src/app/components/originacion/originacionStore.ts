@@ -308,11 +308,22 @@ export const CAT_MONEDA = [
 ];
 
 export const CAT_TIPO_DOCUMENTO = [
-  'Credencial de elector', 'Pasaporte', 'Licencia de conducir', 'Comprobante de domicilio',
-  'Estado de cuenta bancario', 'Constancia de situación fiscal', 'Acta constitutiva',
-  'Carta de autorización', 'Avalúo', 'Otro',
+  // Identificación personal
+  'Credencial de elector', 'CURP', 'Pasaporte', 'Licencia de conducir',
+  // Domicilio y fiscal
+  'Comprobante de domicilio', 'Constancia de situación fiscal', 'Alta en SHCP (SAT)',
+  // Financiero
+  'Estado de cuenta bancario',
+  // Persona Moral
+  'Acta constitutiva', 'Poder notarial',
+  // Análisis / Formalización
+  'Carta de autorización', 'Avalúo',
+  // Contratos (FASE 5)
+  'Contrato firmado', 'Pagaré firmado',
+  'Otro',
 ];
-export const CAT_ESTATUS_EXPEDIENTE = ['Pendiente', 'Aprobado', 'Rechazado'];
+// Estatus del expediente: 'Validado' = aprobado por IA (requerido para avanzar FASE 1)
+export const CAT_ESTATUS_EXPEDIENTE = ['Pendiente', 'Validado', 'Aprobado', 'Rechazado'];
 export const CAT_ESTATUS_AUTORIZACION = ['Pendiente', 'Autorizado', 'Rechazado', 'Condicionado'];
 export const CAT_TIPO_GARANTIA = [
   { value: 'Hipotecaria', label: 'Hipotecaria' },
@@ -520,7 +531,7 @@ export function seedOriginacionFromSolicitudItem(origId: number | string, item: 
       tipoDocumento: doc.tipo_documento || doc.tipoDocumento || '',
       archivo: doc.archivo || '',
       descripcion: doc.nota || doc.descripcion || '',
-      estatus: doc.estatus === 'Validado' ? 'Aprobado' : (doc.estatus || 'Pendiente'),
+      estatus: doc.estatus || 'Pendiente',
       observaciones: doc.observaciones || '',
       fileData: doc.fileData || doc.file_data,
     }));
