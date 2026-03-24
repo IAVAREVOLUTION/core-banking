@@ -44,6 +44,9 @@ import { Dashboard } from './components/Dashboard';
 import { SplashScreen } from './components/SplashScreen';
 import { LoginScreen } from './components/LoginScreen';
 import { OriginacionModule } from './components/originacion/OriginacionModule';
+import { SolicitudActivacionDashboard } from './components/solicitudes-activacion/SolicitudActivacionDashboard';
+import { SolicitudActivacionList } from './components/solicitudes-activacion/SolicitudActivacionList';
+import { useSolicitudesActivacionDB } from './hooks/useSolicitudesActivacionDB';
 import { AvisosVencimientoModule } from './components/avisos-vencimiento/AvisosVencimientoModule';
 import { ConfiguracionModule } from './components/configuracion/ConfiguracionModule';
 import { PagosReferenciadosModule } from './components/pagos-referenciados/PagosReferenciadosModule';
@@ -57,7 +60,7 @@ import { useProductosCaptacionDB } from './hooks/useProductosCaptacionDB';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 
 type View = 'list' | 'form' | 'direccion';
-type Module = 'dashboard' | 'configuracion' | 'productos' | 'garantias' | 'prospectos' | 'clientes' | 'cotizaciones' | 'cuentas-ahorro' | 'solicitudes-creditos' | 'originacion' | 'creditos' | 'inversiones' | 'cartera-credito' | 'cartera-inversion' | 'cartera-ahorro' | 'avisos-vencimiento' | 'pld' | 'pagos-referenciados' | 'casos-cobranza';
+type Module = 'dashboard' | 'configuracion' | 'productos' | 'garantias' | 'prospectos' | 'clientes' | 'cotizaciones' | 'cuentas-ahorro' | 'solicitudes-creditos' | 'solicitudes-activacion' | 'originacion' | 'creditos' | 'inversiones' | 'cartera-credito' | 'cartera-inversion' | 'cartera-ahorro' | 'avisos-vencimiento' | 'pld' | 'pagos-referenciados' | 'casos-cobranza';
 type ClienteView = 'dashboard' | 'list' | 'form' | 'direccion';
 type ProspectoView = 'dashboard' | 'list' | 'form';
 type SolicitudView = 'dashboard' | 'list' | 'form';
@@ -91,6 +94,7 @@ function App() {
   const [selectedProspecto, setSelectedProspecto] = useState<Prospecto | undefined>();
   const [prospectos, setProspectos] = useState<Prospecto[]>([]);
   const [solicitudView, setSolicitudView] = useState<SolicitudView>('dashboard');
+  const [solicitudActivacionView, setSolicitudActivacionView] = useState<SolicitudView>('dashboard');
   const [solicitudes, setSolicitudes] = useState<SolicitudCredito[]>(solicitudesCredito);
   const [selectedSolicitud, setSelectedSolicitud] = useState<SolicitudCredito | undefined>();
   const [creditoView, setCreditoView] = useState<CreditoView>('dashboard');
@@ -146,6 +150,10 @@ function App() {
   // Hook para consultar J_CLIENTES (TODOS los registros, SIN FILTRO) vía /clientes-lista-todos
   const isClientesListActive = currentModule === 'clientes' && (clienteView === 'list' || clienteView === 'dashboard');
   const { clientes: clientesDB, loading: loadingClientes, error: errorClientes, warning: warningClientes, backendStatus: backendStatusClientes, diagnostico: diagnosticoClientes, refetch: refetchClientes } = useClientesDB(isClientesListActive);
+
+  // Hook para consultar J_SOLICITUDES_ACTIVACION cuando el módulo está activo en dashboard
+  const isSolicActivacionActive = currentModule === 'solicitudes-activacion' && solicitudActivacionView === 'dashboard';
+  const { solicitudesActivacion: solicitudesActivacionDB, loading: loadingSolicActivacion } = useSolicitudesActivacionDB(isSolicActivacionActive);
 
   const handleLogin = () => {
     setIsAuthenticated(true);
@@ -339,6 +347,12 @@ function App() {
       setSolicitudView('dashboard');
     } else {
       setSolicitudView('list');
+    }
+    // Si cambiamos al módulo de solicitudes de activación, mostrar el dashboard
+    if (module === 'solicitudes-activacion') {
+      setSolicitudActivacionView('dashboard');
+    } else {
+      setSolicitudActivacionView('list');
     }
   };
 
@@ -633,6 +647,7 @@ function App() {
     { id: 'cotizaciones', label: 'Cotizaciones' },
     { id: 'cuentas-ahorro', label: 'Cuentas ahorro' },
     { id: 'solicitudes-creditos', label: 'Solicitudes' },
+    { id: 'solicitudes-activacion', label: 'Sol. Activación' },
     { id: 'originacion', label: 'Originación' },
     { id: 'creditos', label: 'Créditos' },
     { id: 'inversiones', label: 'Inversiones' },
@@ -1265,6 +1280,49 @@ function App() {
                 cotizacionParaSolicitud={cotizacionParaSolicitud}
                 onCotizacionConsumed={() => setCotizacionParaSolicitud(null)}
               />
+            )}
+          </>
+        ) : currentModule === 'solicitudes-activacion' ? (
+          <>
+            {/* Subnavegación interna del módulo Solicitudes de Activación */}
+            <div className="bg-gray-100 border-b border-gray-300">
+              <div className="px-6 py-3 flex items-center gap-4">
+                <button
+                  onClick={() => setSolicitudActivacionView('dashboard')}
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded text-sm transition-colors ${
+                    solicitudActivacionView === 'dashboard' ? 'tab-active' : 'tab-inactive'
+                  }`}
+                  title="Dashboard de Solicitudes de Activación"
+                >
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+                    <path d="M2 8l6-5 6 5v6a1 1 0 01-1 1H3a1 1 0 01-1-1z"/>
+                    <path d="M6 14v-5h4v5"/>
+                  </svg>
+                  <span>Inicio</span>
+                </button>
+                <button
+                  onClick={() => setSolicitudActivacionView('list')}
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded text-sm transition-colors ${
+                    solicitudActivacionView === 'list' ? 'tab-active' : 'tab-inactive'
+                  }`}
+                >
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+                    <path d="M3 3h10M3 8h10M3 13h10"/>
+                  </svg>
+                  <span>Lista de Solicitudes</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Contenido del módulo */}
+            {solicitudActivacionView === 'dashboard' ? (
+              <SolicitudActivacionDashboard
+                solicitudes={solicitudesActivacionDB}
+                loading={loadingSolicActivacion}
+                onGoToList={() => setSolicitudActivacionView('list')}
+              />
+            ) : (
+              <SolicitudActivacionList />
             )}
           </>
         ) : currentModule === 'originacion' ? (
