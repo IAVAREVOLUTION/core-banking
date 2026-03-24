@@ -29,6 +29,7 @@ import {
   parseCurrency,
 } from './solicitudActivacionStore';
 import { SolicitudActivacionDetailTab } from './SolicitudActivacionDetailTab';
+import { descargarDetallePDF } from './solicitudActivacionPDF';
 
 type FormMode = 'nuevo' | 'editar' | 'ver';
 
@@ -115,17 +116,31 @@ function SectionTitle({ label }: { label: string }) {
 
 // ─── Reusable field grid for both master and Default tab ──────────────────────
 
+const CAT_ESTATUS = [
+  { value: 'Pendiente', label: 'Pendiente' },
+  { value: 'Activo',    label: 'Activo'    },
+];
+
 interface FieldGridProps {
   formData: SolicitudActivacionFormData;
   onChange: (field: keyof SolicitudActivacionFormData, value: string | number) => void;
   errors: Record<string, string>;
   isRO: boolean;
+  canEditEstatus?: boolean;
 }
 
-function DatosGeneralesGrid({ formData, onChange, errors, isRO }: FieldGridProps) {
+function DatosGeneralesGrid({ formData, onChange, errors, isRO, canEditEstatus }: FieldGridProps) {
   const f = (p: Omit<FieldProps, 'formData' | 'onChange' | 'errors' | 'isRO'>) => (
     <Field {...p} formData={formData} onChange={onChange} errors={errors} isRO={isRO} />
   );
+
+  const estatusBadgeClass =
+    formData.estatus === 'Activada'    ? 'text-green-700 bg-green-50 border-green-200'     :
+    formData.estatus === 'Rechazada'   ? 'text-red-700 bg-red-50 border-red-200'           :
+    formData.estatus === 'En Revisión' ? 'text-blue-700 bg-blue-50 border-blue-200'        :
+    formData.estatus === 'Aprobada'    ? 'text-purple-700 bg-purple-50 border-purple-200'  :
+    formData.estatus === 'Activo'      ? 'text-green-700 bg-green-50 border-green-200'     :
+    'text-amber-700 bg-amber-50 border-amber-200';
 
   return (
     <div className="p-3">
@@ -134,7 +149,7 @@ function DatosGeneralesGrid({ formData, onChange, errors, isRO }: FieldGridProps
         {/* Col 1 */}
         <div className="space-y-1.5">
           {f({ label: 'Id Solicitud',     field: 'solicitudId',    forceRO: true })}
-          {f({ label: 'Tipo',             field: 'type' })}
+          {f({ label: 'Tipo',             field: 'type',           forceRO: true })}
           {f({ label: 'Cuenta Bancaria',  field: 'cuentaBancaria', forceRO: true })}
         </div>
 
@@ -142,27 +157,33 @@ function DatosGeneralesGrid({ formData, onChange, errors, isRO }: FieldGridProps
         <div className="space-y-1.5">
           {f({ label: 'Número de Documento', field: 'numeroDocumento', forceRO: true })}
           {f({ label: 'Cliente',             field: 'cliente',         forceRO: true })}
-          {/* Estatus — badge inline */}
+          {/* Estatus — dropdown in edit mode, badge otherwise */}
           <div className="flex flex-col min-h-[52px]">
             <label className="text-[10px] text-gray-600 mb-0.5">ESTATUS</label>
-            <div className="px-2 py-1 text-xs text-gray-700">
-              <span className={`inline-flex px-2 py-0.5 rounded text-[10px] border ${
-                formData.estatus === 'Activada'    ? 'text-green-700 bg-green-50 border-green-200' :
-                formData.estatus === 'Rechazada'   ? 'text-red-700 bg-red-50 border-red-200'       :
-                formData.estatus === 'En Revisión' ? 'text-blue-700 bg-blue-50 border-blue-200'    :
-                formData.estatus === 'Aprobada'    ? 'text-purple-700 bg-purple-50 border-purple-200' :
-                'text-amber-700 bg-amber-50 border-amber-200'
-              }`}>
-                {formData.estatus || 'Pendiente'}
-              </span>
-            </div>
+            {canEditEstatus ? (
+              <select
+                value={formData.estatus || 'Pendiente'}
+                onChange={e => onChange('estatus', e.target.value)}
+                className="px-2 py-1 text-xs border border-gray-300 rounded"
+              >
+                {CAT_ESTATUS.map(o => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            ) : (
+              <div className="px-2 py-1 text-xs text-gray-700">
+                <span className={`inline-flex px-2 py-0.5 rounded text-[10px] border ${estatusBadgeClass}`}>
+                  {formData.estatus || 'Pendiente'}
+                </span>
+              </div>
+            )}
           </div>
         </div>
 
         {/* Col 3 */}
         <div className="space-y-1.5">
           {f({ label: 'Fecha Solicitud',  field: 'fechaSolicitud',  forceRO: true })}
-          {f({ label: 'Fecha Compromiso', field: 'fechaCompromiso', placeholder: 'DD/MM/YYYY' })}
+          {f({ label: 'Fecha Compromiso', field: 'fechaCompromiso', forceRO: true })}
         </div>
 
       </div>
@@ -182,7 +203,7 @@ function InfoPagoGrid({ formData, onChange, errors, isRO }: FieldGridProps) {
         {/* Col 1 */}
         <div className="space-y-1.5">
           {f({ label: 'Forma de Pago', field: 'formaDePago', required: true, options: CAT_FORMA_PAGO })}
-          {f({ label: 'Referencia',    field: 'referencia',  placeholder: 'N° de referencia' })}
+          {f({ label: 'Referencia',    field: 'referencia',  forceRO: true })}
         </div>
 
         {/* Col 2 */}
@@ -317,6 +338,16 @@ export function SolicitudActivacionForm({
           >
             {isRO ? 'Cerrar' : 'Cancelar'}
           </button>
+          <button
+            onClick={() => descargarDetallePDF(formData)}
+            className="px-5 py-1.5 bg-white border border-gray-400 rounded text-xs hover:bg-gray-50 text-gray-700 flex items-center gap-1.5"
+          >
+            <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" strokeWidth="1.5">
+              <path d="M6.5 1v7M3.5 5.5l3 3 3-3" />
+              <path d="M1 10h11" strokeLinecap="round" />
+            </svg>
+            Descargar Detalle
+          </button>
           {montoNum > 0 && (
             <span className="ml-4 text-xs text-gray-500">
               Monto: <span className="font-medium text-gray-700">{formatCurrency(montoNum)}</span>
@@ -338,6 +369,7 @@ export function SolicitudActivacionForm({
             onChange={handleChange}
             errors={errors}
             isRO={isRO}
+            canEditEstatus={mode === 'editar'}
           />
 
           {/* INFORMACIÓN DE PAGO */}
@@ -385,6 +417,7 @@ export function SolicitudActivacionForm({
                 onChange={handleChange}
                 errors={errors}
                 isRO={isRO}
+                canEditEstatus={mode === 'editar'}
               />
               <SectionTitle label="Información de Pago" />
               <InfoPagoGrid

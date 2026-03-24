@@ -30,7 +30,8 @@ RETURNS TABLE (
   solicitud_fecha_primera_aportacion  text,
   solicitud_monto                     text,
   solicitud_moneda                    text,
-  solicitud_tasa_interes              text
+  solicitud_tasa_interes              text,
+  solicitud_linea_produc              text
 )
 LANGUAGE sql
 SECURITY DEFINER
@@ -66,10 +67,18 @@ AS $$
     jccc.type::text                              AS solicitud_type,
     jccc.no_cuenta::text                         AS solicitud_no_cuenta,
     jccc.producto_id::text                       AS solicitud_producto_id,
-    jccc.fecha_inicio::text                      AS solicitud_fecha_primera_aportacion,
+    COALESCE(
+      NULLIF(jccc.data->'solicitud'->'terminos_condiciones'->>'fecha_primera_aportacion', ''),
+      jccc.fecha_inicio::text
+    )                                            AS solicitud_fecha_primera_aportacion,
     (jccc.monto_sol::numeric)::text              AS solicitud_monto,
     COALESCE(jccc.data->>'moneda',      '')      AS solicitud_moneda,
-    COALESCE(jccc.data->>'tasa_interes','')      AS solicitud_tasa_interes
+    COALESCE(
+      NULLIF(jccc.data->'solicitud'->'terminos_condiciones'->>'tasa_interes', ''),
+      NULLIF(jccc.data->>'tasa_interes', ''),
+      ''
+    )                                            AS solicitud_tasa_interes,
+    jccc.linea_produc::text                      AS solicitud_linea_produc
 
   FROM "EFINANCIANET_DB"."J_SOLICITUDES_ACTIVACION" sa
   LEFT JOIN "EFINANCIANET_DB"."J_CLIENTES" c

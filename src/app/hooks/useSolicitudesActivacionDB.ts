@@ -56,6 +56,16 @@ export function parsePct(val: unknown): number {
   return isNaN(n) ? 0 : n;
 }
 
+/** Maps J_CUENTAS_CORP_CLIENTES.linea_produc → TIPO display value */
+export function lineaProdToTipo(linea: string | null | undefined): string {
+  if (!linea) return '';
+  const normalized = linea.trim().toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  if (normalized === 'captacion') return 'Por Cobrar';
+  if (normalized === 'credito')   return 'Por Pagar';
+  return '';
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // DB ROW TYPES
 // ═══════════════════════════════════════════════════════════════════
@@ -83,6 +93,7 @@ export interface SolicitudActivacionDBRow {
   solicitud_monto: unknown;
   solicitud_moneda: string | null;
   solicitud_tasa_interes: unknown;
+  solicitud_linea_produc: string | null;
 }
 
 /** Row returned by schema-direct select (base columns only, no JOINs) */
@@ -127,7 +138,7 @@ function mapRowToListItem(row: SolicitudActivacionDBRow): SolicitudActivacionLis
     solicitudId:     row.solicitud_id || '',
     cliente:         clienteNombre,
     numeroDocumento: row.cliente_curp || (header.numeroDocumento as string) || '',
-    tipo:            row.type || row.solicitud_type || '',
+    tipo:            lineaProdToTipo(row.solicitud_linea_produc) || row.type || row.solicitud_type || '',
     fechaSolicitud:  parseISOToDisplay(row.created_at || ''),
     estatus:         row.estatus || 'Pendiente',
     montoTransaccion: montoStr,

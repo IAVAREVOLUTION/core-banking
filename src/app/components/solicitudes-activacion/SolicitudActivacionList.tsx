@@ -14,6 +14,7 @@ import {
   parseISOToDisplay,
   parseMoney,
   parsePct,
+  lineaProdToTipo,
 } from '../../hooks/useSolicitudesActivacionDB';
 
 type ViewState =
@@ -105,19 +106,27 @@ export function SolicitudActivacionList() {
     const montoTransaccion = String(header.montoTransaccion ?? parseMoney(raw.solicitud_monto) ?? '0.00');
     const moneda           = String(header.moneda || raw.solicitud_moneda || 'MXN');
     const detailMonto      = (detail.monto as number)       ?? parseMoney(raw.solicitud_monto);
-    const detailPctImpuesto = (detail.pctImpuesto as number) ?? parsePct(raw.solicitud_tasa_interes);
+    // % Impuesto: DB stores as whole number (e.g. 3 = 3%); divide by 100 for decimal form used internally
+    const detailPctImpuesto = parsePct(raw.solicitud_tasa_interes) / 100;
     const detailCantidad   = (detail.cantidad as number)    ?? 1;
+
+    // TIPO: always derived from linea_produc; never manually overridden
+    const derivedTipo = lineaProdToTipo(String(raw.solicitud_linea_produc || ''))
+      || s.tipo
+      || String(raw.type || '');
 
     return {
       ...EMPTY_FORM,
       id:             String(s._dbId || s.id || ''),
       solicitudId:    s.solicitudId  || String(raw.solicitud_id  || ''),
       clienteId:      String(raw.cliente_id || ''),
-      type:           s.tipo         || String(raw.type          || ''),
+      type:           derivedTipo,
       fechaSolicitud: s.fechaSolicitud || '',
-      fechaCompromiso: raw.fecha_compromiso
-        ? parseISOToDisplay(String(raw.fecha_compromiso))
-        : String(header.fechaCompromiso || ''),
+      fechaCompromiso: raw.solicitud_fecha_primera_aportacion
+        ? parseISOToDisplay(String(raw.solicitud_fecha_primera_aportacion))
+        : raw.fecha_compromiso
+          ? parseISOToDisplay(String(raw.fecha_compromiso))
+          : String(header.fechaCompromiso || ''),
       estatus: s.estatus || 'Pendiente',
       // JOIN read-only
       numeroDocumento: s.numeroDocumento || String(raw.cliente_curp || header.numeroDocumento || ''),
@@ -126,7 +135,7 @@ export function SolicitudActivacionList() {
       // data.header
       formaDePago:           String(header.formaDePago           || 'Banca por internet'),
       institucionFinanciera: String(header.institucionFinanciera || ''),
-      referencia:            String(header.referencia            || ''),
+      referencia:            String(s._dbId || s.id || ''),
       montoTransaccion,
       moneda,
       nota:        String(header.nota       || ''),
@@ -295,12 +304,8 @@ export function SolicitudActivacionList() {
               <path d="M6 8l-4-4h8z" />
             </svg>
           </div>
-          <button
-            onClick={handleNueva}
-            className="px-5 py-1.5 btn-secondary-theme rounded text-sm font-medium"
-          >
-            Nuevo
-          </button>
+          {/* Nuevo button hidden — solicitudes are not created manually */}
+          {/* <button onClick={handleNueva} className="px-5 py-1.5 btn-secondary-theme rounded text-sm font-medium">Nuevo</button> */}
           <button
             onClick={() => { dbMerged.current = false; refetch(); }}
             disabled={loadingDB}
