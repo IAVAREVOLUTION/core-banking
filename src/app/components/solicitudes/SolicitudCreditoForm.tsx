@@ -743,22 +743,20 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
         </div>
       )}
 
-      {/* ═══ FASE ACTION BAR — Botones de Fase (fuente de verdad: fases del producto) ═══ */}
-      {formData.productoId && formData.faseId && (
-        <div className="px-6 py-2.5 border-b border-gray-200">
-          <FaseActionsComponent
-            fases={fasesDelProducto}
-            faseActualId={formData.faseId}
-            formData={formData}
-            storageId={storageId}
-            modo={modo}
-            onEnviarFase={handleEnviarFase}
-            onRegresarFase={handleRegresarFase}
-            onFormalizarContrato={handleFormalizarContrato}
-            enviandoFase={enviandoFase}
-          />
-        </div>
-      )}
+      {/* ═══ FASE ACTION BAR — siempre visible (fasesDelProducto siempre tiene fallback) ═══ */}
+      <div className="px-6 py-2.5 border-b border-gray-200">
+        <FaseActionsComponent
+          fases={fasesDelProducto}
+          faseActualId={formData.faseId || '1'}
+          formData={formData}
+          storageId={storageId}
+          modo={modo}
+          onEnviarFase={handleEnviarFase}
+          onRegresarFase={handleRegresarFase}
+          onFormalizarContrato={handleFormalizarContrato}
+          enviandoFase={enviandoFase}
+        />
+      </div>
 
       <div className="px-6 py-6">
         {/* ═══ DIAGNÓSTICO TEMPORAL — eliminar después de verificar ═══ */}
