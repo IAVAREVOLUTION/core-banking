@@ -15,6 +15,7 @@ export interface OriginacionFormData {
   lineaProducto: string;
   sublinea: string;
   producto: string;
+  productoId: string;
   periodo: string;
   plazos: string;
   destinoCredito: string;
@@ -374,6 +375,7 @@ export const EMPTY_FORM: OriginacionFormData = {
   lineaProducto: 'Crédito',
   sublinea: '',
   producto: '',
+  productoId: '',
   periodo: '',
   plazos: '',
   destinoCredito: '',
@@ -458,8 +460,13 @@ export function buildFormFromSolicitudItem(item: Record<string, any>): Originaci
   const hdr = sol.header || {};
   const terminos = sol.terminos_condiciones?.parametros_simulacion || {};
 
-  const nombreCompleto = [hdr.nombre_persona, hdr.apellido_paterno_persona, hdr.apellido_materno_persona]
-    .filter(Boolean).join(' ').trim() || item.nombreCompleto || '';
+  // Prioridad: JSONB header → item.nombreCompleto (filtrar "(sin nombre)") → JOIN cols
+  const fromJsonb = [hdr.nombre_persona, hdr.apellido_paterno_persona, hdr.apellido_materno_persona]
+    .filter(Boolean).join(' ').trim();
+  const fromItem = item.nombreCompleto !== '(sin nombre)' ? (item.nombreCompleto || '') : '';
+  const fromJoin = [item._clienteNombre, item._clienteApPaterno, item._clienteApMaterno]
+    .filter(Boolean).join(' ').trim();
+  const nombreCompleto = fromJsonb || fromItem || fromJoin || '';
 
   const faseId = item.faseId || hdr.faseId || '1';
   const faseDescripcion = item.descripcionFase || hdr.descripcion_fase || 'Integración del Expediente';
@@ -484,8 +491,9 @@ export function buildFormFromSolicitudItem(item: Record<string, any>): Originaci
     montoSolicitado: item.montoSolicitado ? String(item.montoSolicitado) : '',
     montoAutorizado: item.montoAutorizado ? String(item.montoAutorizado) : '',
     lineaProducto: item._lineaProducto || hdr.linea_producto || 'Crédito',
-    sublinea: item.tipoProducto || hdr.tipo_producto || '',
-    producto: item.nombreProducto || hdr.nombre_producto || '',
+    sublinea: item.tipoProducto || item._tipoProducto || hdr.tipo_producto || '',
+    producto: item.nombreProducto || hdr.nombre_producto || item._productoNombre || '',
+    productoId: item._productoId || item.productoId || hdr.producto_id || '',
     periodo: terminos.periodicidad || '',
     plazos: String(terminos.plazo || ''),
     destinoCredito: hdr.destino_credito || '',
@@ -496,8 +504,8 @@ export function buildFormFromSolicitudItem(item: Record<string, any>): Originaci
     promptIAFase: item.promptIAFase || hdr.prompt_ia || '',
     notasFase: item.notasFase || hdr.notas_fase || faseDescripcion,
     tasaAutorizada: String(terminos.tasa_interes || ''),
-    fechaInicio: hdr.fecha_inicio || '',
-    fechaFin: hdr.fecha_fin || '',
+    fechaInicio: item._fechaInicio || hdr.fecha_inicio || '',
+    fechaFin: item._fechaFin || hdr.fecha_fin || '',
     moneda: terminos.moneda || 'MXN',
     estatusCliente: item.estatusCliente || hdr.estatus_cliente || '',
     direccionPrincipal: hdr.direccion || item.direccion || '',
@@ -511,8 +519,10 @@ export function buildFormFromSolicitudItem(item: Record<string, any>): Originaci
  * Preserva cambios que el usuario haya hecho dentro de Originación.
  */
 export function seedOriginacionFromSolicitudItem(origId: number | string, item: Record<string, any>): void {
-  // No sobrescribir si ya fue sembrado Y el usuario tiene cambios guardados
-  if (loadFromSavedStore(origId, '_seeded')) return;
+  // Si viene de DB (_fromDB) siempre re-sembrar el form con datos frescos
+  // Solo preservar cambios del usuario si es un item local (no de DB)
+  const alreadySeeded = loadFromSavedStore(origId, '_seeded');
+  if (alreadySeeded && !item._fromDB) return;
 
   const form = buildFormFromSolicitudItem(item);
   saveToSavedStore(origId, 'form', form);

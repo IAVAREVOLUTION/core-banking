@@ -196,6 +196,8 @@ function mapRowToListItem(row: SolicitudDBRow): SolicitudListItem {
     _tipoProducto: row.tipo_produc || null,
     _descripcion: row.descripcion || null,
     _fases: row.fases || null,
+    _fechaInicio: row.fecha_inicio || null,
+    _fechaFin: row.fecha_fin_cu || null,
   } as SolicitudListItem & Record<string, any>;
 }
 

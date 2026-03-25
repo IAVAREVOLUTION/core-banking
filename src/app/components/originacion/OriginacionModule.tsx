@@ -18,7 +18,7 @@ import {
 } from './originacionStore';
 import { useSolicitudesDB, updateFaseSolicitudDB } from '../../hooks/useSolicitudesDB';
 import { useProductosCatalogoDB } from '../../hooks/useProductosCatalogoDB';
-import { ExpedientesSection } from './ExpedientesSection';
+// ExpedientesSection reemplazado por ExpedienteElectronicoTab (shared)
 import {
   ejecutarReglasFase,
   FaseOriginacion,
@@ -28,10 +28,39 @@ import {
 } from './originacionRules';
 import { FlujoTrabajo } from './FlujoTrabajo';
 import { FasesOriginacionTab } from './tabs/FasesOriginacionTab';
+import { FasesSolicitudTab } from '../solicitudes/tabs/FasesSolicitudTab';
 import { PartesRelacionadasTab } from '../solicitudes/tabs/PartesRelacionadasTab';
 import { TerminosCondicionesTab } from '../solicitudes/TerminosCondicionesTab';
 import { SimulacionTab } from '../solicitudes/SimulacionTab';
 import { ComisionesTab } from '../solicitudes/ComisionesTab';
+// ── Componentes compartidos (unificación spec §A-§L) ──
+import { ExpedienteElectronicoTab } from '../solicitudes/ExpedienteElectronicoTab';
+import { GarantiasTab } from '../solicitudes/GarantiasTab';
+import { AutorizacionTab } from '../solicitudes/AutorizacionTab';
+import { NotasTab } from '../solicitudes/NotasTab';
+import { SolicitudCargosTab } from '../solicitudes/SolicitudCargosTab';
+import { ComitesTab } from '../shared/ComitesTab';
+// ── Funciones del store de Solicitudes para puente de datos ──
+import {
+  loadFromSession as loadSolSession,
+  loadFromSavedStore as loadSolSaved,
+  saveToSession as saveSolSession,
+  saveToSavedStore as saveSolSaved,
+  type DocumentoCargado,
+} from '../solicitudes/solicitudCreditoStore';
+import { SolicitudBaseForm } from '../solicitudes/SolicitudBaseForm';
+import { buildFormDataFromListItem, preloadSubtabsFromDBData } from '../solicitudes/SolicitudCreditoList';
+
+// ── Helper: parsear fecha "DD/MM/YYYY HH:MM" → Date (compartido con useFaseValidation) ──
+function parseFechaStr(fecha: string): Date {
+  if (!fecha) return new Date(0);
+  const [datePart, timePart = '00:00'] = fecha.trim().split(' ');
+  const [d, m, y] = datePart.split('/').map(Number);
+  const [h, min] = timePart.split(':').map(Number);
+  if (!y || !m || !d) return new Date(0);
+  const year = y < 100 ? 2000 + y : y;
+  return new Date(year, m - 1, d, h || 0, min || 0);
+}
 
 // ═══════════════════════════════════════════════════════════════════
 // VIEW STATE — Solo consulta: editar | ver (sin nuevo)
@@ -137,9 +166,16 @@ export function OriginacionModule() {
   const seedAndOpen = useCallback((i: OriginacionListItem, mode: 'editar' | 'ver') => {
     const solItem = (solicitudesDB as Record<string, any>[]).find(s => s.id === i.id || s.noSol === i.noSolicitud);
     if (solItem) {
+      // ── Sembrar namespace sol_credito_ (para SolicitudBaseForm / SolicitudCreditoForm) ──
+      const solFormData = buildFormDataFromListItem(solItem as any);
+      saveSolSession(i.id, 'form', solFormData);
+      const dbData = solItem._data;
+      if (dbData && typeof dbData === 'object') {
+        preloadSubtabsFromDBData(i.id, dbData);
+      }
+      // ── También sembrar namespace originacion_ (legacy) ──
       seedOriginacionFromSolicitudItem(i.id, solItem);
     }
-    if (mode === 'editar') clearSession(i.id);
     setView({ type: 'form', mode, id: i.id });
   }, [solicitudesDB]);
 
@@ -197,15 +233,15 @@ export function OriginacionModule() {
     }
   }, [solicitudesDB, saveSolicitud]);
 
-  // ── FORM VIEW ──
+  // ── FORM VIEW — usa SolicitudBaseForm (componente unificado, mismo que Solicitudes) ──
   if (view.type === 'form') {
-    return <OriginacionForm
-      mode={view.mode}
-      originacionId={view.id}
-      onCancel={goToList}
-      onSave={(d) => handleSave(d, view.id)}
-      onActivarCuentaDB={(statuses) => handleActivarCuentaDB(view.id, statuses.estatusSolicitud, statuses.estatusCuenta, statuses.estatusPago, statuses.estatusCartera)}
-    />;
+    return (
+      <SolicitudBaseForm
+        solicitudId={view.id}
+        readOnly={view.mode === 'ver'}
+        onCancel={goToList}
+      />
+    );
   }
 
   // ═══════════════════════════════════════════════════════════════
@@ -675,19 +711,65 @@ function OriginacionForm({ mode, originacionId, onCancel, onSave, onActivarCuent
 }) {
   const isRO = mode === 'ver';
 
-  const [expedientes, setExpedientes] = useState<{ id: number; fechaHora: string; usuario: string; tipoDocumento: string; archivo: string; descripcion: string; estatus: string; observaciones: string }[]>(() =>
-    loadFromSession(originacionId, 'expedientes') || loadFromSavedStore(originacionId, 'expedientes') || []);
+  // ── Expedientes: puente desde namespace sol_credito_ (fuente compartida) ──
+  const [expedientes, setExpedientes] = useState<{ id: number; fechaHora: string; usuario: string; tipoDocumento: string; archivo: string; descripcion: string; estatus: string; observaciones: string }[]>(() => {
+    // Primero intentar documentos de Solicitudes (namespace sol_credito_)
+    const solDocs = loadSolSession<DocumentoCargado[]>(originacionId, 'documentos')
+      || loadSolSaved<DocumentoCargado[]>(originacionId, 'documentos');
+    if (solDocs && solDocs.length > 0) {
+      return solDocs.map(d => ({
+        id: d.id,
+        fechaHora: d.fecha,
+        usuario: d.usuario,
+        tipoDocumento: d.tipoDocumento,
+        archivo: d.archivo,
+        descripcion: d.nota || '',
+        estatus: d.estatus,
+        observaciones: '',
+      }));
+    }
+    // Fallback: namespace originacion_
+    return loadFromSession(originacionId, 'expedientes') || loadFromSavedStore(originacionId, 'expedientes') || [];
+  });
+  // ── Notas: puente desde namespace sol_credito_ (NotasTab comparte datos) ──
   const [notas, setNotas] = useState<{ id: number; fechaCreacion: Date; usuario: string; contenido: string }[]>(() => {
+    // Intentar notas del namespace compartido (sol_credito_)
+    const solNotas = loadSolSession<any[]>(originacionId, 'notas')
+      || loadSolSaved<any[]>(originacionId, 'notas');
+    if (solNotas && solNotas.length > 0) {
+      return solNotas.map(n => ({
+        id: n.id,
+        fechaCreacion: n.fechaCreacion instanceof Date
+          ? n.fechaCreacion
+          : n.fechaCreacion
+            ? new Date(n.fechaCreacion)
+            : n.fecha
+              ? parseFechaStr(n.fecha)
+              : new Date(),
+        usuario: n.usuario || '',
+        contenido: n.nota || n.contenido || '',
+      }));
+    }
+    // Fallback: namespace originacion_
     const raw: any[] = loadFromSession(originacionId, 'notas') || loadFromSavedStore(originacionId, 'notas') || [];
-    // Deserializar fechaCreacion: JSON.parse devuelve strings, no Date
     return raw.map(n => ({ ...n, fechaCreacion: n.fechaCreacion instanceof Date ? n.fechaCreacion : new Date(n.fechaCreacion) }));
   });
-  const [garantias, setGarantias] = useState<OriginacionGarantia[]>(() =>
-    loadFromSession(originacionId, 'garantias') || loadFromSavedStore(originacionId, 'garantias') || []);
+  // ── Garantías: puente desde namespace sol_credito_ ──
+  const [garantias, setGarantias] = useState<OriginacionGarantia[]>(() => {
+    const solGarantias = loadSolSession<any[]>(originacionId, 'garantias')
+      || loadSolSaved<any[]>(originacionId, 'garantias');
+    if (solGarantias && solGarantias.length > 0) return solGarantias as OriginacionGarantia[];
+    return loadFromSession(originacionId, 'garantias') || loadFromSavedStore(originacionId, 'garantias') || [];
+  });
   const [autorizaciones, setAutorizaciones] = useState<OriginacionAutorizacion[]>(() =>
     loadFromSession(originacionId, 'autorizaciones') || loadFromSavedStore(originacionId, 'autorizaciones') || []);
-  const [comites, setComites] = useState<{ autoridad: string; estatus: string }[]>(() =>
-    loadFromSession(originacionId, 'comites') || loadFromSavedStore(originacionId, 'comites') || []);
+  // ── Comités: puente desde namespace sol_credito_ (ComitesTab comparte datos) ──
+  const [comites, setComites] = useState<{ autoridad: string; estatus: string }[]>(() => {
+    const solComites = loadSolSession<any[]>(originacionId, 'comites')
+      || loadSolSaved<any[]>(originacionId, 'comites');
+    if (solComites && solComites.length > 0) return solComites;
+    return loadFromSession(originacionId, 'comites') || loadFromSavedStore(originacionId, 'comites') || [];
+  });
   const [beneficiarios, setBeneficiarios] = useState<{ id: number; nombre: string; firma: boolean }[]>(() =>
     loadFromSession(originacionId, 'beneficiarios') || loadFromSavedStore(originacionId, 'beneficiarios') || []);
   const [solicitudActivacion, setSolicitudActivacion] = useState<{ estatusPago: string; monto: number } | undefined>(() =>
@@ -807,10 +889,28 @@ function OriginacionForm({ mode, originacionId, onCancel, onSave, onActivarCuent
   const { productos: productosDB } = useProductosCatalogoDB(true);
   
   const productoSeleccionado = useMemo(() => {
+    if (fd.productoId) return productosDB.find(p => p.id === fd.productoId);
     if (!fd.producto) return undefined;
     return productosDB.find(p => p.id === fd.producto || p.nombreProducto === fd.producto);
-  }, [fd.producto, productosDB]);
+  }, [fd.productoId, fd.producto, productosDB]);
   
+  // Auto-resolve sublinea y producto desde productoId cuando el catálogo carga (espejo de SolicitudCreditoForm)
+  useEffect(() => {
+    if (!fd.productoId || productosDB.length === 0) return;
+    const dbProd = productosDB.find(p => p.id === fd.productoId);
+    if (!dbProd) return;
+    const updates: Partial<OriginacionFormData> = {};
+    if (dbProd.sublineaProducto && dbProd.sublineaProducto !== fd.sublinea) {
+      updates.sublinea = dbProd.sublineaProducto;
+    }
+    if (dbProd.nombreProducto && dbProd.nombreProducto !== fd.producto) {
+      updates.producto = dbProd.nombreProducto;
+    }
+    if (Object.keys(updates).length > 0) {
+      setFd(prev => ({ ...prev, ...updates }));
+    }
+  }, [fd.productoId, productosDB]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Fases del producto seleccionado
   const fasesDelProducto = useMemo(() => {
     if (!productoSeleccionado) return [];
@@ -895,17 +995,21 @@ function OriginacionForm({ mode, originacionId, onCancel, onSave, onActivarCuent
     <label className={`block text-xs mb-1 ${error ? 'text-red-600' : 'text-gray-700'}`}>{children}{req && <span className="text-red-600 ml-0.5">*</span>}</label>
   );
 
+  // ── Subtabs unificados — idénticos a SolicitudCreditoForm (spec §B) ──
   const sections = [
-    { id: 'default', label: 'Default' },
-    { id: 'fases', label: 'Fases' },
+    { id: 'default',            label: 'Default' },
+    { id: 'expediente',         label: 'Expediente Electrónico' },
+    { id: 'garantias',          label: 'Garantías' },
+    { id: 'comites',            label: 'Comités' },
+    { id: 'cargos',             label: 'Cargos' },
+    { id: 'terminos',           label: 'Términos y Condiciones' },
+    { id: 'simulacion',         label: 'Simulación' },
     { id: 'partesRelacionadas', label: 'Partes Relacionadas' },
-    { id: 'terminos', label: 'Términos y Condiciones' },
-    { id: 'simulacion', label: 'Simulación' },
-    { id: 'expedientes', label: 'Expediente Electrónico' },
-    { id: 'garantias', label: 'Garantías' },
-    { id: 'comisiones', label: 'Comisiones' },
-    { id: 'autorizacion', label: 'Autorizaciones' },
-    { id: 'notas', label: 'Notas' },
+    { id: 'fases',              label: 'Fases' },
+    { id: 'notas',              label: 'Notas' },
+    { id: 'flujoTrabajo',       label: 'Flujo de Trabajo' },
+    { id: 'comisiones',         label: 'Comisiones' },
+    { id: 'autorizaciones',     label: 'Autorizaciones' },
   ];
 
   return (
@@ -1136,16 +1240,16 @@ function OriginacionForm({ mode, originacionId, onCancel, onSave, onActivarCuent
           <div className="space-y-3">
             <div><Lbl req>N° Originación</Lbl><input type="text" value={fd.noOriginacion} disabled className={ic(false, true)} /></div>
             <div><Lbl>N° Solicitud</Lbl><input type="text" value={fd.noSolicitud} disabled className={ic(false, true)} /></div>
-            <div><Lbl req error={errors.cliente}>Cliente</Lbl><select value={fd.cliente} onChange={e => set('cliente', e.target.value)} disabled={isRO} className={sc(!!errors.cliente)}><option value="">Seleccionar...</option>{CAT_CLIENTES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}</select>{errors.cliente && <span className="text-[10px] text-red-500">{errors.cliente}</span>}</div>
+            <div><Lbl req error={errors.cliente}>Cliente</Lbl>{isRO ? <input type="text" value={fd.cliente} disabled className={ic(false, true)} /> : <select value={fd.cliente} onChange={e => set('cliente', e.target.value)} className={sc(!!errors.cliente)}><option value="">Seleccionar...</option>{CAT_CLIENTES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}</select>}{errors.cliente && <span className="text-[10px] text-red-500">{errors.cliente}</span>}</div>
             <div><Lbl req error={errors.fechaSolicitud}>Fecha de Solicitud</Lbl><DatePicker value={fd.fechaSolicitud} onChange={v => set('fechaSolicitud', v)} disabled={isRO} placeholder="DD/MM/YYYY" className={`px-2 py-1 ${errors.fechaSolicitud ? 'border-red-400' : ''}`} />{errors.fechaSolicitud && <span className="text-[10px] text-red-500">{errors.fechaSolicitud}</span>}</div>
-            <div><Lbl>Empresa Fondeadora</Lbl><select value={fd.empresaFondeadora} onChange={e => set('empresaFondeadora', e.target.value)} disabled={isRO} className={sc()}><option value="">Seleccionar...</option>{CAT_EMPRESA_FONDEADORA.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}</select></div>
+            <div><Lbl>Empresa Fondeadora</Lbl>{isRO ? <input type="text" value={fd.empresaFondeadora || '—'} disabled className={ic(false, true)} /> : <select value={fd.empresaFondeadora} onChange={e => set('empresaFondeadora', e.target.value)} className={sc()}><option value="">Seleccionar...</option>{CAT_EMPRESA_FONDEADORA.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}</select>}</div>
             <div><Lbl req error={errors.sucursal}>Sucursal</Lbl><select value={fd.sucursal} onChange={e => set('sucursal', e.target.value)} disabled={isRO} className={sc(!!errors.sucursal)}><option value="">Seleccionar...</option>{CAT_SUCURSAL.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}</select>{errors.sucursal && <span className="text-[10px] text-red-500">{errors.sucursal}</span>}</div>
             <div><Lbl req error={errors.montoSolicitado}>Monto Solicitado</Lbl><div className="relative"><span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-600">$</span><input type="text" value={fd.montoSolicitado} onChange={e => numSet('montoSolicitado', e.target.value)} onBlur={() => curBlur('montoSolicitado')} disabled={isRO} placeholder="0.00" className={`${ic(!!errors.montoSolicitado)} pl-5`} /></div>{errors.montoSolicitado && <span className="text-[10px] text-red-500">{errors.montoSolicitado}</span>}</div>
           </div>
           <div className="space-y-3">
             <div><Lbl req>Línea Producto</Lbl><input type="text" value={fd.lineaProducto} disabled className={ic(false, true)} /></div>
-            <div><Lbl req error={errors.sublinea}>Sublínea</Lbl><select value={fd.sublinea} onChange={e => set('sublinea', e.target.value)} disabled={isRO} className={sc(!!errors.sublinea)}><option value="">Seleccionar...</option>{CAT_SUBLINEA.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}</select>{errors.sublinea && <span className="text-[10px] text-red-500">{errors.sublinea}</span>}</div>
-            <div><Lbl req error={errors.producto}>Producto</Lbl><select value={fd.producto} onChange={e => set('producto', e.target.value)} disabled={isRO} className={sc(!!errors.producto)}><option value="">Seleccionar...</option>{CAT_PRODUCTO.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}</select>{errors.producto && <span className="text-[10px] text-red-500">{errors.producto}</span>}</div>
+            <div><Lbl req error={errors.sublinea}>Sublínea</Lbl>{isRO ? <input type="text" value={fd.sublinea || '—'} disabled className={ic(false, true)} /> : <select value={fd.sublinea} onChange={e => set('sublinea', e.target.value)} className={sc(!!errors.sublinea)}><option value="">Seleccionar...</option>{CAT_SUBLINEA.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}</select>}{errors.sublinea && <span className="text-[10px] text-red-500">{errors.sublinea}</span>}</div>
+            <div><Lbl req error={errors.producto}>Producto</Lbl>{isRO ? <input type="text" value={fd.producto || fd.productoId || '—'} disabled className={ic(false, true)} /> : <select value={fd.producto} onChange={e => set('producto', e.target.value)} className={sc(!!errors.producto)}><option value="">Seleccionar...</option>{CAT_PRODUCTO.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}</select>}{errors.producto && <span className="text-[10px] text-red-500">{errors.producto}</span>}</div>
             <div><Lbl req error={errors.periodo}>Periodo</Lbl><select value={fd.periodo} onChange={e => set('periodo', e.target.value)} disabled={isRO} className={sc(!!errors.periodo)}><option value="">Seleccionar...</option>{CAT_PERIODO.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}</select>{errors.periodo && <span className="text-[10px] text-red-500">{errors.periodo}</span>}</div>
             <div><Lbl req error={errors.plazos}>Plazos</Lbl><select value={fd.plazos} onChange={e => set('plazos', e.target.value)} disabled={isRO} className={sc(!!errors.plazos)}><option value="">Seleccionar...</option>{CAT_PLAZOS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}</select>{errors.plazos && <span className="text-[10px] text-red-500">{errors.plazos}</span>}</div>
             <div><Lbl>Destino del Crédito</Lbl><select value={fd.destinoCredito} onChange={e => set('destinoCredito', e.target.value)} disabled={isRO} className={sc()}><option value="">Seleccionar...</option>{CAT_DESTINO_CREDITO.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}</select></div>
@@ -1252,11 +1356,10 @@ function OriginacionForm({ mode, originacionId, onCancel, onSave, onActivarCuent
                   </div>
                 )}
                 {sec.id === 'fases' && (
-                  <FasesOriginacionTab
+                  <FasesSolicitudTab
                     mode={mode}
-                    productoId={fd.producto}
+                    productoId={fd.productoId || productoSeleccionado?.id || fd.producto}
                     faseIdActual={getFaseIdFromSubEstatus(fd.subEstatus)}
-                    onFaseChange={handleActualizarFase}
                   />
                 )}
                 {sec.id === 'partesRelacionadas' && (
@@ -1265,6 +1368,7 @@ function OriginacionForm({ mode, originacionId, onCancel, onSave, onActivarCuent
                     solicitudId={sid}
                     montoSolicitado={fd.montoSolicitado}
                     clienteNombre={fd.cliente}
+                    clienteId={fd.noCliente}
                   />
                 )}
                 {sec.id === 'terminos' && (
@@ -1272,7 +1376,7 @@ function OriginacionForm({ mode, originacionId, onCancel, onSave, onActivarCuent
                     mode={mode}
                     solicitudId={sid}
                     lineaProducto={fd.lineaProducto}
-                    productoSeleccionado={undefined}
+                    productoSeleccionado={productoSeleccionado}
                     montoSolicitadoHeader={fd.montoSolicitado}
                   />
                 )}
@@ -1283,25 +1387,66 @@ function OriginacionForm({ mode, originacionId, onCancel, onSave, onActivarCuent
                     lineaProducto={fd.lineaProducto}
                   />
                 )}
-                {sec.id === 'expedientes' && (
-                  <ExpedientesSection sid={sid} mode={mode} isRO={isRO} />
+                {/* ── Expediente Electrónico — componente compartido (spec §F) ── */}
+                {sec.id === 'expediente' && (
+                  <ExpedienteElectronicoTab
+                    mode="ver"
+                    solicitudId={sid}
+                    faseIdActual={parseInt(getFaseIdFromSubEstatus(fd.subEstatus)) || 1}
+                    productoId={fd.productoId || productoSeleccionado?.id || fd.producto}
+                    nombreSolicitante={fd.cliente}
+                    fasePromptIA={fd.promptIAFase}
+                  />
                 )}
+                {/* ── Garantías — componente compartido (readOnly en Originación) ── */}
                 {sec.id === 'garantias' && (
-                  <GarantiasSection sid={sid} mode={mode} isRO={isRO} />
+                  <GarantiasTab
+                    mode="ver"
+                    solicitudId={sid}
+                    montoSolicitado={fd.montoSolicitado}
+                    clienteId={fd.noCliente}
+                    faseIdActual={parseInt(getFaseIdFromSubEstatus(fd.subEstatus)) || 1}
+                  />
+                )}
+                {/* ── Comités — componente compartido (readOnly en Originación) ── */}
+                {sec.id === 'comites' && (
+                  <ComitesTab mode="ver" solicitudId={sid} readOnly={true} />
+                )}
+                {/* ── Cargos — componente compartido (readOnly en Originación) ── */}
+                {sec.id === 'cargos' && (
+                  <SolicitudCargosTab mode="ver" solicitudId={sid} />
                 )}
                 {sec.id === 'comisiones' && (
                   <ComisionesTab
                     mode={mode}
                     solicitudId={sid}
                     montoSolicitado={fd.montoSolicitado}
-                    productoId={fd.producto}
+                    productoId={fd.productoId || productoSeleccionado?.id || fd.producto}
                   />
                 )}
-                {sec.id === 'autorizacion' && (
-                  <AutorizacionSection sid={sid} mode={mode} isRO={isRO} />
+                {/* ── Autorizaciones — componente compartido (readOnly en Originación) ── */}
+                {sec.id === 'autorizaciones' && (
+                  <AutorizacionTab
+                    mode="ver"
+                    solicitudId={sid}
+                    montoSolicitado={fd.montoSolicitado}
+                    productoId={fd.productoId || productoSeleccionado?.id || fd.producto}
+                  />
                 )}
+                {/* ── Notas — Originación SÍ puede crear notas (spec §D) ── */}
                 {sec.id === 'notas' && (
-                  <NotasSection notas={notas} setNotas={setNotas} isRO={isRO} />
+                  <NotasTab mode="editar" solicitudId={sid} />
+                )}
+                {/* ── Flujo de Trabajo — componente compartido ── */}
+                {sec.id === 'flujoTrabajo' && (
+                  <div className="bg-white border border-gray-200 p-4">
+                    <h4 className="text-sm font-medium text-gray-800 mb-3">Flujo de Trabajo — Fases del Proceso</h4>
+                    <FlujoTrabajo
+                      subEstatus={fd.subEstatus}
+                      faseActual={fd.subEstatus}
+                      className="mt-2"
+                    />
+                  </div>
                 )}
               </div>
             )}

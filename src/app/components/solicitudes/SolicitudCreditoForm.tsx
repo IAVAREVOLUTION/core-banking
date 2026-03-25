@@ -33,6 +33,8 @@ import { useProductosCatalogoDB, type ProductoCatalogo } from '../../hooks/usePr
 import { fetchNextNoSol, updateFaseSolicitudDB } from '../../hooks/useSolicitudesDB';
 import { addOriginacionItem, CAT_AREA } from '../originacion/originacionStore';
 import { FlujoTrabajo } from '../originacion/FlujoTrabajo';
+import { SolicitudCargosTab } from './SolicitudCargosTab';
+import { ComitesTab } from '../shared/ComitesTab';
 
 // ── Helper: inferir AreaActual según el nombre de la fase ──
 function inferirAreaFase(descripcionFase: string): string {
@@ -563,17 +565,21 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
     </label>
   );
 
+  // ── Subtabs unificados — idénticos a OriginacionModule (spec §B) ──
   const sections = [
-    { id: 'default', label: 'Default' },
-    { id: 'fases', label: 'Fases' },
-    { id: 'partesRelacionadas', label: 'Partes Relacionadas' },
-    { id: 'terminos', label: 'Términos y Condiciones' },
-    { id: 'simulacion', label: 'Simulación' },
-    { id: 'expediente', label: 'Expediente Electrónico' },
-    { id: 'garantias', label: 'Garantías' },
-    { id: 'comisiones', label: 'Comisiones' },
-    { id: 'autorizaciones', label: 'Autorizaciones' },
-    { id: 'notas', label: 'Notas' },
+    { id: 'default',           label: 'Default' },
+    { id: 'expediente',        label: 'Expediente Electrónico' },
+    { id: 'garantias',         label: 'Garantías' },
+    { id: 'comites',           label: 'Comités' },
+    { id: 'cargos',            label: 'Cargos' },
+    { id: 'terminos',          label: 'Términos y Condiciones' },
+    { id: 'simulacion',        label: 'Simulación' },
+    { id: 'partesRelacionadas',label: 'Partes Relacionadas' },
+    { id: 'fases',             label: 'Fases' },
+    { id: 'notas',             label: 'Notas' },
+    { id: 'flujoTrabajo',      label: 'Flujo de Trabajo' },
+    { id: 'comisiones',        label: 'Comisiones' },
+    { id: 'autorizaciones',    label: 'Autorizaciones' },
   ];
 
   return (
@@ -615,6 +621,13 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
           {isRO && <button onClick={handleCancel} className="px-5 py-1.5 bg-white border border-gray-400 text-gray-700 rounded text-sm hover:bg-gray-50">Cerrar</button>}
         </div>
       </div>
+
+      {/* ═══ FLUJO DE TRABAJO — 7 fases visualizadas (igual que Originación) ═══ */}
+      {formData.descripcionFase && (
+        <div className="px-6 py-3 border-b border-gray-200 bg-gray-50">
+          <FlujoTrabajo subEstatus={formData.descripcionFase} faseActual={formData.descripcionFase} />
+        </div>
+      )}
 
       {/* ═══ FASE ACTION BAR — Avance de Fase ═══ */}
       {!isRO && formData.productoId && formData.faseId && (
@@ -850,6 +863,14 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
                 />
               </div>
             </div>
+            <div>
+              <Lbl>Fecha Inicio</Lbl>
+              <input type="text" value={formData.fechaInicio || ''} onChange={e => set('fechaInicio' as any, e.target.value)} disabled={isRO} placeholder="DD/MM/YYYY" className={ic()} />
+            </div>
+            <div>
+              <Lbl>Fecha Fin</Lbl>
+              <input type="text" value={formData.fechaFin || ''} onChange={e => set('fechaFin' as any, e.target.value)} disabled={isRO} placeholder="DD/MM/YYYY" className={ic()} />
+            </div>
           </div>
         </div>
 
@@ -986,6 +1007,22 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
                 )}
                 {sec.id === 'notas' && (
                   <NotasTab mode={mode} solicitudId={storageId} />
+                )}
+                {sec.id === 'comites' && (
+                  <ComitesTab mode={mode} solicitudId={storageId} />
+                )}
+                {sec.id === 'cargos' && (
+                  <SolicitudCargosTab mode={mode} solicitudId={storageId} />
+                )}
+                {sec.id === 'flujoTrabajo' && (
+                  <div className="bg-white border border-gray-200 p-4">
+                    <h4 className="text-sm font-medium text-gray-800 mb-3">Flujo de Trabajo — Fases del Proceso</h4>
+                    <FlujoTrabajo
+                      subEstatus={formData.descripcionFase}
+                      faseActual={formData.descripcionFase}
+                      className="mt-2"
+                    />
+                  </div>
                 )}
               </>
             )}

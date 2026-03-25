@@ -25,6 +25,131 @@ function parseDate(dateStr: string): Date {
   return new Date(fullYear, parseInt(month) - 1, parseInt(day));
 }
 
+/**
+ * Reconstruye SolicitudFormData completo desde un SolicitudListItem + JSONB _data.
+ * Exportada para uso en OriginacionModule (siembra namespace sol_credito_).
+ */
+export function buildFormDataFromListItem(s: SolicitudListItem): Record<string, any> {
+  const extra = s as any;
+  const d = extra._data || {};
+  const sol = d.solicitud || {};
+  const hdr = sol.header || {};
+  const joinNombre = extra._clienteNombre || '';
+  const joinApPaterno = extra._clienteApPaterno || '';
+  const joinApMaterno = extra._clienteApMaterno || '';
+  const joinTipoPersona = extra._clienteTipo || '';
+  const joinProductoNombre = extra._productoNombre || '';
+  const joinSucursal = extra._productoSucursal || '';
+  const joinLineaProducto = extra._lineaProducto || '';
+  const joinTipoProducto = extra._tipoProducto || '';
+  const joinDescripcion = extra._descripcion || '';
+  const joinFases = extra._fases || '';
+  return {
+    id: extra._dbId || String(s.id) || '',
+    noSol: s.noSol || hdr.no_sol || d.noSol || '',
+    cotizacionId: hdr.cotizacion_id || d.cotizacionId || '',
+    lineaProducto: hdr.linea_producto || d.lineaProducto || joinLineaProducto || 'Crédito',
+    tipoProducto: s.tipoProducto || hdr.tipo_producto || d.tipoProducto || joinTipoProducto || '',
+    tipoPersona: hdr.tipo_persona || d.tipoPersona || joinTipoPersona || '',
+    nombrePersona: hdr.nombre_persona || d.nombrePersona || joinNombre || '',
+    apellidoPaternoPersona: hdr.apellido_paterno_persona || d.apellidoPaternoPersona || joinApPaterno || '',
+    apellidoMaternoPersona: hdr.apellido_materno_persona || d.apellidoMaternoPersona || joinApMaterno || '',
+    productoId: extra._productoId || hdr.producto_id || d.productoId || '',
+    nombreProducto: s.nombreProducto || hdr.nombre_producto || d.nombreProducto || joinProductoNombre || '',
+    fechaSolicitud: s.fechaSolicitud || hdr.fecha_solicitud || d.fechaSolicitud || '',
+    descripcion: hdr.descripcion || d.descripcion || joinDescripcion || '',
+    faseId: hdr.fase_id || d.faseId || joinFases || '1',
+    descripcionFase: s.faseDescripcion || hdr.descripcion_fase || d.descripcionFase || '',
+    estatusSolicitud: s.estatusSolicitud || hdr.estatus || d.estatusSolicitud || 'Pendiente',
+    sucursal: s.sucursal || hdr.sucursal || d.sucursal || joinSucursal || '',
+    montoSolicitado: hdr.monto_solicitado
+      || (typeof s.montoSolicitado === 'number' && s.montoSolicitado > 0 ? s.montoSolicitado.toFixed(2) : null)
+      || d.montoSolicitado || '0.00',
+    montoAutorizado: hdr.monto_autorizado
+      || (typeof s.montoAutorizado === 'number' && s.montoAutorizado > 0 ? s.montoAutorizado.toFixed(2) : null)
+      || d.montoAutorizado || '0.00',
+    fechaInicio: extra._fechaInicio || hdr.fecha_inicio || '',
+    fechaFin: extra._fechaFin || hdr.fecha_fin || '',
+    _clienteId: extra._clienteId || hdr.cliente_id || d._clienteId || '',
+  };
+}
+
+/**
+ * Pre-carga subtabs en sessionStorage desde JSONB _data.
+ * Exportada para uso en OriginacionModule.
+ */
+export function preloadSubtabsFromDBData(storageId: number | string, d: Record<string, any>) {
+  const sol = d.solicitud || {};
+  const tc = sol.terminos_condiciones || {};
+  const ps = tc.parametros_simulacion || {};
+  const rawTerminos = tc._raw || {};
+  if (Object.keys(tc).length > 0) {
+    saveToSession(storageId, 'terminos', {
+      montoSolicitado: ps.monto_solicitado || rawTerminos.montoSolicitado || '',
+      fechaPrimerPago: ps.fecha_primer_pago || rawTerminos.fechaPrimerPago || '',
+      fechaPrimeraAportacion: ps.fecha_primera_aportacion || rawTerminos.fechaPrimeraAportacion || '',
+      plazo: ps.plazo || rawTerminos.plazo || '',
+      frecuencia: ps.periodicidad || rawTerminos.frecuencia || '',
+      tasa: ps.tasa_interes || rawTerminos.tasa || '',
+      tipoTasa: rawTerminos.tipoTasa || '',
+      tipoCalculo: rawTerminos.tipoCalculo || '',
+      moneda: rawTerminos.moneda || '',
+      montoGarantia: rawTerminos.montoGarantia || '',
+      seguroFinanciado: rawTerminos.seguroFinanciado ?? false,
+      montoSeguro: rawTerminos.montoSeguro || '',
+    });
+  }
+  const sim = sol.simulacion || {};
+  if (sim.resultado_simulacion?.length > 0) {
+    saveToSession(storageId, 'simulacion', sim.resultado_simulacion.map((r: any) => ({
+      noPago: r.no_pago, fechaPago: r.fecha_pago, saldoInsoluto: r.saldo_insoluto,
+      pagoCapital: r.pago_capital, pagoInteres: r.pago_interes, ivaInteres: r.iva_interes,
+      pagoPeriodo: r.pago_periodo, pagoSeguro: r.pago_seguro, pagoTotal: r.pago_total,
+    })));
+  }
+  const exp = sol.expediente_electronico || {};
+  if (exp.documentos?.length > 0) {
+    saveToSession(storageId, 'documentos', exp.documentos.map((doc: any, i: number) => ({
+      id: doc.id || (i + 1), fecha: doc.fecha_creacion || '', usuario: doc.usuario || '',
+      tipoDocumento: doc.tipo_documento || '', archivo: doc.archivo_adjunto || '',
+      tipoArchivo: doc.tipo_archivo || '', nota: doc.nota || '', area: doc.area || '',
+      fase: doc.fase || '', faseId: doc.fase_id || 0, estatus: doc.estatus || 'Pendiente',
+      validadoIA: doc.validado_ia ?? false,
+      url: doc.url || '', storagePath: doc.storage_path || '',
+      storageBucket: doc.storage_bucket || '', mime: doc.mime || '', tamanoKB: doc.tamano_kb || 0,
+      iaMotivos: doc.ia_motivos || [], iaExtraido: doc.ia_extraido || {},
+    })));
+  }
+  if (sol.garantias?.length > 0) {
+    saveToSession(storageId, 'garantias', sol.garantias.map((g: any, i: number) => ({
+      id: i + 1, fecha: '', usuario: '', tipo: g.tipo_garantia || '', subtipo: g.subtipo || '',
+      descripcion: g.descripcion || '', valorNominal: g.valor_garantia || 0,
+      ubicacion: g.ubicacion || '', estatus: g.estatus || '', nota: g.observaciones || '',
+      fase: g.fase || '', faseId: g.fase_id || 0, area: g.area || '',
+    })));
+  }
+  if (sol.comisiones?.length > 0) {
+    saveToSession(storageId, 'comisiones', sol.comisiones.map((c: any, i: number) => ({
+      id: i + 1, tipoComision: c.tipo_comision || '', descripcion: c.descripcion || '',
+      base: c.base || '', porcentaje: c.porcentaje || 0, montoCalculado: c.monto || 0,
+      estatus: c.estatus || 'Pendiente',
+    })));
+  }
+  if (sol.autorizaciones?.length > 0) {
+    saveToSession(storageId, 'autorizaciones', sol.autorizaciones.map((a: any, i: number) => ({
+      id: i + 1, fechaHora: a.fecha_autorizacion || '', usuario: a.usuario || '',
+      puesto: a.puesto || '', area: a.area || '', descripcion: a.descripcion || '',
+      observaciones: a.comentario || '', estatus: a.estado_autorizacion || '',
+    })));
+  }
+  if (sol.notas?.length > 0) {
+    saveToSession(storageId, 'notas', sol.notas.map((n: any, i: number) => ({
+      id: i + 1, fecha: n.fecha || '', usuario: n.usuario || '',
+      puesto: n.puesto || '', nota: n.nota || '', archivoAdjunto: n.archivo_adjunto || '',
+    })));
+  }
+}
+
 export function SolicitudCreditoList({ cotizacionParaSolicitud, onCotizacionConsumed }: SolicitudCreditoListProps = {}) {
   const [view, setView] = useState<ViewState>({ type: 'list' });
   const [solicitudes, setSolicitudes] = useState<SolicitudListItem[]>(() =>
@@ -171,10 +296,9 @@ export function SolicitudCreditoList({ cotizacionParaSolicitud, onCotizacionCons
   };
 
   /**
-   * Reconstruye un SolicitudFormData completo a partir del list item + _data JSONB.
-   * Soporta estructura anidada (banca móvil: data.solicitud.header) Y flat legacy.
+   * Alias local → función exportada a nivel de módulo (sin duplicación de lógica).
    */
-  const buildFormDataFromListItem = (s: SolicitudListItem): Record<string, any> => {
+  const buildFormDataFromListItemLocal = (s: SolicitudListItem): Record<string, any> => {
     const extra = s as any;
     const d = extra._data || {};
     // ── Nested structure (banca móvil) ──
@@ -226,10 +350,9 @@ export function SolicitudCreditoList({ cotizacionParaSolicitud, onCotizacionCons
   };
 
   /**
-   * Pre-carga las secciones de subtabs en sessionStorage desde la estructura anidada de BD.
-   * Lee data.solicitud.terminos_condiciones, simulacion, garantias, etc.
+   * @deprecated Usar la función exportada a nivel de módulo `preloadSubtabsFromDBData`.
    */
-  const preloadSubtabsFromDBData = (storageId: number | string, d: Record<string, any>) => {
+  const _preloadSubtabsLocal_unused = (storageId: number | string, d: Record<string, any>) => {
     const sol = d.solicitud || {};
 
     // ── Términos y Condiciones ──
