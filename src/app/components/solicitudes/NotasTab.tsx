@@ -7,9 +7,14 @@ import {
 interface Props {
   mode: 'nuevo' | 'editar' | 'ver';
   solicitudId: number | string | 'new';
+  /**
+   * Cuando true, permite agregar notas aunque mode='ver'.
+   * Usado en Originación: el analista siempre puede agregar notas para justificar Regresar.
+   */
+  allowAddNotes?: boolean;
 }
 
-export function NotasTab({ mode, solicitudId }: Props) {
+export function NotasTab({ mode, solicitudId, allowAddNotes = false }: Props) {
   const getInit = (): Nota[] => {
     const s = loadFromSession<Nota[]>(solicitudId, 'notas');
     if (s) return s;
@@ -24,7 +29,8 @@ export function NotasTab({ mode, solicitudId }: Props) {
   const [showForm, setShowForm] = useState(false);
   const [newNota, setNewNota] = useState('');
   const [newArchivo, setNewArchivo] = useState('');
-  const isRO = mode === 'ver';
+  // En modo originacion con allowAddNotes=true, siempre editable
+  const isRO = mode === 'ver' && !allowAddNotes;
 
   useEffect(() => {
     if (!isRO) saveToSession(solicitudId, 'notas', notas);

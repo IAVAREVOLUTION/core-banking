@@ -7,15 +7,14 @@
  * MODO 'solicitudes' → solo "Enviar de Fase"
  * MODO 'originacion' → todos los botones aplicables (siempre visibles, ignora readOnly)
  *
- * Botones por numero_consecutivo (spec C):
+ * Botones por numero_consecutivo (spec):
  *  seq 1         → Enviar
  *  seq 2-3       → Enviar + Regresar
  *  seq 4         → Enviar + Regresar + Formalizar Contrato
  *  seq 5         → Enviar + Regresar
+ *  seq 6         → Solicitud de Activación + Regresar
+ *  seq 7         → Activar Cuenta + Regresar
  */
-import { useState } from 'react';
-import { toast } from 'sonner';
-import { loadFromSession } from '../solicitudes/solicitudCreditoStore';
 import type { SolicitudFormData } from '../solicitudes/solicitudCreditoStore';
 import type { FaseProductoItem } from '../../hooks/useFaseConsistency';
 import { useFaseConsistency } from '../../hooks/useFaseConsistency';
@@ -27,18 +26,22 @@ interface FaseActionsComponentProps {
   fases: FaseProductoItem[];
   /** ID de la fase actual (formData.faseId, guardado en BD) */
   faseActualId: string;
-  /** Datos del formulario (para mostrar estatus y construir contexto de contrato) */
+  /** Datos del formulario */
   formData: SolicitudFormData;
   /** storageId para leer subtabs desde sessionStorage */
   storageId: string | number;
   /** 'solicitudes' → solo Enviar | 'originacion' → todos los botones */
   modo: 'solicitudes' | 'originacion';
-  /** Callback de avance de fase — siempre requerido */
+  /** Avanzar fase (fases 1-5) */
   onEnviarFase: () => void;
-  /** Callback de regreso de fase (validaciones ya hechas en el llamador) */
+  /** Regresar fase (requiere nota ≤30 min — validado en el llamador) */
   onRegresarFase?: () => void;
-  /** Callback de formalizar contrato (Fase 4) */
+  /** Formalizar Contrato (Fase 4) */
   onFormalizarContrato?: () => void;
+  /** Solicitud de Activación (Fase 6) */
+  onSolicitudActivacion?: () => void;
+  /** Activar Cuenta (Fase 7) */
+  onActivarCuenta?: () => void;
   /** Indica si hay una operación de fase en curso */
   enviandoFase?: boolean;
 }
@@ -47,19 +50,14 @@ export function FaseActionsComponent({
   fases,
   faseActualId,
   formData,
-  storageId,
   modo,
   onEnviarFase,
   onRegresarFase,
   onFormalizarContrato,
+  onSolicitudActivacion,
+  onActivarCuenta,
   enviandoFase = false,
 }: FaseActionsComponentProps) {
-  const [contratoModal, setContratoModal] = useState<{
-    lineaProducto: string;
-    tipoProducto: string;
-    noSol: string;
-  } | null>(null);
-
   // ── Fuente de verdad ─────────────────────────────────────────────────────
   const { faseActualReal, seqActual, faseSiguiente, faseAnterior, isConsistent, inconsistencias } =
     useFaseConsistency({ fases, faseActualId });
@@ -78,34 +76,17 @@ export function FaseActionsComponent({
     </div>
   );
 
-  // ── Visibilidad de botones por numero_consecutivo (spec C) ────────────────
-  // puedeEnviar: siempre que haya fase siguiente
-  const puedeEnviar = !!faseSiguiente;
-  // puedeRegresar: siempre que haya fase anterior (seq >= 2)
+  // ── Visibilidad de botones por numero_consecutivo ─────────────────────────
+  // Fases 1-5: botón "Enviar de Fase"
+  const puedeEnviar = !!faseSiguiente && seqActual >= 1 && seqActual <= 5;
+  // Todas las fases con anterior
   const puedeRegresar = !!faseAnterior;
-  // puedeFormalizar: solo en seq 4 (Formalización de Cuenta Financiera)
+  // Solo fase 4
   const puedeFormalizar = seqActual === 4;
-
-  // ── Handlers locales para Formalizar (muestra modal de confirmación) ─────
-  const handleFormalizarClick = () => {
-    // Cargar datos de términos para construir el contrato
-    const terminos: any = loadFromSession<any>(storageId, 'terminos') || {};
-    const garantias: any[] = loadFromSession<any[]>(storageId, 'garantias') || [];
-
-    if (onFormalizarContrato) {
-      onFormalizarContrato();
-    } else {
-      // Mostrar modal local si no hay callback externo
-      setContratoModal({
-        lineaProducto: formData.lineaProducto,
-        tipoProducto: formData.tipoProducto,
-        noSol: formData.noSol || String(storageId),
-      });
-      toast.success('Contrato formalizado', {
-        description: `Línea: ${formData.lineaProducto} | Producto: ${formData.tipoProducto}`,
-      });
-    }
-  };
+  // Fase 6: Solicitud de Activación (reemplaza a Enviar)
+  const puedeSolicitudActivacion = seqActual === 6;
+  // Fase 7: Activar Cuenta (reemplaza a Enviar)
+  const puedeActivarCuenta = seqActual === 7;
 
   // ── Modo Solicitudes: solo botón Enviar ──────────────────────────────────
   if (modo === 'solicitudes') {
@@ -178,7 +159,7 @@ export function FaseActionsComponent({
             {estatus && (
               <span
                 className={`px-2 py-0.5 rounded text-xs ${
-                  estatus === 'Aprobado'
+                  estatus === 'Aprobado' || estatus === 'Autorizada'
                     ? 'bg-green-100 text-green-800'
                     : estatus === 'En Proceso' || estatus === 'En proceso'
                     ? 'bg-blue-100 text-blue-800'
@@ -191,7 +172,7 @@ export function FaseActionsComponent({
           </div>
 
           <div className="flex items-center gap-2 flex-wrap justify-end">
-            {/* Enviar de Fase */}
+            {/* ── Fases 1-5: Enviar de Fase ── */}
             {puedeEnviar && (
               <button
                 onClick={onEnviarFase}
@@ -205,7 +186,52 @@ export function FaseActionsComponent({
               </button>
             )}
 
-            {/* Regresar de Fase (seq >= 2) */}
+            {/* ── Fase 6: Solicitud de Activación ── */}
+            {puedeSolicitudActivacion && (
+              <button
+                onClick={onSolicitudActivacion}
+                disabled={enviandoFase || !onSolicitudActivacion}
+                className="px-4 py-1.5 bg-[#2E5C91] text-white rounded text-xs hover:bg-[#1E4A75] flex items-center gap-1.5 disabled:opacity-50"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M9 12l2 2 4-4" />
+                  <path d="M21 12c0 4.97-4.03 9-9 9s-9-4.03-9-9 4.03-9 9-9 9 4.03 9 9z" />
+                </svg>
+                {enviandoFase ? 'Procesando...' : 'Solicitud de Activación'}
+              </button>
+            )}
+
+            {/* ── Fase 7: Activar Cuenta ── */}
+            {puedeActivarCuenta && (
+              <button
+                onClick={onActivarCuenta}
+                disabled={enviandoFase || !onActivarCuenta}
+                className="px-4 py-1.5 bg-[#059669] text-white rounded text-xs hover:bg-[#047857] flex items-center gap-1.5 disabled:opacity-50"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M12 22c5.52 0 10-4.48 10-10S17.52 2 12 2 2 6.48 2 12s4.48 10 10 10z" />
+                  <path d="M8 12l3 3 5-5" />
+                </svg>
+                {enviandoFase ? 'Activando...' : 'Activar Cuenta'}
+              </button>
+            )}
+
+            {/* ── Fases 4: Formalizar Contrato ── */}
+            {puedeFormalizar && (
+              <button
+                onClick={onFormalizarContrato}
+                disabled={enviandoFase}
+                className="px-4 py-1.5 bg-[#7C3AED] text-white rounded text-xs hover:bg-[#6D28D9] flex items-center gap-1.5 disabled:opacity-50"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+                  <path d="M14 2v6h6M16 13H8M16 17H8M10 9H8" />
+                </svg>
+                Formalizar Contrato
+              </button>
+            )}
+
+            {/* ── Regresar de Fase (seq >= 2) ── */}
             {puedeRegresar && (
               <button
                 onClick={onRegresarFase}
@@ -218,21 +244,6 @@ export function FaseActionsComponent({
                 Regresar de Fase
               </button>
             )}
-
-            {/* Formalizar Contrato (solo seq 4) */}
-            {puedeFormalizar && (
-              <button
-                onClick={handleFormalizarClick}
-                disabled={enviandoFase}
-                className="px-4 py-1.5 bg-[#7C3AED] text-white rounded text-xs hover:bg-[#6D28D9] flex items-center gap-1.5 disabled:opacity-50"
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
-                  <path d="M14 2v6h6M16 13H8M16 17H8M10 9H8" />
-                </svg>
-                Formalizar Contrato
-              </button>
-            )}
           </div>
         </div>
 
@@ -241,38 +252,20 @@ export function FaseActionsComponent({
           {faseAnterior && (
             <span>← Anterior: <span className="text-gray-600">{faseAnterior.fase}</span></span>
           )}
-          {faseSiguiente && (
+          {faseSiguiente && seqActual <= 5 && (
             <span>Siguiente →: <span className="text-gray-600">{faseSiguiente.fase}</span></span>
           )}
-          {!puedeEnviar && (
+          {seqActual === 6 && (
+            <span className="text-blue-600 font-medium">Cree la solicitud de activación según la línea de producto</span>
+          )}
+          {seqActual === 7 && (
+            <span className="text-green-600 font-medium">Última fase — Activación de cuenta</span>
+          )}
+          {!puedeEnviar && !puedeSolicitudActivacion && !puedeActivarCuenta && (
             <span className="text-green-600 font-medium">✓ Última fase del flujo</span>
           )}
         </div>
       </div>
-
-      {/* Modal de contrato (solo se muestra si no hay callback externo) */}
-      {contratoModal && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center">
-          <div className="bg-white rounded-lg p-6 max-w-sm w-full shadow-xl">
-            <h3 className="text-sm font-semibold text-gray-800 mb-2">Contrato / Pagaré generado</h3>
-            <p className="text-xs text-gray-600 mb-1">
-              <strong>Línea:</strong> {contratoModal.lineaProducto}
-            </p>
-            <p className="text-xs text-gray-600 mb-1">
-              <strong>Producto:</strong> {contratoModal.tipoProducto}
-            </p>
-            <p className="text-xs text-gray-600 mb-4">
-              <strong>No. Solicitud:</strong> {contratoModal.noSol}
-            </p>
-            <button
-              onClick={() => setContratoModal(null)}
-              className="px-4 py-1.5 bg-[#2E5C91] text-white rounded text-xs hover:bg-[#1E4A75]"
-            >
-              Cerrar
-            </button>
-          </div>
-        </div>
-      )}
     </>
   );
 }

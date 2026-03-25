@@ -753,6 +753,116 @@ export async function formalizarContratoSolicitudDB(
   }
 }
 
+/**
+ * Crea una entidad "Cuenta por Pagar" (Fase 6 — Línea Crédito).
+ * Intenta POST /crearCuentaPagar; fallback actualiza fases via updateFaseSolicitudDB.
+ */
+export async function crearCuentaPorPagarDB(
+  id: string,
+  datos: Record<string, any>,
+): Promise<{ ok: boolean; error?: string }> {
+  if (!DB_AVAILABLE) return { ok: false, error: 'DB no disponible' };
+  if (!UUID_RE.test(id)) return { ok: false, error: 'ID inválido (no UUID)' };
+
+  try {
+    const res = await fetch(`${API_BASE}/solicitudes-credito/${id}/crearCuentaPagar`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${publicAnonKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(datos),
+    });
+    if (res.ok) {
+      console.log('[SolicDB] crearCuentaPagar POST OK');
+      return { ok: true };
+    }
+    const json = await res.json().catch(() => ({}));
+    return { ok: false, error: json.error || `HTTP ${res.status}` };
+  } catch (err: any) {
+    return { ok: false, error: err?.message || String(err) };
+  }
+}
+
+/**
+ * Crea una entidad "Cuenta por Cobrar" (Fase 6 — Línea Captación).
+ */
+export async function crearCuentaPorCobrarDB(
+  id: string,
+  datos: Record<string, any>,
+): Promise<{ ok: boolean; error?: string }> {
+  if (!DB_AVAILABLE) return { ok: false, error: 'DB no disponible' };
+  if (!UUID_RE.test(id)) return { ok: false, error: 'ID inválido (no UUID)' };
+
+  try {
+    const res = await fetch(`${API_BASE}/solicitudes-credito/${id}/crearCuentaCobrar`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${publicAnonKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(datos),
+    });
+    if (res.ok) {
+      console.log('[SolicDB] crearCuentaCobrar POST OK');
+      return { ok: true };
+    }
+    const json = await res.json().catch(() => ({}));
+    return { ok: false, error: json.error || `HTTP ${res.status}` };
+  } catch (err: any) {
+    return { ok: false, error: err?.message || String(err) };
+  }
+}
+
+/**
+ * Activa la cuenta (Fase 7).
+ * Actualiza en Fin_Corp_Accnt:
+ *   EstatusSolicitud = "Autorizada"
+ *   EstatusCuenta    = "Activa"
+ *   EstatusPago      = "Pagado"
+ *   EstatusCartera   = "Activa"
+ */
+export async function activarCuentaDB(
+  id: string,
+  datos: Record<string, any>,
+): Promise<{ ok: boolean; error?: string }> {
+  if (!DB_AVAILABLE) return { ok: false, error: 'DB no disponible' };
+  if (!UUID_RE.test(id)) return { ok: false, error: 'ID inválido (no UUID)' };
+
+  // Intento 1: Endpoint dedicado /activarCuenta
+  try {
+    const res = await fetch(`${API_BASE}/solicitudes-credito/${id}/activarCuenta`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${publicAnonKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(datos),
+    });
+    if (res.ok) {
+      console.log('[SolicDB] activarCuenta POST OK');
+      return { ok: true };
+    }
+  } catch {
+    // fallthrough a fallback
+  }
+
+  // Fallback: actualizar estatus vía Edge Function PUT
+  try {
+    const payload: Record<string, any> = {
+      estatus_sol: 'Autorizada',
+      estatus_cuen: 'Activa',
+      estatus_disp: 'Pagado',
+      estatus_cart: 'Activa',
+      ...datos,
+    };
+    const res = await fetch(`${API_BASE}/solicitudes-credito/${id}`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${publicAnonKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (res.ok) {
+      console.log('[SolicDB] activarCuenta fallback PUT OK');
+      return { ok: true };
+    }
+    const json = await res.json().catch(() => ({}));
+    return { ok: false, error: json.error || `HTTP ${res.status}` };
+  } catch (err: any) {
+    return { ok: false, error: err?.message || String(err) };
+  }
+}
+
 // ══════════════════════════════════════════════════════════════════
 // HOOK PRINCIPAL
 // ═══════════════════════════════════════════════════════════════════

@@ -30,7 +30,11 @@ import { NotasTab } from './NotasTab';
 import { FasesSolicitudTab } from './tabs/FasesSolicitudTab';
 import { PartesRelacionadasTab } from './tabs/PartesRelacionadasTab';
 import { useProductosCatalogoDB, type ProductoCatalogo } from '../../hooks/useProductosCatalogoDB';
-import { fetchNextNoSol, updateFaseSolicitudDB, avanzarFaseSolicitudDB, regresarFaseSolicitudDB, formalizarContratoSolicitudDB } from '../../hooks/useSolicitudesDB';
+import { fetchNextNoSol, updateFaseSolicitudDB, avanzarFaseSolicitudDB, regresarFaseSolicitudDB, formalizarContratoSolicitudDB, crearCuentaPorPagarDB, crearCuentaPorCobrarDB, activarCuentaDB } from '../../hooks/useSolicitudesDB';
+import {
+  validarDocumentosFase, validarNotaReciente, validarFormalizarContrato,
+  validarContratosYPagares, validarFase6, validarFase7, leerRequisitosProducto,
+} from '../../hooks/useOriginacionValidaciones';
 import { FaseActionsComponent } from '../shared/FaseActionsComponent';
 import { addOriginacionItem, CAT_AREA } from '../originacion/originacionStore';
 import { FlujoTrabajo } from '../originacion/FlujoTrabajo';
@@ -338,30 +342,31 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
       const faseActualReal = fasesDelProducto.find(f => String(f.faseId) === String(formData.faseId));
       const seqActual = faseActualReal?.seq ?? (parseInt(formData.faseId) || 1);
 
-      // ── 2. Obtener documentos cargados (Sección 2) ──
+      // ── 2. Obtener documentos cargados (Sección 2) y requisitos (Sección 1) ──
       const documentos: DocumentoCargado[] =
         loadFromSession<DocumentoCargado[]>(storageId, 'documentos') ||
         loadFromSavedStore<DocumentoCargado[]>(storageId, 'documentos') ||
         [];
-
-      // ── 3. Validar requisitos obligatorios de la fase actual ──
       const rawData = productoSeleccionado?.rawData as Record<string, any> | undefined;
-      const requisitos = getRequisitosObligatoriosFase(rawData, seqActual, formData.tipoPersona);
+      const requisitosProducto: RequisitoProducto[] =
+        (rawData?.requisitos ?? rawData?.requisitosDocumentales ?? rawData?.expedientesElectronicos ?? []) as RequisitoProducto[];
 
-      if (requisitos.length > 0) {
-        const docsFase = documentos.filter(d => (d.faseId === seqActual || d.faseId === 0 || !d.faseId));
-        const tiposPresentes = docsFase.map(d => d.tipoDocumento);
-        const tiposValidados = docsFase.filter(d => d.estatus === 'Validado').map(d => d.tipoDocumento);
+      // ── 3. Validar documentos obligatorios de la fase actual (Sección B) ──
+      const resultDocs = validarDocumentosFase(documentos, requisitosProducto, seqActual, formData.tipoPersona);
+      if (!resultDocs.valid) {
+        toast.error('Documentos obligatorios incompletos', {
+          description: resultDocs.errors.slice(0, 3).join(' · ') + (resultDocs.errors.length > 3 ? ` (+${resultDocs.errors.length - 3} más)` : ''),
+        });
+        return;
+      }
 
-        const faltanPresencia = requisitos.filter(r => !tiposPresentes.includes(r.tipoDocumento)).map(r => r.tipoDocumento);
-        const noValidadosPorIA = requisitos.filter(r => tiposPresentes.includes(r.tipoDocumento) && !tiposValidados.includes(r.tipoDocumento)).map(r => r.tipoDocumento);
-
-        if (faltanPresencia.length > 0) {
-          toast.error('Documentos obligatorios no adjuntados', { description: faltanPresencia.join(', ') });
-          return;
-        }
-        if (noValidadosPorIA.length > 0) {
-          toast.error('Documentos pendientes de validación IA', { description: `Requieren estatus "Validado": ${noValidadosPorIA.join(', ')}` });
+      // ── 3b. Fase 5: validar contratos y pagarés (Sección D) ──
+      if (seqActual === 5) {
+        const resultContratos = validarContratosYPagares(documentos);
+        if (!resultContratos.valid) {
+          toast.error('Contratos y pagarés pendientes', {
+            description: resultContratos.errors.join(' · '),
+          });
           return;
         }
       }
@@ -408,19 +413,15 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
     if (enviandoFase) return;
     setEnviandoFase(true);
     try {
-      // ── Validar nota reciente (≤30 min) ──
-      const notas: any[] =
-        loadFromSession<any[]>(storageId, 'notas') ||
-        loadFromSavedStore<any[]>(storageId, 'notas') ||
-        [];
-      const ahora = new Date();
-      const tieneNotaReciente = notas.some((n) => {
-        const fecha = n.fechaCreacion ? new Date(n.fechaCreacion) : null;
-        return fecha && ahora.getTime() - fecha.getTime() <= 30 * 60 * 1000;
-      });
-      if (!tieneNotaReciente) {
+      // ── Validar nota reciente (≤30 min) — Sección C ──
+      // Intentar desde session primero; si no hay, desde savedStore (notas persistidas)
+      const notasSession = loadFromSession<any[]>(storageId, 'notas');
+      const notasSaved = loadFromSavedStore<any[]>(storageId, 'notas');
+      // Unificar: notas de session tienen prioridad (más recientes)
+      const todasNotas: any[] = notasSession ?? notasSaved ?? [];
+      if (!validarNotaReciente(todasNotas)) {
         toast.error('No se puede regresar de fase', {
-          description: 'Cree una nota en los últimos 30 minutos antes de regresar.',
+          description: 'Cree una nota en los últimos 30 minutos (sección Notas) antes de regresar.',
         });
         return;
       }
@@ -467,38 +468,240 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
     }
   }, [enviandoFase, formData, fasesDelProducto, storageId]);
 
-  /** Formalizar Contrato — solo disponible en Fase 4. */
+  /** Formalizar Contrato — Fase 4. Valida docs previos, términos, garantías y comités. */
   const handleFormalizarContrato = useCallback(async () => {
-    const terminos: any = loadFromSession<any>(storageId, 'terminos') || {};
-    const garantias: any[] = loadFromSession<any[]>(storageId, 'garantias') || [];
+    if (enviandoFase) return;
+    setEnviandoFase(true);
+    try {
+      const terminos: any = loadFromSession<any>(storageId, 'terminos') || loadFromSavedStore<any>(storageId, 'terminos') || {};
+      const garantias: any[] = loadFromSession<any[]>(storageId, 'garantias') || loadFromSavedStore<any[]>(storageId, 'garantias') || [];
+      const comites: any[] = loadFromSession<any[]>(storageId, 'comites') || loadFromSavedStore<any[]>(storageId, 'comites') || [];
+      const documentos: DocumentoCargado[] =
+        loadFromSession<DocumentoCargado[]>(storageId, 'documentos') ||
+        loadFromSavedStore<DocumentoCargado[]>(storageId, 'documentos') ||
+        [];
+      const rawData = productoSeleccionado?.rawData as Record<string, any> | undefined;
+      const requisitosProducto: RequisitoProducto[] =
+        (rawData?.requisitos ?? rawData?.requisitosDocumentales ?? []) as RequisitoProducto[];
+      const { requiereGarantia, requiereComite } = leerRequisitosProducto(rawData);
 
-    const datosContrato = {
-      solicitudId: formData.id || String(storageId),
-      noSol: formData.noSol,
-      lineaProducto: formData.lineaProducto,
-      tipoProducto: formData.tipoProducto,
-      tipoPersona: formData.tipoPersona,
-      cliente: [formData.nombrePersona, formData.apellidoPaternoPersona, formData.apellidoMaternoPersona]
-        .filter(Boolean).join(' ').trim(),
-      terminos,
-      garantias,
-    };
+      // Fases 1-3 previas
+      const faseActualReal = fasesDelProducto.find(f => String(f.faseId) === String(formData.faseId));
+      const seqActual = faseActualReal?.seq ?? 4;
+      const fasesAnteriores = Array.from({ length: seqActual - 1 }, (_, i) => i + 1);
 
-    const dbId = storageId !== 'new' ? String(storageId) : null;
-    const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    if (dbId && UUID_REGEX.test(dbId)) {
-      const result = await formalizarContratoSolicitudDB(dbId, datosContrato);
-      if (result.ok) {
-        toast.success('Contrato formalizado exitosamente', {
-          description: `No. Solicitud: ${formData.noSol}`,
+      const result = validarFormalizarContrato({
+        documentosCargados: documentos,
+        requisitos: requisitosProducto,
+        fasesAnterioresSeq: fasesAnteriores,
+        tipoPersona: formData.tipoPersona,
+        terminos,
+        garantias,
+        comites,
+        productoRequiereGarantia: requiereGarantia,
+        productoRequiereComite: requiereComite,
+      });
+
+      if (!result.valid) {
+        toast.error('No se puede formalizar el contrato', {
+          description: result.errors.slice(0, 3).join(' · ') + (result.errors.length > 3 ? ` (+${result.errors.length - 3} más)` : ''),
         });
-      } else {
-        toast.error('Error al formalizar contrato', { description: result.error });
+        return;
       }
-    } else {
-      toast.success('Contrato formalizado (modo local)', { description: formData.noSol });
+
+      const datosContrato = {
+        solicitudId: formData.id || String(storageId),
+        noSol: formData.noSol,
+        lineaProducto: formData.lineaProducto,
+        tipoProducto: formData.tipoProducto,
+        tipoPersona: formData.tipoPersona,
+        cliente: [formData.nombrePersona, formData.apellidoPaternoPersona, formData.apellidoMaternoPersona]
+          .filter(Boolean).join(' ').trim(),
+        terminos,
+        garantias,
+        comites,
+      };
+
+      const dbId = storageId !== 'new' ? String(storageId) : null;
+      const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (dbId && UUID_REGEX.test(dbId)) {
+        const res = await formalizarContratoSolicitudDB(dbId, datosContrato);
+        if (res.ok) {
+          toast.success('Contrato formalizado exitosamente', { description: `No. Solicitud: ${formData.noSol}` });
+        } else {
+          toast.error('Error al formalizar contrato', { description: res.error });
+        }
+      } else {
+        toast.success('Contrato formalizado (modo local)', { description: formData.noSol });
+      }
+    } finally {
+      setEnviandoFase(false);
     }
-  }, [formData, storageId]);
+  }, [enviandoFase, formData, fasesDelProducto, storageId, productoSeleccionado]);
+
+  /** Solicitud de Activación — Fase 6. Comportamiento según lineaProducto. */
+  const handleSolicitudActivacion = useCallback(async () => {
+    if (enviandoFase) return;
+    setEnviandoFase(true);
+    try {
+      const garantias: any[] = loadFromSession<any[]>(storageId, 'garantias') || loadFromSavedStore<any[]>(storageId, 'garantias') || [];
+      const comites: any[] = loadFromSession<any[]>(storageId, 'comites') || loadFromSavedStore<any[]>(storageId, 'comites') || [];
+      const cargos: any[] = loadFromSession<any[]>(storageId, 'cargos') || loadFromSavedStore<any[]>(storageId, 'cargos') || [];
+      const terminos: any = loadFromSession<any>(storageId, 'terminos') || loadFromSavedStore<any>(storageId, 'terminos') || {};
+      const rawData = productoSeleccionado?.rawData as Record<string, any> | undefined;
+      const { requiereGarantia, requiereComite, montoGarantia } = leerRequisitosProducto(rawData);
+
+      // Validar según línea de producto
+      const result = validarFase6({
+        lineaProducto: formData.lineaProducto,
+        garantias,
+        comites,
+        cargos,
+        montoGarantiaRequerido: montoGarantia,
+        productoRequiereGarantia: requiereGarantia,
+        productoRequiereComite: requiereComite,
+      });
+
+      if (!result.valid) {
+        toast.error('No se puede crear la solicitud de activación', {
+          description: result.errors.slice(0, 3).join(' · ') + (result.errors.length > 3 ? ` (+${result.errors.length - 3} más)` : ''),
+        });
+        return;
+      }
+
+      const dbId = storageId !== 'new' ? String(storageId) : null;
+      const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      const linea = (formData.lineaProducto || '').toLowerCase();
+      const isCaptacion = linea.includes('captación') || linea.includes('captacion');
+      const isLineaCredito = linea.includes('línea') || linea.includes('linea');
+
+      const montoSol = parseFloat((formData.montoSolicitado || '0').replace(/[^0-9.-]/g, '')) || 0;
+      const cliente = [formData.nombrePersona, formData.apellidoPaternoPersona, formData.apellidoMaternoPersona]
+        .filter(Boolean).join(' ').trim();
+
+      // Subproducto Capital (de cargos)
+      const cargoCapital = cargos.find(c =>
+        (c.tipoCargo || c.descripcion || '').toLowerCase().includes('capital')
+      ) || cargos[0];
+
+      const datosCuenta = {
+        solicitudId: formData.id || String(storageId),
+        noDocto: formData.noSol,
+        fecha: new Date().toISOString().split('T')[0],
+        tipo: isCaptacion ? 'Por Cobrar' : 'Por Pagar',
+        cliente,
+        formaPago: terminos.formaPago || '',
+        montoTransaccion: montoSol,
+        moneda: terminos.moneda || 'MXN',
+        detalle: [{
+          cveSubproducto: cargoCapital?.tipoCargo || 'CAP',
+          descSubproducto: 'Capital',
+          cantidad: 1,
+          monto: montoSol,
+          impuesto: 0,
+          moneda: terminos.moneda || 'MXN',
+          subtotal: montoSol,
+          estatus: 'Pendiente',
+        }],
+      };
+
+      if (dbId && UUID_REGEX.test(dbId)) {
+        const res = isCaptacion
+          ? await crearCuentaPorCobrarDB(dbId, datosCuenta)
+          : await crearCuentaPorPagarDB(dbId, datosCuenta);
+
+        if (res.ok) {
+          toast.success(
+            isCaptacion ? 'Cuenta por Cobrar creada' : 'Cuenta por Pagar creada',
+            { description: `Solicitud: ${formData.noSol}` }
+          );
+        } else {
+          toast.warning('Cuenta creada localmente (sin conexión BD)', { description: res.error });
+        }
+      } else {
+        toast.success('Solicitud de activación generada (modo local)', { description: formData.noSol });
+      }
+
+      // Para Línea de Crédito: avanza automáticamente a la siguiente fase
+      if (isLineaCredito) {
+        const faseActualReal2 = fasesDelProducto.find(f => String(f.faseId) === String(formData.faseId));
+        const seqActual2 = faseActualReal2?.seq ?? 6;
+        const sigFase2 = fasesDelProducto.find(f => f.seq === seqActual2 + 1);
+        if (sigFase2) {
+          const nuevaArea2 = sigFase2.area || inferirAreaFase(sigFase2.fase);
+          setFormData(prev => ({
+            ...prev,
+            faseId: sigFase2.faseId,
+            descripcionFase: sigFase2.fase,
+            area: nuevaArea2,
+          }));
+          const dbId2 = storageId !== 'new' ? String(storageId) : null;
+          const UUID_REGEX2 = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+          if (dbId2 && UUID_REGEX2.test(dbId2)) {
+            await avanzarFaseSolicitudDB(dbId2, sigFase2.faseId, sigFase2.fase, nuevaArea2);
+          }
+          toast.success('Línea de Crédito — Fase avanzada automáticamente', { description: sigFase2.fase });
+        }
+      }
+    } finally {
+      setEnviandoFase(false);
+    }
+  }, [enviandoFase, formData, fasesDelProducto, storageId, productoSeleccionado]);
+
+  /** Activar Cuenta — Fase 7. Valida pago (excepto Línea de Crédito) y actualiza todos los estatus. */
+  const handleActivarCuenta = useCallback(async () => {
+    if (enviandoFase) return;
+    setEnviandoFase(true);
+    try {
+      // Cargar solicitudes de activación desde session/savedStore
+      const solicitudesActivacion: any[] =
+        loadFromSession<any[]>(storageId, 'solicitudesActivacion') ||
+        loadFromSavedStore<any[]>(storageId, 'solicitudesActivacion') ||
+        [];
+
+      const result = validarFase7({
+        lineaProducto: formData.lineaProducto,
+        solicitudesActivacion,
+      });
+
+      if (!result.valid) {
+        toast.error('No se puede activar la cuenta', {
+          description: result.errors.join(' · '),
+        });
+        return;
+      }
+
+      // Actualizar estatus en BD
+      const dbId = storageId !== 'new' ? String(storageId) : null;
+      const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+      const datosActivacion = {
+        estatusSolicitud: 'Autorizada',
+        estatusCuenta: 'Activa',
+        estatusPago: 'Pagado',
+        estatusCartera: 'Activa',
+        fechaActivacion: new Date().toISOString().split('T')[0],
+      };
+
+      // Actualizar estado local
+      setFormData(prev => ({ ...prev, estatusSolicitud: 'Autorizada' }));
+
+      if (dbId && UUID_REGEX.test(dbId)) {
+        const res = await activarCuentaDB(dbId, datosActivacion);
+        if (res.ok) {
+          toast.success('¡Cuenta activada exitosamente!', {
+            description: `Solicitud ${formData.noSol} — EstatusSolicitud: Autorizada | EstatusCuenta: Activa`,
+          });
+        } else {
+          toast.warning('Cuenta activada localmente (sin conexión BD)', { description: res.error });
+        }
+      } else {
+        toast.success('Cuenta activada (modo local)', { description: formData.noSol });
+      }
+    } finally {
+      setEnviandoFase(false);
+    }
+  }, [enviandoFase, formData, storageId]);
 
   const handleNumeric = (field: keyof SolicitudFormData, value: string) => {
     const cleaned = value.replace(/[^0-9.]/g, '');
@@ -754,6 +957,8 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
           onEnviarFase={handleEnviarFase}
           onRegresarFase={handleRegresarFase}
           onFormalizarContrato={handleFormalizarContrato}
+          onSolicitudActivacion={handleSolicitudActivacion}
+          onActivarCuenta={handleActivarCuenta}
           enviandoFase={enviandoFase}
         />
       </div>
@@ -1097,7 +1302,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
                   <AutorizacionTab mode={mode} solicitudId={storageId} montoSolicitado={formData.montoSolicitado} productoId={formData.productoId} />
                 )}
                 {sec.id === 'notas' && (
-                  <NotasTab mode={mode} solicitudId={storageId} />
+                  <NotasTab mode={mode} solicitudId={storageId} allowAddNotes={modo === 'originacion'} />
                 )}
                 {sec.id === 'comites' && (
                   <ComitesTab mode={mode} solicitudId={storageId} />
