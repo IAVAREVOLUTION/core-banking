@@ -35,6 +35,7 @@ import { addOriginacionItem, CAT_AREA } from '../originacion/originacionStore';
 import { FlujoTrabajo } from '../originacion/FlujoTrabajo';
 import { SolicitudCargosTab } from './SolicitudCargosTab';
 import { ComitesTab } from '../shared/ComitesTab';
+import { FaseActionsComponent } from '../shared/FaseActionsComponent';
 
 // ── Helper: inferir AreaActual según el nombre de la fase ──
 function inferirAreaFase(descripcionFase: string): string {
@@ -106,9 +107,14 @@ interface SolicitudCreditoFormProps {
   onSave?: (data: any) => void;
   /** Datos pre-cargados desde cotización */
   cotizacionData?: Partial<SolicitudFormData>;
+  /**
+   * 'solicitudes' (default) → solo botón Enviar de Fase
+   * 'originacion'           → todos los botones de fase, siempre visibles
+   */
+  modo?: 'solicitudes' | 'originacion';
 }
 
-export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, cotizacionData }: SolicitudCreditoFormProps) {
+export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, cotizacionData, modo = 'solicitudes' }: SolicitudCreditoFormProps) {
   const storageId: number | string | 'new' = mode === 'nuevo' ? 'new' : (solicitudId ?? 1);
   const initialRender = useRef(true);
   /** Tracks the formData snapshot at mount time — used to detect user-driven changes */
@@ -321,7 +327,8 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
    *  3) Si todo OK: avanza a la siguiente fase, actualiza NoFaseActual / FaseActual / AreaActual en DB.
    */
   const handleEnviarFase = useCallback(async () => {
-    if (isRO || enviandoFase) return;
+    // En modo originación siempre se permite; en otros modos respeta isRO
+    if ((isRO && modo !== 'originacion') || enviandoFase) return;
     setEnviandoFase(true);
     try {
       const faseActualNum = parseInt(formData.faseId) || 1;
@@ -960,6 +967,16 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
                         </div>
                       </div>
                     </div>
+
+                    {/* ── Botones de Fase ── */}
+                    <FaseActionsComponent
+                      formData={formData}
+                      currentFaseNombre={currentFase?.fase || formData.descripcionFase}
+                      storageId={storageId}
+                      modo={modo}
+                      onEnviarFase={handleEnviarFase}
+                      enviandoFase={enviandoFase}
+                    />
 
                   </div>
                 )}
