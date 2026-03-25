@@ -30,6 +30,9 @@ export interface SolicitudFormData {
   sucursal: string;
   montoSolicitado: string;
   montoAutorizado: string;
+  // Fechas de vigencia del crédito (unificadas con Originación)
+  fechaInicio?: string;
+  fechaFin?: string;
 }
 
 // Términos y Condiciones
@@ -563,6 +566,8 @@ export const EMPTY_FORM: SolicitudFormData = {
   sucursal: '',
   montoSolicitado: '',
   montoAutorizado: '',
+  fechaInicio: '',
+  fechaFin: '',
 };
 
 export const EMPTY_TERMINOS: TerminosCondiciones = {
