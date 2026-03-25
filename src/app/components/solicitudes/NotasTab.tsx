@@ -42,6 +42,7 @@ export function NotasTab({ mode, solicitudId }: Props) {
     const nota: Nota = {
       id: generateId(),
       fecha,
+      fechaCreacion: now.toISOString(),
       // TODO: reemplazar con usuario real de sesión cuando se implemente auth
       usuario: '(sesión pendiente)',
       puesto: '(puesto pendiente)',

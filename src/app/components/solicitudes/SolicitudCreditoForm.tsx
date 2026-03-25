@@ -30,7 +30,8 @@ import { NotasTab } from './NotasTab';
 import { FasesSolicitudTab } from './tabs/FasesSolicitudTab';
 import { PartesRelacionadasTab } from './tabs/PartesRelacionadasTab';
 import { useProductosCatalogoDB, type ProductoCatalogo } from '../../hooks/useProductosCatalogoDB';
-import { fetchNextNoSol, updateFaseSolicitudDB } from '../../hooks/useSolicitudesDB';
+import { fetchNextNoSol, updateFaseSolicitudDB, avanzarFaseSolicitudDB, regresarFaseSolicitudDB, formalizarContratoSolicitudDB } from '../../hooks/useSolicitudesDB';
+import { FaseActionsComponent } from '../shared/FaseActionsComponent';
 import { addOriginacionItem, CAT_AREA } from '../originacion/originacionStore';
 import { FlujoTrabajo } from '../originacion/FlujoTrabajo';
 import { SolicitudCargosTab } from './SolicitudCargosTab';
@@ -106,9 +107,14 @@ interface SolicitudCreditoFormProps {
   onSave?: (data: any) => void;
   /** Datos pre-cargados desde cotización */
   cotizacionData?: Partial<SolicitudFormData>;
+  /**
+   * 'solicitudes' (default) → solo botón Enviar de Fase
+   * 'originacion'           → todos los botones de fase, siempre visibles
+   */
+  modo?: 'solicitudes' | 'originacion';
 }
 
-export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, cotizacionData }: SolicitudCreditoFormProps) {
+export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, cotizacionData, modo: modoProp = 'solicitudes' }: SolicitudCreditoFormProps) {
   const storageId: number | string | 'new' = mode === 'nuevo' ? 'new' : (solicitudId ?? 1);
   const initialRender = useRef(true);
   /** Tracks the formData snapshot at mount time — used to detect user-driven changes */
@@ -146,6 +152,8 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
   const [activeSection, setActiveSection] = useState<string>('fases');
 
   const isRO = mode === 'ver';
+  // modo: controla qué botones de fase se muestran
+  const modo = modoProp;
 
   // ── Safety re-init: if solicitudId changed but React reused the instance ──
   useEffect(() => {
@@ -263,21 +271,29 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
     return productosDB.find(p => p.id === formData.productoId);
   }, [formData.productoId, productosDB]);
 
-  // ── Fases del producto seleccionado (mapea correctamente del JSON) ──
+  // ── Fases del producto seleccionado — fuente de verdad ──
   const fasesDelProducto = useMemo(() => {
     const rd = productoSeleccionado?.rawData;
-    // Buscar fases en múltiples keys posibles
     const raw = rd?.fases ?? rd?.fasesRegistros ?? rd?.fase;
     if (Array.isArray(raw) && raw.length > 0) {
-      return raw.map((f: any) => ({
-        faseId: String(f.seq ?? f.id ?? '1'),  // seq es el número de fase
-        fase: f.fase || f.phaseName || f.descripcion || '',  // nombre de la fase
+      return raw.map((f: any, idx: number) => ({
+        faseId: String(f.id ?? f.fase_id ?? f.seq ?? idx + 1),  // ID único (guardado en BD)
+        seq: parseInt(String(f.seq ?? f.numero_consecutivo ?? f.orden ?? idx + 1)),  // numero_consecutivo
+        fase: f.fase || f.phaseName || f.descripcion || '',
         area: f.area || '',
         notes: f.notes || '',
         promptIA: f.promptIA || '',
       }));
     }
-    return CAT_FASES;
+    // Fallback: CAT_FASES con seq explícito
+    return CAT_FASES.map((f, idx) => ({
+      faseId: f.faseId,
+      seq: idx + 1,
+      fase: f.descripcion,
+      area: '',
+      notes: '',
+      promptIA: '',
+    }));
   }, [productoSeleccionado]);
 
   // Sync fase data when productoSeleccionado becomes available (for editing existing solicitudes)
@@ -288,14 +304,14 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
     const raw = rd?.fases ?? rd?.fasesRegistros ?? rd?.fase;
     if (!Array.isArray(raw) || raw.length === 0) return;
 
-    const fase = raw.find((f: any) => {
-      const seq = String(f.seq ?? f.id ?? '');
-      return seq === formData.faseId;
+    const fase = raw.find((f: any, idx: number) => {
+      const fId = String(f.id ?? f.fase_id ?? f.seq ?? idx + 1);
+      return fId === formData.faseId;
     }) || raw[0];
 
     const faseData = {
-      faseId: String(fase.seq ?? fase.id ?? '1'),
-      fase: fase.fase || fase.notes || '',
+      faseId: String(fase.id ?? fase.fase_id ?? fase.seq ?? '1'),
+      fase: fase.fase || fase.descripcion || '',
       area: fase.area || '',
       promptIA: fase.promptIA || '',
     };
@@ -314,30 +330,26 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
 
   const [enviandoFase, setEnviandoFase] = useState(false);
 
-  /**
-   * Enviar de Fase — Regla general B:
-   *  1) Valida documentos obligatorios (Sección 1 del Expediente) según tipo de persona y fase.
-   *  2) Todos deben estar subidos (en Sección 2) y validados por IA (estatus = 'Validado').
-   *  3) Si todo OK: avanza a la siguiente fase, actualiza NoFaseActual / FaseActual / AreaActual en DB.
-   */
   const handleEnviarFase = useCallback(async () => {
-    if (isRO || enviandoFase) return;
+    if ((isRO && modo !== 'originacion') || enviandoFase) return;
     setEnviandoFase(true);
     try {
-      const faseActualNum = parseInt(formData.faseId) || 1;
+      // ── 1. Encontrar faseActualReal por faseId (NO por índice) ──
+      const faseActualReal = fasesDelProducto.find(f => String(f.faseId) === String(formData.faseId));
+      const seqActual = faseActualReal?.seq ?? (parseInt(formData.faseId) || 1);
 
-      // ── 1. Obtener documentos cargados (Sección 2) desde session / savedStore ──
+      // ── 2. Obtener documentos cargados (Sección 2) ──
       const documentos: DocumentoCargado[] =
-        (loadFromSession<DocumentoCargado[]>(storageId, 'documentos') ||
+        loadFromSession<DocumentoCargado[]>(storageId, 'documentos') ||
         loadFromSavedStore<DocumentoCargado[]>(storageId, 'documentos') ||
-        []);
+        [];
 
-      // ── 2. Obtener requisitos obligatorios de la fase actual (Sección 1) ──
+      // ── 3. Validar requisitos obligatorios de la fase actual ──
       const rawData = productoSeleccionado?.rawData as Record<string, any> | undefined;
-      const requisitos = getRequisitosObligatoriosFase(rawData, faseActualNum, formData.tipoPersona);
+      const requisitos = getRequisitosObligatoriosFase(rawData, seqActual, formData.tipoPersona);
 
       if (requisitos.length > 0) {
-        const docsFase = documentos.filter(d => (d.faseId === faseActualNum || d.faseId === 0 || !d.faseId));
+        const docsFase = documentos.filter(d => (d.faseId === seqActual || d.faseId === 0 || !d.faseId));
         const tiposPresentes = docsFase.map(d => d.tipoDocumento);
         const tiposValidados = docsFase.filter(d => d.estatus === 'Validado').map(d => d.tipoDocumento);
 
@@ -354,41 +366,139 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
         }
       }
 
-      // ── 3. Buscar la siguiente fase en Producto_Fases ──
-      const sigFase = fasesDelProducto.find(f => parseInt(f.faseId) === faseActualNum + 1);
+      // ── 4. Buscar faseSiguiente por numero_consecutivo ──
+      const sigFase = fasesDelProducto.find(f => f.seq === seqActual + 1);
       if (!sigFase) {
-        toast.info('Esta es la última fase del flujo', { description: formData.descripcionFase });
+        toast.info('Esta es la última fase del flujo', { description: faseActualReal?.fase || formData.descripcionFase });
         return;
       }
 
-      const nuevaAreaActual = inferirAreaFase(sigFase.descripcion);
+      const nuevaAreaActual = sigFase.area || inferirAreaFase(sigFase.fase);
 
-      // ── 4. Actualizar estado local ──
+      // ── 5. Actualizar estado local ──
       setFormData(prev => ({
         ...prev,
         faseId: sigFase.faseId,
-        descripcionFase: sigFase.descripcion,
+        descripcionFase: sigFase.fase,
+        area: nuevaAreaActual,
         estatusSolicitud: prev.estatusSolicitud === 'Pendiente' ? 'En proceso' : prev.estatusSolicitud,
       }));
 
-      // ── 5. Persistir en DB si hay un dbId válido ──
+      // ── 6. Persistir en BD ──
       const dbId = storageId !== 'new' ? String(storageId) : null;
-      const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-      if (dbId && UUID_RE.test(dbId)) {
+      const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (dbId && UUID_REGEX.test(dbId)) {
         const nuevoEstatus = formData.estatusSolicitud === 'Pendiente' ? 'En proceso' : undefined;
-        const result = await updateFaseSolicitudDB(dbId, sigFase.faseId, sigFase.descripcion, nuevaAreaActual, nuevoEstatus);
+        const result = await avanzarFaseSolicitudDB(dbId, sigFase.faseId, sigFase.fase, nuevaAreaActual, nuevoEstatus);
         if (result.ok) {
-          toast.success('Fase avanzada correctamente', { description: `${formData.descripcionFase} → ${sigFase.descripcion}` });
+          toast.success('Fase avanzada correctamente', { description: `${faseActualReal?.fase || formData.descripcionFase} → ${sigFase.fase}` });
         } else {
           toast.warning('Fase actualizada localmente (sin conexión BD)', { description: result.error || 'Sincronización pendiente' });
         }
       } else {
-        toast.success('Fase avanzada', { description: `${formData.descripcionFase} → ${sigFase.descripcion}. Guarda la solicitud para persistir.` });
+        toast.success('Fase avanzada', { description: `${faseActualReal?.fase || formData.descripcionFase} → ${sigFase.fase}. Guarda para persistir.` });
       }
     } finally {
       setEnviandoFase(false);
     }
-  }, [isRO, enviandoFase, formData, fasesDelProducto, storageId, productoSeleccionado]);
+  }, [isRO, modo, enviandoFase, formData, fasesDelProducto, storageId, productoSeleccionado]);
+
+  /** Regresar de Fase — requiere nota reciente (≤30 min). */
+  const handleRegresarFase = useCallback(async () => {
+    if (enviandoFase) return;
+    setEnviandoFase(true);
+    try {
+      // ── Validar nota reciente (≤30 min) ──
+      const notas: any[] =
+        loadFromSession<any[]>(storageId, 'notas') ||
+        loadFromSavedStore<any[]>(storageId, 'notas') ||
+        [];
+      const ahora = new Date();
+      const tieneNotaReciente = notas.some((n) => {
+        const fecha = n.fechaCreacion ? new Date(n.fechaCreacion) : null;
+        return fecha && ahora.getTime() - fecha.getTime() <= 30 * 60 * 1000;
+      });
+      if (!tieneNotaReciente) {
+        toast.error('No se puede regresar de fase', {
+          description: 'Cree una nota en los últimos 30 minutos antes de regresar.',
+        });
+        return;
+      }
+
+      // ── Encontrar faseActualReal y faseAnterior por seq ──
+      const faseActualReal = fasesDelProducto.find(f => String(f.faseId) === String(formData.faseId));
+      const seqActual = faseActualReal?.seq ?? (parseInt(formData.faseId) || 1);
+      const faseAnterior = fasesDelProducto.find(f => f.seq === seqActual - 1);
+
+      if (!faseAnterior) {
+        toast.info('No hay fase anterior', { description: 'Esta es la primera fase del flujo.' });
+        return;
+      }
+
+      const nuevaArea = faseAnterior.area || inferirAreaFase(faseAnterior.fase);
+
+      // ── Actualizar estado local ──
+      setFormData(prev => ({
+        ...prev,
+        faseId: faseAnterior.faseId,
+        descripcionFase: faseAnterior.fase,
+        area: nuevaArea,
+      }));
+
+      // ── Persistir en BD ──
+      const dbId = storageId !== 'new' ? String(storageId) : null;
+      const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (dbId && UUID_REGEX.test(dbId)) {
+        const result = await regresarFaseSolicitudDB(dbId, faseAnterior.faseId, faseAnterior.fase, nuevaArea);
+        if (result.ok) {
+          toast.success('Fase regresada correctamente', {
+            description: `${faseActualReal?.fase || formData.descripcionFase} → ${faseAnterior.fase}`,
+          });
+        } else {
+          toast.warning('Fase regresada localmente (sin conexión BD)', { description: result.error });
+        }
+      } else {
+        toast.success('Fase regresada', {
+          description: `${faseActualReal?.fase || formData.descripcionFase} → ${faseAnterior.fase}. Guarda para persistir.`,
+        });
+      }
+    } finally {
+      setEnviandoFase(false);
+    }
+  }, [enviandoFase, formData, fasesDelProducto, storageId]);
+
+  /** Formalizar Contrato — solo disponible en Fase 4. */
+  const handleFormalizarContrato = useCallback(async () => {
+    const terminos: any = loadFromSession<any>(storageId, 'terminos') || {};
+    const garantias: any[] = loadFromSession<any[]>(storageId, 'garantias') || [];
+
+    const datosContrato = {
+      solicitudId: formData.id || String(storageId),
+      noSol: formData.noSol,
+      lineaProducto: formData.lineaProducto,
+      tipoProducto: formData.tipoProducto,
+      tipoPersona: formData.tipoPersona,
+      cliente: [formData.nombrePersona, formData.apellidoPaternoPersona, formData.apellidoMaternoPersona]
+        .filter(Boolean).join(' ').trim(),
+      terminos,
+      garantias,
+    };
+
+    const dbId = storageId !== 'new' ? String(storageId) : null;
+    const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (dbId && UUID_REGEX.test(dbId)) {
+      const result = await formalizarContratoSolicitudDB(dbId, datosContrato);
+      if (result.ok) {
+        toast.success('Contrato formalizado exitosamente', {
+          description: `No. Solicitud: ${formData.noSol}`,
+        });
+      } else {
+        toast.error('Error al formalizar contrato', { description: result.error });
+      }
+    } else {
+      toast.success('Contrato formalizado (modo local)', { description: formData.noSol });
+    }
+  }, [formData, storageId]);
 
   const handleNumeric = (field: keyof SolicitudFormData, value: string) => {
     const cleaned = value.replace(/[^0-9.]/g, '');
@@ -414,7 +524,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
     const rawFases = rd?.fases ?? rd?.fasesRegistros ?? rd?.fase;
     const firstFase = Array.isArray(rawFases) && rawFases.length > 0 ? rawFases[0] : null;
     
-    const faseId = firstFase ? String(firstFase.seq ?? firstFase.id ?? '1') : '1';
+    const faseId = firstFase ? String(firstFase.id ?? firstFase.fase_id ?? firstFase.seq ?? '1') : '1';
     const faseNombre = firstFase?.fase || firstFase?.notes || 'Fase 1';
     const faseArea = firstFase?.area || '';
     
@@ -625,48 +735,28 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
       {/* ═══ FLUJO DE TRABAJO — 7 fases visualizadas (igual que Originación) ═══ */}
       {formData.descripcionFase && (
         <div className="px-6 py-3 border-b border-gray-200 bg-gray-50">
-          <FlujoTrabajo subEstatus={formData.descripcionFase} faseActual={formData.descripcionFase} />
+          <FlujoTrabajo
+            subEstatus={formData.descripcionFase}
+            faseActual={formData.descripcionFase}
+            faseActualSeq={fasesDelProducto.find(f => String(f.faseId) === String(formData.faseId))?.seq}
+          />
         </div>
       )}
 
-      {/* ═══ FASE ACTION BAR — Avance de Fase ═══ */}
-      {!isRO && formData.productoId && formData.faseId && (
-        <div className="bg-blue-50 border-b border-blue-200 px-6 py-2.5 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-gray-500">Fase actual:</span>
-              <span className="text-xs font-semibold text-[#4A6FA5] bg-[#D9E2F3] px-2 py-0.5 rounded">
-                {formData.faseId} — {formData.descripcionFase || 'Sin descripción'}
-              </span>
-            </div>
-            <div className="flex items-center gap-1">
-              {fasesDelProducto.map(f => {
-                const fNum = parseInt(f.faseId);
-                const cur = parseInt(formData.faseId) || 1;
-                return (
-                  <div
-                    key={f.faseId}
-                    title={f.descripcion}
-                    className={`w-2 h-2 rounded-full ${fNum < cur ? 'bg-green-500' : fNum === cur ? 'bg-[#4A6FA5]' : 'bg-gray-300'}`}
-                  />
-                );
-              })}
-            </div>
-          </div>
-          <button
-            onClick={handleEnviarFase}
-            disabled={enviandoFase}
-            className="px-4 py-1.5 bg-[#4A6FA5] text-white text-sm rounded hover:bg-[#3d5d8a] disabled:opacity-60 flex items-center gap-2"
-          >
-            {enviandoFase && (
-              <svg className="animate-spin" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2">
-                <circle cx="7" cy="7" r="5" strokeDasharray="20" strokeDashoffset="10" />
-              </svg>
-            )}
-            Enviar de Fase
-          </button>
-        </div>
-      )}
+      {/* ═══ FASE ACTION BAR — siempre visible (fasesDelProducto siempre tiene fallback) ═══ */}
+      <div className="px-6 py-2.5 border-b border-gray-200">
+        <FaseActionsComponent
+          fases={fasesDelProducto}
+          faseActualId={formData.faseId || '1'}
+          formData={formData}
+          storageId={storageId}
+          modo={modo}
+          onEnviarFase={handleEnviarFase}
+          onRegresarFase={handleRegresarFase}
+          onFormalizarContrato={handleFormalizarContrato}
+          enviandoFase={enviandoFase}
+        />
+      </div>
 
       <div className="px-6 py-6">
         {/* ═══ DIAGNÓSTICO TEMPORAL — eliminar después de verificar ═══ */}
@@ -964,10 +1054,11 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
                   </div>
                 )}
                 {sec.id === 'fases' && (
-                  <FasesSolicitudTab 
+                  <FasesSolicitudTab
                     mode={mode}
                     productoId={formData.productoId}
                     faseIdActual={formData.faseId}
+                    faseActualSeq={fasesDelProducto.find(f => String(f.faseId) === String(formData.faseId))?.seq}
                   />
                 )}
                 {sec.id === 'partesRelacionadas' && (
@@ -1020,6 +1111,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
                     <FlujoTrabajo
                       subEstatus={formData.descripcionFase}
                       faseActual={formData.descripcionFase}
+                      faseActualSeq={fasesDelProducto.find(f => String(f.faseId) === String(formData.faseId))?.seq}
                       className="mt-2"
                     />
                   </div>

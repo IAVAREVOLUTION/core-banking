@@ -240,6 +240,7 @@ export function OriginacionModule() {
         solicitudId={view.id}
         readOnly={view.mode === 'ver'}
         onCancel={goToList}
+        modo="originacion"
       />
     );
   }
