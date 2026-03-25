@@ -651,6 +651,108 @@ export async function updateFaseSolicitudDB(
   }
 }
 
+/**
+ * Avanza la fase de la solicitud al siguiente paso.
+ * Intenta POST /avanzarFase; si falla, usa updateFaseSolicitudDB como fallback.
+ */
+export async function avanzarFaseSolicitudDB(
+  id: string,
+  nuevaFaseId: string,
+  nuevaDescripcionFase: string,
+  nuevaArea: string,
+  nuevoEstatus?: string,
+): Promise<{ ok: boolean; error?: string }> {
+  if (!DB_AVAILABLE) return { ok: false, error: 'DB no disponible' };
+  if (!UUID_RE.test(id)) return { ok: false, error: 'ID inválido (no UUID)' };
+
+  // Intento 1: Endpoint dedicado /avanzarFase
+  try {
+    const payload: Record<string, any> = {
+      nuevaFaseId,
+      nuevaDescripcionFase,
+      nuevaArea,
+    };
+    if (nuevoEstatus) payload.nuevoEstatus = nuevoEstatus;
+    const res = await fetch(`${API_BASE}/solicitudes-credito/${id}/avanzarFase`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${publicAnonKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (res.ok) {
+      console.log('[SolicDB] avanzarFase POST OK — faseId:', nuevaFaseId);
+      return { ok: true };
+    }
+  } catch {
+    // fallthrough
+  }
+
+  // Fallback: reutilizar updateFaseSolicitudDB
+  return updateFaseSolicitudDB(id, nuevaFaseId, nuevaDescripcionFase, nuevaArea, nuevoEstatus);
+}
+
+/**
+ * Regresa la fase de la solicitud al paso anterior.
+ * Requiere validación previa (nota reciente) en el llamador.
+ * Intenta POST /regresarFase; si falla, usa updateFaseSolicitudDB como fallback.
+ */
+export async function regresarFaseSolicitudDB(
+  id: string,
+  faseAnteriorId: string,
+  faseAnteriorDesc: string,
+  faseAnteriorArea: string,
+): Promise<{ ok: boolean; error?: string }> {
+  if (!DB_AVAILABLE) return { ok: false, error: 'DB no disponible' };
+  if (!UUID_RE.test(id)) return { ok: false, error: 'ID inválido (no UUID)' };
+
+  // Intento 1: Endpoint dedicado /regresarFase
+  try {
+    const payload = { faseAnteriorId, faseAnteriorDesc, faseAnteriorArea };
+    const res = await fetch(`${API_BASE}/solicitudes-credito/${id}/regresarFase`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${publicAnonKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (res.ok) {
+      console.log('[SolicDB] regresarFase POST OK — faseId:', faseAnteriorId);
+      return { ok: true };
+    }
+  } catch {
+    // fallthrough
+  }
+
+  // Fallback
+  return updateFaseSolicitudDB(id, faseAnteriorId, faseAnteriorDesc, faseAnteriorArea);
+}
+
+/**
+ * Formaliza contrato/pagaré (Fase 4).
+ * Llama POST /formalizarContrato con datos del contrato.
+ */
+export async function formalizarContratoSolicitudDB(
+  id: string,
+  datosContrato: Record<string, any>,
+): Promise<{ ok: boolean; contrato?: any; error?: string }> {
+  if (!DB_AVAILABLE) return { ok: false, error: 'DB no disponible' };
+  if (!UUID_RE.test(id)) return { ok: false, error: 'ID inválido (no UUID)' };
+
+  try {
+    const res = await fetch(`${API_BASE}/solicitudes-credito/${id}/formalizarContrato`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${publicAnonKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(datosContrato),
+    });
+    if (res.ok) {
+      const json = await res.json().catch(() => ({}));
+      console.log('[SolicDB] formalizarContrato POST OK');
+      return { ok: true, contrato: json.contrato ?? json };
+    }
+    const json = await res.json().catch(() => ({}));
+    return { ok: false, error: json.error || `HTTP ${res.status}` };
+  } catch (err: any) {
+    return { ok: false, error: err?.message || String(err) };
+  }
+}
+
 // ══════════════════════════════════════════════════════════════════
 // HOOK PRINCIPAL
 // ═══════════════════════════════════════════════════════════════════

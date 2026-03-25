@@ -17,6 +17,11 @@ interface SolicitudBaseFormProps {
   readOnly?: boolean;
   onCancel: () => void;
   onSave?: (data: any) => void;
+  /**
+   * 'solicitudes' (default) → solo botón Enviar de Fase
+   * 'originacion'           → todos los botones de fase, siempre visibles
+   */
+  modo?: 'solicitudes' | 'originacion';
 }
 
 export function SolicitudBaseForm({
@@ -24,6 +29,7 @@ export function SolicitudBaseForm({
   readOnly = false,
   onCancel,
   onSave,
+  modo = 'solicitudes',
 }: SolicitudBaseFormProps) {
   return (
     <SolicitudCreditoForm
@@ -31,6 +37,7 @@ export function SolicitudBaseForm({
       solicitudId={solicitudId}
       onCancel={onCancel}
       onSave={onSave}
+      modo={modo}
     />
   );
 }

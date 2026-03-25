@@ -7,6 +7,7 @@ import { useMemo } from 'react';
 
 interface FlujoTrabajoProps {
   faseActual?: string;
+  faseActualSeq?: number;   // ADD THIS: numero_consecutivo (1-7) — takes priority over faseActual string
   subEstatus?: string;
   className?: string;
 }
@@ -33,8 +34,12 @@ const FASE_INDEX: Record<string, number> = {
   'Activación de Cuenta Financiera':              6,
 };
 
-export function FlujoTrabajo({ faseActual, subEstatus, className = '' }: FlujoTrabajoProps) {
+export function FlujoTrabajo({ faseActual, faseActualSeq, subEstatus, className = '' }: FlujoTrabajoProps) {
   const currentPhaseIndex = useMemo(() => {
+    // If numero_consecutivo is provided directly, use it (0-indexed)
+    if (faseActualSeq !== undefined && faseActualSeq >= 1) return faseActualSeq - 1;
+
+    // Fallback: match by name
     const key = subEstatus || faseActual || '';
     if (FASE_INDEX[key] !== undefined) return FASE_INDEX[key];
 
@@ -48,7 +53,7 @@ export function FlujoTrabajo({ faseActual, subEstatus, className = '' }: FlujoTr
     if (kl.includes('solic') && kl.includes('activ')) return 5;
     if (kl.includes('activ'))      return 6;
     return 0;
-  }, [faseActual, subEstatus]);
+  }, [faseActual, faseActualSeq, subEstatus]);
 
   return (
     <div className={`${className}`}>
