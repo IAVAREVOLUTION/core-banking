@@ -160,6 +160,8 @@ export interface Autorizacion {
 export interface Nota {
   id: number;
   fecha: string;
+  /** ISO 8601 — usado para validar nota reciente (≤30 min) en Regresar de Fase */
+  fechaCreacion?: string;
   usuario: string;
   puesto: string;
   nota: string;

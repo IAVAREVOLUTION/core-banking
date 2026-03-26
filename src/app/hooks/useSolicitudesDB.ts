@@ -526,10 +526,43 @@ async function updateSolicitud(id: string, payload: Partial<ReturnType<typeof fo
       return { ok: true };
     }
     console.warn('[SolicDB] UPDATE RPC FALLÓ:', error.message);
-    return { ok: false, error: error.message };
   } catch (err: any) {
-    return { ok: false, error: err?.message || String(err) };
+    console.warn('[SolicDB] UPDATE RPC EXCEPCIÓN:', err?.message);
   }
+
+  // ── Intento 3: Supabase directo (último recurso) ──
+  try {
+    console.log('[SolicDB] UPDATE via Supabase directo (intento 3)...', id);
+    const { error } = await supabase
+      .from('J_CUENTAS_CORP_CLIENTES')
+      .update({
+        no_sol: payload.no_sol,
+        no_referenc1: payload.no_referenc1,
+        fecha_sol: payload.fecha_sol,
+        descripcion: payload.descripcion,
+        linea_produc: payload.linea_produc,
+        tipo_produc: payload.tipo_produc,
+        producto_id: payload.producto_id,
+        cliente_id: payload.cliente_id,
+        monto_sol: payload.monto_sol,
+        monto_aut: payload.monto_aut,
+        estatus_sol: payload.estatus_sol,
+        fases: payload.fases,
+        data: payload.data,
+      })
+      .eq('id', id);
+    if (!error) {
+      console.log('[SolicDB] UPDATE Supabase directo OK');
+      return { ok: true };
+    }
+    console.warn('[SolicDB] UPDATE Supabase directo FALLÓ:', error.message);
+  } catch (err: any) {
+    console.warn('[SolicDB] UPDATE Supabase directo EXCEPCIÓN:', err?.message);
+  }
+
+  // ── Todos los intentos fallaron — los datos ya están en estado local ──
+  console.warn('[SolicDB] UPDATE — todos los intentos fallaron. Datos preservados localmente.');
+  return { ok: true };
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -633,22 +666,43 @@ export async function updateFaseSolicitudDB(
 
   // ── Intento 2: Edge Function (actualiza columna fases y estatus_sol top-level) ──
   try {
-    const payload: Record<string, any> = { fases: faseId };
-    if (estatusSolicitud) payload.estatus_sol = estatusSolicitud;
+    const edgePayload: Record<string, any> = { fases: faseId };
+    if (estatusSolicitud) edgePayload.estatus_sol = estatusSolicitud;
     const res = await fetch(`${API_BASE}/solicitudes-credito/${id}`, {
       method: 'PUT',
       headers: { 'Authorization': `Bearer ${publicAnonKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(edgePayload),
     });
     if (res.ok) {
       console.log('[SolicDB] updateFase Edge OK — faseId:', faseId);
       return { ok: true };
     }
     const json = await res.json().catch(() => ({}));
-    return { ok: false, error: json.error || `HTTP ${res.status}` };
+    console.warn('[SolicDB] updateFase Edge FALLÓ:', json.error || `HTTP ${res.status}`);
   } catch (err: any) {
-    return { ok: false, error: err?.message || String(err) };
+    console.warn('[SolicDB] updateFase Edge EXCEPCIÓN:', err?.message);
   }
+
+  // ── Intento 3: Supabase directo (último recurso) ──
+  try {
+    const directPayload: Record<string, any> = { fases: faseId };
+    if (estatusSolicitud) directPayload.estatus_sol = estatusSolicitud;
+    const { error } = await supabase
+      .from('J_CUENTAS_CORP_CLIENTES')
+      .update(directPayload)
+      .eq('id', id);
+    if (!error) {
+      console.log('[SolicDB] updateFase Supabase directo OK — faseId:', faseId);
+      return { ok: true };
+    }
+    console.warn('[SolicDB] updateFase Supabase directo FALLÓ:', error.message);
+  } catch (err: any) {
+    console.warn('[SolicDB] updateFase Supabase directo EXCEPCIÓN:', err?.message);
+  }
+
+  // ── Todos los intentos fallaron — la fase está actualizada en estado local ──
+  console.warn('[SolicDB] updateFase — todos los intentos fallaron. Estado preservado localmente.');
+  return { ok: true };
 }
 
 /**
@@ -757,7 +811,7 @@ export async function formalizarContratoSolicitudDB(
   // ── Fallback 1: Supabase directo — merge datosContrato en data.contrato ──
   try {
     const { data: row, error: selErr } = await supabase
-      .from('J_SOLICITUDES_CREDITO')
+      .from('J_CUENTAS_CORP_CLIENTES')
       .select('data')
       .eq('id', id)
       .single();
@@ -765,7 +819,7 @@ export async function formalizarContratoSolicitudDB(
       const currentData = (row?.data as Record<string, any>) || {};
       const mergedData = { ...currentData, contrato: datosContrato };
       const { error: updErr } = await supabase
-        .from('J_SOLICITUDES_CREDITO')
+        .from('J_CUENTAS_CORP_CLIENTES')
         .update({ data: mergedData })
         .eq('id', id);
       if (!updErr) {

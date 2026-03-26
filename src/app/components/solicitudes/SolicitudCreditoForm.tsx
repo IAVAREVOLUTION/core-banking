@@ -349,12 +349,18 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
       const requisitos = getRequisitosObligatoriosFase(rawData, seqActual, formData.tipoPersona);
 
       if (requisitos.length > 0) {
-        const docsFase = documentos.filter(d => (d.faseId === seqActual || d.faseId === 0 || !d.faseId));
-        const tiposPresentes = docsFase.map(d => d.tipoDocumento);
-        const tiposValidados = docsFase.filter(d => d.estatus === 'Validado').map(d => d.tipoDocumento);
+        // Normalizar faseId a número para evitar mismatch string "1" vs número 1
+        const docsFase = documentos.filter(d => {
+          if (d.faseId == null) return true;
+          const dId = Number(d.faseId);
+          return isNaN(dId) || dId === 0 || dId === seqActual;
+        });
+        // Comparar nombres en minúsculas para evitar mismatch por capitalización
+        const tiposPresentes = docsFase.map(d => (d.tipoDocumento || '').toLowerCase());
+        const tiposValidados = docsFase.filter(d => d.estatus === 'Validado').map(d => (d.tipoDocumento || '').toLowerCase());
 
-        const faltanPresencia = requisitos.filter(r => !tiposPresentes.includes(r.tipoDocumento)).map(r => r.tipoDocumento);
-        const noValidadosPorIA = requisitos.filter(r => tiposPresentes.includes(r.tipoDocumento) && !tiposValidados.includes(r.tipoDocumento)).map(r => r.tipoDocumento);
+        const faltanPresencia = requisitos.filter(r => !tiposPresentes.includes((r.tipoDocumento || '').toLowerCase())).map(r => r.tipoDocumento);
+        const noValidadosPorIA = requisitos.filter(r => tiposPresentes.includes((r.tipoDocumento || '').toLowerCase()) && !tiposValidados.includes((r.tipoDocumento || '').toLowerCase())).map(r => r.tipoDocumento);
 
         if (faltanPresencia.length > 0) {
           toast.error('Documentos obligatorios no adjuntados', { description: faltanPresencia.join(', ') });

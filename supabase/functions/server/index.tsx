@@ -9,7 +9,7 @@ import * as kv from "./kv_store.tsx";
 // ─── Boot log ───────────────────────────────────────────────────────
 // TODOS los endpoints de J_CLIENTES devuelven TODOS los registros SIN WHERE
 // useClientesDB v11.0 → /clientes-lista-todos | useProspectosDB → /clientes-prospectos
-const EDGE_VERSION = "v20.0-J_CATALOGOS-SQL-DIRECT";
+const EDGE_VERSION = "v20.1-FORMALIZAR-CONTRATO";
 console.log(`[SERVER BOOT] Edge function loaded — ${EDGE_VERSION}`);
 console.log(`[SERVER BOOT] Routes: TODOS los endpoints de J_CLIENTES sin filtros WHERE`);
 console.log(`[SERVER BOOT] Auto-bootstrap: public.get_clientes() + public.get_all_jclientes() RPCs`);
@@ -2843,6 +2843,51 @@ app.get("/solicitudes-credito", getSolicitudesHandler);
 app.post("/solicitudes-credito", postSolicitudesHandler);
 app.put("/solicitudes-credito/:id", putSolicitudesHandler);
 app.delete("/solicitudes-credito/:id", deleteSolicitudesHandler);
+
+// ═══════════════════════════════════════════════════════════════════
+// FORMALIZAR CONTRATO / PAGARÉ (Fase 4 — Originación)
+// POST /solicitudes-credito/:id/formalizarContrato
+// Merge de datosContrato en data.contrato + marca estatus_sol = 'Formalizado'
+// ═══════════════════════════════════════════════════════════════════
+const formalizarContratoHandler = async (c: any) => {
+  try {
+    const id = c.req.param('id');
+    const body = await c.req.json();
+    console.log(`[FORMALIZAR] POST /solicitudes-credito/${id}/formalizarContrato`, JSON.stringify(body).substring(0, 400));
+
+    // Verificar que existe la solicitud y obtener data actual
+    const rows = await sql`
+      SELECT data, estatus_sol
+      FROM "EFINANCIANET_DB"."J_CUENTAS_CORP_CLIENTES"
+      WHERE id = ${id}::uuid
+    `;
+    if (rows.length === 0) {
+      console.log(`[FORMALIZAR] Solicitud no encontrada — id: ${id}`);
+      return c.json({ error: 'Solicitud no encontrada' }, 404);
+    }
+
+    const currentData = (rows[0].data as Record<string, any>) ?? {};
+    const mergedData  = { ...currentData, contrato: body };
+
+    await sql`
+      UPDATE "EFINANCIANET_DB"."J_CUENTAS_CORP_CLIENTES"
+      SET
+        data        = ${JSON.stringify(mergedData)}::jsonb,
+        estatus_sol = 'Formalizado'
+      WHERE id = ${id}::uuid
+    `;
+
+    console.log(`[FORMALIZAR] UPDATE OK — id: ${id}`);
+    return c.json({ ok: true, contrato: body });
+  } catch (err: any) {
+    console.log(`[FORMALIZAR] Error:`, err?.message);
+    return c.json({ error: `Error formalizando contrato: ${err?.message}` }, 500);
+  }
+};
+
+// ── Registro de rutas: con prefijo y sin prefijo (fallback) ──
+app.post(`${PREFIX}/solicitudes-credito/:id/formalizarContrato`, formalizarContratoHandler);
+app.post("/solicitudes-credito/:id/formalizarContrato", formalizarContratoHandler);
 
 // ═══════════════════════════════════════════════════════════════════
 // VALIDACIÓN DE DOCUMENTOS CON IA (Groq — Llama 3.2 Vision)

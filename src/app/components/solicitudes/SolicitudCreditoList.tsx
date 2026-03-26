@@ -505,7 +505,12 @@ export function SolicitudCreditoList({ cotizacionParaSolicitud, onCotizacionCons
         // NO agregar manualmente el item local — la BD es la fuente de verdad.
       } else {
         console.warn('[SolicList] DB persist FAILED:', result.error);
-        toast.error('Error al guardar en BD', { description: result.error || 'Revise la consola', duration: 5000 });
+        // Mostrar advertencia amigable — no exponer errores técnicos de Hono al usuario
+        const esErrorConexion = !result.error || result.error.toLowerCase().includes('route not found') || result.error.toLowerCase().includes('not found in hono') || result.error.toLowerCase().includes('could not find the function');
+        toast.warning(
+          esErrorConexion ? 'Guardado localmente (BD no disponible)' : 'Error al guardar en BD',
+          { description: esErrorConexion ? 'Los datos se guardarán localmente. Reintente en unos momentos.' : result.error, duration: 5000 }
+        );
 
         // ── Fallback: agregar localmente si la BD falló ──
         if (isNew) {
