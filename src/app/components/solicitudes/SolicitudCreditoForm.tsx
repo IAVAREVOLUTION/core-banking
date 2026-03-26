@@ -34,6 +34,7 @@ import { fetchNextNoSol, updateFaseSolicitudDB, avanzarFaseSolicitudDB, regresar
 import {
   validarDocumentosFase, validarNotaReciente, validarFormalizarContrato,
   validarContratosYPagares, validarFase6, validarFase7, leerRequisitosProducto,
+  getRequisitosFromRawData,
 } from '../../hooks/useOriginacionValidaciones';
 import { FaseActionsComponent } from '../shared/FaseActionsComponent';
 import { addOriginacionItem, CAT_AREA } from '../originacion/originacionStore';
@@ -348,8 +349,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
         loadFromSavedStore<DocumentoCargado[]>(storageId, 'documentos') ||
         [];
       const rawData = productoSeleccionado?.rawData as Record<string, any> | undefined;
-      const requisitosProducto: RequisitoProducto[] =
-        (rawData?.requisitos ?? rawData?.requisitosDocumentales ?? rawData?.expedientesElectronicos ?? []) as RequisitoProducto[];
+      const requisitosProducto = getRequisitosFromRawData(rawData);
 
       // ── 3. Validar documentos obligatorios de la fase actual (Sección B) ──
       const resultDocs = validarDocumentosFase(documentos, requisitosProducto, seqActual, formData.tipoPersona);
@@ -481,8 +481,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
         loadFromSavedStore<DocumentoCargado[]>(storageId, 'documentos') ||
         [];
       const rawData = productoSeleccionado?.rawData as Record<string, any> | undefined;
-      const requisitosProducto: RequisitoProducto[] =
-        (rawData?.requisitos ?? rawData?.requisitosDocumentales ?? []) as RequisitoProducto[];
+      const requisitosProducto = getRequisitosFromRawData(rawData);
       const { requiereGarantia, requiereComite } = leerRequisitosProducto(rawData);
 
       // Fases 1-3 previas

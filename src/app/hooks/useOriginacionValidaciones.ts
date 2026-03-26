@@ -338,6 +338,73 @@ export function validarFase7(opts: {
 }
 
 // ══════════════════════════════════════════════════════════════════
+// HELPER — Extraer RequisitoProducto[] del rawData del producto
+// Soporta todas las fuentes: expedientesElectronicos, expedientesRegistros,
+// expedientes, requisitos — igual que ExpedienteElectronicoTab.tsx
+// ══════════════════════════════════════════════════════════════════
+
+/**
+ * Extrae y normaliza los requisitos de expediente del rawData del producto.
+ * Fusiona expedientesElectronicos + requisitos sin duplicar tipoDocumento.
+ * No necesita catalogoDocs (se omite promptIA — no requerido para validación).
+ */
+export function getRequisitosFromRawData(rawData: Record<string, any> | null | undefined): RequisitoProducto[] {
+  if (!rawData) return [];
+
+  // Fuente 1: expedientesElectronicos / expedientesRegistros / expedientes
+  const rawExpedientes: any[] =
+    Array.isArray(rawData.expedientesElectronicos) ? rawData.expedientesElectronicos
+    : Array.isArray(rawData.expedientesRegistros) ? rawData.expedientesRegistros
+    : Array.isArray(rawData.expedientes) ? rawData.expedientes
+    : [];
+
+  // Fuente 2: requisitos (RequisitosTab)
+  const rawRequisitos: any[] = Array.isArray(rawData.requisitos) ? rawData.requisitos : [];
+
+  function parseFaseId(fase?: string | number): number {
+    if (typeof fase === 'number') return fase;
+    if (!fase) return 1;
+    const m = String(fase).match(/(\d+)/);
+    return m ? parseInt(m[1], 10) : 1;
+  }
+
+  const mappedExpedientes: RequisitoProducto[] = rawExpedientes.map((r: any, idx: number) => {
+    const faseStr = r.fase || 'Fase 1';
+    return {
+      id: r.id ?? (idx + 1),
+      fase: faseStr,
+      faseId: r.faseId ?? r.fase_id ?? parseFaseId(faseStr),
+      tipoDocumento: r.tipo || r.tipo_documento || r.claveDocumento || `Doc-${idx + 1}`,
+      descripcion: r.descripcion || '',
+      area: r.area || 'General',
+      obligatorio: r.obligatorio ?? true,
+      promptIA: r.promptIA || r.prompt_ia || '',
+    };
+  });
+
+  const seenTypes = new Set(mappedExpedientes.map(r => r.tipoDocumento));
+
+  const mappedRequisitos: RequisitoProducto[] = rawRequisitos
+    .filter((r: any) => r.activo !== false)
+    .map((r: any, idx: number) => {
+      const faseStr = r.fase || 'Fase 1';
+      return {
+        id: r.id ?? (10000 + idx),
+        fase: faseStr,
+        faseId: r.faseId ?? r.fase_id ?? parseFaseId(faseStr),
+        tipoDocumento: r.requisitoNombre || r.tipoDocumento || r.tipo_documento || `Requisito-${idx + 1}`,
+        descripcion: r.descripcion || r.nota || '',
+        area: r.area || 'General',
+        obligatorio: r.obligatorio ?? true,
+        promptIA: r.promptIA || r.prompt_ia || '',
+      };
+    })
+    .filter((r: RequisitoProducto) => !seenTypes.has(r.tipoDocumento));
+
+  return [...mappedExpedientes, ...mappedRequisitos];
+}
+
+// ══════════════════════════════════════════════════════════════════
 // HELPER — Determinar si el producto requiere garantía/comité
 // Lee del rawData del producto
 // ══════════════════════════════════════════════════════════════════
