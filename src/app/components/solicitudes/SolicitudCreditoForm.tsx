@@ -30,12 +30,15 @@ import { NotasTab } from './NotasTab';
 import { FasesSolicitudTab } from './tabs/FasesSolicitudTab';
 import { PartesRelacionadasTab } from './tabs/PartesRelacionadasTab';
 import { useProductosCatalogoDB, type ProductoCatalogo } from '../../hooks/useProductosCatalogoDB';
-import { fetchNextNoSol, updateFaseSolicitudDB, avanzarFaseSolicitudDB, regresarFaseSolicitudDB, formalizarContratoSolicitudDB, crearCuentaPorPagarDB, crearCuentaPorCobrarDB, activarCuentaDB } from '../../hooks/useSolicitudesDB';
+import { fetchNextNoSol, updateFaseSolicitudDB, avanzarFaseSolicitudDB, regresarFaseSolicitudDB, formalizarContratoSolicitudDB, activarCuentaDB } from '../../hooks/useSolicitudesDB';
 import {
   validarDocumentosFase, validarNotaReciente, validarFormalizarContrato,
-  validarContratosYPagares, validarFase6, validarFase7, leerRequisitosProducto,
-  getRequisitosFromRawData,
+  validarContratosYPagares, validarFase6, leerRequisitosProducto,
+  getRequisitosFromRawData, validarResultadoActivacion,
 } from '../../hooks/useOriginacionValidaciones';
+import { useSolicitudesActivacionDB } from '../../hooks/useSolicitudesActivacionDB';
+import type { SolicitudActivacionListItem } from '../solicitudes-activacion/solicitudActivacionStore';
+import { SolicitudActivacionModal } from '../originacion/SolicitudActivacionModal';
 import { FaseActionsComponent } from '../shared/FaseActionsComponent';
 import { addOriginacionItem, CAT_AREA } from '../originacion/originacionStore';
 import { FlujoTrabajo } from '../originacion/FlujoTrabajo';
@@ -335,6 +338,34 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
 
   const [enviandoFase, setEnviandoFase] = useState(false);
 
+  // ── Solicitudes de Activación del módulo externo ────────────────────────────
+  // Solo cargamos cuando estamos en modo Originación para no hacer fetch innecesario
+  const { solicitudesActivacion, refetch: refetchActivaciones } =
+    useSolicitudesActivacionDB(modo === 'originacion');
+
+  // Modal de Solicitud de Activación (Fase 6)
+  const [showActivacionModal, setShowActivacionModal] = useState(false);
+
+  // Solicitud de Activación vinculada a ESTA originación (por solicitudId = storageId)
+  const activacionForThisSol = useMemo(() =>
+    solicitudesActivacion.find(
+      s => s.solicitudId === String(storageId) || s.solicitudId === storageId
+    ) as SolicitudActivacionListItem | undefined,
+    [solicitudesActivacion, storageId]
+  );
+
+  // Determina si el botón "Activar Cuenta" está habilitado (Fase 7)
+  const canActivarCuenta = useMemo(() => {
+    const linea = (formData.lineaProducto || '').toLowerCase();
+    const isLineaCredito =
+      (linea.includes('línea') || linea.includes('linea')) &&
+      (linea.includes('créd') || linea.includes('cred'));
+    // Línea de Crédito: no requiere validación de pago
+    if (isLineaCredito) return true;
+    // Crédito / Captación: requiere Solicitud de Activación con estatus "Pagado"
+    return activacionForThisSol?.estatus?.toLowerCase() === 'pagado';
+  }, [activacionForThisSol, formData.lineaProducto]);
+
   const handleEnviarFase = useCallback(async () => {
     if ((isRO && modo !== 'originacion') || enviandoFase) return;
     setEnviandoFase(true);
@@ -538,91 +569,82 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
     }
   }, [enviandoFase, formData, fasesDelProducto, storageId, productoSeleccionado]);
 
-  /** Solicitud de Activación — Fase 6. Comportamiento según lineaProducto. */
-  const handleSolicitudActivacion = useCallback(async () => {
+  /**
+   * Solicitud de Activación — Fase 6.
+   * ANTES de abrir el módulo externo: valida garantías, comités, cargos y expediente.
+   * Si las validaciones pasan → abre el modal del módulo externo.
+   * El módulo externo (SolicitudActivacionModal) se encarga de crear/editar/guardar.
+   * Después de guardar → handleActivacionSaved valida el resultado y avanza de fase.
+   */
+  const handleSolicitudActivacion = useCallback(() => {
     if (enviandoFase) return;
-    setEnviandoFase(true);
-    try {
-      const garantias: any[] = loadFromSession<any[]>(storageId, 'garantias') || loadFromSavedStore<any[]>(storageId, 'garantias') || [];
-      const comites: any[] = loadFromSession<any[]>(storageId, 'comites') || loadFromSavedStore<any[]>(storageId, 'comites') || [];
-      const cargos: any[] = loadFromSession<any[]>(storageId, 'cargos') || loadFromSavedStore<any[]>(storageId, 'cargos') || [];
-      const terminos: any = loadFromSession<any>(storageId, 'terminos') || loadFromSavedStore<any>(storageId, 'terminos') || {};
-      const rawData = productoSeleccionado?.rawData as Record<string, any> | undefined;
-      const { requiereGarantia, requiereComite, montoGarantia } = leerRequisitosProducto(rawData);
+    const garantias: any[] = loadFromSession<any[]>(storageId, 'garantias') || loadFromSavedStore<any[]>(storageId, 'garantias') || [];
+    const comites: any[]   = loadFromSession<any[]>(storageId, 'comites')   || loadFromSavedStore<any[]>(storageId, 'comites')   || [];
+    const cargos: any[]    = loadFromSession<any[]>(storageId, 'cargos')    || loadFromSavedStore<any[]>(storageId, 'cargos')    || [];
+    const rawData = productoSeleccionado?.rawData as Record<string, any> | undefined;
+    const { requiereGarantia, requiereComite, montoGarantia } = leerRequisitosProducto(rawData);
 
-      // Validar según línea de producto
-      const result = validarFase6({
-        lineaProducto: formData.lineaProducto,
-        garantias,
-        comites,
-        cargos,
-        montoGarantiaRequerido: montoGarantia,
-        productoRequiereGarantia: requiereGarantia,
-        productoRequiereComite: requiereComite,
+    // Pre-validación: garantías, comités, cargos, expediente
+    const result = validarFase6({
+      lineaProducto: formData.lineaProducto,
+      garantias,
+      comites,
+      cargos,
+      montoGarantiaRequerido: montoGarantia,
+      productoRequiereGarantia: requiereGarantia,
+      productoRequiereComite: requiereComite,
+    });
+
+    if (!result.valid) {
+      toast.error('Completa los requisitos antes de abrir la Solicitud de Activación', {
+        description: result.errors.slice(0, 3).join(' · ') + (result.errors.length > 3 ? ` (+${result.errors.length - 3} más)` : ''),
       });
+      return;
+    }
 
-      if (!result.valid) {
-        toast.error('No se puede crear la solicitud de activación', {
-          description: result.errors.slice(0, 3).join(' · ') + (result.errors.length > 3 ? ` (+${result.errors.length - 3} más)` : ''),
-        });
-        return;
-      }
+    // Todo OK — abrir el módulo externo
+    setShowActivacionModal(true);
+  }, [enviandoFase, formData, storageId, productoSeleccionado]);
 
-      const dbId = storageId !== 'new' ? String(storageId) : null;
-      const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-      const linea = (formData.lineaProducto || '').toLowerCase();
-      const isCaptacion = linea.includes('captación') || linea.includes('captacion');
-      const isLineaCredito = linea.includes('línea') || linea.includes('linea');
+  /**
+   * Callback invocado por SolicitudActivacionModal cuando el usuario guarda.
+   * Originación valida el resultado (estatus, montos) y avanza de fase si todo está correcto.
+   * Para Línea de Crédito: avanza automáticamente.
+   */
+  const handleActivacionSaved = useCallback(async (savedItem: SolicitudActivacionListItem) => {
+    setShowActivacionModal(false);
 
-      const montoSol = parseFloat((formData.montoSolicitado || '0').replace(/[^0-9.-]/g, '')) || 0;
-      const cliente = [formData.nombrePersona, formData.apellidoPaternoPersona, formData.apellidoMaternoPersona]
-        .filter(Boolean).join(' ').trim();
+    // Refrescar la lista de solicitudes de activación para que canActivarCuenta se actualice
+    refetchActivaciones();
 
-      // Subproducto Capital (de cargos)
-      const cargoCapital = cargos.find(c =>
-        (c.tipoCargo || c.descripcion || '').toLowerCase().includes('capital')
-      ) || cargos[0];
+    // Post-validación: la solicitud existe, está en estatus válido y montos coinciden
+    const montoSol = parseFloat((formData.montoSolicitado || '0').replace(/[^0-9.-]/g, '')) || 0;
+    const resultPostVal = validarResultadoActivacion({
+      savedItem,
+      montoEsperado: montoSol > 0 ? montoSol : undefined,
+    });
 
-      const datosCuenta = {
-        solicitudId: formData.id || String(storageId),
-        noDocto: formData.noSol,
-        fecha: new Date().toISOString().split('T')[0],
-        tipo: isCaptacion ? 'Por Cobrar' : 'Por Pagar',
-        cliente,
-        formaPago: terminos.formaPago || '',
-        montoTransaccion: montoSol,
-        moneda: terminos.moneda || 'MXN',
-        detalle: [{
-          cveSubproducto: cargoCapital?.tipoCargo || 'CAP',
-          descSubproducto: 'Capital',
-          cantidad: 1,
-          monto: montoSol,
-          impuesto: 0,
-          moneda: terminos.moneda || 'MXN',
-          subtotal: montoSol,
-          estatus: 'Pendiente',
-        }],
-      };
+    if (!resultPostVal.valid) {
+      toast.warning('Solicitud de Activación guardada con advertencias', {
+        description: resultPostVal.errors.slice(0, 3).join(' · '),
+      });
+      // No bloqueamos — solo advertimos. El usuario puede corregir desde el módulo externo.
+      return;
+    }
 
-      if (dbId && UUID_REGEX.test(dbId)) {
-        const res = isCaptacion
-          ? await crearCuentaPorCobrarDB(dbId, datosCuenta)
-          : await crearCuentaPorPagarDB(dbId, datosCuenta);
+    toast.success('Solicitud de Activación guardada', {
+      description: `Estatus: ${savedItem.estatus}`,
+    });
 
-        if (res.ok) {
-          toast.success(
-            isCaptacion ? 'Cuenta por Cobrar creada' : 'Cuenta por Pagar creada',
-            { description: `Solicitud: ${formData.noSol}` }
-          );
-        } else {
-          toast.warning('Cuenta creada localmente (sin conexión BD)', { description: res.error });
-        }
-      } else {
-        toast.success('Solicitud de activación generada (modo local)', { description: formData.noSol });
-      }
+    // Avance automático para Línea de Crédito (Spec §B.5)
+    const linea = (formData.lineaProducto || '').toLowerCase();
+    const isLineaCredito =
+      (linea.includes('línea') || linea.includes('linea')) &&
+      (linea.includes('créd') || linea.includes('cred'));
 
-      // Para Línea de Crédito: avanza automáticamente a la siguiente fase
-      if (isLineaCredito) {
+    if (isLineaCredito) {
+      setEnviandoFase(true);
+      try {
         const faseActualReal2 = fasesDelProducto.find(f => String(f.faseId) === String(formData.faseId));
         const seqActual2 = faseActualReal2?.seq ?? 6;
         const sigFase2 = fasesDelProducto.find(f => f.seq === seqActual2 + 1);
@@ -641,45 +663,39 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
           }
           toast.success('Línea de Crédito — Fase avanzada automáticamente', { description: sigFase2.fase });
         }
+      } finally {
+        setEnviandoFase(false);
       }
-    } finally {
-      setEnviandoFase(false);
     }
-  }, [enviandoFase, formData, fasesDelProducto, storageId, productoSeleccionado]);
+  }, [formData, fasesDelProducto, storageId, refetchActivaciones]);
 
-  /** Activar Cuenta — Fase 7. Valida pago (excepto Línea de Crédito) y actualiza todos los estatus. */
+  /**
+   * Activar Cuenta — Fase 7.
+   * Originación NO edita la Solicitud de Activación.
+   * Solo valida su estatus (Crédito/Captación: "Pagado") y activa la cuenta.
+   * La validación preventiva ya está en canActivarCuenta — el botón se deshabilita antes.
+   */
   const handleActivarCuenta = useCallback(async () => {
     if (enviandoFase) return;
+    // Seguridad extra: verificar canActivarCuenta
+    if (!canActivarCuenta) {
+      toast.error('No se puede activar la cuenta', {
+        description: 'La Solicitud de Activación no está pagada.',
+      });
+      return;
+    }
     setEnviandoFase(true);
     try {
-      // Cargar solicitudes de activación desde session/savedStore
-      const solicitudesActivacion: any[] =
-        loadFromSession<any[]>(storageId, 'solicitudesActivacion') ||
-        loadFromSavedStore<any[]>(storageId, 'solicitudesActivacion') ||
-        [];
-
-      const result = validarFase7({
-        lineaProducto: formData.lineaProducto,
-        solicitudesActivacion,
-      });
-
-      if (!result.valid) {
-        toast.error('No se puede activar la cuenta', {
-          description: result.errors.join(' · '),
-        });
-        return;
-      }
-
-      // Actualizar estatus en BD
+      // Actualizar estatus en BD (Spec §C.2)
       const dbId = storageId !== 'new' ? String(storageId) : null;
       const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
       const datosActivacion = {
         estatusSolicitud: 'Autorizada',
-        estatusCuenta: 'Activa',
-        estatusPago: 'Pagado',
-        estatusCartera: 'Activa',
-        fechaActivacion: new Date().toISOString().split('T')[0],
+        estatusCuenta:    'Activa',
+        estatusPago:      'Pagado',
+        estatusCartera:   'Activa',
+        fechaActivacion:  new Date().toISOString().split('T')[0],
       };
 
       // Actualizar estado local
@@ -700,7 +716,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
     } finally {
       setEnviandoFase(false);
     }
-  }, [enviandoFase, formData, storageId]);
+  }, [enviandoFase, canActivarCuenta, formData, storageId]);
 
   const handleNumeric = (field: keyof SolicitudFormData, value: string) => {
     const cleaned = value.replace(/[^0-9.]/g, '');
@@ -958,6 +974,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
           onFormalizarContrato={handleFormalizarContrato}
           onSolicitudActivacion={handleSolicitudActivacion}
           onActivarCuenta={handleActivarCuenta}
+          canActivarCuenta={canActivarCuenta}
           enviandoFase={enviandoFase}
         />
       </div>
@@ -1325,6 +1342,24 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
           </div>
         ))}
       </div>
+
+      {/* ── Modal Solicitud de Activación (Fase 6) — módulo externo ── */}
+      {showActivacionModal && (
+        <SolicitudActivacionModal
+          originacionSolicitudId={String(storageId)}
+          seed={{
+            cliente: [formData.nombrePersona, formData.apellidoPaternoPersona, formData.apellidoMaternoPersona]
+              .filter(Boolean).join(' ').trim(),
+            lineaProducto: formData.lineaProducto || '',
+            montoTransaccion: formData.montoSolicitado || '0',
+            moneda: (loadFromSession<any>(storageId, 'terminos') || loadFromSavedStore<any>(storageId, 'terminos') || {}).moneda || 'MXN',
+            productoId: formData.productoId || '',
+          }}
+          existingActivacion={activacionForThisSol}
+          onClose={() => setShowActivacionModal(false)}
+          onSaved={handleActivacionSaved}
+        />
+      )}
     </div>
   );
 }

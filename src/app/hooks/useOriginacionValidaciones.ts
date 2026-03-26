@@ -17,6 +17,7 @@
  */
 
 import type { DocumentoCargado, RequisitoProducto, Nota } from '../components/solicitudes/solicitudCreditoStore';
+import type { SolicitudActivacionListItem } from '../components/solicitudes-activacion/solicitudActivacionStore';
 
 export interface ValidationResult {
   valid: boolean;
@@ -333,6 +334,56 @@ export function validarFase7(opts: {
     }
   }
   // Línea de Crédito: no requiere validación de Solicitudes de Activación
+
+  return { valid: errors.length === 0, errors };
+}
+
+// ══════════════════════════════════════════════════════════════════
+// G. VALIDAR RESULTADO DE SOLICITUD DE ACTIVACIÓN (post-cierre modal, Fase 6)
+// ══════════════════════════════════════════════════════════════════
+
+/**
+ * Valida el item guardado por el módulo externo de Solicitudes de Activación.
+ * Originación llama esta función DESPUÉS de que el modal se cierra con datos
+ * para decidir si avanza de fase.
+ *
+ * Reglas (Spec §B.4):
+ *  - Solicitud de Activación debe existir
+ *  - Estatus debe ser "Pendiente" o "En proceso"
+ *  - Monto (si se provee) debe coincidir con el monto de la originación (±$1)
+ */
+export function validarResultadoActivacion(opts: {
+  savedItem: SolicitudActivacionListItem | null | undefined;
+  montoEsperado?: number;
+}): ValidationResult {
+  const errors: string[] = [];
+  const s = opts.savedItem;
+
+  if (!s) {
+    errors.push('No se encontró la Solicitud de Activación guardada.');
+    return { valid: false, errors };
+  }
+
+  // Estatus válido: Pendiente o En proceso
+  const estatusNorm = (s.estatus || '').toLowerCase().trim();
+  const estatusOk   = estatusNorm === 'pendiente' || estatusNorm === 'en proceso';
+  if (!estatusOk) {
+    errors.push(
+      `Solicitud de Activación con estatus inválido: "${s.estatus}". ` +
+      'Se esperaba "Pendiente" o "En proceso".'
+    );
+  }
+
+  // Monto debe coincidir (tolerancia ±$1 para diferencias de redondeo)
+  if (opts.montoEsperado !== undefined && opts.montoEsperado > 0 && s.montoTransaccion) {
+    const montoAct = parseFloat(String(s.montoTransaccion).replace(/[^0-9.-]/g, '')) || 0;
+    if (montoAct > 0 && Math.abs(montoAct - opts.montoEsperado) > 1) {
+      errors.push(
+        `El monto de la Solicitud de Activación ($${montoAct.toLocaleString('es-MX', { minimumFractionDigits: 2 })}) ` +
+        `no coincide con el monto de la originación ($${opts.montoEsperado.toLocaleString('es-MX', { minimumFractionDigits: 2 })}).`
+      );
+    }
+  }
 
   return { valid: errors.length === 0, errors };
 }

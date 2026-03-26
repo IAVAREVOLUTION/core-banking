@@ -42,6 +42,12 @@ interface FaseActionsComponentProps {
   onSolicitudActivacion?: () => void;
   /** Activar Cuenta (Fase 7) */
   onActivarCuenta?: () => void;
+  /**
+   * Indica si el botón "Activar Cuenta" está habilitado.
+   * false → se muestra deshabilitado + banner "La Solicitud de Activación no está pagada."
+   * Si se omite (undefined) → habilitado por defecto.
+   */
+  canActivarCuenta?: boolean;
   /** Indica si hay una operación de fase en curso */
   enviandoFase?: boolean;
 }
@@ -56,6 +62,7 @@ export function FaseActionsComponent({
   onFormalizarContrato,
   onSolicitudActivacion,
   onActivarCuenta,
+  canActivarCuenta,
   enviandoFase = false,
 }: FaseActionsComponentProps) {
   // ── Fuente de verdad ─────────────────────────────────────────────────────
@@ -205,8 +212,9 @@ export function FaseActionsComponent({
             {puedeActivarCuenta && (
               <button
                 onClick={onActivarCuenta}
-                disabled={enviandoFase || !onActivarCuenta}
-                className="px-4 py-1.5 bg-[#059669] text-white rounded text-xs hover:bg-[#047857] flex items-center gap-1.5 disabled:opacity-50"
+                disabled={enviandoFase || !onActivarCuenta || canActivarCuenta === false}
+                title={canActivarCuenta === false ? 'La Solicitud de Activación no está pagada.' : undefined}
+                className="px-4 py-1.5 bg-[#059669] text-white rounded text-xs hover:bg-[#047857] flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <path d="M12 22c5.52 0 10-4.48 10-10S17.52 2 12 2 2 6.48 2 12s4.48 10 10 10z" />
@@ -256,10 +264,13 @@ export function FaseActionsComponent({
             <span>Siguiente →: <span className="text-gray-600">{faseSiguiente.fase}</span></span>
           )}
           {seqActual === 6 && (
-            <span className="text-blue-600 font-medium">Cree la solicitud de activación según la línea de producto</span>
+            <span className="text-blue-600 font-medium">Abra el módulo de Solicitud de Activación para crear o editar la solicitud</span>
           )}
-          {seqActual === 7 && (
+          {seqActual === 7 && canActivarCuenta !== false && (
             <span className="text-green-600 font-medium">Última fase — Activación de cuenta</span>
+          )}
+          {seqActual === 7 && canActivarCuenta === false && (
+            <span className="text-red-600 font-medium">⚠ La Solicitud de Activación no está pagada.</span>
           )}
           {!puedeEnviar && !puedeSolicitudActivacion && !puedeActivarCuenta && (
             <span className="text-green-600 font-medium">✓ Última fase del flujo</span>
