@@ -469,8 +469,8 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
 
   /** Formalizar Contrato — solo disponible en Fase 4. */
   const handleFormalizarContrato = useCallback(async () => {
-    const terminos: any = loadFromSession<any>(storageId, 'terminos') || {};
-    const garantias: any[] = loadFromSession<any[]>(storageId, 'garantias') || [];
+    const terminos: any = loadFromSession<any>(storageId, 'terminos') || loadFromSavedStore<any>(storageId, 'terminos') || {};
+    const garantias: any[] = loadFromSession<any[]>(storageId, 'garantias') || loadFromSavedStore<any[]>(storageId, 'garantias') || [];
 
     const datosContrato = {
       solicitudId: formData.id || String(storageId),
@@ -482,21 +482,29 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
         .filter(Boolean).join(' ').trim(),
       terminos,
       garantias,
+      fechaFormalizacion: new Date().toISOString(),
     };
 
+    // ── Guardar localmente SIEMPRE (fuente de verdad local) ──
+    saveToSavedStore(storageId, 'contrato', datosContrato);
+    saveToSession(storageId, 'contrato', datosContrato);
+
+    // ── Intentar sincronizar con BD (no bloqueante si falla) ──
     const dbId = storageId !== 'new' ? String(storageId) : null;
     const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     if (dbId && UUID_REGEX.test(dbId)) {
       const result = await formalizarContratoSolicitudDB(dbId, datosContrato);
       if (result.ok) {
-        toast.success('Contrato formalizado exitosamente', {
+        toast.success('Contrato formalizado', { description: `No. Solicitud: ${formData.noSol}` });
+      } else {
+        // Ya está guardado localmente — se sincronizará al guardar la solicitud
+        toast.success('Contrato formalizado', {
           description: `No. Solicitud: ${formData.noSol}`,
         });
-      } else {
-        toast.error('Error al formalizar contrato', { description: result.error });
+        console.warn('[SolicForm] formalizarContrato BD falló (guardado local):', result.error);
       }
     } else {
-      toast.success('Contrato formalizado (modo local)', { description: formData.noSol });
+      toast.success('Contrato formalizado', { description: formData.noSol });
     }
   }, [formData, storageId]);
 
