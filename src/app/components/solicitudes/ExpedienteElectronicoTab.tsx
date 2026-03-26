@@ -14,13 +14,11 @@ import { toast } from 'sonner';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 import { supabase } from '../../lib/supabaseClient';
 import * as pdfjsLib from 'pdfjs-dist';
-import * as pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs';
-
-// Pre-load the worker module onto globalThis so pdf.js uses it directly
-// without attempting Web Worker creation or dynamic import() from CDN.
-(globalThis as any).pdfjsWorker = pdfjsWorker;
-pdfjsLib.GlobalWorkerOptions.workerSrc = 'pdfjs-dist/build/pdf.worker.min.mjs';
-console.log('[pdf.js] Worker pre-cargado en globalThis.pdfjsWorker — sin CDN, sin dynamic import');
+// ?url tells Vite to emit the worker as a separate file in dist/assets/
+// and returns its hashed URL, so it resolves correctly both in dev and prod.
+import pdfjsWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorkerUrl;
+console.log('[pdf.js] Worker URL configurado vía Vite ?url:', pdfjsWorkerUrl);
 import {
   DocumentoCargado, RequisitoProducto,
   saveToSession, loadFromSession, loadFromSavedStore, generateId,
