@@ -38,6 +38,7 @@ import {
 } from '../../hooks/useOriginacionValidaciones';
 import { useSolicitudesActivacionDB } from '../../hooks/useSolicitudesActivacionDB';
 import type { SolicitudActivacionListItem } from '../solicitudes-activacion/solicitudActivacionStore';
+import { autoCrearDocumentosFase4 } from '../../hooks/generarDocumentosFase4';
 import { SolicitudActivacionModal } from '../originacion/SolicitudActivacionModal';
 import { FaseActionsComponent } from '../shared/FaseActionsComponent';
 import { addOriginacionItem, CAT_AREA } from '../originacion/originacionStore';
@@ -338,6 +339,9 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
 
   const [enviandoFase, setEnviandoFase] = useState(false);
 
+  // Clave para forzar remount de ExpedienteElectronicoTab tras auto-generar docs en Fase 4
+  const [expedienteKey, setExpedienteKey] = useState(0);
+
   // ── Solicitudes de Activación del módulo externo ────────────────────────────
   // Solo cargamos cuando estamos en modo Originación para no hacer fetch innecesario
   const { solicitudesActivacion, refetch: refetchActivaciones } =
@@ -365,6 +369,41 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
     // Crédito / Captación: requiere Solicitud de Activación con estatus "Pagado"
     return activacionForThisSol?.estatus?.toLowerCase() === 'pagado';
   }, [activacionForThisSol, formData.lineaProducto]);
+
+  // ── Auto-generación de documentos al entrar en Fase 4 (Formalización) ────────
+  // Crea CONTRATO_BASE, PAGARE_BASE (PDFs base), CONTRATO_FIRMADO, PAGARE_FIRMADO
+  // Solo se ejecuta en modo originación, con una solicitud ya persistida (no 'new').
+  useEffect(() => {
+    if (modo !== 'originacion') return;
+    if (storageId === 'new') return;
+
+    const faseActual = fasesDelProducto.find(f => String(f.faseId) === String(formData.faseId));
+    if (faseActual?.seq !== 4) return;
+
+    const terminos = loadFromSession<any>(storageId, 'terminos')
+      ?? loadFromSavedStore<any>(storageId, 'terminos')
+      ?? {};
+    const cliente = [formData.nombrePersona, formData.apellidoPaternoPersona, formData.apellidoMaternoPersona]
+      .filter(Boolean).join(' ').trim();
+
+    const creados = autoCrearDocumentosFase4({
+      storageId,
+      datos: {
+        noSol: formData.noSol,
+        cliente,
+        lineaProducto: formData.lineaProducto,
+        tipoProducto: formData.tipoProducto,
+        productoNombre: productoSeleccionado?.nombreProducto || formData.nombreProducto,
+        terminos,
+      },
+    });
+
+    if (creados) {
+      // Forzar remount de ExpedienteElectronicoTab para que lea los nuevos docs de session storage
+      setExpedienteKey(k => k + 1);
+      console.log('[SolicForm] Fase 4 → documentos base generados automáticamente.');
+    }
+  }, [formData.faseId, fasesDelProducto]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleEnviarFase = useCallback(async () => {
     if ((isRO && modo !== 'originacion') || enviandoFase) return;
@@ -1347,6 +1386,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
                 )}
                 {sec.id === 'expediente' && (
                   <ExpedienteElectronicoTab
+                    key={`exp-${storageId}-${expedienteKey}`}
                     mode={mode}
                     solicitudId={storageId}
                     faseIdActual={parseInt(formData.faseId) || 1}
