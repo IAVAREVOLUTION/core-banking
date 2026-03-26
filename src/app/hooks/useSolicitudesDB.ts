@@ -153,11 +153,6 @@ function mapRowToListItem(row: SolicitudDBRow): SolicitudListItem {
   const joinNombre = [row.cliente_nombre, row.cliente_ap_paterno, row.cliente_ap_materno].filter(Boolean).join(' ');
   const nombreCompleto = nestedNombre || flatNombre || joinNombre || '(sin nombre)';
 
-  // ── Debug: trazar origen del nombre ──
-  if (!nestedNombre && !flatNombre) {
-    console.log(`[mapRow] id=${row.id} — nombre viene del JOIN (no del JSONB header). joinNombre='${joinNombre}'`);
-  }
-
   // ── Producto ──
   // Priority: nested header > flat legacy > JOIN J_PRODUCTOS > column
   const nombreProducto = hdr.nombre_producto || d.nombreProducto || row.producto_nombre || '';
