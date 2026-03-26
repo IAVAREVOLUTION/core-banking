@@ -189,15 +189,72 @@ export function validarFormalizarContrato(opts: {
 }
 
 // ══════════════════════════════════════════════════════════════════
-// D. FASE 5 — CONTRATOS Y PAGARÉS
+// D1. FASE 4 — VALIDACIÓN PARA "ENVIAR DE FASE"
+// Complementa validarDocumentosFase(): verifica Términos, Garantías y Comités.
 // ══════════════════════════════════════════════════════════════════
 
+/**
+ * Valida que Términos y Condiciones, Garantías (si aplica) y Comités (si aplica)
+ * estén completos antes de avanzar desde Fase 4.
+ * Los documentos de la fase ya se validaron mediante validarDocumentosFase().
+ */
+export function validarFase4Envio(opts: {
+  terminos: Record<string, any>;
+  garantias: any[];
+  comites: any[];
+  productoRequiereGarantia: boolean;
+  productoRequiereComite: boolean;
+}): ValidationResult {
+  const errors: string[] = [];
+
+  // 1. Términos y Condiciones completos
+  const t = opts.terminos || {};
+  const tieneTerminos =
+    (t.monto || t.montoSolicitado) &&
+    (t.plazo || t.plazoMeses) &&
+    (t.tasa || t.tasaAnual);
+  if (!tieneTerminos) {
+    errors.push('Términos y Condiciones incompletos. Verifique monto, plazo y tasa antes de avanzar.');
+  }
+
+  // 2. Garantías (si el producto lo requiere)
+  if (opts.productoRequiereGarantia) {
+    if (!opts.garantias || opts.garantias.length === 0) {
+      errors.push('El producto requiere garantías registradas antes de avanzar de fase.');
+    }
+  }
+
+  // 3. Comités (si el producto lo requiere)
+  if (opts.productoRequiereComite) {
+    if (!opts.comites || opts.comites.length === 0) {
+      errors.push('El producto requiere comité de autorización antes de avanzar de fase.');
+    } else {
+      const autorizado = opts.comites.some(c =>
+        (c.estatus || c.status || '').toLowerCase() === 'autorizado'
+      );
+      if (!autorizado) {
+        errors.push('El comité de autorización no tiene estatus "Autorizado".');
+      }
+    }
+  }
+
+  return { valid: errors.length === 0, errors };
+}
+
+// ══════════════════════════════════════════════════════════════════
+// D2. FASE 5 — CONTRATOS Y PAGARÉS
+// ══════════════════════════════════════════════════════════════════
+
+/**
+ * Valida que existan contratos y pagarés firmados en Sección 2.
+ * Por cada documento: debe existir, tener archivo adjunto, no estar rechazado y estar validado.
+ */
 export function validarContratosYPagares(documentosCargados: DocumentoCargado[]): ValidationResult {
   const errors: string[] = [];
 
   const pagares = documentosCargados.filter(d => {
     const tipo = (d.tipoDocumento || '').toLowerCase();
-    return tipo.includes('pagaré') || tipo.includes('pagare') || tipo.includes('pagaré');
+    return tipo.includes('pagaré') || tipo.includes('pagare');
   });
 
   const contratos = documentosCargados.filter(d => {
@@ -205,21 +262,33 @@ export function validarContratosYPagares(documentosCargados: DocumentoCargado[])
     return tipo.includes('contrato');
   });
 
+  // ── Pagarés ──────────────────────────────────────────────────────────────
   if (pagares.length === 0) {
     errors.push('No se han cargado pagarés. Cargue y valide el pagaré antes de avanzar.');
   } else {
-    const noValidados = pagares.filter(d => d.estatus !== 'Validado');
-    if (noValidados.length > 0) {
-      errors.push(`Pagaré(s) sin validar: ${noValidados.map(d => d.tipoDocumento).join(', ')}`);
+    for (const d of pagares) {
+      if (!d.archivo && !(d as any).url && !(d as any).fileData) {
+        errors.push(`Pagaré sin archivo adjunto: "${d.tipoDocumento}". Adjunte el documento firmado.`);
+      } else if (d.estatus === 'Rechazado') {
+        errors.push(`Pagaré rechazado: "${d.tipoDocumento}". Vuelva a cargar el documento.`);
+      } else if (d.estatus !== 'Validado') {
+        errors.push(`Pagaré pendiente de validación: "${d.tipoDocumento}"`);
+      }
     }
   }
 
+  // ── Contratos ─────────────────────────────────────────────────────────────
   if (contratos.length === 0) {
     errors.push('No se han cargado contratos. Cargue y valide el contrato antes de avanzar.');
   } else {
-    const noValidados = contratos.filter(d => d.estatus !== 'Validado');
-    if (noValidados.length > 0) {
-      errors.push(`Contrato(s) sin validar: ${noValidados.map(d => d.tipoDocumento).join(', ')}`);
+    for (const d of contratos) {
+      if (!d.archivo && !(d as any).url && !(d as any).fileData) {
+        errors.push(`Contrato sin archivo adjunto: "${d.tipoDocumento}". Adjunte el documento firmado.`);
+      } else if (d.estatus === 'Rechazado') {
+        errors.push(`Contrato rechazado: "${d.tipoDocumento}". Vuelva a cargar el documento.`);
+      } else if (d.estatus !== 'Validado') {
+        errors.push(`Contrato pendiente de validación: "${d.tipoDocumento}"`);
+      }
     }
   }
 

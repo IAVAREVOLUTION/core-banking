@@ -33,7 +33,7 @@ import { useProductosCatalogoDB, type ProductoCatalogo } from '../../hooks/usePr
 import { fetchNextNoSol, updateFaseSolicitudDB, avanzarFaseSolicitudDB, regresarFaseSolicitudDB, formalizarContratoSolicitudDB, activarCuentaDB } from '../../hooks/useSolicitudesDB';
 import {
   validarDocumentosFase, validarNotaReciente, validarFormalizarContrato,
-  validarContratosYPagares, validarFase6, leerRequisitosProducto,
+  validarContratosYPagares, validarFase4Envio, validarFase6, leerRequisitosProducto,
   getRequisitosFromRawData, validarResultadoActivacion,
 } from '../../hooks/useOriginacionValidaciones';
 import { useSolicitudesActivacionDB } from '../../hooks/useSolicitudesActivacionDB';
@@ -391,7 +391,28 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
         return;
       }
 
-      // ── 3b. Fase 5: validar contratos y pagarés (Sección D) ──
+      // ── 3b. Fase 4: validar Términos, Garantías y Comités antes de avanzar ──
+      if (seqActual === 4) {
+        const terminos4: any = loadFromSession<any>(storageId, 'terminos') || loadFromSavedStore<any>(storageId, 'terminos') || {};
+        const garantias4: any[] = loadFromSession<any[]>(storageId, 'garantias') || loadFromSavedStore<any[]>(storageId, 'garantias') || [];
+        const comites4: any[] = loadFromSession<any[]>(storageId, 'comites') || loadFromSavedStore<any[]>(storageId, 'comites') || [];
+        const { requiereGarantia: rg4, requiereComite: rc4 } = leerRequisitosProducto(rawData);
+        const resultFase4 = validarFase4Envio({
+          terminos: terminos4,
+          garantias: garantias4,
+          comites: comites4,
+          productoRequiereGarantia: rg4,
+          productoRequiereComite: rc4,
+        });
+        if (!resultFase4.valid) {
+          toast.error('Requisitos de formalización incompletos', {
+            description: resultFase4.errors.slice(0, 3).join(' · ') + (resultFase4.errors.length > 3 ? ` (+${resultFase4.errors.length - 3} más)` : ''),
+          });
+          return;
+        }
+      }
+
+      // ── 3c. Fase 5: validar contratos y pagarés (Sección D) ──
       if (seqActual === 5) {
         const resultContratos = validarContratosYPagares(documentos);
         if (!resultContratos.valid) {
@@ -578,13 +599,40 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
    */
   const handleSolicitudActivacion = useCallback(() => {
     if (enviandoFase) return;
+
+    const documentos6: DocumentoCargado[] =
+      loadFromSession<DocumentoCargado[]>(storageId, 'documentos') ||
+      loadFromSavedStore<DocumentoCargado[]>(storageId, 'documentos') ||
+      [];
     const garantias: any[] = loadFromSession<any[]>(storageId, 'garantias') || loadFromSavedStore<any[]>(storageId, 'garantias') || [];
     const comites: any[]   = loadFromSession<any[]>(storageId, 'comites')   || loadFromSavedStore<any[]>(storageId, 'comites')   || [];
     const cargos: any[]    = loadFromSession<any[]>(storageId, 'cargos')    || loadFromSavedStore<any[]>(storageId, 'cargos')    || [];
-    const rawData = productoSeleccionado?.rawData as Record<string, any> | undefined;
-    const { requiereGarantia, requiereComite, montoGarantia } = leerRequisitosProducto(rawData);
+    const rawData6 = productoSeleccionado?.rawData as Record<string, any> | undefined;
+    const requisitosProducto6 = getRequisitosFromRawData(rawData6);
+    const { requiereGarantia, requiereComite, montoGarantia } = leerRequisitosProducto(rawData6);
 
-    // Pre-validación: garantías, comités, cargos, expediente
+    // ── Pre-validación 1: Expediente completo (documentos obligatorios de TODAS las fases anteriores) ──
+    // Fases 1-5 deben tener todos los documentos obligatorios cargados y validados
+    const faseActualSeq6 = (fasesDelProducto.find(f => String(f.faseId) === String(formData.faseId))?.seq) ?? 6;
+    for (let s = 1; s < faseActualSeq6; s++) {
+      const resDoc = validarDocumentosFase(documentos6, requisitosProducto6, s, formData.tipoPersona);
+      if (!resDoc.valid) {
+        toast.error(`Expediente incompleto — Fase ${s}`, {
+          description: resDoc.errors.slice(0, 3).join(' · ') + (resDoc.errors.length > 3 ? ` (+${resDoc.errors.length - 3} más)` : ''),
+        });
+        return;
+      }
+    }
+    // También validar documentos de la fase actual (fase 6)
+    const resDocActual6 = validarDocumentosFase(documentos6, requisitosProducto6, faseActualSeq6, formData.tipoPersona);
+    if (!resDocActual6.valid) {
+      toast.error('Expediente incompleto — Fase actual', {
+        description: resDocActual6.errors.slice(0, 3).join(' · ') + (resDocActual6.errors.length > 3 ? ` (+${resDocActual6.errors.length - 3} más)` : ''),
+      });
+      return;
+    }
+
+    // ── Pre-validación 2: Garantías, Comités, Cargos ──
     const result = validarFase6({
       lineaProducto: formData.lineaProducto,
       garantias,
@@ -604,7 +652,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
 
     // Todo OK — abrir el módulo externo
     setShowActivacionModal(true);
-  }, [enviandoFase, formData, storageId, productoSeleccionado]);
+  }, [enviandoFase, formData, fasesDelProducto, storageId, productoSeleccionado]);
 
   /**
    * Callback invocado por SolicitudActivacionModal cuando el usuario guarda.
