@@ -610,19 +610,29 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
         terminos,
         garantias,
         comites,
+        fechaFormalizacion: new Date().toISOString(),
       };
 
+      // ── Persistir localmente SIEMPRE (fuente de verdad local) ──
+      saveToSavedStore(storageId, 'contrato', datosContrato);
+      saveToSession(storageId, 'contrato', datosContrato);
+
+      // ── Intentar sincronizar con BD (no bloqueante) ──
       const dbId = storageId !== 'new' ? String(storageId) : null;
       const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
       if (dbId && UUID_REGEX.test(dbId)) {
         const res = await formalizarContratoSolicitudDB(dbId, datosContrato);
         if (res.ok) {
-          toast.success('Contrato formalizado exitosamente', { description: `No. Solicitud: ${formData.noSol}` });
+          toast.success('Contrato formalizado', { description: `No. Solicitud: ${formData.noSol}` });
         } else {
-          toast.error('Error al formalizar contrato', { description: res.error });
+          // El contrato ya está guardado localmente — la BD se sincronizará al guardar la solicitud
+          toast.success('Contrato formalizado (local)', {
+            description: `No. Solicitud: ${formData.noSol}. Se sincronizará al guardar.`,
+          });
+          console.warn('[SolicForm] formalizarContrato BD FALLÓ (guardado local):', res.error);
         }
       } else {
-        toast.success('Contrato formalizado (modo local)', { description: formData.noSol });
+        toast.success('Contrato formalizado', { description: formData.noSol });
       }
     } finally {
       setEnviandoFase(false);
