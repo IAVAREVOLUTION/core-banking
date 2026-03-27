@@ -171,6 +171,7 @@ export interface Product {
   periodos?: any[];
   tasasReferencia?: any[];
   garantias?: any[];
+  plantillas?: any[];
 
   // === SUBTABS ESTÁTICOS DE CRÉDITO (se guardan/leen del JSONB) ===
   amortizaciones?: any[];

@@ -38,6 +38,7 @@ import { CheckListTab } from './tabs/CheckListTab';
 import { TabuladorProductosTab } from './tabs/TabuladorProductosTab';
 import { ExpedientesProductoTab } from './tabs/ExpedientesProductoTab';
 import { RequisitosTab } from './tabs/RequisitosTab';
+import { PlantillasTab } from './tabs/PlantillasTab';
 import { useProductoPersistence, useProductoTabs } from '../../hooks/useProductoPersistence';
 import { syncToJProducts } from '../../hooks/useSyncJProducts';
 import { usePuestosTrabajoDB } from '../../hooks/usePuestosTrabajoDB';
@@ -377,6 +378,7 @@ export function ProductoForm({
         expedientesElectronicos: expedientesRef.current?.getData() || [],
         autorizacion: efectivoAutorizacion,
         eventoContable: efectivoEventoContable,
+        plantillas: plantillasState,
       };
 
       // Sincronizar con J_PRODUCTOS (fire-and-forget, no bloquea guardado local)
@@ -525,6 +527,7 @@ export function ProductoForm({
     { id: 'garantias', label: 'Garantías' },
     { id: 'impuestos', label: 'Impuestos' },
     { id: 'paquetes', label: 'Paquetes' },
+    { id: 'plantillas', label: 'Plantillas' },
     { id: 'prelacion', label: 'Prelación de cargos' },
     { id: 'tabulador-productos', label: 'Tabulador de Productos' },
   ];
@@ -550,6 +553,7 @@ export function ProductoForm({
     { id: 'impuestos', label: 'Impuestos' },
     { id: 'comision', label: 'Comisiones' },
     { id: 'expedientes-electronicos', label: 'Requisitos OK' },
+    { id: 'plantillas', label: 'Plantillas' },
     { id: 'autorizacion', label: 'Autorizaciones' },
     { id: 'evento-contable', label: 'Eventos Contables' },
   ];
@@ -613,6 +617,30 @@ export function ProductoForm({
     return product?.eventoContable && product.eventoContable.length > 0 ? product.eventoContable : [];
   });
   const efectivoEventoContable = eventoContableState;
+
+  // ── Plantillas (subtab Plantillas — Fase 4 Formalizar Contrato) ──
+  const TIPOS_PLANTILLA = ['solicitud', 'contrato', 'pagare', 'minuta'] as const;
+  type TipoPlantilla = typeof TIPOS_PLANTILLA[number];
+  interface PlantillaItem {
+    id: string;
+    nombre: string;
+    tipo: TipoPlantilla | '';
+    archivoBase: string;
+    version: string;
+    estatus: 'Activo' | 'Inactivo';
+  }
+  const plantillaVacia = (): PlantillaItem => ({
+    id: crypto.randomUUID(),
+    nombre: '',
+    tipo: '',
+    archivoBase: '',
+    version: '1.0',
+    estatus: 'Activo',
+  });
+  const [plantillasState, setPlantillasState] = useState<PlantillaItem[]>(() => {
+    if (isCreate) return [];
+    return Array.isArray(product?.plantillas) && product.plantillas.length > 0 ? product.plantillas : [];
+  });
 
   // Cargar puestos de trabajo desde J_Catalogos (type=PuestoTrabajo)
   const { puestos, loading: loadingPuestos } = usePuestosTrabajoDB();
@@ -1205,6 +1233,18 @@ export function ProductoForm({
             <div style={{ display: activeTab === 'expedientes-electronicos' ? 'block' : 'none' }}>
               <ExpedientesProductoTab ref={expedientesRef} mode={mode} productId={productId} persistToStorage storagePrefix="credito" initialData={Array.isArray(product?.expedientesElectronicos) ? product.expedientesElectronicos : undefined} fases={Array.isArray(product?.fases) ? product.fases : undefined} />
             </div>
+
+            {/* ═══════════════════════════════════════════════════════════════
+                PLANTILLAS — Fase 4 Formalizar Contrato
+                Tipos: solicitud | contrato | pagare | minuta
+            ═══════════════════════════════════════════════════════════════ */}
+            {activeTab === 'plantillas' && (
+              <PlantillasTab
+                formData={formData}
+                updateFormData={updateFormData}
+                isView={isView}
+              />
+            )}
 
             {activeTab === 'autorizacion' && (
               <div>
