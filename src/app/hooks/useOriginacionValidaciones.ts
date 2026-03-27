@@ -59,9 +59,13 @@ export function validarDocumentosFase(
   if (reqFase.length === 0) return { valid: true, errors: [] };
 
   // Docs de la fase actual (por faseId o sin fase)
-  const docsFase = documentosCargados.filter(d =>
-    d.faseId === faseSeq || d.faseId === 0 || !d.faseId
-  );
+  // NOTA: faseId puede venir como string "1" o número 1 desde distintas fuentes —
+  // usar Number() para normalizar antes de comparar estrictamente.
+  const docsFase = documentosCargados.filter(d => {
+    if (d.faseId == null) return true;           // sin faseId → aplica a todas
+    const dId = Number(d.faseId);
+    return isNaN(dId) || dId === 0 || dId === faseSeq;
+  });
 
   for (const req of reqFase) {
     const docEncontrado = docsFase.find(d =>
@@ -490,11 +494,15 @@ export function getRequisitosFromRawData(rawData: Record<string, any> | null | u
 
   const mappedExpedientes: RequisitoProducto[] = rawExpedientes.map((r: any, idx: number) => {
     const faseStr = r.fase || 'Fase 1';
+    // faseId: normalizar SIEMPRE a número para evitar comparaciones string vs number
+    const rawFaseId = r.faseId ?? r.fase_id;
+    const faseId = rawFaseId != null ? parseInt(String(rawFaseId), 10) || parseFaseId(faseStr) : parseFaseId(faseStr);
     return {
       id: r.id ?? (idx + 1),
       fase: faseStr,
-      faseId: r.faseId ?? r.fase_id ?? parseFaseId(faseStr),
-      tipoDocumento: r.tipo || r.tipo_documento || r.claveDocumento || `Doc-${idx + 1}`,
+      faseId,
+      // tipoDocumento: preferir tipoDocumento/tipo_documento sobre clave, en ese orden
+      tipoDocumento: r.tipoDocumento || r.tipo_documento || r.tipo || r.claveDocumento || `Doc-${idx + 1}`,
       descripcion: r.descripcion || '',
       area: r.area || 'General',
       obligatorio: r.obligatorio ?? true,

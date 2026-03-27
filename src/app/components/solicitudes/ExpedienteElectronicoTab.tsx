@@ -304,17 +304,22 @@ function getPromptIAFromCatalogo(claveDocumento: string | undefined, catalogo: C
 function mapExpedienteToLocal(row: ExpedienteDBRow, idx: number, catalogo: CatalogoDocItem[] = []): RequisitoProducto {
   const faseStr = row.fase || 'Fase 1';
   const claveDoc = row.claveDocumento;
-  
+
+  // faseId: normalizar SIEMPRE a número para evitar mismatch string "1" vs número 1
+  const rawFaseId = row.faseId ?? row.fase_id;
+  const faseId = rawFaseId != null ? parseInt(String(rawFaseId), 10) || parseFaseId(faseStr) : parseFaseId(faseStr);
+
   // Buscar promptIA: 1) del row mismo, 2) del catálogo usando claveDocumento
   const promptIADelRow = row.promptIA || row.prompt_ia || '';
   const promptIADelCatalogo = getPromptIAFromCatalogo(claveDoc, catalogo);
   const promptIA = promptIADelRow || promptIADelCatalogo;
-  
+
   return {
     id: row.id ?? (idx + 1),
     fase: faseStr,
-    faseId: row.faseId ?? row.fase_id ?? parseFaseId(faseStr),
-    tipoDocumento: row.tipo || row.tipo_documento || row.claveDocumento || `Doc-${idx + 1}`,
+    faseId,
+    // tipoDocumento: prioridad al nombre descriptivo sobre la clave técnica
+    tipoDocumento: (row as any).tipoDocumento || row.tipo_documento || row.tipo || row.claveDocumento || `Doc-${idx + 1}`,
     descripcion: row.descripcion || '',
     area: row.area || 'General',
     obligatorio: row.obligatorio ?? true,
@@ -850,7 +855,12 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
       console.log(`${LOG} [IA] Resultado:`, result);
 
       if (!res.ok || result.error) {
-        throw new Error(result.error || result.details || `HTTP ${res.status}`);
+        const rawError = result.error || result.details || `HTTP ${res.status}`;
+        // Si Hono no tiene el endpoint de IA, mostrar mensaje amigable en lugar del error técnico
+        if (res.status === 404 || rawError.toLowerCase().includes('route not found') || rawError.toLowerCase().includes('not found in hono')) {
+          throw new Error('El servicio de validación IA no está disponible. Valide el documento manualmente cambiando el estatus a "Validado".');
+        }
+        throw new Error(rawError);
       }
 
       const esValido = result.valido === true;
