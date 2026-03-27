@@ -17,7 +17,7 @@ export function PlantillasTab({ formData, updateFormData, isView }: {
   updateFormData: (field: string, value: any) => void;
   isView: boolean;
 }) {
-  const plantillas = (formData.plantillas as any[]) || [];
+  const plantillas = Array.isArray(formData?.plantillas) ? formData.plantillas : [];
   const [showForm, setShowForm] = useState(false);
   const [editIdx, setEditIdx] = useState<number | null>(null);
   const [form, setForm] = useState({ nombre: '', tipo: '', archivoBase: '', version: '1.0', estatus: 'Activo' });
