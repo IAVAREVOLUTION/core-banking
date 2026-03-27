@@ -12,6 +12,7 @@ import { TasaReferenciaTab } from './tabs/TasaReferenciaTab';
 import { MatrizTasaVariableTab } from './tabs/MatrizTasaVariableTab';
 import { ExpedientesProductoTab } from './tabs/ExpedientesProductoTab';
 import { SucursalTab } from './tabs/SucursalTab';
+import { PlantillasTab } from './tabs/PlantillasTab';
 import { useProductoPersistence, useProductoTabs } from '../../hooks/useProductoPersistence';
 import { syncToJProducts } from '../../hooks/useSyncJProducts';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
@@ -139,6 +140,7 @@ export function ProductoCaptacionForm({ mode, productoId, producto, onCancel, on
   const matrizTasaVariableRef = useRef<TabDataRef>(null);
   const sucursalRef = useRef<TabDataRef>(null);
   const expedientesRef = useRef<TabDataRef>(null);
+  const plantillasRef = useRef<TabDataRef>(null);
 
   // Estado para los datos de comisiones (para sincronización)
   const [comisionesData, setComisionesData] = useState<any[]>(Array.isArray(producto?.comisiones) ? producto.comisiones : producto?.comisionesRegistros || []);
@@ -678,6 +680,7 @@ export function ProductoCaptacionForm({ mode, productoId, producto, onCancel, on
       sessionStorage.removeItem(`credito_matriztasavariable_${pid}`);
       sessionStorage.removeItem(`credito_sucursal_${pid}`);
       sessionStorage.removeItem(`captacion_expedientes_prod_${pid}`);
+      sessionStorage.removeItem(`captacion_plantillas_${pid}`);
     } catch (e) { /* ignore */ }
     clearPersistedData();
     onCancel();
@@ -827,6 +830,7 @@ export function ProductoCaptacionForm({ mode, productoId, producto, onCancel, on
       sucursalRegistros: sucursalRef.current?.getData() || [],
       expedientesRegistros: expedientesRef.current?.getData() || [],
       tasasReferenciaRegistros: tasasReferencia || [],
+      plantillas: plantillasRef.current?.getData() || [],
     };
     
     console.log('handleSave - Producto completo con registros:', newProduct);
@@ -943,6 +947,7 @@ export function ProductoCaptacionForm({ mode, productoId, producto, onCancel, on
         sucursalRegistros,
         expedientesRegistros,
         tasasReferenciaRegistros,
+        plantillas: plantillasRef.current?.getData() || [],
       };
 
       console.log('[handleSave] JSON institucional para J_PRODUCTOS.data:', jProductoData);
@@ -986,6 +991,7 @@ export function ProductoCaptacionForm({ mode, productoId, producto, onCancel, on
       sessionStorage.removeItem(`credito_matriztasavariable_${pid}`);
       sessionStorage.removeItem(`credito_sucursal_${pid}`);
       sessionStorage.removeItem(`captacion_expedientes_prod_${pid}`);
+      sessionStorage.removeItem(`captacion_plantillas_${pid}`);
     } catch (e) { /* ignore */ }
     } catch (err) {
       console.error('[ProductoCaptacionForm] Error inesperado al guardar:', err);
@@ -1013,6 +1019,7 @@ export function ProductoCaptacionForm({ mode, productoId, producto, onCancel, on
     // === Tabs adicionales de Captación ===
     { id: 'tasaInversion', label: 'Tasa de Inversión' },
     { id: 'checklist', label: 'Check List Captaciones' },
+    { id: 'plantillas', label: 'Plantillas' },
   ];
 
   return (
@@ -2032,6 +2039,17 @@ export function ProductoCaptacionForm({ mode, productoId, producto, onCancel, on
             </div>
           </div>
         )}
+
+        <div style={{ display: activeTab === 'plantillas' ? 'block' : 'none' }}>
+          <PlantillasTab
+            ref={plantillasRef}
+            mode={modeCredito}
+            productId={productoId || 'nuevo'}
+            persistToStorage
+            storagePrefix="captacion"
+            initialData={Array.isArray((producto as any)?.plantillas) ? (producto as any).plantillas : undefined}
+          />
+        </div>
 
 
       </div>

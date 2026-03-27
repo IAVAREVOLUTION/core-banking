@@ -142,6 +142,12 @@ export function validarFormalizarContrato(opts: {
   comites: any[];
   productoRequiereGarantia: boolean;
   productoRequiereComite: boolean;
+  plantillas?: Array<{
+    tipoPlantilla: string;
+    estatus: 'Activo' | 'Inactivo';
+    nombre?: string;
+    archivoBase?: string;
+  }>;
 }): ValidationResult {
   const errors: string[] = [];
 
@@ -186,6 +192,42 @@ export function validarFormalizarContrato(opts: {
       if (!autorizado) {
         errors.push('El comité de autorización no tiene estatus "Autorizado".');
       }
+    }
+  }
+
+  // 5. Plantillas institucionales — Contrato y Pagaré activos
+  if (opts.plantillas) {
+    const activas = opts.plantillas.filter(p => p.estatus === 'Activo');
+    const tieneContrato = activas.some(p => p.tipoPlantilla === 'contrato');
+    const tienePagare = activas.some(p => p.tipoPlantilla === 'pagare');
+
+    if (!tieneContrato) {
+      const existeInactiva = opts.plantillas.some(p => p.tipoPlantilla === 'contrato' && p.estatus === 'Inactivo');
+      errors.push(existeInactiva
+        ? 'Plantilla "Contrato de Operación" existe pero está INACTIVA. Actívela en el subtab Plantillas del producto.'
+        : 'No existe plantilla tipo "Contrato de Operación" en el subtab Plantillas del producto.'
+      );
+    }
+    if (!tienePagare) {
+      const existeInactiva = opts.plantillas.some(p => p.tipoPlantilla === 'pagare' && p.estatus === 'Inactivo');
+      errors.push(existeInactiva
+        ? 'Plantilla "Pagaré" existe pero está INACTIVA. Actívela en el subtab Plantillas del producto.'
+        : 'No existe plantilla tipo "Pagaré" en el subtab Plantillas del producto.'
+      );
+    }
+  } else {
+    errors.push('El subtab Plantillas no existe o no contiene registros en el producto. Configure las plantillas de Contrato y Pagaré.');
+  }
+
+  // 6. Acta Constitutiva validada (Persona Moral)
+  if (opts.tipoPersona === 'Moral') {
+    const actaValidada = opts.documentosCargados.some(d =>
+      d.estatus === 'Validado' &&
+      (d.tipoDocumento?.toLowerCase().includes('acta constitutiva') ||
+       d.tipoDocumento?.toLowerCase().includes('acta_constitutiva'))
+    );
+    if (!actaValidada) {
+      errors.push('Acta Constitutiva: documento obligatorio para Persona Moral, no encontrada con estatus "Validado" en el expediente.');
     }
   }
 
@@ -485,18 +527,55 @@ export function getRequisitosFromRawData(rawData: Record<string, any> | null | u
   // Fuente 2: requisitos (RequisitosTab)
   const rawRequisitos: any[] = Array.isArray(rawData.requisitos) ? rawData.requisitos : [];
 
+  // Fuente 3: fases del producto (para mapear faseId ↔ fase nombre)
+  const rawFases: any[] = Array.isArray(rawData.fases) ? rawData.fases : [];
+
+  /** Mapa: nombre fase → seq numérico */
+  const faseNameToSeq: Record<string, number> = {};
+  for (const f of rawFases) {
+    const seq = typeof f.seq === 'number' ? f.seq : parseInt(String(f.seq), 10);
+    if (f.fase && !isNaN(seq)) faseNameToSeq[f.fase.toLowerCase().trim()] = seq;
+  }
+
   function parseFaseId(fase?: string | number): number {
     if (typeof fase === 'number') return fase;
     if (!fase) return 1;
+    // Primero: buscar en el mapa de fases del producto
+    const fromMap = faseNameToSeq[String(fase).toLowerCase().trim()];
+    if (fromMap) return fromMap;
+    // Fallback: extraer número del string
     const m = String(fase).match(/(\d+)/);
     return m ? parseInt(m[1], 10) : 1;
   }
 
+  /** Mapeo de tipos de documento conocidos → faseId correcta (basado en flujo institucional) */
+  const DOC_TYPE_TO_PHASE: Record<string, number> = {
+    'contrato firmado': 5,
+    'contrato_firmado': 5,
+    'pagare firmado': 5,
+    'pagare_firmado': 5,
+    'pagaré firmado': 5,
+  };
+
+  /** Intenta inferir faseId por tipo de documento si no tiene faseId explícito */
+  function inferFaseId(doc: any, parsedFaseId: number): number {
+    // 1. Si tiene faseId/fase_id explícito, usarlo
+    const explicit = doc.faseId ?? doc.fase_id;
+    if (explicit != null) {
+      const n = parseInt(String(explicit), 10);
+      if (!isNaN(n) && n > 0) return n;
+    }
+    // 2. Si el tipo de documento está en el mapa conocido, usar ese faseId
+    const tipoDoc = String(doc.tipoDocumento || doc.tipo || doc.tipo_documento || '').toLowerCase().trim();
+    if (DOC_TYPE_TO_PHASE[tipoDoc]) return DOC_TYPE_TO_PHASE[tipoDoc];
+    // 3. Usar el faseId parseado del string de fase
+    return parsedFaseId;
+  }
+
   const mappedExpedientes: RequisitoProducto[] = rawExpedientes.map((r: any, idx: number) => {
     const faseStr = r.fase || 'Fase 1';
-    // faseId: normalizar SIEMPRE a número para evitar comparaciones string vs number
-    const rawFaseId = r.faseId ?? r.fase_id;
-    const faseId = rawFaseId != null ? parseInt(String(rawFaseId), 10) || parseFaseId(faseStr) : parseFaseId(faseStr);
+    const parsedFaseId = parseFaseId(faseStr);
+    const faseId = inferFaseId(r, parsedFaseId);
     return {
       id: r.id ?? (idx + 1),
       fase: faseStr,
@@ -516,10 +595,12 @@ export function getRequisitosFromRawData(rawData: Record<string, any> | null | u
     .filter((r: any) => r.activo !== false)
     .map((r: any, idx: number) => {
       const faseStr = r.fase || 'Fase 1';
+      const parsedFaseId = parseFaseId(faseStr);
+      const faseId = inferFaseId(r, parsedFaseId);
       return {
         id: r.id ?? (10000 + idx),
         fase: faseStr,
-        faseId: r.faseId ?? r.fase_id ?? parseFaseId(faseStr),
+        faseId,
         tipoDocumento: r.requisitoNombre || r.tipoDocumento || r.tipo_documento || `Requisito-${idx + 1}`,
         descripcion: r.descripcion || r.nota || '',
         area: r.area || 'General',
@@ -562,4 +643,168 @@ export function leerRequisitosProducto(rawData: Record<string, any> | null | und
     parseFloat(String(rawData.montoGarantia || rawData.monto_garantia || 0).replace(/[^0-9.-]/g, '')) || 0;
 
   return { requiereGarantia, requiereComite, montoGarantia };
+}
+
+// ══════════════════════════════════════════════════════════════════
+// H. VALIDACIÓN POR FASE — CORE bancario
+// Valida SOLO documentos obligatorios cuya FaseConfigurada
+// coincida EXACTAMENTE con la fase actual de la solicitud.
+// ══════════════════════════════════════════════════════════════════
+
+export interface ValidacionFaseResult {
+  valido: boolean;
+  faltantes: string[];
+  pendientesValidacion: string[];
+  documentosValidados: string[];
+  faseActual: string;
+  motivos: string[];
+}
+
+/**
+ * Valida los documentos obligatorios de la fase actual de la solicitud.
+ *
+ * REGLA PRINCIPAL:
+ * Solo valida documentos cuyo FaseConfigurada coincida EXACTAMENTE
+ * con la fase actual. No valida documentos de fases futuras o pasadas.
+ *
+ * Para cada documento obligatorio de esta fase, verifica:
+ * 1. Que esté cargado en el expediente electrónico
+ * 2. Que haya sido validado por la IA de documentos
+ * 3. Que el tipo coincida con el configurado
+ * 4. Que tenga archivo adjunto (legible)
+ * 5. Que no esté rechazado
+ *
+ * @param faseActualSeq     — secuencia de la fase actual (1, 2, 3, 4...)
+ * @param faseActualNombre  — nombre legible de la fase (ej: "Integración Expediente")
+ * @param requisitos        — documentos configurados en el producto (Sección 1)
+ * @param documentosCargados — documentos en el expediente (Sección 2)
+ * @param tipoPersona       — tipo de persona del cliente
+ */
+export function validarDocumentosPorFase(
+  faseActualSeq: number,
+  faseActualNombre: string,
+  requisitos: RequisitoProducto[],
+  documentosCargados: DocumentoCargado[],
+  tipoPersona: string,
+): ValidacionFaseResult {
+  const faltantes: string[] = [];
+  const pendientesValidacion: string[] = [];
+  const documentosValidados: string[] = [];
+  const motivos: string[] = [];
+
+  // ── PASO 1: Filtrar DocumentosRequeridosEnEstaFase ──
+  // Solo documentos donde FaseConfigurada == FaseActual Y EsObligatorio == true
+  const reqDeFase = requisitos.filter(r => {
+    const rFaseSeq = typeof r.faseId === 'number' ? r.faseId : (parseInt(String(r.faseId)) || 0);
+    if (rFaseSeq !== faseActualSeq) return false;
+    if (!r.obligatorio) return false;
+
+    // Filtro por tipo de persona
+    const persona = String((r as any).tipoPersona || (r as any).persona || '').toLowerCase();
+    if (!persona || persona.includes('todo') || persona.includes('all') || persona === '') return true;
+    const tp = tipoPersona.toLowerCase();
+    if (tp.includes('moral') && !persona.includes('moral')) return false;
+    if (!tp.includes('moral') && persona.includes('moral')) return false;
+    return true;
+  });
+
+  // DEBUG: Log de filtrado por fase
+  console.log(`[validarFase] ═══ Fase ${faseActualSeq} "${faseActualNombre}" ═══`);
+  console.log(`[validarFase] Requisitos totales: ${requisitos.length}`);
+  console.log(`[validarFase] Requisitos por fase:`, requisitos.map(r => `"${r.tipoDocumento}" → faseId=${r.faseId} oblig=${r.obligatorio}`));
+  console.log(`[validarFase] Requisitos de ESTA fase (${faseActualSeq}): ${reqDeFase.length}`, reqDeFase.map(r => r.tipoDocumento));
+  console.log(`[validarFase] Documentos cargados: ${documentosCargados.length}`, documentosCargados.map(d => `"${d.tipoDocumento}" → faseId=${d.faseId} estatus=${d.estatus}`));
+
+  // Si no hay documentos obligatorios para esta fase → válida automáticamente
+  if (reqDeFase.length === 0) {
+    return {
+      valido: true,
+      faltantes: [],
+      pendientesValidacion: [],
+      documentosValidados: [],
+      faseActual: faseActualNombre,
+      motivos: [`No hay documentos obligatorios configurados para la fase "${faseActualNombre}".`],
+    };
+  }
+
+  // ── PASO 2: Obtener documentos cargados de ESTA fase ──
+  // Filtro ESTRICTO: solo documentos cuyo faseId coincida EXACTAMENTE con la fase actual.
+  // Si el documento no tiene faseId → NO se incluye (pertenece a una fase futura o no asignada).
+  const docsDeFase = documentosCargados.filter(d => {
+    if (d.faseId == null) return false; // sin faseId → no se valida aquí
+    const dId = Number(d.faseId);
+    if (isNaN(dId) || dId === 0) return false; // faseId inválido → no se valida
+    return dId === faseActualSeq; // solo documentos de esta fase exacta
+  });
+
+  console.log(`[validarFase] Documentos de ESTA fase (${faseActualSeq}): ${docsDeFase.length}`, docsDeFase.map(d => d.tipoDocumento));
+  console.log(`[validarFase] Documentos excluidos (otra fase):`, documentosCargados.filter(d => !docsDeFase.includes(d)).map(d => `"${d.tipoDocumento}"→faseId=${d.faseId}`));
+
+  // ── PASO 3: Validar cada documento requerido ──
+  for (const req of reqDeFase) {
+    const nombreDoc = req.tipoDocumento;
+    const nombreLower = nombreDoc.toLowerCase();
+
+    // 1. ¿Está cargado en el expediente?
+    const docCargado = docsDeFase.find(d =>
+      (d.tipoDocumento || '').toLowerCase() === nombreLower
+    );
+
+    if (!docCargado) {
+      faltantes.push(nombreDoc);
+      motivos.push(`"${nombreDoc}": no cargado en el expediente electrónico.`);
+      continue;
+    }
+
+    // 2. ¿Tiene archivo adjunto? (legible)
+    if (!docCargado.archivo && !docCargado.url && !docCargado.fileData) {
+      faltantes.push(nombreDoc);
+      motivos.push(`"${nombreDoc}": cargado pero sin archivo adjunto.`);
+      continue;
+    }
+
+    // 3. ¿Está rechazado?
+    if (docCargado.estatus === 'Rechazado') {
+      faltantes.push(nombreDoc);
+      motivos.push(`"${nombreDoc}": rechazado. Debe volver a cargarlo.`);
+      continue;
+    }
+
+    // 4. ¿Fue validado por IA?
+    if (!docCargado.validadoIA) {
+      pendientesValidacion.push(nombreDoc);
+      motivos.push(`"${nombreDoc}": cargado pero pendiente de validación IA.`);
+      continue;
+    }
+
+    // 5. ¿Está validado por el sistema?
+    if (docCargado.estatus !== 'Validado') {
+      pendientesValidacion.push(nombreDoc);
+      motivos.push(`"${nombreDoc}": validado por IA pero estatus "${docCargado.estatus}".`);
+      continue;
+    }
+
+    // ✅ Documento OK
+    documentosValidados.push(nombreDoc);
+  }
+
+  // ── Verificar documentos rechazados en esta fase (aunque no sean obligatorios) ──
+  const rechazados = docsDeFase.filter(d => d.estatus === 'Rechazado');
+  for (const r of rechazados) {
+    if (!faltantes.includes(r.tipoDocumento)) {
+      faltantes.push(r.tipoDocumento);
+      motivos.push(`"${r.tipoDocumento}": rechazado. Debe corregirlo.`);
+    }
+  }
+
+  const valido = faltantes.length === 0 && pendientesValidacion.length === 0;
+
+  return {
+    valido,
+    faltantes,
+    pendientesValidacion,
+    documentosValidados,
+    faseActual: faseActualNombre,
+    motivos,
+  };
 }

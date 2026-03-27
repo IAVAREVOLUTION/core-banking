@@ -10,6 +10,20 @@ export type FaseOriginacion =
   | 'Activación de Cuenta Financiera';
 
 export type TipoPersona = 'Física' | 'Moral' | 'Fís. c/Act. Emp.';
+export type TipoPlantillaPicklist = 'solicitud' | 'contrato' | 'pagare' | 'minuta';
+
+export const TIPO_PLANTILLA_VALIDOS: TipoPlantillaPicklist[] = ['solicitud', 'contrato', 'pagare', 'minuta'];
+
+const TIPO_PLANTILLA_LABELS: Record<TipoPlantillaPicklist, string> = {
+  solicitud: 'Solicitud de Crédito',
+  contrato: 'Contrato de Operación',
+  pagare: 'Pagaré',
+  minuta: 'Minuta de Acuerdos',
+};
+
+function labelTipoPlantilla(tipo: TipoPlantillaPicklist): string {
+  return TIPO_PLANTILLA_LABELS[tipo] || tipo;
+}
 
 export interface DocumentoObligatorio {
   tipoDocumento: string;
@@ -86,6 +100,7 @@ export interface ReglaValidacionResult {
     comitesAutorizados: boolean;
     beneficiariosCompletos: boolean;
     solicitudPagoCompletado: boolean;
+    plantillasValidas?: boolean;
   };
   actualizaciones: FlujoTrabajoUpdate[];
   contrato?: ContratoData;
@@ -189,6 +204,79 @@ export function validarSolicitudPago(solicitud: SolicitudActivacion): boolean {
   return solicitud.estatusPago === 'Pagado';
 }
 
+/**
+ * Valida que existan plantillas activas de tipo "contrato" y "pagare"
+ * en el subtab Plantillas del submódulo del producto.
+ * Retorna los motivos de error y los faltantes.
+ */
+export function validarPlantillasFormalizacion(
+  plantillas: OriginacionContext['plantillas']
+): { valido: boolean; motivos: string[]; faltantes: string[]; plantillasDetectadas: string[] } {
+  const motivos: string[] = [];
+  const faltantes: string[] = [];
+  const plantillasDetectadas: string[] = [];
+
+  if (!plantillas || !Array.isArray(plantillas)) {
+    return {
+      valido: false,
+      motivos: ['El subtab Plantillas no existe o no contiene registros en el producto.'],
+      faltantes: [
+        `${labelTipoPlantilla('contrato')} (Activa)`,
+        `${labelTipoPlantilla('pagare')} (Activa)`,
+      ],
+      plantillasDetectadas: [],
+    };
+  }
+
+  // Validar tipos de plantilla en el picklist definido
+  const plantillasInvalidas = plantillas.filter(
+    p => !TIPO_PLANTILLA_VALIDOS.includes(p.tipoPlantilla)
+  );
+  if (plantillasInvalidas.length > 0) {
+    motivos.push(
+      `Tipo(s) de plantilla inválido(s): ${plantillasInvalidas.map(p => `"${p.tipoPlantilla}"`).join(', ')}. Valores permitidos: ${TIPO_PLANTILLA_VALIDOS.map(t => labelTipoPlantilla(t)).join(', ')}.`
+    );
+  }
+
+  // Filtrar plantillas activas
+  const activas = plantillas.filter(p => p.estatus === 'Activo');
+
+  // Verificar plantilla tipo "contrato"
+  const contrato = activas.find(p => p.tipoPlantilla === 'contrato');
+  if (contrato) {
+    plantillasDetectadas.push(labelTipoPlantilla('contrato'));
+  } else {
+    const existeInactiva = plantillas.some(p => p.tipoPlantilla === 'contrato' && p.estatus === 'Inactivo');
+    if (existeInactiva) {
+      motivos.push(`${labelTipoPlantilla('contrato')}: existe pero está INACTIVA. Actívela antes de formalizar.`);
+    } else {
+      motivos.push(`${labelTipoPlantilla('contrato')}: no encontrada en el subtab Plantillas del producto.`);
+    }
+    faltantes.push(`${labelTipoPlantilla('contrato')} (Activa)`);
+  }
+
+  // Verificar plantilla tipo "pagare"
+  const pagare = activas.find(p => p.tipoPlantilla === 'pagare');
+  if (pagare) {
+    plantillasDetectadas.push(labelTipoPlantilla('pagare'));
+  } else {
+    const existeInactiva = plantillas.some(p => p.tipoPlantilla === 'pagare' && p.estatus === 'Inactivo');
+    if (existeInactiva) {
+      motivos.push(`${labelTipoPlantilla('pagare')}: existe pero está INACTIVA. Actívela antes de formalizar.`);
+    } else {
+      motivos.push(`${labelTipoPlantilla('pagare')}: no encontrada en el subtab Plantillas del producto.`);
+    }
+    faltantes.push(`${labelTipoPlantilla('pagare')} (Activa)`);
+  }
+
+  return {
+    valido: motivos.length === 0 && faltantes.length === 0,
+    motivos,
+    faltantes,
+    plantillasDetectadas,
+  };
+}
+
 export function generarContrato(
   lineaProducto: LineaProducto,
   tipoProducto: TipoProducto,
@@ -287,6 +375,14 @@ export interface OriginacionContext {
   cargos?: CargoItem[];
   requiereGarantia?: boolean;
   requiereComite?: boolean;
+  plantillas?: Array<{
+    id: number;
+    nombre: string;
+    tipoPlantilla: TipoPlantillaPicklist;
+    archivoBase: string;
+    version: string;
+    estatus: 'Activo' | 'Inactivo';
+  }>;
 }
 
 export function ejecutarReglasFase(
@@ -526,18 +622,73 @@ function validarFase4Formalizacion(
   context: OriginacionContext,
   accion: 'enviarFase' | 'regresarFase' | 'formalizarContrato' | 'solicitudActivacion' | 'activarCuenta'
 ): ReglaValidacionResult {
-  const { fase, tipoPersona, documentos, notas, lineaProducto, tipoProducto, header, garantias } = context;
+  const { fase, tipoPersona, documentos, notas, lineaProducto, tipoProducto, header, garantias, plantillas } = context;
 
   if (accion === 'formalizarContrato') {
-    // Solo genera el contrato/pagaré para revisión e impresión.
+    const erroresFormalizacion: string[] = [];
+    const faltantesFormalizacion: string[] = [];
+
+    // 1. VALIDAR PLANTILLAS REQUERIDAS
+    const valPlantillas = validarPlantillasFormalizacion(plantillas);
+    if (!valPlantillas.valido) {
+      erroresFormalizacion.push('Plantillas requeridas faltantes o inactivas:', ...valPlantillas.motivos);
+      faltantesFormalizacion.push(...valPlantillas.faltantes);
+    }
+
+    // 2. VALIDAR ACTA CONSTITUTIVA (para Persona Moral) — debe estar cargada y validada
+    if (tipoPersona === 'Moral') {
+      const actaCargada = documentos.some(d =>
+        d.toLowerCase().includes('acta constitutiva') || d.toLowerCase().includes('acta_constitutiva')
+      );
+      if (!actaCargada) {
+        erroresFormalizacion.push('Acta Constitutiva: documento obligatorio para Persona Moral, no encontrado en el expediente validado de Fase 4.');
+        faltantesFormalizacion.push('Acta Constitutiva (validada)');
+      }
+    }
+
+    // 3. Si hay errores → bloquear formalización
+    if (erroresFormalizacion.length > 0) {
+      return {
+        accionPermitida: false,
+        fase,
+        faseDestino: null,
+        motivos: [
+          'No se puede formalizar el contrato. Se requiere lo siguiente:',
+          ...erroresFormalizacion,
+        ],
+        validaciones: {
+          documentosCompletos: true,
+          notaReciente: true,
+          garantiasSuficientes: true,
+          comitesAutorizados: true,
+          beneficiariosCompletos: true,
+          solicitudPagoCompletado: true,
+          plantillasValidas: valPlantillas.valido,
+        },
+        actualizaciones: [],
+        documentosFaltantes: faltantesFormalizacion,
+      };
+    }
+
+    // Todo OK → generar contrato/pagaré para revisión e impresión.
     // NO avanza de fase — el avance ocurre con "Enviar de Fase".
     const contrato = generarContrato(lineaProducto, tipoProducto, header, garantias);
     return {
       accionPermitida: true,
       fase,
       faseDestino: null,
-      motivos: ['Contrato y pagaré generados. Revise e imprima los documentos antes de avanzar.'],
-      validaciones: { documentosCompletos: true, notaReciente: true, garantiasSuficientes: true, comitesAutorizados: true, beneficiariosCompletos: true, solicitudPagoCompletado: true },
+      motivos: [
+        `Validación completa. Plantillas: ${valPlantillas.plantillasDetectadas.join(', ')}.${tipoPersona === 'Moral' ? ' Acta Constitutiva: validada.' : ''} Contrato y pagaré generados. Revise e imprima los documentos antes de avanzar.`,
+      ],
+      validaciones: {
+        documentosCompletos: true,
+        notaReciente: true,
+        garantiasSuficientes: true,
+        comitesAutorizados: true,
+        beneficiariosCompletos: true,
+        solicitudPagoCompletado: true,
+        plantillasValidas: true,
+      },
       actualizaciones: [],
       contrato,
     };

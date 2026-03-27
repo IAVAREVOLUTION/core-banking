@@ -162,6 +162,9 @@ function mapRowToProduct(row: ProductoCaptacionRow, index: number): Product {
 
     // ── Acceso Cuenta (array de canales operativos) ──
     accesoCuenta: Array.isArray(d.accesoCuenta) ? d.accesoCuenta : undefined,
+
+    // ── Plantillas institucionales ──
+    plantillas: Array.isArray(d.plantillas) ? d.plantillas : undefined,
   } as Product;
 }
 

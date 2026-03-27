@@ -25,6 +25,7 @@ import { FasesTab } from '../productos/tabs/FasesTab';
 import { GarantiaTab } from '../productos/tabs/GarantiaTab';
 import { ComisionesTab } from '../productos/tabs/ComisionesTab';
 import { ExpedientesProductoTab } from '../productos/tabs/ExpedientesProductoTab';
+import { PlantillasTab } from '../productos/tabs/PlantillasTab';
 import { useProductoPersistence, useProductoTabs } from '../../hooks/useProductoPersistence';
 import { syncToJProducts } from '../../hooks/useSyncJProducts';
 
@@ -398,6 +399,7 @@ export function ProductoLineaCreditoForm({
           checkList: formData.checkList || [],
           condicionesDisposicion: formData.condicionesDisposicion || [],
           parametrosCalculo: formData.parametrosCalculo || [],
+          plantillas: plantillasRef.current?.getData() || [],
         };
 
         const existingDbUuid = product?.dbUuid || null;
@@ -447,6 +449,7 @@ export function ProductoLineaCreditoForm({
   const garantiasRef = useRef<{ getData: () => any[] }>(null);
   const comisionesRef = useRef<{ getData: () => any[] }>(null);
   const expedientesRef = useRef<{ getData: () => any[] }>(null);
+  const plantillasRef = useRef<{ getData: () => any[] }>(null);
 
   // Estado para Tasa Referencia (requerido por MatrizTasaVariableTab)
   interface TasaReferenciaItem {
@@ -557,6 +560,7 @@ export function ProductoLineaCreditoForm({
     { id: 'garantias', label: 'Garantías' },
     // === Tabs adicionales ===
     { id: 'checkList', label: 'Check List' },
+    { id: 'plantillas', label: 'Plantillas' },
   ];
 
   return (
@@ -970,6 +974,17 @@ export function ProductoLineaCreditoForm({
                 storagePrefix="linea_credito"
                 initialData={product?.expedientes}
                 fases={product?.fases}
+              />
+            </div>
+
+            <div style={{ display: activeTab === 'plantillas' ? 'block' : 'none' }}>
+              <PlantillasTab
+                ref={plantillasRef}
+                mode={mode}
+                productId={productId}
+                persistToStorage
+                storagePrefix="linea_credito"
+                initialData={Array.isArray((product as any)?.plantillas) ? (product as any).plantillas : undefined}
               />
             </div>
           </div>

@@ -12,6 +12,7 @@
  */
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { toast } from 'sonner';
+import { projectId, publicAnonKey } from '/utils/supabase/info';
 import {
   SolicitudFormData, EMPTY_FORM, MOCK_FORMS, SOLICITUDES_LISTA,
   saveToSession, loadFromSession, loadFromSavedStore, saveToSavedStore, commitAndClearSession, clearSession,
@@ -32,7 +33,7 @@ import { PartesRelacionadasTab } from './tabs/PartesRelacionadasTab';
 import { useProductosCatalogoDB, type ProductoCatalogo } from '../../hooks/useProductosCatalogoDB';
 import { fetchNextNoSol, updateFaseSolicitudDB, avanzarFaseSolicitudDB, regresarFaseSolicitudDB, formalizarContratoSolicitudDB, activarCuentaDB } from '../../hooks/useSolicitudesDB';
 import {
-  validarDocumentosFase, validarNotaReciente, validarFormalizarContrato,
+  validarDocumentosFase, validarDocumentosPorFase, validarNotaReciente, validarFormalizarContrato,
   validarContratosYPagares, validarFase4Envio, validarFase6, leerRequisitosProducto,
   getRequisitosFromRawData, validarResultadoActivacion,
 } from '../../hooks/useOriginacionValidaciones';
@@ -386,23 +387,39 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
     const cliente = [formData.nombrePersona, formData.apellidoPaternoPersona, formData.apellidoMaternoPersona]
       .filter(Boolean).join(' ').trim();
 
-    const creados = autoCrearDocumentosFase4({
-      storageId,
-      datos: {
-        noSol: formData.noSol,
-        cliente,
-        lineaProducto: formData.lineaProducto,
-        tipoProducto: formData.tipoProducto,
-        productoNombre: productoSeleccionado?.nombreProducto || formData.nombreProducto,
-        terminos,
-      },
-    });
+    // Obtener plantillas del producto seleccionado
+    const rd = productoSeleccionado?.rawData as Record<string, any> | undefined;
+    const plantillasProducto = rd?.plantillas || [];
 
-    if (creados) {
-      // Forzar remount de ExpedienteElectronicoTab para que lea los nuevos docs de session storage
-      setExpedienteKey(k => k + 1);
-      console.log('[SolicForm] Fase 4 → documentos base generados automáticamente.');
-    }
+    const ejecutarFase4 = async () => {
+      const resultado = await autoCrearDocumentosFase4({
+        storageId,
+        datos: {
+          noSol: formData.noSol,
+          cliente,
+          lineaProducto: formData.lineaProducto,
+          tipoProducto: formData.tipoProducto,
+          productoNombre: productoSeleccionado?.nombreProducto || formData.nombreProducto,
+          terminos,
+        },
+        plantillas: plantillasProducto,
+      });
+
+      if (resultado.exito) {
+        // Forzar remount de ExpedienteElectronicoTab para que lea los nuevos docs de session storage
+        setExpedienteKey(k => k + 1);
+        console.log(
+          '[SolicForm] Fase 4 → documentos generados:',
+          resultado.pdfGenerados.join(', '),
+          '| Supabase:', resultado.subidosASupabase ? 'OK' : 'local',
+          '| Expediente:', resultado.registradosEnExpediente ? 'OK' : 'pendiente'
+        );
+      } else {
+        console.warn('[SolicForm] Fase 4 → bloqueado:', resultado.error);
+      }
+    };
+
+    ejecutarFase4();
   }, [formData.faseId, fasesDelProducto]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleEnviarFase = useCallback(async () => {
@@ -423,12 +440,104 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
       const requisitosProducto = getRequisitosFromRawData(rawData);
 
       // ── 3. Validar documentos obligatorios de la fase actual (Sección B) ──
-      const resultDocs = validarDocumentosFase(documentos, requisitosProducto, seqActual, formData.tipoPersona);
-      if (!resultDocs.valid) {
-        toast.error('Documentos obligatorios incompletos', {
-          description: resultDocs.errors.slice(0, 3).join(' · ') + (resultDocs.errors.length > 3 ? ` (+${resultDocs.errors.length - 3} más)` : ''),
+      // Solo valida documentos cuya FaseConfigurada == FaseActual
+      const faseNombre = faseActualReal?.fase || `Fase ${seqActual}`;
+      const valFase = validarDocumentosPorFase(
+        seqActual, faseNombre, requisitosProducto, documentos, formData.tipoPersona,
+      );
+      if (!valFase.valido) {
+        const mensajes: string[] = [];
+        if (valFase.faltantes.length > 0) {
+          mensajes.push(`Faltantes: ${valFase.faltantes.join(', ')}`);
+        }
+        if (valFase.pendientesValidacion.length > 0) {
+          mensajes.push(`Pendientes de validación IA: ${valFase.pendientesValidacion.join(', ')}`);
+        }
+        toast.error('No se puede avanzar de fase', {
+          description: mensajes.slice(0, 3).join(' · ') + (mensajes.length > 3 ? ` (+${mensajes.length - 3} más)` : ''),
+          duration: 8000,
         });
+        console.log(`[Fase ${seqActual}] Validación por fase:`, valFase);
         return;
+      }
+      console.log(`[Fase ${seqActual}] ✅ Documentos validados:`, valFase.documentosValidados.join(', '));
+
+      // ── 3a. Validación IA con el prompt de la fase ──
+      // Envía los datos extraídos de los documentos al Edge Function con el prompt de la fase.
+      // El prompt de la fase define QUÉ validar a nivel de fase completa.
+      const fasePromptIA = faseActualReal?.promptIA;
+      if (fasePromptIA) {
+        const toastIA = toast.loading(`Validando fase con IA: "${faseNombre}"...`, {
+          description: 'Enviando datos de documentos al validador IA...',
+        });
+
+        try {
+          // Construir contexto de documentos de esta fase para la IA
+          const docsDeFase = documentos.filter(d => {
+            if (d.faseId == null) return false;
+            const dId = Number(d.faseId);
+            return !isNaN(dId) && dId > 0 && dId === seqActual;
+          });
+
+          const contextoDocs = docsDeFase.map(d => ({
+            tipoDocumento: d.tipoDocumento,
+            estatus: d.estatus,
+            validadoIA: d.validadoIA,
+            ia_motivos: (d as any).iaMotivos || [],
+            ia_extraido: (d as any).iaExtraido || {},
+          }));
+
+          const API_BASE_FASE = `https://${projectId}.supabase.co/functions/v1/make-server-7e2d13d9`;
+          const resFaseIA = await fetch(`${API_BASE_FASE}/validar-fase-ia`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${publicAnonKey}`,
+            },
+            body: JSON.stringify({
+              faseNombre,
+              faseSeq: seqActual,
+              promptIA: fasePromptIA,
+              documentos: contextoDocs,
+              tipoPersona: formData.tipoPersona,
+              solicitudId: storageId,
+            }),
+          });
+
+          toast.dismiss(toastIA);
+
+          if (resFaseIA.ok) {
+            const resultadoFaseIA = await resFaseIA.json();
+            console.log(`[Fase ${seqActual}] 🤖 Resultado validación IA de fase:`, resultadoFaseIA);
+
+            if (resultadoFaseIA.valido === false) {
+              toast.error(`IA: Fase "${faseNombre}" no cumple criterios`, {
+                description: (resultadoFaseIA.motivos || []).slice(0, 3).join(' · '),
+                duration: 10000,
+              });
+              return; // BLOQUEAR avance si la IA dice que no
+            }
+
+            toast.success(`IA: Fase "${faseNombre}" validada correctamente`, {
+              description: resultadoFaseIA.motivos?.length > 0
+                ? resultadoFaseIA.motivos.slice(0, 2).join(' · ')
+                : 'Todos los criterios de la fase se cumplen.',
+              duration: 5000,
+            });
+          } else if (resFaseIA.status === 404) {
+            // Endpoint no desplegado — continuar sin validación IA de fase
+            console.warn(`[Fase ${seqActual}] Endpoint /validar-fase-ia no disponible (404). Continuando sin validación IA de fase.`);
+          } else {
+            const errText = await resFaseIA.text();
+            console.warn(`[Fase ${seqActual}] Error en validación IA de fase (HTTP ${resFaseIA.status}):`, errText);
+          }
+        } catch (errFaseIA: any) {
+          toast.dismiss(toastIA);
+          console.warn(`[Fase ${seqActual}] Error de red en validación IA de fase:`, errFaseIA.message);
+          // No bloquear por errores de red — continuar
+        }
+      } else {
+        console.log(`[Fase ${seqActual}] Sin promptIA configurado en la fase — omitiendo validación IA de fase.`);
       }
 
       // ── 3b. Fase 4: validar Términos, Garantías y Comités antes de avanzar ──
@@ -575,6 +684,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
       const rawData = productoSeleccionado?.rawData as Record<string, any> | undefined;
       const requisitosProducto = getRequisitosFromRawData(rawData);
       const { requiereGarantia, requiereComite } = leerRequisitosProducto(rawData);
+      const plantillasProducto = rawData?.plantillas || [];
 
       // Fases 1-3 previas
       const faseActualReal = fasesDelProducto.find(f => String(f.faseId) === String(formData.faseId));
@@ -591,6 +701,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
         comites,
         productoRequiereGarantia: requiereGarantia,
         productoRequiereComite: requiereComite,
+        plantillas: plantillasProducto,
       });
 
       if (!result.valid) {
@@ -665,19 +776,31 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
     // Fases 1-5 deben tener todos los documentos obligatorios cargados y validados
     const faseActualSeq6 = (fasesDelProducto.find(f => String(f.faseId) === String(formData.faseId))?.seq) ?? 6;
     for (let s = 1; s < faseActualSeq6; s++) {
-      const resDoc = validarDocumentosFase(documentos6, requisitosProducto6, s, formData.tipoPersona);
-      if (!resDoc.valid) {
+      const faseS = fasesDelProducto.find(f => f.seq === s);
+      const valFaseS = validarDocumentosPorFase(
+        s, faseS?.fase || `Fase ${s}`, requisitosProducto6, documentos6, formData.tipoPersona,
+      );
+      if (!valFaseS.valido) {
+        const msgs: string[] = [];
+        if (valFaseS.faltantes.length > 0) msgs.push(`Faltantes: ${valFaseS.faltantes.join(', ')}`);
+        if (valFaseS.pendientesValidacion.length > 0) msgs.push(`Pendientes IA: ${valFaseS.pendientesValidacion.join(', ')}`);
         toast.error(`Expediente incompleto — Fase ${s}`, {
-          description: resDoc.errors.slice(0, 3).join(' · ') + (resDoc.errors.length > 3 ? ` (+${resDoc.errors.length - 3} más)` : ''),
+          description: msgs.slice(0, 3).join(' · '),
         });
         return;
       }
     }
     // También validar documentos de la fase actual (fase 6)
-    const resDocActual6 = validarDocumentosFase(documentos6, requisitosProducto6, faseActualSeq6, formData.tipoPersona);
-    if (!resDocActual6.valid) {
+    const fase6 = fasesDelProducto.find(f => f.seq === faseActualSeq6);
+    const valFase6 = validarDocumentosPorFase(
+      faseActualSeq6, fase6?.fase || `Fase ${faseActualSeq6}`, requisitosProducto6, documentos6, formData.tipoPersona,
+    );
+    if (!valFase6.valido) {
+      const msgs6: string[] = [];
+      if (valFase6.faltantes.length > 0) msgs6.push(`Faltantes: ${valFase6.faltantes.join(', ')}`);
+      if (valFase6.pendientesValidacion.length > 0) msgs6.push(`Pendientes IA: ${valFase6.pendientesValidacion.join(', ')}`);
       toast.error('Expediente incompleto — Fase actual', {
-        description: resDocActual6.errors.slice(0, 3).join(' · ') + (resDocActual6.errors.length > 3 ? ` (+${resDocActual6.errors.length - 3} más)` : ''),
+        description: msgs6.slice(0, 3).join(' · '),
       });
       return;
     }
