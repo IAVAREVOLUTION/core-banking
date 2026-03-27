@@ -31,6 +31,10 @@ import { FasesSolicitudTab } from './tabs/FasesSolicitudTab';
 import { PartesRelacionadasTab } from './tabs/PartesRelacionadasTab';
 import { useProductosCatalogoDB, type ProductoCatalogo } from '../../hooks/useProductosCatalogoDB';
 import { fetchNextNoSol, updateFaseSolicitudDB, avanzarFaseSolicitudDB, regresarFaseSolicitudDB, formalizarContratoSolicitudDB } from '../../hooks/useSolicitudesDB';
+import { SUPABASE_URL } from '../../lib/supabaseClient';
+import { publicAnonKey } from '/utils/supabase/info';
+
+const API_BASE_FORM = `${SUPABASE_URL}/functions/v1/make-server-7e2d13d9`;
 import { FaseActionsComponent } from '../shared/FaseActionsComponent';
 import { addOriginacionItem, CAT_AREA } from '../originacion/originacionStore';
 import { FlujoTrabajo } from '../originacion/FlujoTrabajo';
@@ -473,11 +477,102 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
     }
   }, [enviandoFase, formData, fasesDelProducto, storageId]);
 
-  /** Formalizar Contrato — solo disponible en Fase 4. */
+  /** Formalizar Contrato — solo disponible en Fase 4.
+   *  Valida con IA (plantillas, Acta Constitutiva) antes de proceder. */
   const handleFormalizarContrato = useCallback(async () => {
     const terminos: any = loadFromSession<any>(storageId, 'terminos') || loadFromSavedStore<any>(storageId, 'terminos') || {};
     const garantias: any[] = loadFromSession<any[]>(storageId, 'garantias') || loadFromSavedStore<any[]>(storageId, 'garantias') || [];
+    const documentosCargados: any[] = loadFromSession<any[]>(storageId, 'documentos') || loadFromSavedStore<any[]>(storageId, 'documentos') || [];
 
+    const rawData = productoSeleccionado?.rawData as Record<string, any> | undefined;
+    const plantillas: any[] = Array.isArray(rawData?.plantillas) ? rawData.plantillas : [];
+    const faseActualReal = fasesDelProducto.find(f => String(f.faseId) === String(formData.faseId));
+
+    // ── Validación local de plantillas (sin IA — primera barrera) ──
+    const plantillaContrato = plantillas.find((p: any) => p.tipo === 'contrato' && p.estatus === 'Activo');
+    const plantillaPagare   = plantillas.find((p: any) => p.tipo === 'pagare'   && p.estatus === 'Activo');
+    if (!plantillaContrato || !plantillaPagare) {
+      const faltantes: string[] = [];
+      if (!plantillaContrato) faltantes.push('plantilla tipo "contrato" activa');
+      if (!plantillaPagare)   faltantes.push('plantilla tipo "pagaré" activa');
+      toast.error('No se puede formalizar el contrato', {
+        description: `Falta(n): ${faltantes.join(' y ')}. Configure las plantillas en Módulo de Producto → subtab Plantillas.`,
+        duration: 9000,
+      });
+      return;
+    }
+    const documentosObligatoriosFase4 = rawData
+      ? (rawData.requisitos ?? rawData.requisitosDocumentales ?? rawData.expedientesElectronicos ?? []).filter((r: any) => {
+          const rFaseId = r.faseId ?? r.fase_id;
+          return rFaseId == null || Number(rFaseId) === 4;
+        })
+      : [];
+
+    // ── 1. Validar con IA (plantillas + documentos Fase 4) ──
+    try {
+      const iaPayload = {
+        botonPresionado: 'Formalizar Contrato',
+        faseActual: faseActualReal?.fase || formData.descripcionFase || 'Fase 4',
+        faseNumero: faseActualReal?.seq || 4,
+        tipoPersona: formData.tipoPersona,
+        lineaProducto: formData.lineaProducto,
+        datosCliente: {
+          nombre: [formData.nombrePersona, formData.apellidoPaternoPersona, formData.apellidoMaternoPersona].filter(Boolean).join(' ').trim(),
+          rfc: (formData as any).rfc || '',
+        },
+        datosCredito: {
+          monto: formData.montoSol,
+          producto: formData.tipoProducto,
+          noSol: formData.noSol,
+        },
+        plantillas,
+        documentosCargados,
+        documentosObligatorios: documentosObligatoriosFase4,
+        garantias,
+        terminos,
+      };
+
+      const iaRes = await fetch(`${API_BASE_FORM}/validar-documento-ia`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${publicAnonKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(iaPayload),
+      });
+      const iaResult = await iaRes.json().catch(() => ({}));
+
+      // Si IA responde y bloquea, mostrar motivos y detener
+      if (iaRes.ok && iaResult.valido === false) {
+        const motivos = Array.isArray(iaResult.motivos) ? iaResult.motivos.join('\n') : '';
+        const faltantes = Array.isArray(iaResult.faltantes) && iaResult.faltantes.length > 0
+          ? `\nFaltante(s): ${iaResult.faltantes.join(', ')}`
+          : '';
+        toast.error('No se puede formalizar el contrato', {
+          description: (motivos + faltantes).trim() || 'Verifique la configuración del producto (plantillas y documentos).',
+          duration: 8000,
+        });
+        return; // Bloquear — no continuar
+      }
+
+      // Si IA responde OK pero advierte que no puede generar documentos
+      if (iaRes.ok && iaResult.valido === true) {
+        const puedeGenerar = iaResult.puedeGenerarDocumentos === true
+          || (iaResult.puedeGenerarContrato === true && iaResult.puedeGenerarPagare === true);
+        if (!puedeGenerar) {
+          const detectadas: string[] = Array.isArray(iaResult.plantillasDetectadas) ? iaResult.plantillasDetectadas : [];
+          const faltanIA: string[] = [];
+          if (!detectadas.includes('contrato')) faltanIA.push('Contrato');
+          if (!detectadas.includes('pagare'))   faltanIA.push('Pagaré');
+          toast.warning('Advertencia de plantillas', {
+            description: `La IA indica que falta(n): ${faltanIA.join(', ')}. Verifique el subtab Plantillas del producto.`,
+            duration: 7000,
+          });
+        }
+      }
+    } catch (iaErr: any) {
+      // Error de red — no bloquear, solo advertir
+      console.warn('[SolicForm] Validación IA no disponible:', iaErr?.message);
+    }
+
+    // ── 2. Construir datos del contrato ──
     const datosContrato = {
       solicitudId: formData.id || String(storageId),
       noSol: formData.noSol,
@@ -488,31 +583,26 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
         .filter(Boolean).join(' ').trim(),
       terminos,
       garantias,
+      plantillaContratoUsada: plantillas.find((p: any) => p.tipo === 'contrato' && p.estatus === 'Activo')?.nombre || null,
+      plantillaPagareUsada: plantillas.find((p: any) => p.tipo === 'pagare' && p.estatus === 'Activo')?.nombre || null,
       fechaFormalizacion: new Date().toISOString(),
     };
 
-    // ── Guardar localmente SIEMPRE (fuente de verdad local) ──
+    // ── 3. Guardar localmente SIEMPRE (fuente de verdad local) ──
     saveToSavedStore(storageId, 'contrato', datosContrato);
     saveToSession(storageId, 'contrato', datosContrato);
 
-    // ── Intentar sincronizar con BD (no bloqueante si falla) ──
+    // ── 4. Intentar sincronizar con BD (no bloqueante si falla) ──
     const dbId = storageId !== 'new' ? String(storageId) : null;
     const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     if (dbId && UUID_REGEX.test(dbId)) {
       const result = await formalizarContratoSolicitudDB(dbId, datosContrato);
-      if (result.ok) {
-        toast.success('Contrato formalizado', { description: `No. Solicitud: ${formData.noSol}` });
-      } else {
-        // Ya está guardado localmente — se sincronizará al guardar la solicitud
-        toast.success('Contrato formalizado', {
-          description: `No. Solicitud: ${formData.noSol}`,
-        });
+      if (!result.ok) {
         console.warn('[SolicForm] formalizarContrato BD falló (guardado local):', result.error);
       }
-    } else {
-      toast.success('Contrato formalizado', { description: formData.noSol });
     }
-  }, [formData, storageId]);
+    toast.success('Contrato formalizado', { description: `No. Solicitud: ${formData.noSol}` });
+  }, [formData, storageId, productoSeleccionado, fasesDelProducto]);
 
   const handleNumeric = (field: keyof SolicitudFormData, value: string) => {
     const cleaned = value.replace(/[^0-9.]/g, '');

@@ -9,7 +9,7 @@ import * as kv from "./kv_store.tsx";
 // ─── Boot log ───────────────────────────────────────────────────────
 // TODOS los endpoints de J_CLIENTES devuelven TODOS los registros SIN WHERE
 // useClientesDB v11.0 → /clientes-lista-todos | useProspectosDB → /clientes-prospectos
-const EDGE_VERSION = "v20.1-FORMALIZAR-CONTRATO";
+const EDGE_VERSION = "v20.3-PLANTILLAS-FORMALIZAR";
 console.log(`[SERVER BOOT] Edge function loaded — ${EDGE_VERSION}`);
 console.log(`[SERVER BOOT] Routes: TODOS los endpoints de J_CLIENTES sin filtros WHERE`);
 console.log(`[SERVER BOOT] Auto-bootstrap: public.get_clientes() + public.get_all_jclientes() RPCs`);
@@ -2892,89 +2892,302 @@ app.post("/solicitudes-credito/:id/formalizarContrato", formalizarContratoHandle
 // ═══════════════════════════════════════════════════════════════════
 // VALIDACIÓN DE DOCUMENTOS CON IA (Groq — Llama 3.2 Vision)
 // ═══════════════════════════════════════════════════════════════════
+// ── System prompt: validador Módulo de Producto — Formalizar Contrato ──
+const SYSTEM_PROMPT_FORMALIZAR_CONTRATO = `Eres un asistente experto en configuración del CORE bancario.
+Tu tarea es asegurar que el Módulo de "Producto" esté correctamente configurado
+para soportar la creación y uso de plantillas institucionales en el flujo de Originación.
+
+INSTRUCCIONES DE VALIDACIÓN:
+1. El subtab "Plantillas" debe existir en el submódulo del Producto.
+2. Tipos de plantilla válidos (picklist): solicitud, contrato, pagare, minuta.
+3. Cada plantilla debe tener: Nombre, Tipo, Archivo base, Versión, Estatus (Activo/Inactivo).
+4. Para Formalizar Contrato (Fase 4) se requiere al menos:
+   - Una plantilla tipo "contrato" con Estatus "Activo"
+   - Una plantilla tipo "pagare" con Estatus "Activo"
+5. Si falta alguna plantilla requerida, si el subtab no existe, o si el tipo no es válido → bloquear.
+6. Verifica también que los documentos de Fase 4 obligatorios estén cargados y validados.
+
+REGLAS:
+- Si falta plantilla "contrato" activa → valido: false, reportar en faltantes.
+- Si falta plantilla "pagare" activa → valido: false, reportar en faltantes.
+- Si ambas existen y están activas → puedeGenerarDocumentos: true.
+- Detecta y reporta en plantillasDetectadas los tipos de plantillas activas encontradas.
+
+Responde ÚNICAMENTE en JSON con esta estructura exacta:
+{
+  "valido": true,
+  "motivos": ["motivo 1"],
+  "faltantes": ["plantilla o configuración faltante"],
+  "plantillasDetectadas": ["contrato", "pagare"],
+  "puedeGenerarDocumentos": true
+}
+NO incluyas texto fuera del JSON.`;
+
+// ── System prompt: validador experto CORE Bancario ──────────────────
+const SYSTEM_PROMPT_CORE_BANKING = `Eres un validador experto de procesos bancarios del CORE de Productos y Originación.
+Tu función es validar fases completas del flujo de originación, documentos, subtabs,
+plantillas, reglas de negocio y condiciones legales, operativas y jurídicas.
+El sistema te enviará:
+- Datos del cliente
+- Tipo de persona (Física, Moral, Física con Actividad Empresarial)
+- Datos del crédito
+- Línea de producto (Crédito, Captación, Línea de Crédito)
+- Documentos cargados en el expediente electrónico (Sección 2)
+- Documentos obligatorios por fase (Sección 1)
+- Documentos generados automáticamente (Solicitud, Contrato, Pagaré)
+- Subtabs configurados en el producto
+- Plantillas configuradas en el producto
+- Reglas de negocio de la fase
+- Notas registradas
+- Fase actual, número de fase y área actual
+- Prompt IA del producto
+- Prompt IA de la fase (si existe)
+- Catálogo de prompts por documento (fallback)
+- Botón presionado por el usuario (Enviar Fase, Regresar Fase, Formalizar Contrato, Solicitud de Activación, Activar Cuenta)
+
+────────────────────────────────────────
+1. INTERPRETACIÓN DEL CONTEXTO
+────────────────────────────────────────
+Debes interpretar:
+- El prompt IA del producto
+- El prompt IA de la fase
+- El catálogo de prompts por documento
+- Las reglas de negocio del flujo de originación
+- Los documentos cargados
+- Los documentos generados
+- Los subtabs
+- Las plantillas
+- El tipo de persona
+- La línea de producto
+- La fase actual
+- El botón presionado
+
+────────────────────────────────────────
+2. VALIDACIÓN DE DOCUMENTOS OBLIGATORIOS
+────────────────────────────────────────
+Para la fase actual:
+- Identifica los documentos obligatorios según el tipo de persona.
+- Verifica que existan en la Sección 2 del expediente electrónico.
+- Verifica que hayan sido validados por IA.
+- Verifica que cumplan con el tipo esperado.
+- Verifica que sean legibles.
+- Verifica que coincidan con los datos del cliente.
+- Verifica requisitos legales (RFC, firmas, vigencia, etc.).
+Si falta un documento obligatorio, repórtalo.
+
+────────────────────────────────────────
+3. VALIDACIÓN DE SUBTABS Y CONFIGURACIÓN
+────────────────────────────────────────
+Verifica:
+- Que existan los subtabs requeridos por la fase.
+- Que existan plantillas configuradas (Solicitud, Contrato, Pagaré, Minuta).
+- Que las plantillas correspondan al producto.
+- Que los documentos generados provengan de la plantilla correcta.
+
+────────────────────────────────────────
+4. VALIDACIÓN DE REGLAS DE NEGOCIO POR FASE
+────────────────────────────────────────
+FASE 1 — Expediente Electrónico
+- Validar que los datos del cliente estén completos.
+- Validar que existan los documentos base según tipo de persona.
+FASE 2 — Integración / Solicitud
+- Validar que exista el PDF "SOLICITUD".
+- Validar encabezado EXACTO: "SOLICITUD".
+- Validar datos del cliente y monto.
+- Validar firma (si aplica).
+FASE 3 — Análisis / RFC
+- Validar que exista la Constancia Fiscal SAT.
+- Validar que el RFC coincida con el del cliente.
+FASE 4 — Expediente Jurídico / Formalización
+- Validar Acta Constitutiva.
+- Validar plantillas de Contrato y Pagaré.
+- Validar generación de Contrato.pdf y Pagare.pdf.
+- Validar datos del crédito, términos y condiciones y garantías.
+FASE 5 — Validación de Firmas
+- Validar Contrato firmado.
+- Validar Pagaré firmado.
+- Validar firmas legibles.
+FASE 6 — Solicitud de Activación
+- Validar que todas las fases anteriores estén completas.
+- Validar garantías (si aplica).
+- Validar comités (si aplica).
+- Validar cargos.
+- Validar creación de Cuenta por Pagar o Cuenta por Cobrar.
+FASE 7 — Activación de Cuenta
+- Validar que el estatus en Solicitudes de Activación sea "Pagado".
+- Validar que se puedan actualizar los estatus:
+  - Estatus Solicitud = Autorizada
+  - Estatus Cuenta = Activa
+  - Estatus Pago = Pagado
+  - Estatus Cartera = Activa
+
+────────────────────────────────────────
+5. VALIDACIÓN DE BOTONES Y ACCIONES
+────────────────────────────────────────
+Botón "Enviar Fase"
+- Validar documentos obligatorios.
+- Validar reglas de negocio.
+- Validar que la fase esté completa.
+Botón "Regresar Fase"
+- Validar que exista al menos una NOTA en los últimos 30 minutos.
+Botón "Formalizar Contrato"
+- Validar plantillas.
+- Validar datos del crédito.
+- Validar garantías.
+- Validar términos y condiciones.
+- Validar generación de Contrato y Pagaré.
+Botón "Solicitud de Activación"
+- Validar garantías.
+- Validar comités.
+- Validar cargos.
+- Validar creación de Cuenta por Pagar o Cobrar.
+Botón "Activar Cuenta"
+- Validar estatus de Solicitud de Activación.
+
+────────────────────────────────────────
+6. RESPUESTA EN JSON
+────────────────────────────────────────
+Responde únicamente en JSON:
+{
+  "valido": true | false,
+  "confianza": 0.0 a 1.0,
+  "motivos": ["motivo 1", "motivo 2"],
+  "faltantes": ["documento o condición faltante"],
+  "faseListaParaAvanzar": true | false,
+  "documentosValidados": [
+    {
+      "tipo": "INE",
+      "valido": true,
+      "motivos": ["Nombre coincide", "Documento vigente"]
+    }
+  ]
+}
+NO incluyas texto fuera del JSON.`;
+
 const validarDocumentoIAHandler = async (c: any) => {
   const LOG_IA = "[VALIDAR-IA]";
   try {
     const body = await c.req.json();
-    const { storagePath, promptIA, tipoDocumento, nombreSolicitante, imageBase64 } = body;
+    const {
+      // ── Parámetros de validación de documento individual (modo documento) ──
+      storagePath, promptIA, tipoDocumento, nombreSolicitante, imageBase64,
+      // ── Parámetros de validación de fase completa (modo fase) ──
+      datosCliente, tipoPersona, datosCredito, lineaProducto,
+      documentosCargados, documentosObligatorios, documentosGenerados,
+      subtabs, plantillas, reglas, notas,
+      faseActual, faseNumero, areaActual,
+      promptIAProducto, promptIAFase, catalogoPrompts,
+      botonPresionado,
+    } = body;
 
-    console.log(`${LOG_IA} Request — tipo=${tipoDocumento}, path=${storagePath}, hasImageBase64=${!!imageBase64}`);
+    const modoFase = !!(faseActual || faseNumero !== undefined || botonPresionado);
+    const modoDocumento = !!(tipoDocumento && (storagePath || imageBase64));
 
-    if (!tipoDocumento) {
-      return c.json({ error: "Falta parámetro obligatorio: tipoDocumento" }, 400);
+    console.log(`${LOG_IA} Request — modo=${modoFase ? 'FASE' : 'DOCUMENTO'}, tipo=${tipoDocumento}, fase=${faseActual}(${faseNumero}), boton=${botonPresionado}`);
+
+    if (!modoFase && !modoDocumento) {
+      return c.json({ error: "Faltan parámetros: especifique (tipoDocumento + storagePath/imageBase64) o (faseActual/faseNumero/botonPresionado)" }, 400);
     }
-    if (!storagePath && !imageBase64) {
-      return c.json({ error: "Falta storagePath o imageBase64" }, 400);
-    }
 
+    // ── 1. Obtener imagen (solo si modo documento) ──
     let imageDataUrl = "";
 
-    if (imageBase64) {
-      // Frontend renderizó el PDF a imagen y envía base64 directamente
-      console.log(LOG_IA + " Usando imageBase64 del frontend (PDF pre-renderizado)");
-      const approxBytes = imageBase64.length * 0.75;
-      if (approxBytes > 4 * 1024 * 1024) {
-        return c.json({ error: "La imagen renderizada es demasiado grande (máx 4MB)", details: (approxBytes / 1024).toFixed(0) + " KB" }, 400);
+    if (modoDocumento) {
+      if (imageBase64) {
+        // Frontend renderizó el PDF a imagen y envía base64 directamente
+        console.log(LOG_IA + " Usando imageBase64 del frontend (PDF pre-renderizado)");
+        const approxBytes = imageBase64.length * 0.75;
+        if (approxBytes > 4 * 1024 * 1024) {
+          return c.json({ error: "La imagen renderizada es demasiado grande (máx 4MB)", details: (approxBytes / 1024).toFixed(0) + " KB" }, 400);
+        }
+        imageDataUrl = imageBase64.startsWith("data:") ? imageBase64 : "data:image/png;base64," + imageBase64;
+        console.log(LOG_IA + " imageBase64 OK — ~" + (approxBytes / 1024).toFixed(1) + " KB");
+      } else if (storagePath) {
+        const supabaseIA = createClient(
+          Deno.env.get("SUPABASE_URL")!,
+          Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+        );
+        const { data: fileData, error: downloadError } = await supabaseIA.storage
+          .from(BUCKET_NAME)
+          .download(storagePath);
+        if (downloadError || !fileData) {
+          console.log(LOG_IA + " Error descargando archivo:", downloadError?.message);
+          return c.json({ error: "No se pudo descargar el documento de Storage", details: downloadError?.message }, 500);
+        }
+        const arrayBuffer = await fileData.arrayBuffer();
+        const uint8 = new Uint8Array(arrayBuffer);
+        let binary = "";
+        for (let i = 0; i < uint8.length; i++) binary += String.fromCharCode(uint8[i]);
+        const base64Content = btoa(binary);
+        const fileSizeKB = uint8.length / 1024;
+        if (uint8.length > 4 * 1024 * 1024) {
+          return c.json({ error: "El documento es demasiado grande para validación IA (máx 4MB)", details: fileSizeKB.toFixed(0) + " KB" }, 400);
+        }
+        const ext = storagePath.split(".").pop()?.toLowerCase() || "png";
+        if (ext === "pdf") {
+          return c.json({ error: "Los PDFs requieren pre-renderizado. El frontend debe enviar imageBase64.", details: "Use pdfjs-dist en frontend" }, 400);
+        }
+        const mimeMap: Record<string, string> = {
+          png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg",
+          gif: "image/gif", webp: "image/webp", bmp: "image/bmp",
+        };
+        imageDataUrl = "data:" + (mimeMap[ext] || "image/png") + ";base64," + base64Content;
+        console.log(LOG_IA + " Archivo descargado OK — " + fileSizeKB.toFixed(1) + " KB");
       }
-      imageDataUrl = imageBase64.startsWith("data:") ? imageBase64 : "data:image/png;base64," + imageBase64;
-      console.log(LOG_IA + " imageBase64 OK — ~" + (approxBytes / 1024).toFixed(1) + " KB");
-    } else {
-      const supabaseIA = createClient(
-        Deno.env.get("SUPABASE_URL")!,
-        Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
-      );
-
-      const { data: fileData, error: downloadError } = await supabaseIA.storage
-        .from(BUCKET_NAME)
-        .download(storagePath);
-
-      if (downloadError || !fileData) {
-        console.log(LOG_IA + " Error descargando archivo:", downloadError?.message);
-        return c.json({ error: "No se pudo descargar el documento de Storage", details: downloadError?.message }, 500);
-      }
-
-      const arrayBuffer = await fileData.arrayBuffer();
-      const uint8 = new Uint8Array(arrayBuffer);
-      let binary = "";
-      for (let i = 0; i < uint8.length; i++) {
-        binary += String.fromCharCode(uint8[i]);
-      }
-      const base64Content = btoa(binary);
-
-      const fileSizeKB = uint8.length / 1024;
-      if (uint8.length > 4 * 1024 * 1024) {
-        console.log(LOG_IA + " Archivo demasiado grande: " + fileSizeKB.toFixed(1) + " KB");
-        return c.json({ error: "El documento es demasiado grande para validación IA (máx 4MB)", details: fileSizeKB.toFixed(0) + " KB" }, 400);
-      }
-
-      const ext = storagePath.split(".").pop()?.toLowerCase() || "png";
-      if (ext === "pdf") {
-        console.log(LOG_IA + " PDF sin imageBase64 — frontend debe pre-renderizar");
-        return c.json({ error: "Los PDFs requieren pre-renderizado. El frontend debe enviar imageBase64.", details: "Use pdfjs-dist en frontend" }, 400);
-      }
-      const mimeMap: Record<string, string> = {
-        png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg",
-        gif: "image/gif", webp: "image/webp", bmp: "image/bmp",
-      };
-      const mimeType = mimeMap[ext] || "image/png";
-      imageDataUrl = "data:" + mimeType + ";base64," + base64Content;
-      console.log(LOG_IA + " Archivo descargado OK — " + fileSizeKB.toFixed(1) + " KB, mime=" + mimeType);
     }
 
-    // ── 2. Construir prompt bancario ──
+    // ── 2. Construir contexto para el validador bancario ──
     const fechaSistema = new Date().toISOString();
-    const reqPrompt = promptIA || "Verificar que el documento sea legítimo, legible y corresponda al tipo esperado.";
-    const solNombre = nombreSolicitante || "(no proporcionado)";
-    const promptFinal = "Eres un validador documental experto para un sistema bancario.\n\nTu tarea es analizar el documento proporcionado (imagen o PDF convertido a imagen)\ny validar si cumple con el requisito especificado.\n\nREQUISITO (promptIA):\n" + reqPrompt + "\n\nDATOS DEL SOLICITANTE:\nNombre esperado: " + solNombre + "\nTipo de documento esperado: " + tipoDocumento + "\nFecha actual del sistema: " + fechaSistema + "\n\nINSTRUCCIONES DE VALIDACIÓN:\n1. Determina si el documento corresponde al tipo esperado.\n2. Verifica si el nombre del documento coincide con el nombre del solicitante (si aplica).\n3. Verifica si el documento está vigente (si aplica).\n4. Evalúa si el documento está completo, legible y sin alteraciones.\n5. Identifica señales de manipulación, edición o fraude.\n6. Extrae información relevante del documento (nombre, fechas, folios, etc.).\n7. Responde ÚNICAMENTE en JSON con la siguiente estructura:\n\n{\n  \"valido\": true | false,\n  \"confianza\": 0.0 a 1.0,\n  \"motivos\": [\"motivo 1\", \"motivo 2\"],\n  \"extraido\": {\n    \"nombre_detectado\": \"...\",\n    \"fecha_documento\": \"...\",\n    \"tipo_detectado\": \"...\",\n    \"folio\": \"...\",\n    \"otros_campos\": \"...\"\n  }\n}\n\nNO incluyas texto fuera del JSON.";
 
-    // ── 3. Llamar a Groq API (Llama 3.2 Vision) ──
+    // Contexto de la fase / proceso
+    const contextoFase = {
+      fechaSistema,
+      botonPresionado: botonPresionado || "(no especificado)",
+      faseActual: faseActual || "(no especificada)",
+      faseNumero: faseNumero ?? "(no especificado)",
+      areaActual: areaActual || "(no especificada)",
+      tipoPersona: tipoPersona || "(no especificado)",
+      lineaProducto: lineaProducto || "(no especificado)",
+      datosCliente: datosCliente || {},
+      datosCredito: datosCredito || {},
+      promptIAProducto: promptIAProducto || promptIA || "(no especificado)",
+      promptIAFase: promptIAFase || "(no especificado)",
+      catalogoPrompts: catalogoPrompts || [],
+      documentosObligatorios: documentosObligatorios || [],
+      documentosCargados: documentosCargados || [],
+      documentosGenerados: documentosGenerados || [],
+      subtabs: subtabs || [],
+      plantillas: plantillas || [],
+      reglas: reglas || [],
+      notas: notas || [],
+      ...(tipoDocumento ? { tipoDocumentoActual: tipoDocumento } : {}),
+      ...(nombreSolicitante ? { nombreSolicitante } : {}),
+    };
+
+    const userMessage = `Valida el siguiente contexto del proceso bancario y responde ÚNICAMENTE en JSON:\n\n${JSON.stringify(contextoFase, null, 2)}`;
+
+    // ── 3. Construir mensajes para Groq (con imagen si es modo documento) ──
+    const groqMessages = imageDataUrl
+      ? [{ role: "user", content: [
+          { type: "text", text: userMessage },
+          { type: "image_url", image_url: { url: imageDataUrl } },
+        ]}]
+      : [{ role: "user", content: userMessage }];
+
+    // ── 4. Llamar a Groq API ──
     const GROQ_KEY = Deno.env.get("GROQ_API_KEY");
     if (!GROQ_KEY) {
       console.log(`${LOG_IA} ERROR: GROQ_API_KEY no configurada`);
       return c.json({ error: "GROQ_API_KEY no configurada en secrets" }, 500);
     }
 
-    console.log(`${LOG_IA} Llamando a Groq API (meta-llama/llama-4-scout-17b-16e-instruct)...`);
+    // Seleccionar system prompt según el contexto
+    const esFormalizarContrato = (botonPresionado || "").toLowerCase().includes("formalizar");
+    const systemPrompt = esFormalizarContrato
+      ? SYSTEM_PROMPT_FORMALIZAR_CONTRATO
+      : SYSTEM_PROMPT_CORE_BANKING;
+
+    console.log(`${LOG_IA} Llamando a Groq API — modo=${imageDataUrl ? 'VISION' : 'TEXT'}, boton=${botonPresionado}, prompt=${esFormalizarContrato ? 'FORMALIZAR' : 'CORE'}`);
     const groqResponse = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -2982,18 +3195,15 @@ const validarDocumentoIAHandler = async (c: any) => {
         "Authorization": "Bearer " + GROQ_KEY,
       },
       body: JSON.stringify({
-        model: "meta-llama/llama-4-scout-17b-16e-instruct",
+        model: imageDataUrl
+          ? "meta-llama/llama-4-scout-17b-16e-instruct"  // vision para documentos
+          : "llama-3.3-70b-versatile",                    // texto para fases
         messages: [
-          {
-            role: "user",
-            content: [
-              { type: "text", text: promptFinal },
-              { type: "image_url", image_url: { url: imageDataUrl } },
-            ],
-          },
+          { role: "system", content: systemPrompt },
+          ...groqMessages,
         ],
         temperature: 0.1,
-        max_tokens: 1024,
+        max_tokens: 2048,
       }),
     });
 
@@ -3021,38 +3231,55 @@ const validarDocumentoIAHandler = async (c: any) => {
     const rawContent = groqResult.choices?.[0]?.message?.content || "{}";
     console.log(`${LOG_IA} Groq response raw (first 500 chars):`, rawContent.substring(0, 500));
 
-    // ── 4. Parsear JSON de la respuesta ──
+    // ── 5. Parsear JSON de la respuesta ──
     let parsed: any;
     try {
-      // Intentar extraer JSON de posible markdown ```json ... ```
+      // Extraer JSON de posible markdown ```json ... ```
       const jsonMatch = rawContent.match(/```(?:json)?\s*([\s\S]*?)```/);
       const cleanJson = jsonMatch ? jsonMatch[1].trim() : rawContent.trim();
       parsed = JSON.parse(cleanJson);
     } catch (parseErr: any) {
       console.log(`${LOG_IA} JSON parse error:`, parseErr.message, "raw:", rawContent.substring(0, 200));
-      // Devolver resultado parcial
       parsed = {
         valido: false,
         confianza: 0,
-        motivos: ["La IA no pudo analizar el documento correctamente", "Respuesta no estructurada: " + rawContent.substring(0, 200)],
-        extraido: {},
+        motivos: ["La IA no pudo analizar el contexto correctamente", "Respuesta no estructurada: " + rawContent.substring(0, 200)],
+        faltantes: [],
+        faseListaParaAvanzar: false,
+        documentosValidados: [],
         _rawResponse: rawContent.substring(0, 500),
       };
     }
 
-    // Asegurar estructura mínima
+    // Asegurar estructura completa (backwards-compatible con campos legacy)
+    const modeloUsado = imageDataUrl
+      ? "meta-llama/llama-4-scout-17b-16e-instruct"
+      : "llama-3.3-70b-versatile";
+
     const result = {
       valido: parsed.valido === true,
       confianza: typeof parsed.confianza === "number" ? parsed.confianza : (parsed.valido ? 0.8 : 0.2),
       motivos: Array.isArray(parsed.motivos) ? parsed.motivos : [],
+      faltantes: Array.isArray(parsed.faltantes) ? parsed.faltantes : [],
+      faseListaParaAvanzar: parsed.faseListaParaAvanzar === true,
+      documentosValidados: Array.isArray(parsed.documentosValidados) ? parsed.documentosValidados : [],
+      // Campos específicos Formalizar Contrato (Fase 4) — nuevo formato
+      plantillasDetectadas: Array.isArray(parsed.plantillasDetectadas) ? parsed.plantillasDetectadas : [],
+      puedeGenerarDocumentos: parsed.puedeGenerarDocumentos === true,
+      // Compatibilidad con campos legacy
+      puedeGenerarContrato: parsed.puedeGenerarContrato === true || (Array.isArray(parsed.plantillasDetectadas) && parsed.plantillasDetectadas.includes('contrato')),
+      puedeGenerarPagare: parsed.puedeGenerarPagare === true || (Array.isArray(parsed.plantillasDetectadas) && parsed.plantillasDetectadas.includes('pagare')),
+      // Campos legacy para compatibilidad con validación de documento individual
       extraido: parsed.extraido || {},
-      modelo: "meta-llama/llama-4-scout-17b-16e-instruct",
+      modelo: modeloUsado,
       timestamp: fechaSistema,
-      tipoDocumento,
+      tipoDocumento: tipoDocumento || null,
+      faseActual: faseActual || null,
+      botonPresionado: botonPresionado || null,
       usage: groqResult.usage || null,
     };
 
-    console.log(`${LOG_IA} ✅ Resultado: valido=${result.valido}, confianza=${result.confianza}, motivos=${result.motivos.length}`);
+    console.log(`${LOG_IA} ✅ valido=${result.valido}, confianza=${result.confianza}, faseListaParaAvanzar=${result.faseListaParaAvanzar}, faltantes=${result.faltantes.length}, docsValidados=${result.documentosValidados.length}`);
     return c.json(result);
   } catch (err: any) {
     console.log(`${LOG_IA} Error no capturado:`, err.message, err.stack);
