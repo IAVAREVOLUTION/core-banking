@@ -18,8 +18,8 @@ interface SolicitudBaseFormProps {
   onCancel: () => void;
   onSave?: (data: any) => void;
   /**
-   * 'solicitudes' (default) — solo botón "Enviar de Fase"
-   * 'originacion'           — todos los botones de fase, siempre visibles
+   * 'solicitudes' (default) → solo botón Enviar de Fase
+   * 'originacion'           → todos los botones de fase, siempre visibles
    */
   modo?: 'solicitudes' | 'originacion';
 }

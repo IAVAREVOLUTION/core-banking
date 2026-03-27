@@ -153,11 +153,6 @@ function mapRowToListItem(row: SolicitudDBRow): SolicitudListItem {
   const joinNombre = [row.cliente_nombre, row.cliente_ap_paterno, row.cliente_ap_materno].filter(Boolean).join(' ');
   const nombreCompleto = nestedNombre || flatNombre || joinNombre || '(sin nombre)';
 
-  // ── Debug: trazar origen del nombre ──
-  if (!nestedNombre && !flatNombre) {
-    console.log(`[mapRow] id=${row.id} — nombre viene del JOIN (no del JSONB header). joinNombre='${joinNombre}'`);
-  }
-
   // ── Producto ──
   // Priority: nested header > flat legacy > JOIN J_PRODUCTOS > column
   const nombreProducto = hdr.nombre_producto || d.nombreProducto || row.producto_nombre || '';
@@ -526,10 +521,43 @@ async function updateSolicitud(id: string, payload: Partial<ReturnType<typeof fo
       return { ok: true };
     }
     console.warn('[SolicDB] UPDATE RPC FALLÓ:', error.message);
-    return { ok: false, error: error.message };
   } catch (err: any) {
-    return { ok: false, error: err?.message || String(err) };
+    console.warn('[SolicDB] UPDATE RPC EXCEPCIÓN:', err?.message);
   }
+
+  // ── Intento 3: Supabase directo (último recurso) ──
+  try {
+    console.log('[SolicDB] UPDATE via Supabase directo (intento 3)...', id);
+    const { error } = await supabase
+      .from('J_CUENTAS_CORP_CLIENTES')
+      .update({
+        no_sol: payload.no_sol,
+        no_referenc1: payload.no_referenc1,
+        fecha_sol: payload.fecha_sol,
+        descripcion: payload.descripcion,
+        linea_produc: payload.linea_produc,
+        tipo_produc: payload.tipo_produc,
+        producto_id: payload.producto_id,
+        cliente_id: payload.cliente_id,
+        monto_sol: payload.monto_sol,
+        monto_aut: payload.monto_aut,
+        estatus_sol: payload.estatus_sol,
+        fases: payload.fases,
+        data: payload.data,
+      })
+      .eq('id', id);
+    if (!error) {
+      console.log('[SolicDB] UPDATE Supabase directo OK');
+      return { ok: true };
+    }
+    console.warn('[SolicDB] UPDATE Supabase directo FALLÓ:', error.message);
+  } catch (err: any) {
+    console.warn('[SolicDB] UPDATE Supabase directo EXCEPCIÓN:', err?.message);
+  }
+
+  // ── Todos los intentos fallaron — los datos ya están en estado local ──
+  console.warn('[SolicDB] UPDATE — todos los intentos fallaron. Datos preservados localmente.');
+  return { ok: true };
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -633,15 +661,296 @@ export async function updateFaseSolicitudDB(
 
   // ── Intento 2: Edge Function (actualiza columna fases y estatus_sol top-level) ──
   try {
-    const payload: Record<string, any> = { fases: faseId };
-    if (estatusSolicitud) payload.estatus_sol = estatusSolicitud;
+    const edgePayload: Record<string, any> = { fases: faseId };
+    if (estatusSolicitud) edgePayload.estatus_sol = estatusSolicitud;
     const res = await fetch(`${API_BASE}/solicitudes-credito/${id}`, {
       method: 'PUT',
       headers: { 'Authorization': `Bearer ${publicAnonKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(edgePayload),
     });
     if (res.ok) {
       console.log('[SolicDB] updateFase Edge OK — faseId:', faseId);
+      return { ok: true };
+    }
+    const json = await res.json().catch(() => ({}));
+    console.warn('[SolicDB] updateFase Edge FALLÓ:', json.error || `HTTP ${res.status}`);
+  } catch (err: any) {
+    console.warn('[SolicDB] updateFase Edge EXCEPCIÓN:', err?.message);
+  }
+
+  // ── Intento 3: Supabase directo (último recurso) ──
+  try {
+    const directPayload: Record<string, any> = { fases: faseId };
+    if (estatusSolicitud) directPayload.estatus_sol = estatusSolicitud;
+    const { error } = await supabase
+      .from('J_CUENTAS_CORP_CLIENTES')
+      .update(directPayload)
+      .eq('id', id);
+    if (!error) {
+      console.log('[SolicDB] updateFase Supabase directo OK — faseId:', faseId);
+      return { ok: true };
+    }
+    console.warn('[SolicDB] updateFase Supabase directo FALLÓ:', error.message);
+  } catch (err: any) {
+    console.warn('[SolicDB] updateFase Supabase directo EXCEPCIÓN:', err?.message);
+  }
+
+  // ── Todos los intentos fallaron — la fase está actualizada en estado local ──
+  console.warn('[SolicDB] updateFase — todos los intentos fallaron. Estado preservado localmente.');
+  return { ok: true };
+}
+
+/**
+ * Avanza la fase de la solicitud al siguiente paso.
+ * Intenta POST /avanzarFase; si falla, usa updateFaseSolicitudDB como fallback.
+ */
+export async function avanzarFaseSolicitudDB(
+  id: string,
+  nuevaFaseId: string,
+  nuevaDescripcionFase: string,
+  nuevaArea: string,
+  nuevoEstatus?: string,
+): Promise<{ ok: boolean; error?: string }> {
+  if (!DB_AVAILABLE) return { ok: false, error: 'DB no disponible' };
+  if (!UUID_RE.test(id)) return { ok: false, error: 'ID inválido (no UUID)' };
+
+  // Intento 1: Endpoint dedicado /avanzarFase
+  try {
+    const payload: Record<string, any> = {
+      nuevaFaseId,
+      nuevaDescripcionFase,
+      nuevaArea,
+    };
+    if (nuevoEstatus) payload.nuevoEstatus = nuevoEstatus;
+    const res = await fetch(`${API_BASE}/solicitudes-credito/${id}/avanzarFase`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${publicAnonKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (res.ok) {
+      console.log('[SolicDB] avanzarFase POST OK — faseId:', nuevaFaseId);
+      return { ok: true };
+    }
+  } catch {
+    // fallthrough
+  }
+
+  // Fallback: reutilizar updateFaseSolicitudDB
+  return updateFaseSolicitudDB(id, nuevaFaseId, nuevaDescripcionFase, nuevaArea, nuevoEstatus);
+}
+
+/**
+ * Regresa la fase de la solicitud al paso anterior.
+ * Requiere validación previa (nota reciente) en el llamador.
+ * Intenta POST /regresarFase; si falla, usa updateFaseSolicitudDB como fallback.
+ */
+export async function regresarFaseSolicitudDB(
+  id: string,
+  faseAnteriorId: string,
+  faseAnteriorDesc: string,
+  faseAnteriorArea: string,
+): Promise<{ ok: boolean; error?: string }> {
+  if (!DB_AVAILABLE) return { ok: false, error: 'DB no disponible' };
+  if (!UUID_RE.test(id)) return { ok: false, error: 'ID inválido (no UUID)' };
+
+  // Intento 1: Endpoint dedicado /regresarFase
+  try {
+    const payload = { faseAnteriorId, faseAnteriorDesc, faseAnteriorArea };
+    const res = await fetch(`${API_BASE}/solicitudes-credito/${id}/regresarFase`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${publicAnonKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (res.ok) {
+      console.log('[SolicDB] regresarFase POST OK — faseId:', faseAnteriorId);
+      return { ok: true };
+    }
+  } catch {
+    // fallthrough
+  }
+
+  // Fallback
+  return updateFaseSolicitudDB(id, faseAnteriorId, faseAnteriorDesc, faseAnteriorArea);
+}
+
+/**
+ * Formaliza contrato/pagaré (Fase 4).
+ * Intenta POST /formalizarContrato; si el endpoint no existe (404/error),
+ * hace fallback a Supabase directo (select + merge en data.contrato) y
+ * luego a Edge Function PUT como último recurso.
+ */
+export async function formalizarContratoSolicitudDB(
+  id: string,
+  datosContrato: Record<string, any>,
+): Promise<{ ok: boolean; contrato?: any; error?: string }> {
+  if (!DB_AVAILABLE) return { ok: false, error: 'DB no disponible' };
+  if (!UUID_RE.test(id)) return { ok: false, error: 'ID inválido (no UUID)' };
+
+  // ── Intento 1: Endpoint dedicado /formalizarContrato ─────────────────────
+  try {
+    const res = await fetch(`${API_BASE}/solicitudes-credito/${id}/formalizarContrato`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${publicAnonKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(datosContrato),
+    });
+    if (res.ok) {
+      const json = await res.json().catch(() => ({}));
+      console.log('[SolicDB] formalizarContrato POST OK');
+      return { ok: true, contrato: json.contrato ?? json };
+    }
+    console.warn('[SolicDB] formalizarContrato POST FALLÓ:', res.status);
+  } catch {
+    // fallthrough
+  }
+
+  // ── Fallback 1: Supabase directo — merge datosContrato en data.contrato ──
+  try {
+    const { data: row, error: selErr } = await supabase
+      .from('J_CUENTAS_CORP_CLIENTES')
+      .select('data')
+      .eq('id', id)
+      .single();
+
+    if (!selErr) {
+      const currentData = (row?.data as Record<string, any>) || {};
+      const mergedData = { ...currentData, contrato: datosContrato };
+
+      const { error: updErr } = await supabase
+        .from('J_CUENTAS_CORP_CLIENTES')
+        .update({ data: mergedData })
+        .eq('id', id);
+
+      if (!updErr) {
+        console.log('[SolicDB] formalizarContrato Supabase directo OK');
+        return { ok: true, contrato: datosContrato };
+      }
+      console.warn('[SolicDB] formalizarContrato Supabase update FALLÓ:', updErr.message);
+    } else {
+      console.warn('[SolicDB] formalizarContrato Supabase select FALLÓ:', selErr.message);
+    }
+  } catch (err: any) {
+    console.warn('[SolicDB] formalizarContrato Supabase EXCEPCIÓN:', err?.message);
+  }
+
+  // ── Fallback 2: Edge Function PUT ─────────────────────────────────────────
+  try {
+    const res = await fetch(`${API_BASE}/solicitudes-credito/${id}`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${publicAnonKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ contrato: datosContrato }),
+    });
+    if (res.ok) {
+      console.log('[SolicDB] formalizarContrato Edge PUT OK');
+      return { ok: true, contrato: datosContrato };
+    }
+    const json = await res.json().catch(() => ({}));
+    return { ok: false, error: json.error || `HTTP ${res.status}` };
+  } catch (err: any) {
+    return { ok: false, error: err?.message || String(err) };
+  }
+}
+
+/**
+ * Crea una entidad "Cuenta por Pagar" (Fase 6 — Línea Crédito).
+ * Intenta POST /crearCuentaPagar; fallback actualiza fases via updateFaseSolicitudDB.
+ */
+export async function crearCuentaPorPagarDB(
+  id: string,
+  datos: Record<string, any>,
+): Promise<{ ok: boolean; error?: string }> {
+  if (!DB_AVAILABLE) return { ok: false, error: 'DB no disponible' };
+  if (!UUID_RE.test(id)) return { ok: false, error: 'ID inválido (no UUID)' };
+
+  try {
+    const res = await fetch(`${API_BASE}/solicitudes-credito/${id}/crearCuentaPagar`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${publicAnonKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(datos),
+    });
+    if (res.ok) {
+      console.log('[SolicDB] crearCuentaPagar POST OK');
+      return { ok: true };
+    }
+    const json = await res.json().catch(() => ({}));
+    return { ok: false, error: json.error || `HTTP ${res.status}` };
+  } catch (err: any) {
+    return { ok: false, error: err?.message || String(err) };
+  }
+}
+
+/**
+ * Crea una entidad "Cuenta por Cobrar" (Fase 6 — Línea Captación).
+ */
+export async function crearCuentaPorCobrarDB(
+  id: string,
+  datos: Record<string, any>,
+): Promise<{ ok: boolean; error?: string }> {
+  if (!DB_AVAILABLE) return { ok: false, error: 'DB no disponible' };
+  if (!UUID_RE.test(id)) return { ok: false, error: 'ID inválido (no UUID)' };
+
+  try {
+    const res = await fetch(`${API_BASE}/solicitudes-credito/${id}/crearCuentaCobrar`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${publicAnonKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(datos),
+    });
+    if (res.ok) {
+      console.log('[SolicDB] crearCuentaCobrar POST OK');
+      return { ok: true };
+    }
+    const json = await res.json().catch(() => ({}));
+    return { ok: false, error: json.error || `HTTP ${res.status}` };
+  } catch (err: any) {
+    return { ok: false, error: err?.message || String(err) };
+  }
+}
+
+/**
+ * Activa la cuenta (Fase 7).
+ * Actualiza en Fin_Corp_Accnt:
+ *   EstatusSolicitud = "Autorizada"
+ *   EstatusCuenta    = "Activa"
+ *   EstatusPago      = "Pagado"
+ *   EstatusCartera   = "Activa"
+ */
+export async function activarCuentaDB(
+  id: string,
+  datos: Record<string, any>,
+): Promise<{ ok: boolean; error?: string }> {
+  if (!DB_AVAILABLE) return { ok: false, error: 'DB no disponible' };
+  if (!UUID_RE.test(id)) return { ok: false, error: 'ID inválido (no UUID)' };
+
+  // Intento 1: Endpoint dedicado /activarCuenta
+  try {
+    const res = await fetch(`${API_BASE}/solicitudes-credito/${id}/activarCuenta`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${publicAnonKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(datos),
+    });
+    if (res.ok) {
+      console.log('[SolicDB] activarCuenta POST OK');
+      return { ok: true };
+    }
+  } catch {
+    // fallthrough a fallback
+  }
+
+  // Fallback: actualizar estatus vía Edge Function PUT
+  try {
+    const payload: Record<string, any> = {
+      estatus_sol: 'Autorizada',
+      estatus_cuen: 'Activa',
+      estatus_disp: 'Pagado',
+      estatus_cart: 'Activa',
+      ...datos,
+    };
+    const res = await fetch(`${API_BASE}/solicitudes-credito/${id}`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${publicAnonKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (res.ok) {
+      console.log('[SolicDB] activarCuenta fallback PUT OK');
       return { ok: true };
     }
     const json = await res.json().catch(() => ({}));

@@ -3,6 +3,7 @@ import { useProductosCatalogoDB } from '../../../hooks/useProductosCatalogoDB';
 
 interface FaseDisplay {
   faseId: string;
+  seq: number;      // ADD: numero_consecutivo
   descripcion: string;
   promptIA?: string;
   notes?: string;
@@ -13,9 +14,10 @@ interface FasesSolicitudTabProps {
   mode: 'nuevo' | 'editar' | 'ver';
   productoId: string;
   faseIdActual: string;
+  faseActualSeq?: number;  // ADD: numero_consecutivo para comparar correctamente
 }
 
-export function FasesSolicitudTab({ mode, productoId, faseIdActual }: FasesSolicitudTabProps) {
+export function FasesSolicitudTab({ mode, productoId, faseIdActual, faseActualSeq }: FasesSolicitudTabProps) {
   const { productos: productosDB } = useProductosCatalogoDB(true);
   const [faseSeleccionada, setFaseSeleccionada] = useState<FaseDisplay | null>(null);
 
@@ -42,16 +44,15 @@ export function FasesSolicitudTab({ mode, productoId, faseIdActual }: FasesSolic
     
     if (!Array.isArray(raw) || raw.length === 0) return [];
 
-    return raw.map((f: any): FaseDisplay => ({
-      faseId: String(f.seq ?? f.id ?? '1'),  // seq es el número de fase
-      descripcion: f.fase || f.descripcion || '',  // 'fase' es el nombre
+    return raw.map((f: any, idx: number): FaseDisplay & { seq: number } => ({
+      faseId: String(f.id ?? f.fase_id ?? f.seq ?? idx + 1),
+      seq: parseInt(String(f.seq ?? f.numero_consecutivo ?? f.orden ?? idx + 1)),
+      descripcion: f.fase || f.descripcion || '',
       promptIA: f.promptIA || '',
       notes: f.notes || '',
       area: f.area || '',
     }));
   }, [productoId, productosDB]);
-
-  const faseActualNum = parseInt(faseIdActual) || 1;
 
   if (!productoId) {
     return (
@@ -93,9 +94,12 @@ export function FasesSolicitudTab({ mode, productoId, faseIdActual }: FasesSolic
           </h4>
           <div className="space-y-2">
             {fasesProducto.map((fase, index) => {
-              const numFase = parseInt(fase.faseId) || (index + 1);
-              const isActive = numFase === faseActualNum;
-              const isPast = numFase < faseActualNum;
+              const isActive = faseActualSeq !== undefined
+                ? fase.seq === faseActualSeq
+                : fase.faseId === faseIdActual || parseInt(fase.faseId) === parseInt(faseIdActual);
+              const isPast = faseActualSeq !== undefined
+                ? fase.seq < faseActualSeq
+                : parseInt(fase.faseId) < parseInt(faseIdActual);
               const isSelected = faseSeleccionada?.faseId === fase.faseId;
               const areaLabel = getAreaLabel(fase.descripcion, fase.area);
 

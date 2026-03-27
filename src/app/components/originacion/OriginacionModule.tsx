@@ -234,12 +234,20 @@ export function OriginacionModule() {
   }, [solicitudesDB, saveSolicitud]);
 
   // ── FORM VIEW — usa SolicitudBaseForm (componente unificado, mismo que Solicitudes) ──
+  // onSolSave: recibe { ...formData, _allSubtabs } desde SolicitudCreditoForm.handleSave
+  const handleSolSave = useCallback(async (data: any) => {
+    const { _allSubtabs, ...formData } = data;
+    const dbId = formData.id && typeof formData.id === 'string' ? formData.id : undefined;
+    await saveSolicitud(formData as import('../solicitudes/solicitudCreditoStore').SolicitudFormData, dbId, _allSubtabs);
+  }, [saveSolicitud]);
+
   if (view.type === 'form') {
     return (
       <SolicitudBaseForm
         solicitudId={view.id}
         readOnly={view.mode === 'ver'}
         onCancel={goToList}
+        onSave={handleSolSave}
         modo="originacion"
       />
     );

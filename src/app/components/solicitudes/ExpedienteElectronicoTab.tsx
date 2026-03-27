@@ -14,13 +14,38 @@ import { toast } from 'sonner';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 import { supabase } from '../../lib/supabaseClient';
 import * as pdfjsLib from 'pdfjs-dist';
-import * as pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs';
+// ?url emite el worker como archivo separado en dist/assets/ y devuelve su URL con hash.
+import pdfjsWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 
-// Pre-load the worker module onto globalThis so pdf.js uses it directly
-// without attempting Web Worker creation or dynamic import() from CDN.
-(globalThis as any).pdfjsWorker = pdfjsWorker;
-pdfjsLib.GlobalWorkerOptions.workerSrc = 'pdfjs-dist/build/pdf.worker.min.mjs';
-console.log('[pdf.js] Worker pre-cargado en globalThis.pdfjsWorker — sin CDN, sin dynamic import');
+/**
+ * pdfjs-dist v5 hace un dynamic import() del worker .mjs.
+ * Algunos servidores locales (Electron, http-server) no sirven .mjs con
+ * Content-Type: application/javascript, lo que hace fallar el import.
+ * Solución: crear un Blob URL con el script del worker — los Blob URLs
+ * siempre tienen el tipo correcto y no dependen del servidor.
+ * El resultado se cachea en módulo para no re-fetchar en cada uso.
+ */
+let _pdfjsWorkerBlobUrl: string | null = null;
+
+async function ensurePdfjsWorker(): Promise<void> {
+  if (_pdfjsWorkerBlobUrl) {
+    pdfjsLib.GlobalWorkerOptions.workerSrc = _pdfjsWorkerBlobUrl;
+    return;
+  }
+  try {
+    const res  = await fetch(pdfjsWorkerUrl);
+    const blob = await res.blob();
+    _pdfjsWorkerBlobUrl = URL.createObjectURL(
+      new Blob([await blob.text()], { type: 'application/javascript' })
+    );
+    pdfjsLib.GlobalWorkerOptions.workerSrc = _pdfjsWorkerBlobUrl;
+    console.log('[pdf.js] Worker Blob URL creado:', _pdfjsWorkerBlobUrl.substring(0, 60));
+  } catch (err) {
+    // Fallback: usar la URL directa (funciona si el servidor sí sirve .mjs)
+    console.warn('[pdf.js] Blob URL fallback — usando URL directa:', pdfjsWorkerUrl);
+    pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorkerUrl;
+  }
+}
 import {
   DocumentoCargado, RequisitoProducto,
   saveToSession, loadFromSession, loadFromSavedStore, generateId,
@@ -279,17 +304,22 @@ function getPromptIAFromCatalogo(claveDocumento: string | undefined, catalogo: C
 function mapExpedienteToLocal(row: ExpedienteDBRow, idx: number, catalogo: CatalogoDocItem[] = []): RequisitoProducto {
   const faseStr = row.fase || 'Fase 1';
   const claveDoc = row.claveDocumento;
-  
+
+  // faseId: normalizar SIEMPRE a número para evitar mismatch string "1" vs número 1
+  const rawFaseId = row.faseId ?? row.fase_id;
+  const faseId = rawFaseId != null ? parseInt(String(rawFaseId), 10) || parseFaseId(faseStr) : parseFaseId(faseStr);
+
   // Buscar promptIA: 1) del row mismo, 2) del catálogo usando claveDocumento
   const promptIADelRow = row.promptIA || row.prompt_ia || '';
   const promptIADelCatalogo = getPromptIAFromCatalogo(claveDoc, catalogo);
   const promptIA = promptIADelRow || promptIADelCatalogo;
-  
+
   return {
     id: row.id ?? (idx + 1),
     fase: faseStr,
-    faseId: row.faseId ?? row.fase_id ?? parseFaseId(faseStr),
-    tipoDocumento: row.tipo || row.tipo_documento || row.claveDocumento || `Doc-${idx + 1}`,
+    faseId,
+    // tipoDocumento: prioridad al nombre descriptivo sobre la clave técnica
+    tipoDocumento: (row as any).tipoDocumento || row.tipo_documento || row.tipo || row.claveDocumento || `Doc-${idx + 1}`,
     descripcion: row.descripcion || '',
     area: row.area || 'General',
     obligatorio: row.obligatorio ?? true,
@@ -676,6 +706,8 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
    */
   const renderPdfToImage = async (pdfUrl: string): Promise<string | null> => {
     try {
+      // Garantizar que el worker esté listo antes de llamar a getDocument
+      await ensurePdfjsWorker();
       console.log(`${LOG} [PDF→IMG] Descargando PDF desde: ${pdfUrl.substring(0, 100)}...`);
       const response = await fetch(pdfUrl);
       if (!response.ok) throw new Error(`HTTP ${response.status} al descargar PDF`);
@@ -823,7 +855,12 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
       console.log(`${LOG} [IA] Resultado:`, result);
 
       if (!res.ok || result.error) {
-        throw new Error(result.error || result.details || `HTTP ${res.status}`);
+        const rawError = result.error || result.details || `HTTP ${res.status}`;
+        // Si Hono no tiene el endpoint de IA, mostrar mensaje amigable en lugar del error técnico
+        if (res.status === 404 || rawError.toLowerCase().includes('route not found') || rawError.toLowerCase().includes('not found in hono')) {
+          throw new Error('El servicio de validación IA no está disponible. Valide el documento manualmente cambiando el estatus a "Validado".');
+        }
+        throw new Error(rawError);
       }
 
       const esValido = result.valido === true;
