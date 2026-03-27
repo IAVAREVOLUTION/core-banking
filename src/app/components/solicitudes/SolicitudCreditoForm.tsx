@@ -406,6 +406,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
   }, [formData.faseId, fasesDelProducto]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleEnviarFase = useCallback(async () => {
+    // En modo originación siempre se permite; en otros modos respeta isRO
     if ((isRO && modo !== 'originacion') || enviandoFase) return;
     setEnviandoFase(true);
     try {
@@ -1368,6 +1369,16 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
                         </div>
                       </div>
                     </div>
+
+                    {/* ── Botones de Fase ── */}
+                    <FaseActionsComponent
+                      formData={formData}
+                      currentFaseNombre={currentFase?.fase || formData.descripcionFase}
+                      storageId={storageId}
+                      modo={modo}
+                      onEnviarFase={handleEnviarFase}
+                      enviandoFase={enviandoFase}
+                    />
 
                   </div>
                 )}
