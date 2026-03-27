@@ -305,7 +305,7 @@ export function SolicitudActivacionList() {
             </svg>
           </div>
           {/* Nuevo button hidden — solicitudes are not created manually */}
-          {/* <button onClick={handleNueva} className="px-5 py-1.5 btn-secondary-theme rounded text-sm font-medium">Nuevo</button> */}
+          <button onClick={handleNueva} className="px-5 py-1.5 btn-secondary-theme rounded text-sm font-medium">Nuevo</button>
           <button
             onClick={() => { dbMerged.current = false; refetch(); }}
             disabled={loadingDB}
