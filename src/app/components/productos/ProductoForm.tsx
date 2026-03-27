@@ -1241,7 +1241,7 @@ export function ProductoForm({
             {activeTab === 'plantillas' && (
               <PlantillasTab
                 formData={formData}
-                updateFormData={updateFormData}
+                updateFormData={updateField}
                 isView={isView}
               />
             )}
