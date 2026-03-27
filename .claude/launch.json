@@ -3,12 +3,10 @@
   "configurations": [
     {
       "name": "Vite Dev Server",
-      "runtimeExecutable": "C:/Program Files/nodejs/node.exe",
-      "runtimeArgs": [
-        "-e",
-        "const http=require('http'),fs=require('fs'),path=require('path');const root='C:/Users/CSolanoE/Documents/Documentos/CORE/Sistema de Banca Productos/.claude/worktrees/musing-kirch/dist';const mime={'html':'text/html','js':'application/javascript','css':'text/css','png':'image/png','svg':'image/svg+xml','ico':'image/x-icon','json':'application/json','woff2':'font/woff2','woff':'font/woff'};http.createServer((req,res)=>{let fp=path.join(root,req.url==='/'?'index.html':req.url);if(!fs.existsSync(fp))fp=path.join(root,'index.html');const ext=path.extname(fp).slice(1);res.setHeader('Content-Type',mime[ext]||'application/octet-stream');fs.createReadStream(fp).pipe(res);}).listen(5175,()=>console.log('serving on 5175'));"
-      ],
-      "port": 5175
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "port": 5300,
+      "autoPort": false
     }
   ]
 }
