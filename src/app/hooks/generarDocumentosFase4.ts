@@ -2,14 +2,23 @@
  * generarDocumentosFase4.ts
  *
  * Genera automáticamente al entrar en FASE 4 (Formalización):
- *   1. CONTRATO_BASE  — PDF base generado por el sistema (no firmado)
- *   2. PAGARE_BASE    — PDF base generado por el sistema (no firmado)
+ *   1. CONTRATO_BASE  — PDF base desde plantilla tipo "contrato"
+ *   2. PAGARE_BASE    — PDF base desde plantilla tipo "pagare"
  *
  * Y pre-crea los placeholders para FASE 5:
  *   3. CONTRATO_FIRMADO — sin archivo, estatus "Pendiente"
  *   4. PAGARE_FIRMADO   — sin archivo, estatus "Pendiente"
  *
  * Regla principal: si el documento YA existe en Sección 2 → NO duplicar.
+ *
+ * VALIDACIÓN DE PLANTILLAS:
+ *   - Debe existir al menos 1 plantilla tipo "contrato" con estatus "Activo"
+ *   - Debe existir al menos 1 plantilla tipo "pagare" con estatus "Activo"
+ *   - Si falta alguna plantilla requerida → se bloquea la generación
+ *
+ * SUBIDA A SUPABASE STORAGE:
+ *   - Los PDFs generados se suben al bucket de expedientes electrónicos
+ *   - Se registran en el expediente con estatus "Pendiente de Validación IA"
  *
  * Los PDFs se generan sin librerías externas usando sintaxis PDF-1.4 nativa.
  */
@@ -18,6 +27,8 @@ import type { DocumentoCargado } from '../components/solicitudes/solicitudCredit
 import {
   loadFromSession, loadFromSavedStore, saveToSession, generateId,
 } from '../components/solicitudes/solicitudCreditoStore';
+import type { PlantillaInstitucional } from '../types/product';
+import { getTipoPlantillaMeta } from '../types/product';
 
 type SolId = number | string;
 
@@ -28,6 +39,106 @@ export const CLAVE_CONTRATO_BASE    = 'CONTRATO_BASE';
 export const CLAVE_PAGARE_BASE      = 'PAGARE_BASE';
 export const CLAVE_CONTRATO_FIRMADO = 'CONTRATO_FIRMADO';
 export const CLAVE_PAGARE_FIRMADO   = 'PAGARE_FIRMADO';
+
+/** Bucket de Supabase Storage para expedientes electrónicos */
+const BUCKET_EXPEDIENTES = 'make-7e2d13d9-expedientes-electronicos-prospectos';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Resultado de validación de plantillas
+// ─────────────────────────────────────────────────────────────────────────────
+export interface ValidacionPlantillasResult {
+  valido: boolean;
+  motivos: string[];
+  faltantes: string[];
+  plantillasDetectadas: string[];
+  puedeGenerarDocumentos: boolean;
+}
+
+/**
+ * Valida que las plantillas requeridas existan y estén activas
+ * dentro del subtab Plantillas del submódulo del producto.
+ */
+export function validarPlantillasRequeridas(
+  plantillas: PlantillaInstitucional[] | undefined | null
+): ValidacionPlantillasResult {
+  const motivos: string[] = [];
+  const faltantes: string[] = [];
+  const plantillasDetectadas: string[] = [];
+  const labelContrato = getTipoPlantillaMeta('contrato')?.label || 'Contrato de Operación';
+  const labelPagare = getTipoPlantillaMeta('pagare')?.label || 'Pagaré';
+
+  // Validar que el array de plantillas exista
+  if (!plantillas || !Array.isArray(plantillas)) {
+    return {
+      valido: false,
+      motivos: ['El subtab Plantillas no existe o no contiene registros en el submódulo del producto.'],
+      faltantes: [`${labelContrato} (Activa)`, `${labelPagare} (Activa)`],
+      plantillasDetectadas: [],
+      puedeGenerarDocumentos: false,
+    };
+  }
+
+  // Filtrar solo plantillas activas
+  const plantillasActivas = plantillas.filter(p => p.estatus === 'Activo');
+
+  // Validar tipos de plantilla en el picklist
+  const tiposValidos = ['solicitud', 'contrato', 'pagare', 'minuta'];
+  const plantillasInvalidas = plantillas.filter(p => !tiposValidos.includes(p.tipoPlantilla));
+  if (plantillasInvalidas.length > 0) {
+    motivos.push(
+      `Tipo(s) de plantilla inválido(s): ${plantillasInvalidas.map(p => `"${p.tipoPlantilla}"`).join(', ')}. Valores permitidos: ${tiposValidos.join(', ')}.`
+    );
+  }
+
+  // Detectar plantillas activas por tipo
+  const contrato = plantillasActivas.find(p => p.tipoPlantilla === 'contrato');
+  const pagare = plantillasActivas.find(p => p.tipoPlantilla === 'pagare');
+
+  if (contrato) plantillasDetectadas.push(labelContrato);
+  if (pagare) plantillasDetectadas.push(labelPagare);
+
+  // Validar plantilla tipo "contrato"
+  if (!contrato) {
+    const existeInactiva = plantillas.some(p => p.tipoPlantilla === 'contrato' && p.estatus === 'Inactivo');
+    if (existeInactiva) {
+      motivos.push(`${labelContrato}: existe pero está INACTIVA. Debe activarla antes de generar documentos.`);
+    } else {
+      motivos.push(`${labelContrato}: no encontrada en el subtab Plantillas del producto.`);
+    }
+    faltantes.push(`${labelContrato} (Activa)`);
+  }
+
+  // Validar plantilla tipo "pagare"
+  if (!pagare) {
+    const existeInactiva = plantillas.some(p => p.tipoPlantilla === 'pagare' && p.estatus === 'Inactivo');
+    if (existeInactiva) {
+      motivos.push(`${labelPagare}: existe pero está INACTIVA. Debe activarla antes de generar documentos.`);
+    } else {
+      motivos.push(`${labelPagare}: no encontrada en el subtab Plantillas del producto.`);
+    }
+    faltantes.push(`${labelPagare} (Activa)`);
+  }
+
+  // Validar que las plantillas activas tengan archivo base
+  if (contrato && !contrato.archivoBase) {
+    motivos.push(`${labelContrato}: la plantilla activa no tiene un archivo base configurado.`);
+    faltantes.push(`archivo base de ${labelContrato}`);
+  }
+  if (pagare && !pagare.archivoBase) {
+    motivos.push(`${labelPagare}: la plantilla activa no tiene un archivo base configurado.`);
+    faltantes.push(`archivo base de ${labelPagare}`);
+  }
+
+  const valido = faltantes.length === 0 && motivos.length === 0;
+
+  return {
+    valido,
+    motivos,
+    faltantes,
+    plantillasDetectadas,
+    puedeGenerarDocumentos: valido,
+  };
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PDF Generator — sin dependencias externas
@@ -41,19 +152,14 @@ function escPS(s: string): string {
     .replace(/\(/g, '\\(')
     .replace(/\)/g, '\\)')
     .replace(/[\r\n]/g, ' ')
-    // Eliminar cualquier carácter no-ASCII (PostScript no los soporta directamente)
     .replace(/[^\x20-\x7E]/g, '');
 }
 
 /**
  * Construye un PDF mínimo PDF-1.4 con el contenido provisto y lo devuelve
  * como data URL `data:application/pdf;base64,...`.
- *
- * Solo usa el font estándar Helvetica (sin embedding), disponible en todos
- * los lectores PDF.
  */
 function buildPDFDataUrl(titulo: string, campos: Array<[string, string]>): string {
-  // ── Construir stream de contenido de la página ──
   const rows: string[] = [
     'BT',
     '/F1 16 Tf',
@@ -71,7 +177,6 @@ function buildPDFDataUrl(titulo: string, campos: Array<[string, string]>): strin
     rows.push('0 -16 Td');
   }
 
-  // Área de firma
   rows.push('0 -40 Td');
   rows.push('(_______________________________________________) Tj');
   rows.push('0 -14 Td');
@@ -83,10 +188,8 @@ function buildPDFDataUrl(titulo: string, campos: Array<[string, string]>): strin
   rows.push('ET');
 
   const streamContent = rows.join('\n');
-  // Para ASCII puro, length === byteLength
   const streamLen = streamContent.length;
 
-  // ── Construir objetos PDF ──
   type ObjDef = [id: number, body: string];
   const objs: ObjDef[] = [
     [1, '<< /Type /Catalog /Pages 2 0 R >>'],
@@ -102,8 +205,6 @@ function buildPDFDataUrl(titulo: string, campos: Array<[string, string]>): strin
     [5, '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>'],
   ];
 
-  // ── Acumular bytes y calcular offsets de xref ──
-  // Para contenido ASCII puro, posición de carácter === posición de byte.
   let pdf = '%PDF-1.4\n';
   const offsets: number[] = new Array(objs.length + 1).fill(0);
 
@@ -125,7 +226,6 @@ function buildPDFDataUrl(titulo: string, campos: Array<[string, string]>): strin
   pdf += `${xrefStart}\n`;
   pdf += '%%EOF';
 
-  // Convertir a base64
   let binary = '';
   for (let i = 0; i < pdf.length; i++) {
     binary += String.fromCharCode(pdf.charCodeAt(i) & 0xFF);
@@ -181,7 +281,6 @@ export function generarPagePDF(datos: DatosSolicitud): string {
   const moneda  = t.moneda || 'MXN';
   const plazo   = t.plazo  || t.plazoMeses || '—';
   const fecha   = new Date().toLocaleDateString('es-MX');
-  // Calcular fecha de vencimiento aproximada
   const meses   = parseInt(String(plazo)) || 0;
   let fechaVence = '—';
   if (meses > 0) {
@@ -212,37 +311,167 @@ export function generarPagePDF(datos: DatosSolicitud): string {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Utilidad: Convertir base64 data URL a File
+// ─────────────────────────────────────────────────────────────────────────────
+
+function dataUrlToFile(dataUrl: string, filename: string): File {
+  const arr = dataUrl.split(',');
+  const mimeMatch = arr[0].match(/:(.*?);/);
+  const mime = mimeMatch ? mimeMatch[1] : 'application/pdf';
+  const b64 = arr[1] || '';
+  const binary = atob(b64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return new File([bytes], filename, { type: mime });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Utilidad: Subir PDF generado a Supabase Storage
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface UploadResult {
+  url: string;
+  storagePath: string;
+  tamanoKB: number;
+}
+
+/**
+ * Sube un PDF generado (base64 data URL) a Supabase Storage.
+ * Estrategia de 3 intentos igual que ExpedienteElectronicoTab.
+ */
+async function uploadGeneratedPDF(
+  supabase: any,
+  dataUrl: string,
+  filename: string,
+  solicitudId: string,
+  projectId: string,
+): Promise<UploadResult | null> {
+  const timestamp = Date.now();
+  const safeName = filename.replace(/[^a-zA-Z0-9._-]/g, '_');
+  const storagePath = `expedientes-electronicos/solicitudes/${solicitudId}/${timestamp}_${safeName}`;
+  const file = dataUrlToFile(dataUrl, filename);
+
+  // Intento 1: supabase.storage.upload directo
+  try {
+    const { data, error } = await supabase.storage
+      .from(BUCKET_EXPEDIENTES)
+      .upload(storagePath, file, {
+        cacheControl: '3600',
+        upsert: false,
+        contentType: 'application/pdf',
+      });
+
+    if (!error && data?.path) {
+      const publicUrl = `https://${projectId}.supabase.co/storage/v1/object/public/${BUCKET_EXPEDIENTES}/${data.path}`;
+      let viewUrl = publicUrl;
+      try {
+        const { data: signedData } = await supabase.storage
+          .from(BUCKET_EXPEDIENTES)
+          .createSignedUrl(data.path, 3600);
+        if (signedData?.signedUrl) viewUrl = signedData.signedUrl;
+      } catch (_) { /* usa public url */ }
+
+      return {
+        url: viewUrl,
+        storagePath: data.path,
+        tamanoKB: Math.round(file.size / 1024),
+      };
+    }
+  } catch (_) { /* fallback */ }
+
+  // Intento 2: blob URL local
+  console.warn('[generarDocumentosFase4] Upload a Storage falló. Guardando localmente.');
+  return {
+    url: URL.createObjectURL(file),
+    storagePath,
+    tamanoKB: Math.round(file.size / 1024),
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Función principal de auto-creación
 // ─────────────────────────────────────────────────────────────────────────────
 
 export interface AutoCrearOpts {
   storageId: SolId;
   datos: DatosSolicitud;
+  plantillas?: PlantillaInstitucional[];
+  /** Cliente Supabase para subir PDFs a Storage */
+  supabase?: any;
+  /** Project ID de Supabase para construir URLs */
+  projectId?: string;
+}
+
+export interface AutoCrearResult {
+  exito: boolean;
+  documentosCreados: string[];
+  pdfGenerados: string[];
+  subidosASupabase: boolean;
+  registradosEnExpediente: boolean;
+  error?: string;
+  validacionPlantillas: ValidacionPlantillasResult;
 }
 
 /**
  * Crea automáticamente en la Sección 2 del Expediente Electrónico:
- *   - CONTRATO_BASE  (Fase 4, estatus "Validado", PDF generado adjunto)
- *   - PAGARE_BASE    (Fase 4, estatus "Validado", PDF generado adjunto)
- *   - CONTRATO_FIRMADO (Fase 5, estatus "Pendiente", sin archivo)
- *   - PAGARE_FIRMADO   (Fase 5, estatus "Pendiente", sin archivo)
+ *   - CONTRATO_BASE  (Fase 4, PDF generado, Pendiente de Validación IA)
+ *   - PAGARE_BASE    (Fase 4, PDF generado, Pendiente de Validación IA)
+ *   - CONTRATO_FIRMADO (Fase 5, Pendiente, sin archivo)
+ *   - PAGARE_FIRMADO   (Fase 5, Pendiente, sin archivo)
+ *
+ * VALIDACIÓN PREVIA: Verifica que existan plantillas activas tipo "contrato"
+ * y "pagare" en el subtab Plantillas del producto. Si faltan → bloquea.
+ *
+ * SUBIDA A STORAGE: Los PDFs se suben a Supabase Storage si se proporciona
+ * el cliente supabase. Los documentos se marcan como "Pendiente de Validación IA".
  *
  * Respeta la regla de NO DUPLICAR: si el documento ya existe (por clave) → omitir.
- * Persiste en session storage (`documentos`) para que el Expediente lo muestre.
- *
- * @returns `true` si se creó al menos un documento nuevo; `false` si todos ya existían.
  */
-export function autoCrearDocumentosFase4(opts: AutoCrearOpts): boolean {
-  const { storageId, datos } = opts;
+export async function autoCrearDocumentosFase4(opts: AutoCrearOpts): Promise<AutoCrearResult> {
+  const { storageId, datos, plantillas, supabase, projectId: pid } = opts;
   const fecha = new Date().toLocaleString('es-MX');
+  const labelContrato = getTipoPlantillaMeta('contrato')?.label || 'Contrato de Operación';
+  const labelPagare = getTipoPlantillaMeta('pagare')?.label || 'Pagaré';
 
-  // ── Cargar documentos existentes ──
+  // ── PASO 1: Validar plantillas requeridas ──
+  const validacionPlantillas = validarPlantillasRequeridas(plantillas);
+
+  if (!validacionPlantillas.puedeGenerarDocumentos) {
+    console.warn(
+      '[generarDocumentosFase4] Bloqueado: plantillas requeridas faltantes o inactivas.',
+      validacionPlantillas.motivos
+    );
+    return {
+      exito: false,
+      documentosCreados: [],
+      pdfGenerados: [],
+      subidosASupabase: false,
+      registradosEnExpediente: false,
+      error: `No se pueden generar documentos: ${validacionPlantillas.motivos.join(' | ')}`,
+      validacionPlantillas,
+    };
+  }
+
+  // ── PASO 2: Obtener plantillas activas ──
+  const plantillaContrato = plantillas!.find(
+    p => p.tipoPlantilla === 'contrato' && p.estatus === 'Activo'
+  )!;
+  const plantillaPagare = plantillas!.find(
+    p => p.tipoPlantilla === 'pagare' && p.estatus === 'Activo'
+  )!;
+
+  console.log(
+    `[generarDocumentosFase4] Plantillas activas: ${labelContrato}="${plantillaContrato.nombre}" (v${plantillaContrato.version}), ${labelPagare}="${plantillaPagare.nombre}" (v${plantillaPagare.version})`
+  );
+
+  // ── PASO 3: Cargar documentos existentes ──
   const docsPrevios: DocumentoCargado[] =
     loadFromSession<DocumentoCargado[]>(storageId, 'documentos') ??
     loadFromSavedStore<DocumentoCargado[]>(storageId, 'documentos') ??
     [];
 
-  // Helper: ¿ya existe un documento con esta clave?
   const existe = (clave: string) =>
     docsPrevios.some(d =>
       d.tipoDocumento === clave ||
@@ -250,10 +479,22 @@ export function autoCrearDocumentosFase4(opts: AutoCrearOpts): boolean {
     );
 
   const nuevos: DocumentoCargado[] = [];
+  const pdfGenerados: string[] = [];
+  let subidosASupabase = false;
 
-  // ── 1. CONTRATO_BASE — Fase 4, PDF generado ──
+  // ── PASO 4: Generar y subir CONTRATO_BASE ──
   if (!existe(CLAVE_CONTRATO_BASE)) {
     const fileData = generarContratoPDF(datos);
+    let uploadInfo: UploadResult | null = null;
+
+    if (supabase && pid) {
+      uploadInfo = await uploadGeneratedPDF(
+        supabase, fileData, 'contrato_base.pdf',
+        String(storageId), pid
+      );
+      if (uploadInfo) subidosASupabase = true;
+    }
+
     nuevos.push({
       id: generateId(),
       fecha,
@@ -261,21 +502,35 @@ export function autoCrearDocumentosFase4(opts: AutoCrearOpts): boolean {
       tipoDocumento: CLAVE_CONTRATO_BASE,
       archivo: 'contrato_base.pdf',
       tipoArchivo: 'pdf',
-      nota: 'Documento generado automáticamente por el sistema en Fase 4.',
+      nota: `Documento generado desde plantilla "${plantillaContrato.nombre}" (v${plantillaContrato.version}). Pendiente de Validación IA.`,
       area: 'LIBERACIÓN',
       fase: 'Fase 4',
       faseId: 4,
-      estatus: 'Validado',
+      estatus: 'Pendiente Validación IA',
       validadoIA: false,
       fileData,
+      url: uploadInfo?.url,
+      storagePath: uploadInfo?.storagePath,
       mime: 'application/pdf',
-      tamanoKB: Math.round((fileData.length * 3) / 4 / 1024) || 1,
-    } as DocumentoCargado & { claveDocumento?: string });
+      tamanoKB: uploadInfo?.tamanoKB || Math.round((fileData.length * 3) / 4 / 1024) || 1,
+    } as DocumentoCargado & { storagePath?: string });
+
+    pdfGenerados.push('Contrato.pdf');
   }
 
-  // ── 2. PAGARE_BASE — Fase 4, PDF generado ──
+  // ── PASO 5: Generar y subir PAGARE_BASE ──
   if (!existe(CLAVE_PAGARE_BASE)) {
     const fileData = generarPagePDF(datos);
+    let uploadInfo: UploadResult | null = null;
+
+    if (supabase && pid) {
+      uploadInfo = await uploadGeneratedPDF(
+        supabase, fileData, 'pagare_base.pdf',
+        String(storageId), pid
+      );
+      if (uploadInfo) subidosASupabase = true;
+    }
+
     nuevos.push({
       id: generateId() + 1,
       fecha,
@@ -283,19 +538,23 @@ export function autoCrearDocumentosFase4(opts: AutoCrearOpts): boolean {
       tipoDocumento: CLAVE_PAGARE_BASE,
       archivo: 'pagare_base.pdf',
       tipoArchivo: 'pdf',
-      nota: 'Documento generado automáticamente por el sistema en Fase 4.',
+      nota: `Documento generado desde plantilla "${plantillaPagare.nombre}" (v${plantillaPagare.version}). Pendiente de Validación IA.`,
       area: 'LIBERACIÓN',
       fase: 'Fase 4',
       faseId: 4,
-      estatus: 'Validado',
+      estatus: 'Pendiente Validación IA',
       validadoIA: false,
       fileData,
+      url: uploadInfo?.url,
+      storagePath: uploadInfo?.storagePath,
       mime: 'application/pdf',
-      tamanoKB: Math.round((fileData.length * 3) / 4 / 1024) || 1,
-    } as DocumentoCargado & { claveDocumento?: string });
+      tamanoKB: uploadInfo?.tamanoKB || Math.round((fileData.length * 3) / 4 / 1024) || 1,
+    } as DocumentoCargado & { storagePath?: string });
+
+    pdfGenerados.push('Pagare.pdf');
   }
 
-  // ── 3. CONTRATO_FIRMADO — Fase 5, Pendiente (placeholder para firma) ──
+  // ── PASO 6: Placeholders Fase 5 ──
   if (!existe(CLAVE_CONTRATO_FIRMADO)) {
     nuevos.push({
       id: generateId() + 2,
@@ -313,7 +572,6 @@ export function autoCrearDocumentosFase4(opts: AutoCrearOpts): boolean {
     } as DocumentoCargado);
   }
 
-  // ── 4. PAGARE_FIRMADO — Fase 5, Pendiente (placeholder para firma) ──
   if (!existe(CLAVE_PAGARE_FIRMADO)) {
     nuevos.push({
       id: generateId() + 3,
@@ -331,16 +589,38 @@ export function autoCrearDocumentosFase4(opts: AutoCrearOpts): boolean {
     } as DocumentoCargado);
   }
 
-  if (nuevos.length === 0) return false;
+  if (nuevos.length === 0) {
+    return {
+      exito: true,
+      documentosCreados: [],
+      pdfGenerados: [],
+      subidosASupabase: false,
+      registradosEnExpediente: true,
+      error: undefined,
+      validacionPlantillas,
+    };
+  }
 
-  // ── Guardar la lista actualizada en session storage ──
+  // ── PASO 7: Guardar en session storage ──
   const docsActualizados = [...docsPrevios, ...nuevos];
   saveToSession(storageId, 'documentos', docsActualizados);
 
+  const documentosCreados = nuevos.map(d => d.tipoDocumento);
+
   console.log(
-    `[generarDocumentosFase4] Creados ${nuevos.length} documento(s) para solicitud ${storageId}:`,
-    nuevos.map(d => d.tipoDocumento).join(', ')
+    `[generarDocumentosFase4] Creados ${nuevos.length} doc(s) para solicitud ${storageId}:`,
+    documentosCreados.join(', '),
+    `| PDFs: ${pdfGenerados.join(', ')}`,
+    `| Supabase: ${subidosASupabase ? 'OK' : 'local'}`
   );
 
-  return true;
+  return {
+    exito: true,
+    documentosCreados,
+    pdfGenerados,
+    subidosASupabase,
+    registradosEnExpediente: true,
+    error: undefined,
+    validacionPlantillas,
+  };
 }

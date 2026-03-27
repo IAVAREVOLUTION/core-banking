@@ -38,6 +38,7 @@ import { CheckListTab } from './tabs/CheckListTab';
 import { TabuladorProductosTab } from './tabs/TabuladorProductosTab';
 import { ExpedientesProductoTab } from './tabs/ExpedientesProductoTab';
 import { RequisitosTab } from './tabs/RequisitosTab';
+import { PlantillasTab } from './tabs/PlantillasTab';
 import { useProductoPersistence, useProductoTabs } from '../../hooks/useProductoPersistence';
 import { syncToJProducts } from '../../hooks/useSyncJProducts';
 import { usePuestosTrabajoDB } from '../../hooks/usePuestosTrabajoDB';
@@ -233,6 +234,7 @@ export function ProductoForm({
   const comisionesRef = useRef<{ getData: () => any[] }>(null);
   const requisitosRef = useRef<{ getData: () => any[] }>(null);
   const tabuladorRef = useRef<{ getData: () => any[] }>(null);
+  const plantillasRef = useRef<{ getData: () => any[] }>(null);
 
   useEffect(() => {
     if (formData.lineaProducto) {
@@ -317,6 +319,7 @@ export function ProductoForm({
         comisiones: comisionesRef.current?.getData() || [],
         requisitos: requisitosRef.current?.getData() || [],
         tabulador: tabuladorRef.current?.getData() || [],
+        plantillas: plantillasRef.current?.getData() || [],
         // Datos inline (ya en estado de ProductoForm)
         periodos: periodos,
         tasasReferencia: tasasReferencia,
@@ -377,6 +380,7 @@ export function ProductoForm({
         expedientesElectronicos: expedientesRef.current?.getData() || [],
         autorizacion: efectivoAutorizacion,
         eventoContable: efectivoEventoContable,
+        plantillas: plantillasRef.current?.getData() || [],
       };
 
       // Sincronizar con J_PRODUCTOS (fire-and-forget, no bloquea guardado local)
@@ -418,6 +422,7 @@ export function ProductoForm({
       `credito_expedientes_prod_${productId}`,
       `credito_requisitos_${productId}`,
       `credito_comisiones_producto_${productId}`,
+      `credito_plantillas_${productId}`,
     ];
     tabStorageKeys.forEach(key => {
       try { sessionStorage.removeItem(key); } catch (e) { /* ignore */ }
@@ -527,6 +532,7 @@ export function ProductoForm({
     { id: 'paquetes', label: 'Paquetes' },
     { id: 'prelacion', label: 'Prelación de cargos' },
     { id: 'tabulador-productos', label: 'Tabulador de Productos' },
+    { id: 'plantillas', label: 'Plantillas' },
   ];
 
   // ══════════════════════════════════════════════════════════════
@@ -552,6 +558,7 @@ export function ProductoForm({
     { id: 'expedientes-electronicos', label: 'Requisitos OK' },
     { id: 'autorizacion', label: 'Autorizaciones' },
     { id: 'evento-contable', label: 'Eventos Contables' },
+    { id: 'plantillas', label: 'Plantillas' },
   ];
 
   const tabs = isSeguros ? segurosTabs : allTabs;
@@ -999,6 +1006,16 @@ export function ProductoForm({
 
             <div style={{ display: activeTab === 'tabulador-productos' ? 'block' : 'none' }}>
               <TabuladorProductosTab ref={tabuladorRef} mode={mode} productId={productId} persistToStorage initialData={Array.isArray(product?.tabulador) ? product.tabulador : undefined} />
+            </div>
+
+            <div style={{ display: activeTab === 'plantillas' ? 'block' : 'none' }}>
+              <PlantillasTab
+                ref={plantillasRef}
+                mode={mode}
+                productId={productId}
+                persistToStorage
+                initialData={Array.isArray((product as any)?.plantillas) ? (product as any).plantillas : undefined}
+              />
             </div>
 
             {/* === Tabs secundarios que NO son parte del maestro-detalle (renderizado condicional) === */}

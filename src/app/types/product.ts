@@ -171,6 +171,7 @@ export interface Product {
   periodos?: any[];
   tasasReferencia?: any[];
   garantias?: any[];
+  plantillas?: PlantillaInstitucional[];
 
   // === SUBTABS ESTÁTICOS DE CRÉDITO (se guardan/leen del JSONB) ===
   amortizaciones?: any[];
@@ -241,6 +242,68 @@ export interface Comision {
   concepto: string;
   monto: number;
   tipo: 'Fijo' | 'Porcentaje';
+}
+
+// === Plantillas Institucionales (subtab Plantillas) ===
+export type TipoPlantilla = 'solicitud' | 'contrato' | 'pagare' | 'minuta';
+
+export interface PlantillaInstitucional {
+  id: number;
+  productId: number;
+  nombre: string;
+  tipoPlantilla: TipoPlantilla;
+  archivoBase: string;       // Nombre del archivo (PDF, DOCX o HTML)
+  archivoData?: string;      // Data URL del archivo cargado (base64)
+  version: string;
+  estatus: 'Activo' | 'Inactivo';
+  fechaCreacion: string;
+  fechaModificacion: string;
+}
+
+export const TIPO_PLANTILLA_OPTIONS: TipoPlantilla[] = ['solicitud', 'contrato', 'pagare', 'minuta'];
+
+export interface TipoPlantillaOption {
+  value: TipoPlantilla;
+  label: string;
+  descripcion: string;
+  icon: string;
+  color: string;
+}
+
+export const TIPO_PLANTILLA_CATALOGO: TipoPlantillaOption[] = [
+  {
+    value: 'solicitud',
+    label: 'Solicitud de Crédito',
+    descripcion: 'Formato de solicitud formal del producto financiero por parte del cliente',
+    icon: '📋',
+    color: '#2196F3',
+  },
+  {
+    value: 'contrato',
+    label: 'Contrato de Operación',
+    descripcion: 'Instrumento legal que formaliza la relación jurídica entre la institución y el cliente',
+    icon: '📄',
+    color: '#4CAF50',
+  },
+  {
+    value: 'pagare',
+    label: 'Pagare',
+    descripcion: 'Título de crédito que ampara la obligación de pago a favor de la institución',
+    icon: '📝',
+    color: '#FF9800',
+  },
+  {
+    value: 'minuta',
+    label: 'Minuta de Acuerdos',
+    descripcion: 'Registro formal de acuerdos, términos y condiciones pactados entre las partes',
+    icon: '📑',
+    color: '#9C27B0',
+  },
+];
+
+/** Obtiene la metadata de un tipo de plantilla por su valor */
+export function getTipoPlantillaMeta(value: TipoPlantilla): TipoPlantillaOption | undefined {
+  return TIPO_PLANTILLA_CATALOGO.find(t => t.value === value);
 }
 
 export type FormMode = 'view' | 'edit' | 'create';

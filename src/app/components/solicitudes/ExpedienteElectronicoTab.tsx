@@ -13,39 +13,12 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { toast } from 'sonner';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 import { supabase } from '../../lib/supabaseClient';
-import * as pdfjsLib from 'pdfjs-dist';
-// ?url emite el worker como archivo separado en dist/assets/ y devuelve su URL con hash.
-import pdfjsWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 
 /**
- * pdfjs-dist v5 hace un dynamic import() del worker .mjs.
- * Algunos servidores locales (Electron, http-server) no sirven .mjs con
- * Content-Type: application/javascript, lo que hace fallar el import.
- * Solución: crear un Blob URL con el script del worker — los Blob URLs
- * siempre tienen el tipo correcto y no dependen del servidor.
- * El resultado se cachea en módulo para no re-fetchar en cada uso.
+ * pdf.js se carga dinámicamente desde CDN (jsdelivr) para evitar
+ * el conflicto con Vite (worker .mjs importa "/@vite/client").
+ * Se usa la versión 3.11.174 estable, sin worker (main thread only).
  */
-let _pdfjsWorkerBlobUrl: string | null = null;
-
-async function ensurePdfjsWorker(): Promise<void> {
-  if (_pdfjsWorkerBlobUrl) {
-    pdfjsLib.GlobalWorkerOptions.workerSrc = _pdfjsWorkerBlobUrl;
-    return;
-  }
-  try {
-    const res  = await fetch(pdfjsWorkerUrl);
-    const blob = await res.blob();
-    _pdfjsWorkerBlobUrl = URL.createObjectURL(
-      new Blob([await blob.text()], { type: 'application/javascript' })
-    );
-    pdfjsLib.GlobalWorkerOptions.workerSrc = _pdfjsWorkerBlobUrl;
-    console.log('[pdf.js] Worker Blob URL creado:', _pdfjsWorkerBlobUrl.substring(0, 60));
-  } catch (err) {
-    // Fallback: usar la URL directa (funciona si el servidor sí sirve .mjs)
-    console.warn('[pdf.js] Blob URL fallback — usando URL directa:', pdfjsWorkerUrl);
-    pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorkerUrl;
-  }
-}
 import {
   DocumentoCargado, RequisitoProducto,
   saveToSession, loadFromSession, loadFromSavedStore, generateId,
@@ -701,22 +674,38 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
   };
 
   /**
-   * Renderiza la primera página de un PDF a PNG base64 usando pdfjs-dist.
-   * Retorna un data URL "data:image/png;base64,..." o null si falla.
+   * Renderiza la primera página de un PDF a PNG base64.
+   * Carga pdf.js dinámicamente desde CDN (jsdelivr) para evitar
+   * conflictos con Vite y el worker .mjs.
    */
   const renderPdfToImage = async (pdfUrl: string): Promise<string | null> => {
     try {
-      // Garantizar que el worker esté listo antes de llamar a getDocument
-      await ensurePdfjsWorker();
-      console.log(`${LOG} [PDF→IMG] Descargando PDF desde: ${pdfUrl.substring(0, 100)}...`);
-      const response = await fetch(pdfUrl);
-      if (!response.ok) throw new Error(`HTTP ${response.status} al descargar PDF`);
-      const arrayBuffer = await response.arrayBuffer();
-      if (arrayBuffer.byteLength < 100) throw new Error(`PDF demasiado pequeño (${arrayBuffer.byteLength} bytes), posible archivo corrupto`);
-      console.log(`${LOG} [PDF→IMG] PDF descargado: ${(arrayBuffer.byteLength / 1024).toFixed(1)} KB`);
+      // Cargar pdf.js desde CDN (solo una vez, se cachea)
+      if (!(window as any)._pdfjsLoaded) {
+        await new Promise<void>((resolve, reject) => {
+          const script = document.createElement('script');
+          script.src = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js';
+          script.onload = () => {
+            const pdfjsLib = (window as any).pdfjsLib;
+            if (pdfjsLib?.GlobalWorkerOptions) {
+              pdfjsLib.GlobalWorkerOptions.workerSrc =
+                'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+            }
+            console.log('[pdf.js] Cargado desde CDN v3.11.174');
+            resolve();
+          };
+          script.onerror = () => reject(new Error('No se pudo cargar pdf.js desde CDN'));
+          document.head.appendChild(script);
+        });
+        (window as any)._pdfjsLoaded = true;
+      }
 
+      const pdfjsLib = (window as any).pdfjsLib;
+      if (!pdfjsLib) throw new Error('pdf.js no disponible después de carga CDN');
+
+      console.log(`${LOG} [PDF→IMG] Descargando PDF desde: ${pdfUrl.substring(0, 100)}...`);
       const loadingTask = pdfjsLib.getDocument({
-        data: new Uint8Array(arrayBuffer),
+        url: pdfUrl,
         isEvalSupported: false,
         disableAutoFetch: true,
         disableStream: true,
@@ -743,7 +732,7 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
 
       return dataUrl;
     } catch (err: any) {
-      console.error(`${LOG} [PDF→IMG] Error renderizando PDF:`, err?.message || err);
+      console.error(`${LOG} [PDF→IMG] Error:`, err?.message || err);
       return null;
     }
   };
@@ -776,7 +765,7 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
 
     setValidatingId(docId);
 
-    // Detectar si es PDF → pre-renderizar primera página con pdfjs-dist
+    // Detectar si es PDF → pre-renderizar primera página con pdf.js (CDN)
     const isPdf = doc.mime?.includes('pdf') || doc.archivo?.toLowerCase().endsWith('.pdf') || doc.storagePath?.toLowerCase().endsWith('.pdf');
     let imageBase64: string | undefined;
 
@@ -785,7 +774,7 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
         description: 'Convirtiendo primera página a imagen...',
       });
       try {
-        // Construir URL del PDF — preferir signed URL para buckets privados
+        // Construir URL del PDF — preferir signed URL
         let pdfUrl: string | null = null;
         if (doc.storagePath) {
           pdfUrl = await refreshSignedUrl(doc.storagePath);
@@ -821,16 +810,19 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
     });
 
     try {
-      // PRIORIDAD DE PROMPT IA:
-      // 1. fasePromptIA (configurado en la fase del producto) - PRIORIDAD MÁS ALTA
-      // 2. reqInfo?.promptIA (del catálogo de documentos)
-      // 3. Fallback por defecto
-      const promptAEnviar = fasePromptIA || reqInfo?.promptIA || `Verificar que el documento sea un "${doc.tipoDocumento}" legítimo y legible.`;
+      // PRIORIDAD DE PROMPT IA PARA VALIDACIÓN DE DOCUMENTO (botón "Validar IA"):
+      // 1. reqInfo?.promptIA — prompt propio del documento (catálogo de documentos)
+      // 2. Fallback por defecto
+      //
+      // NOTA: El prompt de la fase (fasePromptIA) NO se usa aquí.
+      // El prompt de la fase se usa ÚNICAMENTE al cambiar de fase ("Enviar Fase").
+      const promptAEnviar = reqInfo?.promptIA || `Verificar que el documento sea un "${doc.tipoDocumento}" legítimo y legible.`;
+      const promptFuente = reqInfo?.promptIA ? 'DOCUMENTO (catálogo)' : 'FALLBACK';
       console.log(`${LOG} [IA] Enviando a /validar-documento-ia`);
       console.log(`${LOG} [IA]   - storagePath: ${doc.storagePath || '(n/a)'}`);
       console.log(`${LOG} [IA]   - tipoDocumento: ${doc.tipoDocumento}`);
       console.log(`${LOG} [IA]   - prompt usado: ${promptAEnviar.substring(0, 100)}...`);
-      console.log(`${LOG} [IA]   - fuente prompt: ${fasePromptIA ? 'FASE (prioridad)' : reqInfo?.promptIA ? 'CATÁLOGO' : 'FALLBACK'}`);
+      console.log(`${LOG} [IA]   - fuente prompt: ${promptFuente}`);
       
       const payload: any = {
         storagePath: doc.storagePath,
@@ -840,6 +832,10 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
       };
       if (imageBase64) {
         payload.imageBase64 = imageBase64;
+      }
+      // Si no hay imagen renderizada pero hay fileData (no-PDF), enviarlo
+      if (!imageBase64 && !isPdf && doc.fileData) {
+        payload.imageBase64 = doc.fileData;
       }
 
       const res = await fetch(`${API_BASE}/validar-documento-ia`, {

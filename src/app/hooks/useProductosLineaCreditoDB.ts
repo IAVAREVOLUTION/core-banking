@@ -206,6 +206,8 @@ function mapRowToProduct(row: ProductoLineaCreditoRow, index: number): ProductoL
     periodosRegistros: Array.isArray(d.periodosRegistros) ? d.periodosRegistros : undefined,
     tasasReferenciaRegistros: Array.isArray(d.tasasReferenciaRegistros) ? d.tasasReferenciaRegistros : undefined,
     expedientes: Array.isArray(d.expedientes) ? d.expedientes : undefined,
+    // ── Plantillas institucionales ──
+    plantillas: Array.isArray(d.plantillas) ? d.plantillas : undefined,
   } as ProductoLineaCredito;
 }
 
