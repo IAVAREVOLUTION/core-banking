@@ -11,7 +11,6 @@ import {
 import {
   useSolicitudesActivacionDB,
   type BackendStatus,
-  parseISOToDisplay,
   parseMoney,
   parsePct,
   lineaProdToTipo,
@@ -105,40 +104,56 @@ export function SolicitudActivacionList() {
 
     const montoTransaccion = String(header.montoTransaccion ?? parseMoney(raw.solicitud_monto) ?? '0.00');
     const moneda           = String(header.moneda || raw.solicitud_moneda || 'MXN');
-    const detailMonto      = (detail.monto as number)       ?? parseMoney(raw.solicitud_monto);
+    const detailMonto      = (detail.monto as number)    ?? parseMoney(raw.solicitud_monto);
     // % Impuesto: DB stores as whole number (e.g. 3 = 3%); divide by 100 for decimal form used internally
     const detailPctImpuesto = parsePct(raw.solicitud_tasa_interes) / 100;
-    const detailCantidad   = (detail.cantidad as number)    ?? 1;
+    const detailCantidad   = (detail.cantidad as number) ?? 1;
 
     // TIPO: always derived from linea_produc; never manually overridden
     const derivedTipo = lineaProdToTipo(String(raw.solicitud_linea_produc || ''))
       || s.tipo
       || String(raw.type || '');
 
+    // Dates: store as YYYY-MM-DD for date inputs
+    const toISO = (val: string): string => {
+      if (!val) return '';
+      // DD/MM/YYYY → YYYY-MM-DD
+      const m = val.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+      if (m) return `${m[3]}-${m[2]}-${m[1]}`;
+      // Already YYYY-MM-DD or ISO
+      if (/^\d{4}-\d{2}-\d{2}/.test(val)) return val.split('T')[0];
+      return '';
+    };
+
+    const fechaSolicitud = toISO(
+      String(header.fechaSolicitud || s.fechaSolicitud || raw.created_at || '')
+    );
+    const fechaCompromiso = toISO(
+      String(raw.fecha_compromiso || header.fechaCompromiso || '')
+    );
+
     return {
       ...EMPTY_FORM,
-      id:             String(s._dbId || s.id || ''),
-      solicitudId:    s.solicitudId  || String(raw.solicitud_id  || ''),
-      clienteId:      String(raw.cliente_id || ''),
-      type:           derivedTipo,
-      fechaSolicitud: s.fechaSolicitud || '',
-      fechaCompromiso: raw.solicitud_fecha_primera_aportacion
-        ? parseISOToDisplay(String(raw.solicitud_fecha_primera_aportacion))
-        : raw.fecha_compromiso
-          ? parseISOToDisplay(String(raw.fecha_compromiso))
-          : String(header.fechaCompromiso || ''),
+      id:          String(s._dbId || s.id || ''),
+      solicitudId: s.solicitudId || String(raw.solicitud_id || ''),
+      clienteId:   String(raw.cliente_id || ''),
+      type:        derivedTipo,
+      fechaSolicitud,
+      fechaCompromiso,
       estatus: s.estatus || 'Pendiente',
-      // JOIN read-only
-      numeroDocumento: s.numeroDocumento || String(raw.cliente_curp || header.numeroDocumento || ''),
-      cliente:         s.cliente         || String(header.cliente   || ''),
+      // Fields from selected SOLICITUD (stored in data.header)
+      noSol:           String(header.noSol          || raw.solicitud_no_cuenta || ''),
+      numeroDocumento: String(header.numeroDocumento || ''),
+      cliente:         s.cliente || String(header.cliente || ''),
       cuentaBancaria:  String(raw.solicitud_no_cuenta || header.cuentaBancaria || ''),
+      producto:        String(header.producto        || ''),
       // data.header
       formaDePago:           String(header.formaDePago           || 'Banca por internet'),
       institucionFinanciera: String(header.institucionFinanciera || ''),
       referencia:            String(s._dbId || s.id || ''),
       montoTransaccion,
       moneda,
-      nota:        String(header.nota       || ''),
+      nota:        String(header.nota        || ''),
       usuarioNota: String(header.usuarioNota || ''),
       // data.detail
       detailClaveProducto: String(detail.claveProducto || raw.solicitud_producto_id || ''),

@@ -12,24 +12,26 @@
 export interface SolicitudActivacionFormData {
   // ── DB columns (direct) ──────────────────────────────────────────
   id: string;                      // uuid — siempre read-only
-  solicitudId: string;             // FK → J_CUENTAS_CORP_CLIENTES.id — read-only
-  clienteId: string;               // FK → J_CLIENTES.id — read-only (no visible directo)
+  solicitudId: string;             // FK → J_CUENTAS_CORP_CLIENTES.id
+  clienteId: string;               // FK → J_CLIENTES.id — no visible directo
   type: string;                    // → J_SOLICITUDES_ACTIVACION.type
-  fechaSolicitud: string;          // DD/MM/YYYY HH:MM:SS — read-only display
-  fechaCompromiso: string;         // DD/MM/YYYY → J_SOLICITUDES_ACTIVACION.fecha_compromiso
-  estatus: string;                 // fijo 'Pendiente' — read-only
+  fechaSolicitud: string;          // YYYY-MM-DD — editable date input
+  fechaCompromiso: string;         // YYYY-MM-DD — editable date input
+  estatus: string;                 // Pendiente | Cancelado | Pagado
 
-  // ── JOIN-sourced read-only display fields ────────────────────────
-  numeroDocumento: string;         // J_CLIENTES.data.curp
-  cliente: string;                 // J_CLIENTES nombre + apellidos
+  // ── Read-only fields populated from selected SOLICITUD ───────────
+  noSol: string;                   // J_CUENTAS_CORP_CLIENTES.no_sol (display)
+  numeroDocumento: string;         // Auto-generated FAC-XXXXXXXXXX
+  cliente: string;                 // data.solicitud.header.nombre_cliente
   cuentaBancaria: string;          // J_CUENTAS_CORP_CLIENTES.no_cuenta
+  producto: string;                // data.solicitud.header.nombre_producto
 
   // ── data.header (editables) ───────────────────────────────────────
   formaDePago: string;             // 'Banca por internet' | 'En sucursal'
   institucionFinanciera: string;
   referencia: string;
-  montoTransaccion: string;        // pre-poblado de J_CUENTAS_CORP_CLIENTES
-  moneda: string;                  // pre-poblado de J_CUENTAS_CORP_CLIENTES
+  montoTransaccion: string;        // read-only, from selected SOLICITUD
+  moneda: string;                  // read-only, from selected SOLICITUD
   nota: string;
   usuarioNota: string;
 
@@ -86,10 +88,12 @@ export const EMPTY_FORM: SolicitudActivacionFormData = {
   fechaSolicitud: '',
   fechaCompromiso: '',
   estatus: 'Pendiente',
-  // JOIN read-only
+  // Read-only fields from selected SOLICITUD
+  noSol: '',
   numeroDocumento: '',
   cliente: '',
   cuentaBancaria: '',
+  producto: '',
   // data.header
   formaDePago: 'Banca por internet',
   institucionFinanciera: '',

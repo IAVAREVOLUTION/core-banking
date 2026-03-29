@@ -193,9 +193,12 @@ function formToDBPayload(form: SolicitudActivacionFormData) {
     estatus:          form.estatus || 'Pendiente',
     data: {
       header: {
+        noSol:                 form.noSol,
         cliente:               form.cliente,
-        numeroDocumento:       form.numeroDocumento,
+        numeroDocumento:       form.numeroDocumento,  // insert RPC will override with FAC-XXXXXXXXXX
         cuentaBancaria:        form.cuentaBancaria,
+        producto:              form.producto,
+        fechaSolicitud:        form.fechaSolicitud,
         formaDePago:           form.formaDePago,
         institucionFinanciera: form.institucionFinanciera,
         referencia:            form.referencia,
