@@ -28,8 +28,23 @@ function parseDate(dateStr: string): Date {
   return new Date(fullYear, parseInt(month) - 1, parseInt(day));
 }
 
-export function SolicitudActivacionList() {
-  const [view,        setView]        = useState<ViewState>({ type: 'list' });
+interface SolicitudActivacionListProps {
+  /** Si se provee, el módulo abre directamente en modo "nuevo" con estos datos pre-cargados */
+  initialNewData?: Partial<SolicitudActivacionFormData>;
+  /** Callback cuando se guarda desde modo originación (para notificar a Fase 6) */
+  onSavedFromOriginacion?: (item: SolicitudActivacionListItem) => void;
+  /** Callback cuando se cierra/cancela desde modo originación */
+  onCancelFromOriginacion?: () => void;
+}
+
+export function SolicitudActivacionList({
+  initialNewData,
+  onSavedFromOriginacion,
+  onCancelFromOriginacion,
+}: SolicitudActivacionListProps = {}) {
+  const [view,        setView]        = useState<ViewState>(
+    initialNewData ? { type: 'form', mode: 'nuevo' } : { type: 'list' }
+  );
   const [solicitudes, setSolicitudes] = useState<SolicitudActivacionListItem[]>([]);
   const [searchTerm,  setSearchTerm]  = useState('');
   const [sortOrder,   setSortOrder]   = useState<'desc' | 'asc'>('desc');
@@ -170,11 +185,16 @@ export function SolicitudActivacionList() {
     setView({ type: 'form', mode: 'ver', solicitudId: sid, dbId: s._dbId || String(s.id) });
   };
 
-  const handleBack = () => setView({ type: 'list' });
+  const handleBack = () => {
+    if (onCancelFromOriginacion) { onCancelFromOriginacion(); return; }
+    setView({ type: 'list' });
+  };
 
   const handleSave = async (data: SolicitudActivacionFormData) => {
     const isNew = view.type === 'form' && view.mode === 'nuevo';
     const dbId  = view.type === 'form' ? (view as { dbId?: string }).dbId : undefined;
+
+    let savedItem: SolicitudActivacionListItem | null = null;
 
     try {
       const result = await saveSolicitudActivacion(data, isNew ? undefined : dbId);
@@ -183,10 +203,23 @@ export function SolicitudActivacionList() {
           description: data.cliente ? `Cliente: ${data.cliente}` : undefined,
           duration: 3000,
         });
+        savedItem = {
+          id:              result.id || String(Date.now()),
+          solicitudId:     data.solicitudId,
+          cliente:         data.cliente,
+          numeroDocumento: data.numeroDocumento,
+          tipo:            data.type,
+          fechaSolicitud:  data.fechaSolicitud.split(' ')[0],
+          estatus:         data.estatus || 'Pendiente',
+          montoTransaccion: data.montoTransaccion,
+          moneda:          data.moneda,
+          _dbId:           result.id,
+          _fromDB:         true,
+        };
       } else {
         toast.error('Error al guardar en BD', { description: result.error || 'Revise la consola', duration: 5000 });
         if (isNew) {
-          const newItem: SolicitudActivacionListItem = {
+          savedItem = {
             id:              Date.now(),
             solicitudId:     data.solicitudId,
             cliente:         data.cliente,
@@ -194,14 +227,23 @@ export function SolicitudActivacionList() {
             tipo:            data.type,
             fechaSolicitud:  data.fechaSolicitud.split(' ')[0],
             estatus:         data.estatus || 'Pendiente',
+            montoTransaccion: data.montoTransaccion,
+            moneda:          data.moneda,
+            _fromDB:         false,
           };
-          setSolicitudes(prev => [newItem, ...prev]);
+          setSolicitudes(prev => [savedItem!, ...prev]);
           toast.info('Guardado localmente (sin BD)', { duration: 3000 });
         }
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       toast.error('Error inesperado al guardar', { description: msg, duration: 5000 });
+    }
+
+    // Notificar a Originación si aplica
+    if (onSavedFromOriginacion && savedItem) {
+      onSavedFromOriginacion(savedItem);
+      return;
     }
 
     setView({ type: 'list' });
@@ -214,6 +256,7 @@ export function SolicitudActivacionList() {
         key={`${view.mode}-${view.solicitudId ?? 'new'}`}
         mode={view.mode}
         solicitudId={view.solicitudId}
+        initialData={view.mode === 'nuevo' && initialNewData ? initialNewData : undefined}
         onCancel={handleBack}
         onSave={handleSave}
       />

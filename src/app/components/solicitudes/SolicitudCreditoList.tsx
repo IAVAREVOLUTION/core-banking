@@ -16,6 +16,16 @@ interface SolicitudCreditoListProps {
   cotizacionParaSolicitud?: any;
   /** Callback para limpiar el dato de cotización después de consumirlo */
   onCotizacionConsumed?: () => void;
+  /** Si se pasa, filtra la lista para mostrar solo las solicitudes de este cliente */
+  clienteIdFilter?: string;
+  /** Datos del cliente para pre-llenar automáticamente una nueva solicitud */
+  initialClienteData?: {
+    clienteId: string;
+    nombre: string;
+    apellidoPaterno: string;
+    apellidoMaterno: string;
+    tipoPersona?: string;
+  };
 }
 
 function parseDate(dateStr: string): Date {
@@ -150,7 +160,7 @@ export function preloadSubtabsFromDBData(storageId: number | string, d: Record<s
   }
 }
 
-export function SolicitudCreditoList({ cotizacionParaSolicitud, onCotizacionConsumed }: SolicitudCreditoListProps = {}) {
+export function SolicitudCreditoList({ cotizacionParaSolicitud, onCotizacionConsumed, clienteIdFilter, initialClienteData }: SolicitudCreditoListProps = {}) {
   const [view, setView] = useState<ViewState>({ type: 'list' });
   const [solicitudes, setSolicitudes] = useState<SolicitudListItem[]>(() =>
     [...SOLICITUDES_LISTA].sort((a, b) => parseDate(b.fechaSolicitud).getTime() - parseDate(a.fechaSolicitud).getTime())
@@ -283,7 +293,22 @@ export function SolicitudCreditoList({ cotizacionParaSolicitud, onCotizacionCons
     if (searchBarRef.current) { searchBarRef.current.focus(); searchBarRef.current.classList.add('animate-highlight-border'); setTimeout(() => searchBarRef.current?.classList.remove('animate-highlight-border'), 1000); }
   };
 
-  const handleNuevaSolicitud = () => { clearSession('new'); setView({ type: 'form', mode: 'nuevo' }); };
+  const handleNuevaSolicitud = () => {
+    clearSession('new');
+    if (initialClienteData) {
+      saveToSession('new', 'form', {
+        ...EMPTY_FORM,
+        noSol: consumeNoSol(),
+        fechaSolicitud: getFechaSolicitudNow(),
+        tipoPersona: initialClienteData.tipoPersona || '',
+        nombrePersona: initialClienteData.nombre,
+        apellidoPaternoPersona: initialClienteData.apellidoPaterno,
+        apellidoMaternoPersona: initialClienteData.apellidoMaterno,
+        _clienteId: initialClienteData.clienteId,
+      });
+    }
+    setView({ type: 'form', mode: 'nuevo' });
+  };
 
   /** Resuelve el ID de storage para una solicitud: UUID string o number legacy */
   const resolveStorageId = (s: SolicitudListItem): number | string => {
@@ -562,7 +587,11 @@ export function SolicitudCreditoList({ cotizacionParaSolicitud, onCotizacionCons
   }
 
   // ─── LIST VIEW ───
-  const filteredSolicitudes = solicitudes
+  const clienteFiltered = clienteIdFilter
+    ? solicitudes.filter(s => (s as any)._clienteId === clienteIdFilter)
+    : solicitudes;
+
+  const filteredSolicitudes = clienteFiltered
     .filter(s => {
       const q = searchTerm.toLowerCase();
       return s.noSol.toLowerCase().includes(q) || s.nombreCompleto.toLowerCase().includes(q) ||
@@ -814,8 +843,9 @@ export function SolicitudCreditoList({ cotizacionParaSolicitud, onCotizacionCons
               <button
                 onClick={() => {
                   try {
-                    const result = createCreditoFromSolicitud(solicitudToGenerate.id, {
-                      id: solicitudToGenerate.id,
+                    const solId = Number(solicitudToGenerate.id) || 0;
+                    const result = createCreditoFromSolicitud(solId, {
+                      id: solId,
                       noSolicitud: solicitudToGenerate.noSol,
                       cliente: solicitudToGenerate.nombreCompleto,
                       fechaSolicitud: solicitudToGenerate.fechaSolicitud,
@@ -826,7 +856,7 @@ export function SolicitudCreditoList({ cotizacionParaSolicitud, onCotizacionCons
                       sucursal: solicitudToGenerate.sucursal,
                       estatusSolicitud: solicitudToGenerate.estatusSolicitud,
                     });
-                    setGeneratedCreditos(prev => new Set(prev).add(solicitudToGenerate.id));
+                    setGeneratedCreditos(prev => new Set(prev).add(solId));
                     setShowGenerarModal(false);
                     setSolicitudToGenerate(null);
                     toast.success(`Crédito ${result.noCredito} generado exitosamente`, {

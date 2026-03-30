@@ -28,6 +28,7 @@ import { GarantiasTab } from './GarantiasTab';
 import { ComisionesTab } from './ComisionesTab';
 import { AutorizacionTab } from './AutorizacionTab';
 import { NotasTab } from './NotasTab';
+import { DatePicker } from '../ui/DatePicker';
 import { FasesSolicitudTab } from './tabs/FasesSolicitudTab';
 import { PartesRelacionadasTab } from './tabs/PartesRelacionadasTab';
 import { useProductosCatalogoDB, type ProductoCatalogo } from '../../hooks/useProductosCatalogoDB';
@@ -39,7 +40,10 @@ import {
 } from '../../hooks/useOriginacionValidaciones';
 import { useSolicitudesActivacionDB } from '../../hooks/useSolicitudesActivacionDB';
 import type { SolicitudActivacionListItem } from '../solicitudes-activacion/solicitudActivacionStore';
-import { autoCrearDocumentosFase4 } from '../../hooks/generarDocumentosFase4';
+import {
+  generarContratoPDF, generarPagePDF, generarSolicitudPDF,
+  type DatosSolicitud,
+} from '../../hooks/generarDocumentosFase4';
 import { SolicitudActivacionModal } from '../originacion/SolicitudActivacionModal';
 import { FaseActionsComponent } from '../shared/FaseActionsComponent';
 import { addOriginacionItem, CAT_AREA } from '../originacion/originacionStore';
@@ -326,14 +330,22 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
       promptIA: fase.promptIA || '',
     };
 
-    if (faseData.fase && faseData.fase !== formData.descripcionFase) {
-      console.log('[SolicForm] Syncing fase from product:', faseData);
+    const needsFaseSync = !!(faseData.fase && faseData.fase !== formData.descripcionFase);
+    const needsNombreProducto = !formData.nombreProducto && !!productoSeleccionado.nombreProducto;
+    const needsTipoProducto = !formData.tipoProducto && !!productoSeleccionado.sublineaProducto;
+
+    if (needsFaseSync || needsNombreProducto || needsTipoProducto) {
+      console.log('[SolicForm] Syncing from product:', { faseData, needsFaseSync, needsNombreProducto, needsTipoProducto });
       setFormData(prev => ({
         ...prev,
-        faseId: faseData.faseId,
-        descripcionFase: faseData.fase,
-        area: faseData.area,
-        promptIAFase: faseData.promptIA,
+        ...(needsFaseSync ? {
+          faseId: faseData.faseId,
+          descripcionFase: faseData.fase,
+          area: faseData.area,
+          promptIAFase: faseData.promptIA,
+        } : {}),
+        nombreProducto: prev.nombreProducto || productoSeleccionado.nombreProducto || '',
+        tipoProducto: prev.tipoProducto || productoSeleccionado.sublineaProducto || '',
       }));
     }
   }, [productoSeleccionado, loadingProductos]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -342,6 +354,21 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
 
   // Clave para forzar remount de ExpedienteElectronicoTab tras auto-generar docs en Fase 4
   const [expedienteKey, setExpedienteKey] = useState(0);
+
+  // Debug IA de fases — registro del último intento de validación IA al enviar fase
+  const [iaFaseDebug, setIaFaseDebug] = useState<{
+    faseSeq: number;
+    faseNombre: string;
+    promptIA: string;
+    docsEnContexto: number;
+    payload: object;
+    status: 'pending' | 'ok' | 'error' | 'skipped';
+    httpStatus?: number;
+    resultado?: any;
+    errorMsg?: string;
+    timestamp: string;
+  } | null>(null);
+  const [showIAFaseDebug, setShowIAFaseDebug] = useState(false);
 
   // ── Solicitudes de Activación del módulo externo ────────────────────────────
   // Solo cargamos cuando estamos en modo Originación para no hacer fetch innecesario
@@ -371,56 +398,8 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
     return activacionForThisSol?.estatus?.toLowerCase() === 'pagado';
   }, [activacionForThisSol, formData.lineaProducto]);
 
-  // ── Auto-generación de documentos al entrar en Fase 4 (Formalización) ────────
-  // Crea CONTRATO_BASE, PAGARE_BASE (PDFs base), CONTRATO_FIRMADO, PAGARE_FIRMADO
-  // Solo se ejecuta en modo originación, con una solicitud ya persistida (no 'new').
-  useEffect(() => {
-    if (modo !== 'originacion') return;
-    if (storageId === 'new') return;
-
-    const faseActual = fasesDelProducto.find(f => String(f.faseId) === String(formData.faseId));
-    if (faseActual?.seq !== 4) return;
-
-    const terminos = loadFromSession<any>(storageId, 'terminos')
-      ?? loadFromSavedStore<any>(storageId, 'terminos')
-      ?? {};
-    const cliente = [formData.nombrePersona, formData.apellidoPaternoPersona, formData.apellidoMaternoPersona]
-      .filter(Boolean).join(' ').trim();
-
-    // Obtener plantillas del producto seleccionado
-    const rd = productoSeleccionado?.rawData as Record<string, any> | undefined;
-    const plantillasProducto = rd?.plantillas || [];
-
-    const ejecutarFase4 = async () => {
-      const resultado = await autoCrearDocumentosFase4({
-        storageId,
-        datos: {
-          noSol: formData.noSol,
-          cliente,
-          lineaProducto: formData.lineaProducto,
-          tipoProducto: formData.tipoProducto,
-          productoNombre: productoSeleccionado?.nombreProducto || formData.nombreProducto,
-          terminos,
-        },
-        plantillas: plantillasProducto,
-      });
-
-      if (resultado.exito) {
-        // Forzar remount de ExpedienteElectronicoTab para que lea los nuevos docs de session storage
-        setExpedienteKey(k => k + 1);
-        console.log(
-          '[SolicForm] Fase 4 → documentos generados:',
-          resultado.pdfGenerados.join(', '),
-          '| Supabase:', resultado.subidosASupabase ? 'OK' : 'local',
-          '| Expediente:', resultado.registradosEnExpediente ? 'OK' : 'pendiente'
-        );
-      } else {
-        console.warn('[SolicForm] Fase 4 → bloqueado:', resultado.error);
-      }
-    };
-
-    ejecutarFase4();
-  }, [formData.faseId, fasesDelProducto]); // eslint-disable-line react-hooks/exhaustive-deps
+  // (Auto-generación de documentos en Fase 4 eliminada — los PDFs se generan
+  //  manualmente con "Formalizar Contrato" y el usuario los firma y sube al expediente.)
 
   const handleEnviarFase = useCallback(async () => {
     // En modo originación siempre se permite; en otros modos respeta isRO
@@ -472,11 +451,11 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
         });
 
         try {
-          // Construir contexto de documentos de esta fase para la IA
+          // Contexto: todos los docs de esta fase O ANTERIORES (dId <= seqActual)
           const docsDeFase = documentos.filter(d => {
             if (d.faseId == null) return false;
             const dId = Number(d.faseId);
-            return !isNaN(dId) && dId > 0 && dId === seqActual;
+            return !isNaN(dId) && dId > 0 && dId <= seqActual;
           });
 
           const contextoDocs = docsDeFase.map(d => ({
@@ -487,49 +466,132 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
             ia_extraido: (d as any).iaExtraido || {},
           }));
 
+          const resumenDocs = contextoDocs.map(d =>
+            `- ${d.tipoDocumento}: ${d.estatus}${d.validadoIA ? ' (Validado IA)' : ' (Sin validar IA)'}` +
+            (d.ia_motivos?.length ? ` | Motivos: ${d.ia_motivos.slice(0, 2).join('; ')}` : '')
+          ).join('\n');
+
           const API_BASE_FASE = `https://${projectId}.supabase.co/functions/v1/make-server-7e2d13d9`;
-          const resFaseIA = await fetch(`${API_BASE_FASE}/validar-fase-ia`, {
+          const nombreCliente = [formData.nombrePersona, formData.apellidoPaternoPersona].filter(Boolean).join(' ') || 'Cliente';
+
+          // Requisitos obligatorios de esta fase (Sección 1 del expediente)
+          const requisitosDeEstaFase = requisitosProducto.filter((r: any) => {
+            const rFaseId = Number(r.faseId ?? r.fase_id ?? 0);
+            return rFaseId === seqActual;
+          }).map((r: any) => ({
+            tipoDocumento: r.tipoDocumento || r.tipo_documento,
+            obligatorio: r.obligatorio !== false,
+            area: r.area || '',
+          }));
+
+          const terminos = loadFromSession<any>(storageId, 'terminos')
+            || loadFromSavedStore<any>(storageId, 'terminos')
+            || {};
+
+          // Construir prompt enriquecido con todos los datos embebidos directamente
+          const reqResumen = requisitosDeEstaFase.length > 0
+            ? requisitosDeEstaFase.map((r: any) =>
+                `  - ${r.tipoDocumento}${r.obligatorio ? ' (OBLIGATORIO)' : ' (opcional)'}${r.area ? ` [${r.area}]` : ''}`
+              ).join('\n')
+            : '  Sin requisitos configurados para esta fase.';
+
+          const promptConContexto =
+            (fasePromptIA || '') + '\n\n' +
+            '=== DATOS DEL CLIENTE ===\n' +
+            `Nombre: ${nombreCliente}\n` +
+            `Tipo persona: ${formData.tipoPersona || 'No especificado'}\n` +
+            `No. Solicitud: ${formData.noSol || 'No asignado'}\n\n` +
+            '=== DATOS DEL CRÉDITO ===\n' +
+            `Línea de producto: ${formData.lineaProducto || 'No especificada'}\n` +
+            `Tipo de producto: ${formData.tipoProducto || 'No especificado'}\n` +
+            `Producto: ${productoSeleccionado?.nombreProducto || formData.tipoProducto || 'No especificado'}\n` +
+            `Monto solicitado: ${terminos.montoSolicitado || terminos.monto || 'No especificado'}\n` +
+            `Plazo: ${terminos.plazo || terminos.plazoMeses || 'No especificado'}\n` +
+            `Moneda: ${terminos.moneda || 'MXN'}\n\n` +
+            `=== FASE ACTUAL: ${faseNombre} (Fase ${seqActual}) ===\n\n` +
+            '=== DOCUMENTOS OBLIGATORIOS PARA ESTA FASE ===\n' +
+            reqResumen + '\n\n' +
+            '=== DOCUMENTOS CARGADOS EN EL EXPEDIENTE ===\n' +
+            (resumenDocs || 'Sin documentos registrados.') + '\n\n' +
+            `Total documentos: ${documentos.length} | Validados por IA: ${documentos.filter(d => d.validadoIA).length}\n\n` +
+            'Responde ÚNICAMENTE en JSON válido con esta estructura exacta:\n' +
+            '{ "valido": true|false, "motivos": ["motivo1", "motivo2"], "confianza": 0.0 }';
+
+          const payloadFaseIA = {
+            faseActual: faseNombre,
+            faseNumero: seqActual,
+            botonPresionado: 'enviarFase',
+            promptIA: promptConContexto,
+            // Datos del cliente
+            nombreSolicitante: nombreCliente,
+            tipoPersona: formData.tipoPersona,
+            noSol: formData.noSol || '',
+            // Datos del producto / crédito
+            lineaProducto: formData.lineaProducto || '',
+            tipoProducto: formData.tipoProducto || '',
+            productoNombre: productoSeleccionado?.nombreProducto || formData.tipoProducto || '',
+            monto: terminos.montoSolicitado || terminos.monto || '',
+            plazo: terminos.plazo || terminos.plazoMeses || '',
+            moneda: terminos.moneda || 'MXN',
+            // Expediente
+            documentos: contextoDocs,
+            resumenDocumentos: resumenDocs || 'Sin documentos registrados.',
+            requisitosObligatorios: requisitosDeEstaFase,
+            totalDocumentosCargados: documentos.length,
+            documentosValidadosIA: documentos.filter(d => d.validadoIA).length,
+          };
+
+          // Registrar intento en debug
+          setIaFaseDebug({
+            faseSeq: seqActual,
+            faseNombre,
+            promptIA: promptConContexto,
+            docsEnContexto: contextoDocs.length,
+            payload: payloadFaseIA,
+            status: 'pending',
+            timestamp: new Date().toLocaleTimeString('es-MX'),
+          });
+          setShowIAFaseDebug(true);
+
+          console.log(`[Fase ${seqActual}] Enviando validacion IA → /validar-documento-ia | docs: ${contextoDocs.length} | prompt: "${fasePromptIA?.substring(0, 80)}..."`);
+
+          const resFaseIA = await fetch(`${API_BASE_FASE}/validar-documento-ia`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
               'Authorization': `Bearer ${publicAnonKey}`,
             },
-            body: JSON.stringify({
-              faseNombre,
-              faseSeq: seqActual,
-              promptIA: fasePromptIA,
-              documentos: contextoDocs,
-              tipoPersona: formData.tipoPersona,
-              solicitudId: storageId,
-            }),
+            body: JSON.stringify(payloadFaseIA),
           });
 
           toast.dismiss(toastIA);
 
           if (resFaseIA.ok) {
             const resultadoFaseIA = await resFaseIA.json();
-            console.log(`[Fase ${seqActual}] 🤖 Resultado validación IA de fase:`, resultadoFaseIA);
+            setIaFaseDebug(prev => prev ? { ...prev, status: 'ok', httpStatus: resFaseIA.status, resultado: resultadoFaseIA } : null);
+            console.log(`[Fase ${seqActual}] IA resultado:`, resultadoFaseIA);
 
             if (resultadoFaseIA.valido === false) {
               toast.error(`IA: Fase "${faseNombre}" no cumple criterios`, {
                 description: (resultadoFaseIA.motivos || []).slice(0, 3).join(' · '),
                 duration: 10000,
               });
-              return; // BLOQUEAR avance si la IA dice que no
+              return;
             }
 
-            toast.success(`IA: Fase "${faseNombre}" validada correctamente`, {
+            toast.success(`IA: Fase "${faseNombre}" validada`, {
               description: resultadoFaseIA.motivos?.length > 0
                 ? resultadoFaseIA.motivos.slice(0, 2).join(' · ')
                 : 'Todos los criterios de la fase se cumplen.',
               duration: 5000,
             });
           } else if (resFaseIA.status === 404) {
-            // Endpoint no desplegado — continuar sin validación IA de fase
-            console.warn(`[Fase ${seqActual}] Endpoint /validar-fase-ia no disponible (404). Continuando sin validación IA de fase.`);
+            setIaFaseDebug(prev => prev ? { ...prev, status: 'error', httpStatus: 404, errorMsg: 'Endpoint no encontrado (404)' } : null);
+            console.warn(`[Fase ${seqActual}] /validar-documento-ia 404.`);
           } else {
             const errText = await resFaseIA.text();
-            console.warn(`[Fase ${seqActual}] Error en validación IA de fase (HTTP ${resFaseIA.status}):`, errText);
+            setIaFaseDebug(prev => prev ? { ...prev, status: 'error', httpStatus: resFaseIA.status, errorMsg: errText } : null);
+            console.warn(`[Fase ${seqActual}] Error IA HTTP ${resFaseIA.status}:`, errText);
           }
         } catch (errFaseIA: any) {
           toast.dismiss(toastIA);
@@ -537,7 +599,17 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
           // No bloquear por errores de red — continuar
         }
       } else {
-        console.log(`[Fase ${seqActual}] Sin promptIA configurado en la fase — omitiendo validación IA de fase.`);
+        setIaFaseDebug({
+          faseSeq: seqActual,
+          faseNombre,
+          promptIA: '',
+          docsEnContexto: 0,
+          payload: {},
+          status: 'skipped',
+          errorMsg: 'La fase no tiene promptIA configurado en el subtab Fases del producto.',
+          timestamp: new Date().toLocaleTimeString('es-MX'),
+        });
+        console.log(`[Fase ${seqActual}] Sin promptIA configurado — omitiendo validacion IA de fase.`);
       }
 
       // ── 3b. Fase 4: validar Términos, Garantías y Comités antes de avanzar ──
@@ -670,6 +742,78 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
   }, [enviandoFase, formData, fasesDelProducto, storageId]);
 
   /** Formalizar Contrato — Fase 4. Valida docs previos, términos, garantías y comités. */
+  /**
+   * Generar Solicitud — Fase 2.
+   * Genera el PDF de Solicitud de Crédito desde la plantilla tipo "solicitud",
+   * lo registra en el expediente, lo descarga y lo abre en una pestaña.
+   */
+  const handleGenerarSolicitud = useCallback(async () => {
+    if (enviandoFase) return;
+    setEnviandoFase(true);
+    try {
+      const terminos: any =
+        loadFromSession<any>(storageId, 'terminos') ||
+        loadFromSavedStore<any>(storageId, 'terminos') ||
+        {};
+      const rawData = productoSeleccionado?.rawData as Record<string, any> | undefined;
+      const plantillasProducto: any[] = rawData?.plantillas || [];
+
+      const cliente = [formData.nombrePersona, formData.apellidoPaternoPersona, formData.apellidoMaternoPersona]
+        .filter(Boolean).join(' ').trim() || 'Cliente';
+
+      const datosSolicitud: DatosSolicitud = {
+        noSol: formData.noSol,
+        cliente,
+        lineaProducto: formData.lineaProducto,
+        tipoProducto: formData.tipoProducto,
+        productoNombre: productoSeleccionado?.nombreProducto || formData.tipoProducto || '',
+        terminos,
+      };
+
+      // ── Generar PDF ──
+      const solicitudPDF = generarSolicitudPDF(datosSolicitud);
+
+      // ── Convertir a blob URL para abrir/descargar ──
+      const toObjectURL = (dataUrl: string): string => {
+        const [header, b64] = dataUrl.split(',');
+        const mime = header.match(/:(.*?);/)?.[1] ?? 'application/pdf';
+        const bin = atob(b64);
+        const buf = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+        return URL.createObjectURL(new Blob([buf], { type: mime }));
+      };
+
+      const solicitudUrl = toObjectURL(solicitudPDF);
+
+      // ── Abrir en nueva pestaña ──
+      const tab = window.open(solicitudUrl, '_blank');
+      if (!tab) {
+        toast.warning('El navegador bloqueó la pestaña', {
+          description: 'Permita las ventanas emergentes para este sitio.',
+        });
+      }
+
+      // ── Descarga automática ──
+      const a = document.createElement('a');
+      a.href = solicitudUrl;
+      a.download = `Solicitud_${formData.noSol}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+
+      setTimeout(() => URL.revokeObjectURL(solicitudUrl), 120_000);
+
+      toast.success('Solicitud generada', {
+        description: `Solicitud_${formData.noSol}.pdf descargada y abierta en pestaña.`,
+      });
+    } catch (err) {
+      console.error('[SolicForm] handleGenerarSolicitud error:', err);
+      toast.error('Error al generar la solicitud');
+    } finally {
+      setEnviandoFase(false);
+    }
+  }, [enviandoFase, formData, storageId, productoSeleccionado]);
+
   const handleFormalizarContrato = useCallback(async () => {
     if (enviandoFase) return;
     setEnviandoFase(true);
@@ -711,14 +855,16 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
         return;
       }
 
+      const cliente = [formData.nombrePersona, formData.apellidoPaternoPersona, formData.apellidoMaternoPersona]
+        .filter(Boolean).join(' ').trim();
+
       const datosContrato = {
         solicitudId: formData.id || String(storageId),
         noSol: formData.noSol,
         lineaProducto: formData.lineaProducto,
         tipoProducto: formData.tipoProducto,
         tipoPersona: formData.tipoPersona,
-        cliente: [formData.nombrePersona, formData.apellidoPaternoPersona, formData.apellidoMaternoPersona]
-          .filter(Boolean).join(' ').trim(),
+        cliente,
         terminos,
         garantias,
         comites,
@@ -729,22 +875,75 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
       saveToSavedStore(storageId, 'contrato', datosContrato);
       saveToSession(storageId, 'contrato', datosContrato);
 
+      // ── Generar PDFs ──
+      const datosSolicitud: DatosSolicitud = {
+        noSol: formData.noSol,
+        cliente,
+        lineaProducto: formData.lineaProducto,
+        tipoProducto: formData.tipoProducto,
+        productoNombre: productoSeleccionado?.nombreProducto || formData.tipoProducto || '',
+        terminos,
+      };
+
+      const contratoPDF = generarContratoPDF(datosSolicitud);
+      const pagarePDF   = generarPagePDF(datosSolicitud);
+
+      // ── Convertir base64 a blob URL (window.open no acepta data: URLs en Chrome) ──
+      const toObjectURL = (dataUrl: string): string => {
+        const [header, b64] = dataUrl.split(',');
+        const mime = header.match(/:(.*?);/)?.[1] ?? 'application/pdf';
+        const bin = atob(b64);
+        const buf = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+        return URL.createObjectURL(new Blob([buf], { type: mime }));
+      };
+
+      const contratoUrl = toObjectURL(contratoPDF);
+      const pagareUrl   = toObjectURL(pagarePDF);
+
+      // ── Abrir en pestañas nuevas ──
+      const tabContrato = window.open(contratoUrl, '_blank');
+      const tabPagare   = window.open(pagareUrl,   '_blank');
+      if (!tabContrato || !tabPagare) {
+        toast.warning('El navegador bloqueó las pestañas', {
+          description: 'Permita las ventanas emergentes para este sitio y vuelva a intentarlo.',
+        });
+      }
+
+      // ── Descarga automática ──
+      const descargar = (url: string, nombre: string) => {
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = nombre;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      };
+      descargar(contratoUrl, `Contrato_${formData.noSol}.pdf`);
+      descargar(pagareUrl,   `Pagare_${formData.noSol}.pdf`);
+
+      // Liberar blob URLs tras 2 minutos
+      setTimeout(() => { URL.revokeObjectURL(contratoUrl); URL.revokeObjectURL(pagareUrl); }, 120_000);
+
       // ── Intentar sincronizar con BD (no bloqueante) ──
       const dbId = storageId !== 'new' ? String(storageId) : null;
       const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
       if (dbId && UUID_REGEX.test(dbId)) {
         const res = await formalizarContratoSolicitudDB(dbId, datosContrato);
         if (res.ok) {
-          toast.success('Contrato formalizado', { description: `No. Solicitud: ${formData.noSol}` });
+          toast.success('Contrato formalizado — documentos generados', {
+            description: `Contrato y Pagaré descargados. No. Solicitud: ${formData.noSol}`,
+          });
         } else {
-          // El contrato ya está guardado localmente — la BD se sincronizará al guardar la solicitud
-          toast.success('Contrato formalizado (local)', {
-            description: `No. Solicitud: ${formData.noSol}. Se sincronizará al guardar.`,
+          toast.success('Contrato formalizado (local) — documentos generados', {
+            description: `Contrato y Pagaré descargados. No. Solicitud: ${formData.noSol}`,
           });
           console.warn('[SolicForm] formalizarContrato BD FALLÓ (guardado local):', res.error);
         }
       } else {
-        toast.success('Contrato formalizado', { description: formData.noSol });
+        toast.success('Contrato formalizado — documentos generados', {
+          description: `Contrato_${formData.noSol}.pdf y Pagare_${formData.noSol}.pdf descargados.`,
+        });
       }
     } finally {
       setEnviandoFase(false);
@@ -1192,6 +1391,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
           modo={modo}
           onEnviarFase={handleEnviarFase}
           onRegresarFase={handleRegresarFase}
+          onGenerarSolicitud={handleGenerarSolicitud}
           onFormalizarContrato={handleFormalizarContrato}
           onSolicitudActivacion={handleSolicitudActivacion}
           onActivarCuenta={handleActivarCuenta}
@@ -1199,6 +1399,166 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
           enviandoFase={enviandoFase}
         />
       </div>
+
+      {/* ═══ DEBUG IA DE FASES ═══ */}
+      {showIAFaseDebug && iaFaseDebug && (
+        <div className="mx-6 mt-3 rounded-xl border border-violet-300 overflow-hidden shadow text-xs">
+          {/* Header */}
+          <div className="flex items-center justify-between px-4 py-2 bg-violet-700 text-white">
+            <div className="flex items-center gap-2">
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                <circle cx="6" cy="3.5" r="2.5"/><path d="M1 11c0-2.8 2.2-5 5-5s5 2.2 5 5"/>
+                <path d="M7.5 2l2-1.5M4.5 2l-2-1.5"/>
+              </svg>
+              <span className="font-bold tracking-wide">Debug — Validación IA de Fase</span>
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-violet-500">
+                Fase {iaFaseDebug.faseSeq}: {iaFaseDebug.faseNombre}
+              </span>
+            </div>
+            <div className="flex items-center gap-3">
+              <span className="text-violet-300 text-[10px]">{iaFaseDebug.timestamp}</span>
+              {/* Badge de estado */}
+              {iaFaseDebug.status === 'pending' && (
+                <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-500 text-white text-[10px] font-bold">
+                  <svg className="animate-spin w-2.5 h-2.5" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="5" cy="5" r="4" strokeOpacity=".3"/><path d="M5 1a4 4 0 0 1 4 4" strokeLinecap="round"/></svg>
+                  ENVIANDO
+                </span>
+              )}
+              {iaFaseDebug.status === 'ok' && iaFaseDebug.resultado?.valido === true && (
+                <span className="px-2 py-0.5 rounded-full bg-emerald-500 text-white text-[10px] font-bold">✓ VALIDADO</span>
+              )}
+              {iaFaseDebug.status === 'ok' && iaFaseDebug.resultado?.valido === false && (
+                <span className="px-2 py-0.5 rounded-full bg-red-500 text-white text-[10px] font-bold">✗ RECHAZADO</span>
+              )}
+              {iaFaseDebug.status === 'error' && (
+                <span className="px-2 py-0.5 rounded-full bg-red-600 text-white text-[10px] font-bold">
+                  ERROR {iaFaseDebug.httpStatus}
+                </span>
+              )}
+              {iaFaseDebug.status === 'skipped' && (
+                <span className="px-2 py-0.5 rounded-full bg-gray-500 text-white text-[10px] font-bold">SIN PROMPT</span>
+              )}
+              <button onClick={() => setShowIAFaseDebug(false)} className="text-violet-300 hover:text-white transition-colors ml-1">
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M2 2l8 8M10 2l-8 8"/></svg>
+              </button>
+            </div>
+          </div>
+
+          {/* Fila de datos del cliente/producto que se envían */}
+          <div className="grid grid-cols-5 gap-px bg-violet-100 border-b border-violet-200 text-[10px]">
+            {[
+              { label: 'Cliente', value: (iaFaseDebug.payload as any).nombreSolicitante },
+              { label: 'Tipo Persona', value: (iaFaseDebug.payload as any).tipoPersona },
+              { label: 'Línea Producto', value: (iaFaseDebug.payload as any).lineaProducto },
+              { label: 'Tipo Producto', value: (iaFaseDebug.payload as any).tipoProducto },
+              { label: 'No. Solicitud', value: (iaFaseDebug.payload as any).noSol },
+            ].map(({ label, value }) => (
+              <div key={label} className={`px-3 py-1.5 bg-white ${!value ? 'bg-red-50' : ''}`}>
+                <div className="text-[9px] text-gray-400 uppercase tracking-wide">{label}</div>
+                <div className={`font-semibold truncate ${value ? 'text-gray-800' : 'text-red-500 italic'}`}>
+                  {value || 'vacío'}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-3 divide-x divide-violet-100 bg-white">
+            {/* Columna 1: Prompt */}
+            <div className="p-3">
+              <div className="text-[10px] font-semibold text-violet-700 uppercase tracking-wider mb-1.5">
+                Prompt IA de Fase
+                <span className={`ml-2 px-1.5 py-0.5 rounded text-[9px] font-bold ${iaFaseDebug.promptIA ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
+                  {iaFaseDebug.promptIA ? 'CONFIGURADO' : 'NO CONFIGURADO'}
+                </span>
+              </div>
+              {iaFaseDebug.promptIA ? (
+                <p className="text-[10px] text-gray-600 leading-relaxed font-mono bg-violet-50 rounded p-2 max-h-28 overflow-auto">
+                  {iaFaseDebug.promptIA}
+                </p>
+              ) : (
+                <p className="text-[10px] text-red-500 italic">
+                  Sin promptIA en el subtab Fases del producto. Configúralo para habilitar esta validación.
+                </p>
+              )}
+            </div>
+
+            {/* Columna 2: Documentos en contexto */}
+            <div className="p-3">
+              <div className="text-[10px] font-semibold text-violet-700 uppercase tracking-wider mb-1.5">
+                Documentos enviados al contexto
+                <span className={`ml-2 px-1.5 py-0.5 rounded text-[9px] font-bold ${iaFaseDebug.docsEnContexto > 0 ? 'bg-blue-100 text-blue-700' : 'bg-orange-100 text-orange-700'}`}>
+                  {iaFaseDebug.docsEnContexto} docs
+                </span>
+              </div>
+              {(iaFaseDebug.payload as any).documentos?.length > 0 ? (
+                <ul className="space-y-1 max-h-28 overflow-auto">
+                  {(iaFaseDebug.payload as any).documentos.map((d: any, i: number) => (
+                    <li key={i} className="flex items-center gap-1.5">
+                      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${d.validadoIA ? 'bg-emerald-500' : 'bg-amber-400'}`} />
+                      <span className="text-[10px] text-gray-700 truncate">{d.tipoDocumento}</span>
+                      <span className={`text-[9px] shrink-0 ${d.estatus === 'Validado' ? 'text-emerald-600' : d.estatus === 'Rechazado' ? 'text-red-600' : 'text-amber-600'}`}>
+                        {d.estatus}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-[10px] text-orange-500 italic">
+                  0 documentos en contexto. Verifica que los docs tengan faseId correcto (≤ fase actual).
+                </p>
+              )}
+            </div>
+
+            {/* Columna 3: Resultado IA */}
+            <div className="p-3">
+              <div className="text-[10px] font-semibold text-violet-700 uppercase tracking-wider mb-1.5">Respuesta del Endpoint</div>
+              {iaFaseDebug.status === 'pending' && (
+                <p className="text-[10px] text-blue-500 italic animate-pulse">Esperando respuesta...</p>
+              )}
+              {iaFaseDebug.status === 'ok' && iaFaseDebug.resultado && (
+                <div className="space-y-1.5">
+                  <div className="flex items-center gap-2">
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${iaFaseDebug.resultado.valido ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
+                      {iaFaseDebug.resultado.valido ? '✓ valido: true' : '✗ valido: false'}
+                    </span>
+                    {typeof iaFaseDebug.resultado.confianza === 'number' && (
+                      <span className="text-[10px] text-gray-600 font-semibold">
+                        {Math.round(iaFaseDebug.resultado.confianza * 100)}% confianza
+                      </span>
+                    )}
+                  </div>
+                  {iaFaseDebug.resultado.motivos?.length > 0 && (
+                    <ul className="space-y-0.5 max-h-20 overflow-auto">
+                      {iaFaseDebug.resultado.motivos.map((m: string, i: number) => (
+                        <li key={i} className="text-[10px] text-gray-600 leading-snug">· {m}</li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
+              {iaFaseDebug.status === 'error' && (
+                <div>
+                  <p className="text-[10px] text-red-600 font-semibold mb-1">HTTP {iaFaseDebug.httpStatus}</p>
+                  <p className="text-[10px] text-red-500 font-mono bg-red-50 rounded p-1.5 max-h-20 overflow-auto break-all">
+                    {iaFaseDebug.errorMsg}
+                  </p>
+                </div>
+              )}
+              {iaFaseDebug.status === 'skipped' && (
+                <p className="text-[10px] text-gray-400 italic">{iaFaseDebug.errorMsg}</p>
+              )}
+            </div>
+          </div>
+
+          {/* Footer: endpoint */}
+          <div className="px-4 py-1.5 bg-violet-50 border-t border-violet-100 flex items-center gap-2">
+            <svg width="9" height="9" viewBox="0 0 9 9" fill="none" stroke="#7C3AED" strokeWidth="1.5" strokeLinecap="round"><circle cx="4.5" cy="4.5" r="3.5"/><path d="M4.5 3v2l1 1"/></svg>
+            <span className="text-[10px] text-violet-600 font-mono">
+              POST https://{projectId}.supabase.co/functions/v1/make-server-7e2d13d9/validar-documento-ia
+            </span>
+          </div>
+        </div>
+      )}
 
       <div className="px-6 py-6">
         {/* ═══ DIAGNÓSTICO TEMPORAL — eliminar después de verificar ═══ */}
@@ -1397,11 +1757,11 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
             </div>
             <div>
               <Lbl>Fecha Inicio</Lbl>
-              <input type="text" value={formData.fechaInicio || ''} onChange={e => set('fechaInicio' as any, e.target.value)} disabled={isRO} placeholder="DD/MM/YYYY" className={ic()} />
+              <DatePicker value={formData.fechaInicio || ''} onChange={v => set('fechaInicio', v)} disabled={isRO} placeholder="DD/MM/YYYY" className={ic()} />
             </div>
             <div>
               <Lbl>Fecha Fin</Lbl>
-              <input type="text" value={formData.fechaFin || ''} onChange={e => set('fechaFin' as any, e.target.value)} disabled={isRO} placeholder="DD/MM/YYYY" className={ic()} />
+              <DatePicker value={formData.fechaFin || ''} onChange={v => set('fechaFin', v)} disabled={isRO} placeholder="DD/MM/YYYY" className={ic()} />
             </div>
           </div>
         </div>
@@ -1491,15 +1851,32 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
                           {currentFase?.notes || '—'}
                         </div>
                       </div>
+
+                      {/* Prompt IA */}
+                      {(currentFase?.promptIA || formData.promptIAFase) && (
+                        <div className="mt-3">
+                          <label className="text-[10px] font-medium text-gray-500 uppercase">Prompt IA</label>
+                          <div className="mt-1 px-3 py-2 bg-white border border-blue-200 rounded text-sm text-gray-600 whitespace-pre-wrap leading-relaxed">
+                            {currentFase?.promptIA || formData.promptIAFase}
+                          </div>
+                        </div>
+                      )}
                     </div>
 
                     {/* ── Botones de Fase ── */}
                     <FaseActionsComponent
+                      fases={fasesDelProducto}
+                      faseActualId={formData.faseId || '1'}
                       formData={formData}
-                      currentFaseNombre={currentFase?.fase || formData.descripcionFase}
                       storageId={storageId}
                       modo={modo}
                       onEnviarFase={handleEnviarFase}
+                      onRegresarFase={handleRegresarFase}
+                      onGenerarSolicitud={handleGenerarSolicitud}
+                      onFormalizarContrato={handleFormalizarContrato}
+                      onSolicitudActivacion={handleSolicitudActivacion}
+                      onActivarCuenta={handleActivarCuenta}
+                      canActivarCuenta={canActivarCuenta}
                       enviandoFase={enviandoFase}
                     />
 
@@ -1582,6 +1959,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
           seed={{
             cliente: [formData.nombrePersona, formData.apellidoPaternoPersona, formData.apellidoMaternoPersona]
               .filter(Boolean).join(' ').trim(),
+            clienteId: formData._clienteId || '',
             lineaProducto: formData.lineaProducto || '',
             montoTransaccion: formData.montoSolicitado || '0',
             moneda: (loadFromSession<any>(storageId, 'terminos') || loadFromSavedStore<any>(storageId, 'terminos') || {}).moneda || 'MXN',

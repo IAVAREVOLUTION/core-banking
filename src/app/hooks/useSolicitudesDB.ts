@@ -231,7 +231,7 @@ function formToDBPayload(form: SolicitudFormData, allSubtabs?: Record<string, an
     linea_produc: form.lineaProducto || 'Crédito',
     tipo_produc: form.tipoProducto || '',
     producto_id: safeUuid(form.productoId),
-    cliente_id: null as string | null, // Will be resolved by RPC/edge function
+    cliente_id: safeUuid((form as any)._clienteId) || null, // UUID explícito si viene del módulo Clientes
     monto_sol: isNaN(montoSolNum) ? 0 : montoSolNum,
     monto_aut: isNaN(montoAutNum) ? 0 : montoAutNum,
     estatus_sol: form.estatusSolicitud || 'Pendiente',
@@ -274,6 +274,8 @@ function formToDBPayload(form: SolicitudFormData, allSubtabs?: Record<string, an
             frecuencia: terminos.frecuencia || '',
             fechaPrimerPago: terminos.fechaPrimerPago || '',
             fechaPrimeraAportacion: terminos.fechaPrimeraAportacion || '',
+            fechaInicio: (terminos as any).fechaInicio || terminos.fechaPrimerPago || '',
+            fechaFin: (terminos as any).fechaFin || '',
             tipoTasa: terminos.tipoTasa || '',
             tipoCalculo: terminos.tipoCalculo || '',
             moneda: terminos.moneda || '',

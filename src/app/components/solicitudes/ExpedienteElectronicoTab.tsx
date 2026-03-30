@@ -24,6 +24,7 @@ import {
   saveToSession, loadFromSession, loadFromSavedStore, generateId,
   MOCK_REQUISITOS_PRODUCTO, MOCK_DOCUMENTOS,
 } from './solicitudCreditoStore';
+import { AgregarDocumentoModal } from '../originacion/AgregarDocumentoModal';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-7e2d13d9`;
 const LOG = '[ExpedienteTab]';
@@ -426,12 +427,76 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
   const [previewDocId, setPreviewDocId] = useState<number | null>(null);
   const [uploading, setUploading] = useState(false);
   const [iaResultModal, setIaResultModal] = useState<{ docId: number; result: any } | null>(null);
+  const [showIADebug, setShowIADebug] = useState(false);
+  const [showAgregarModal, setShowAgregarModal] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const isRO = mode === 'ver';
 
-  // ── Persist documentos en sessionStorage ──
+  // ── Persist documentos en sessionStorage (caché local) ──
   useEffect(() => {
     if (!isRO) saveToSession(solicitudId, 'documentos', documentos);
+  }, [documentos, solicitudId, isRO]);
+
+  // ── Guardar documentos en BD cada vez que cambian (debounce 800ms) ──
+  useEffect(() => {
+    if (isRO) return;
+    // Solo guardar si es una solicitud persistida (UUID)
+    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const dbId = String(solicitudId);
+    if (!UUID_RE.test(dbId)) return;
+
+    const timer = setTimeout(async () => {
+      const payload = {
+        data: {
+          solicitud: {
+            expediente_electronico: {
+              documentos: documentos.map(doc => ({
+                id: doc.id || null,
+                fecha_creacion: doc.fecha || null,
+                usuario: doc.usuario || null,
+                tipo_documento: doc.tipoDocumento || null,
+                archivo_adjunto: doc.archivo || null,
+                tipo_archivo: doc.tipoArchivo || null,
+                nota: doc.nota || null,
+                area: doc.area || null,
+                fase: doc.fase || null,
+                fase_id: doc.faseId || null,
+                validado_ia: doc.validadoIA ?? null,
+                estatus: doc.estatus || null,
+                url: (doc as any).url || null,
+                storage_path: (doc as any).storagePath || null,
+                storage_bucket: (doc as any).storageBucket || null,
+                mime: (doc as any).mime || null,
+                tamano_kb: (doc as any).tamanoKB || null,
+                ia_motivos: (doc as any).iaMotivos || null,
+                ia_extraido: (doc as any).iaExtraido || null,
+              })),
+            },
+          },
+        },
+      };
+
+      try {
+        const res = await fetch(`${API_BASE}/solicitudes-credito/${dbId}`, {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${publicAnonKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(payload),
+        });
+        if (res.ok) {
+          console.log(`${LOG} Expediente guardado en BD (${documentos.length} docs)`);
+        } else {
+          const err = await res.json().catch(() => ({}));
+          console.warn(`${LOG} Error guardando expediente en BD:`, err);
+        }
+      } catch (err) {
+        console.warn(`${LOG} Excepción guardando expediente en BD:`, err);
+      }
+    }, 800);
+
+    return () => clearTimeout(timer);
   }, [documentos, solicitudId, isRO]);
 
   // ══════════════════════════════════════════════════════════════════
@@ -1230,7 +1295,6 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
 
       {/* ═══ SECCION 2 — Documentos Cargados por el Usuario ═══ */}
       <div className="p-5">
-        {/* ── Header con contador y botón ── */}
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2">
@@ -1252,114 +1316,38 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
               </span>
             )}
           </div>
-          {!isRO && (
+          <div className="flex items-center gap-2">
             <button
-              onClick={() => setShowForm(!showForm)}
-              className={`px-3.5 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all duration-200 shadow-sm ${
-                showForm
-                  ? 'bg-gray-100 text-gray-600 border border-gray-300 hover:bg-gray-200'
-                  : 'btn-secondary-theme hover:shadow-md'
+              onClick={() => setShowIADebug(v => !v)}
+              title="Panel de debug de validación IA"
+              className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-medium border transition-all duration-200 ${
+                showIADebug
+                  ? 'bg-violet-600 text-white border-violet-700 shadow-sm'
+                  : 'bg-violet-50 text-violet-700 border-violet-200 hover:bg-violet-100'
               }`}
             >
-              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"
-                className={`transition-transform duration-200 ${showForm ? 'rotate-45' : ''}`}>
-                <path d="M6 1v10M1 6h10" />
+              <svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                <circle cx="5.5" cy="3.5" r="2.5" />
+                <path d="M1 10c0-2.5 2-4 4.5-4s4.5 1.5 4.5 4" />
+                <path d="M7 2l1.5-1M4 2L2.5 1" />
               </svg>
-              {showForm ? 'Cerrar' : 'Agregar Documento'}
+              Debug IA
             </button>
-          )}
+            {!isRO && (
+              <button
+                onClick={() => setShowAgregarModal(true)}
+                className="px-3.5 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all duration-200 shadow-sm bg-[#4A6FA5] text-white hover:bg-[#3A5A8A]"
+              >
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                  <path d="M6 1v10M1 6h10" />
+                </svg>
+                Agregar Documento
+              </button>
+            )}
+          </div>
         </div>
 
-        {/* ── Formulario de carga (expandible) ── */}
-        {showForm && !isRO && (
-          <div className="bg-gradient-to-b from-slate-50 to-white border border-slate-200 rounded-xl p-5 mb-5 shadow-sm">
-            <div className="flex items-center gap-2 mb-4">
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="#4A6FA5" strokeWidth="1.5" strokeLinecap="round">
-                <path d="M7 1v8M4 6l3 3 3-3" />
-                <path d="M1 10v2a1 1 0 001 1h10a1 1 0 001-1v-2" />
-              </svg>
-              <span className="text-xs font-semibold text-gray-700">Nuevo Documento</span>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-              <div>
-                <label className="block text-[11px] font-medium text-gray-600 mb-1.5">
-                  Tipo de Documento <span className="text-red-400">*</span>
-                </label>
-                <select
-                  value={newDoc.tipoDocumento || ''}
-                  onChange={e => setNewDoc(prev => ({ ...prev, tipoDocumento: e.target.value }))}
-                  className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg bg-white focus:ring-2 focus:ring-[#4A6FA5]/30 focus:border-[#4A6FA5] transition-colors"
-                >
-                  <option value="">Seleccionar tipo...</option>
-                  {requisitosFaseActual.map(req => (
-                    <option key={req.id} value={req.tipoDocumento}>{req.tipoDocumento}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-[11px] font-medium text-gray-600 mb-1.5">
-                  Archivo <span className="text-red-400">*</span>
-                </label>
-                <div
-                  onClick={handleFileSelect}
-                  className="flex items-center gap-2 px-3 py-2 text-xs border border-dashed border-gray-300 rounded-lg bg-gray-50 cursor-pointer hover:border-[#4A6FA5] hover:bg-blue-50/30 transition-colors group"
-                >
-                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="#9CA3AF" strokeWidth="1.5" className="shrink-0 group-hover:stroke-[#4A6FA5] transition-colors">
-                    <path d="M7 1v8M4 6l3 3 3-3" strokeLinecap="round" strokeLinejoin="round" />
-                    <path d="M1 10v2a1 1 0 001 1h10a1 1 0 001-1v-2" strokeLinecap="round" />
-                  </svg>
-                  <span className={`truncate ${newDoc.archivo ? 'text-gray-700' : 'text-gray-400'}`}>
-                    {newDoc.archivo || 'Clic para seleccionar archivo...'}
-                  </span>
-                </div>
-                <input
-                  type="file"
-                  ref={fileInputRef}
-                  onChange={handleFileChange}
-                  className="hidden"
-                />
-              </div>
-              <div>
-                <label className="block text-[11px] font-medium text-gray-600 mb-1.5">Nota <span className="text-gray-300">(opcional)</span></label>
-                <input
-                  type="text"
-                  value={newDoc.nota || ''}
-                  onChange={e => setNewDoc(prev => ({ ...prev, nota: e.target.value }))}
-                  placeholder="Agregar observaciones..."
-                  className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg bg-white focus:ring-2 focus:ring-[#4A6FA5]/30 focus:border-[#4A6FA5] transition-colors"
-                />
-              </div>
-            </div>
-            <div className="flex items-center gap-2 pt-3 border-t border-gray-100">
-              <button
-                onClick={handleAddDoc}
-                disabled={uploading}
-                className="px-5 py-2 btn-secondary-theme rounded-lg text-xs font-medium flex items-center gap-2 disabled:opacity-60 shadow-sm hover:shadow-md transition-all"
-              >
-                {uploading ? (
-                  <svg className="animate-spin h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                    <circle cx="12" cy="12" r="10" strokeOpacity="0.25" />
-                    <path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round" />
-                  </svg>
-                ) : (
-                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-                    <path d="M7 1v8M4 6l3 3 3-3" />
-                    <path d="M1 10v2a1 1 0 001 1h10a1 1 0 001-1v-2" />
-                  </svg>
-                )}
-                {uploading ? 'Subiendo archivo...' : 'Cargar Documento'}
-              </button>
-              <button
-                onClick={() => { setShowForm(false); setNewDoc({}); setSelectedFile(null); }}
-                className="px-4 py-2 bg-white border border-gray-200 text-gray-500 rounded-lg text-xs hover:bg-gray-50 hover:text-gray-700 transition-colors"
-              >
-                Cancelar
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Tabla de documentos cargados */}
+        {/* ── Tabla de documentos cargados ── */}
         {documentosFiltrados.length === 0 ? (
           <div className="text-center py-12 border border-dashed border-gray-200 rounded-xl bg-gradient-to-b from-gray-50/50 to-white">
             <div className="w-14 h-14 mx-auto mb-3 rounded-2xl bg-gray-100 flex items-center justify-center">
@@ -1385,20 +1373,14 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
                     <th className="px-3 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Archivo</th>
                     <th className="px-3 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Formato</th>
                     <th className="px-3 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Nota</th>
-                    <th className="px-3 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Area</th>
                     <th className="px-3 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Fase</th>
-                    <th className="px-3 py-2.5 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider">IA</th>
                     <th className="px-3 py-2.5 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Estatus</th>
                     <th className="px-3 py-2.5 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Acciones</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
                   {documentosFiltrados.map((doc, idx) => (
-                    <tr
-                      key={doc.id}
-                      className="hover:bg-blue-50/40 transition-colors duration-150"
-                      style={{ backgroundColor: idx % 2 === 1 ? '#FAFBFC' : '#FFFFFF' }}
-                    >
+                    <tr key={doc.id} className="hover:bg-blue-50/40 transition-colors" style={{ backgroundColor: idx % 2 === 1 ? '#FAFBFC' : '#FFFFFF' }}>
                       <td className="px-3 py-2 text-gray-500 whitespace-nowrap">
                         <span className="font-mono text-[11px]">{doc.fecha}</span>
                       </td>
@@ -1407,11 +1389,7 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
                         <span className="font-medium text-gray-800">{doc.tipoDocumento}</span>
                       </td>
                       <td className="px-3 py-2">
-                        <button
-                          onClick={() => handlePreview(doc.id)}
-                          className="inline-flex items-center gap-1 text-[#4A6FA5] hover:text-[#3A5A8A] font-medium cursor-pointer text-left group"
-                          title="Clic para previsualizar"
-                        >
+                        <button onClick={() => handlePreview(doc.id)} className="inline-flex items-center gap-1 text-[#4A6FA5] hover:text-[#3A5A8A] font-medium cursor-pointer text-left group">
                           <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" className="shrink-0 opacity-60 group-hover:opacity-100 transition-opacity">
                             <path d="M1 6s2-4 5-4 5 4 5 4-2 4-5 4-5-4-5-4z" />
                             <circle cx="6" cy="6" r="1.5" />
@@ -1427,99 +1405,49 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
                       <td className="px-3 py-2 text-gray-500 max-w-[130px] truncate" title={doc.nota}>
                         {doc.nota || <span className="text-gray-300 italic">--</span>}
                       </td>
-                      <td className="px-3 py-2 text-gray-600">{doc.area}</td>
                       <td className="px-3 py-2 text-gray-600">{doc.fase}</td>
                       <td className="px-3 py-2 text-center">
                         {doc.validadoIA ? (
-                          <button
-                            onClick={() => handleVerResultadoIA(doc)}
-                            className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-green-50 text-green-600 hover:bg-green-100 cursor-pointer transition-colors"
-                            title="Clic para ver resultado de validación IA"
-                          >
-                            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M2.5 6l2.5 2.5 4.5-4.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
-                          </button>
-                        ) : (
-                          <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-gray-50 text-gray-300">
-                            <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M2 5h6" strokeLinecap="round" /></svg>
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-3 py-2 text-center">
-                        {doc.validadoIA ? (
-                          <button
-                            onClick={() => handleVerResultadoIA(doc)}
-                            className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-semibold border cursor-pointer hover:shadow-sm transition-all ${
-                              doc.estatus === 'Validado' ? 'text-emerald-700 bg-emerald-50 border-emerald-200 hover:bg-emerald-100' :
-                              doc.estatus === 'Rechazado' ? 'text-red-700 bg-red-50 border-red-200 hover:bg-red-100' :
-                              'text-amber-700 bg-amber-50 border-amber-200 hover:bg-amber-100'
-                            }`}
-                            title="Clic para ver resultado de validación IA"
-                          >
-                            <span className={`w-1.5 h-1.5 rounded-full ${
-                              doc.estatus === 'Validado' ? 'bg-emerald-500' :
-                              doc.estatus === 'Rechazado' ? 'bg-red-500' :
-                              'bg-amber-500'
-                            }`} />
+                          <button onClick={() => handleVerResultadoIA(doc)} className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-semibold border cursor-pointer hover:shadow-sm transition-all ${
+                            doc.estatus === 'Validado' ? 'text-emerald-700 bg-emerald-50 border-emerald-200 hover:bg-emerald-100' :
+                            doc.estatus === 'Rechazado' ? 'text-red-700 bg-red-50 border-red-200 hover:bg-red-100' :
+                            'text-amber-700 bg-amber-50 border-amber-200 hover:bg-amber-100'
+                          }`}>
+                            <span className={`w-1.5 h-1.5 rounded-full ${doc.estatus === 'Validado' ? 'bg-emerald-500' : doc.estatus === 'Rechazado' ? 'bg-red-500' : 'bg-amber-500'}`} />
                             {doc.estatus}
                           </button>
                         ) : (
                           <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-medium border text-amber-600 bg-amber-50/60 border-amber-200/60">
                             <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
-                            {doc.estatus}
+                            Pendiente
                           </span>
                         )}
                       </td>
                       <td className="px-3 py-2 text-center">
                         <div className="flex items-center justify-center gap-1">
                           {doc.validadoIA && (
-                            <button
-                              onClick={() => handleVerResultadoIA(doc)}
-                              className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium text-purple-700 bg-purple-50 hover:bg-purple-100 border border-purple-200/60 transition-colors"
-                              title="Ver resultado de validación IA"
-                            >
+                            <button onClick={() => handleVerResultadoIA(doc)} className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium text-purple-700 bg-purple-50 hover:bg-purple-100 border border-purple-200/60 transition-colors">
                               <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="1" y="1" width="8" height="8" rx="1" /><path d="M3 4h4M3 6h2" /></svg>
                               Resultado
                             </button>
                           )}
                           {!doc.validadoIA && !isRO && (
-                            <button
-                              onClick={() => handleValidarIA(doc.id)}
-                              disabled={validatingId === doc.id}
+                            <button onClick={() => handleValidarIA(doc.id)} disabled={validatingId === doc.id}
                               className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium border transition-all ${
-                                validatingId === doc.id
-                                  ? 'text-blue-400 bg-blue-50 border-blue-200/60 cursor-wait'
-                                  : 'text-blue-700 bg-blue-50 hover:bg-blue-100 border-blue-200/60 hover:shadow-sm'
-                              }`}
-                              title="Validar con IA"
-                            >
+                                validatingId === doc.id ? 'text-blue-400 bg-blue-50 border-blue-200/60 cursor-wait' : 'text-blue-700 bg-blue-50 hover:bg-blue-100 border-blue-200/60 hover:shadow-sm'
+                              }`}>
                               {validatingId === doc.id ? (
-                                <svg className="animate-spin h-2.5 w-2.5" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2">
-                                  <circle cx="6" cy="6" r="5" strokeOpacity="0.25" />
-                                  <path d="M6 1a5 5 0 0 1 5 5" strokeLinecap="round" />
-                                </svg>
+                                <svg className="animate-spin h-2.5 w-2.5" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="6" cy="6" r="5" strokeOpacity="0.25" /><path d="M6 1a5 5 0 0 1 5 5" strokeLinecap="round" /></svg>
                               ) : (
-                                <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.3">
-                                  <circle cx="5" cy="3.5" r="2.5" />
-                                  <path d="M1 9c0-2 1.8-3.5 4-3.5s4 1.5 4 3.5" strokeLinecap="round" />
-                                  <path d="M7 2.5l1.5-1M3 2.5L1.5 1.5" strokeLinecap="round" />
-                                </svg>
+                                <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.3"><circle cx="5" cy="3.5" r="2.5" /><path d="M1 9c0-2 1.8-3.5 4-3.5s4 1.5 4 3.5" strokeLinecap="round" /><path d="M7 2.5l1.5-1M3 2.5L1.5 1.5" strokeLinecap="round" /></svg>
                               )}
                               {validatingId === doc.id ? 'Validando...' : 'Validar IA'}
                             </button>
                           )}
                           {!isRO && (
-                            <button
-                              onClick={() => handleEliminar(doc.id)}
-                              className="inline-flex items-center justify-center w-6 h-6 rounded-md text-gray-400 hover:text-red-600 hover:bg-red-50 border border-transparent hover:border-red-200 transition-colors"
-                              title="Eliminar documento"
-                            >
-                              <svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-                                <path d="M1.5 3h8M4 3V1.5h3V3M3 3v6.5a1 1 0 001 1h3a1 1 0 001-1V3" />
-                              </svg>
+                            <button onClick={() => handleEliminar(doc.id)} className="inline-flex items-center justify-center w-6 h-6 rounded-md text-gray-400 hover:text-red-600 hover:bg-red-50 border border-transparent hover:border-red-200 transition-colors">
+                              <svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M1.5 3h8M4 3V1.5h3V3M3 3v6.5a1 1 0 001 1h3a1 1 0 001-1V3" /></svg>
                             </button>
-                          )}
-                          {isRO && !doc.validadoIA && (
-                            <span className="text-gray-300 text-[10px] italic">Pendiente</span>
                           )}
                         </div>
                       </td>
@@ -1528,247 +1456,26 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
                 </tbody>
               </table>
             </div>
-            {/* Mini-footer de tabla */}
             <div className="px-3 py-2 bg-gray-50/80 border-t border-gray-100 flex items-center justify-between">
-              <span className="text-[10px] text-gray-400">
-                {documentosFiltrados.length} documento{documentosFiltrados.length !== 1 ? 's' : ''} cargado{documentosFiltrados.length !== 1 ? 's' : ''}
-              </span>
-              <span className="text-[10px] text-gray-400">
-                {documentosFiltrados.filter(d => d.validadoIA).length} validado{documentosFiltrados.filter(d => d.validadoIA).length !== 1 ? 's' : ''} por IA
-              </span>
+              <span className="text-[10px] text-gray-400">{documentosFiltrados.length} documento{documentosFiltrados.length !== 1 ? 's' : ''} cargado{documentosFiltrados.length !== 1 ? 's' : ''}</span>
+              <span className="text-[10px] text-gray-400">{documentosFiltrados.filter(d => d.validadoIA).length} validado{documentosFiltrados.filter(d => d.validadoIA).length !== 1 ? 's' : ''} por IA</span>
             </div>
           </div>
         )}
-
-        {/* ═══ Modal de previsualización ═══ */}
-        {previewDocId !== null && (() => {
-          const doc = documentosFiltrados.find(d => d.id === previewDocId);
-          const localDataUrl = (fileDataUrls as any)[previewDocId];
-          // Prioridad: data URL local > doc.url (Storage/blob)
-          const previewUrl = localDataUrl || doc?.url || '';
-          const isImage = localDataUrl?.startsWith('data:image/') || doc?.mime?.startsWith('image/');
-          const isPdf = localDataUrl?.startsWith('data:application/pdf') || doc?.mime === 'application/pdf';
-          if (!doc) return null;
-          return (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setPreviewDocId(null)}>
-              <div className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full max-h-[85vh] overflow-hidden border border-gray-200/50" onClick={e => e.stopPropagation()}>
-                <div className="flex items-center justify-between px-5 py-3.5 border-b border-gray-100 bg-gradient-to-r from-slate-50 to-white">
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-lg bg-blue-50 flex items-center justify-center border border-blue-100">
-                      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#4A6FA5" strokeWidth="1.5">
-                        <path d="M4 1h6l4 4v8a2 2 0 01-2 2H4a2 2 0 01-2-2V3a2 2 0 012-2z" />
-                        <path d="M10 1v4h4" />
-                      </svg>
-                    </div>
-                    <div>
-                      <h5 className="text-sm font-semibold text-gray-800">{doc.archivo}</h5>
-                      <div className="flex items-center gap-1.5 mt-0.5">
-                        <span className="text-[10px] text-gray-400">{doc.tipoDocumento}</span>
-                        <span className="w-1 h-1 rounded-full bg-gray-300" />
-                        <span className="text-[10px] text-gray-400">{doc.tipoArchivo}</span>
-                        <span className="w-1 h-1 rounded-full bg-gray-300" />
-                        <span className="text-[10px] text-gray-400">{doc.fecha}</span>
-                        {doc.tamanoKB && <>
-                          <span className="w-1 h-1 rounded-full bg-gray-300" />
-                          <span className="text-[10px] text-gray-400">{doc.tamanoKB} KB</span>
-                        </>}
-                      </div>
-                    </div>
-                  </div>
-                  <button onClick={() => setPreviewDocId(null)} className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors">
-                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                      <path d="M4 4l8 8M12 4l-8 8" />
-                    </svg>
-                  </button>
-                </div>
-                <div className="p-6 overflow-auto max-h-[70vh] flex items-center justify-center bg-gray-50/50">
-                  {previewUrl ? (
-                    isImage ? (
-                      <img src={previewUrl} alt={doc.archivo} className="max-w-full max-h-[60vh] object-contain rounded-lg shadow-sm" />
-                    ) : isPdf ? (
-                      <iframe src={previewUrl} className="w-full h-[60vh] rounded-lg border border-gray-200 shadow-sm" title={doc.archivo} />
-                    ) : (
-                      <div className="text-center py-10">
-                        <svg className="mx-auto mb-3" width="48" height="48" viewBox="0 0 48 48" fill="none" stroke="#9CA3AF" strokeWidth="1.5">
-                          <path d="M12 6h16l8 8v24a4 4 0 01-4 4H12a4 4 0 01-4-4V10a4 4 0 014-4z" />
-                          <path d="M28 6v8h8" />
-                        </svg>
-                        <p className="text-xs text-gray-500 mb-2">Vista previa no disponible para este tipo de archivo ({doc.tipoArchivo})</p>
-                        <a href={previewUrl} download={doc.archivo} className="text-xs text-blue-600 hover:underline">Descargar archivo</a>
-                      </div>
-                    )
-                  ) : doc.storagePath ? (
-                    <div className="text-center py-10">
-                      <svg className="mx-auto mb-3" width="48" height="48" viewBox="0 0 48 48" fill="none" stroke="#9CA3AF" strokeWidth="1.5">
-                        <path d="M12 6h16l8 8v24a4 4 0 01-4 4H12a4 4 0 01-4-4V10a4 4 0 014-4z" />
-                        <path d="M28 6v8h8" />
-                      </svg>
-                      <p className="text-xs text-gray-500 mb-2">La URL firmada expiró. Regenerando...</p>
-                      <button
-                        onClick={async () => {
-                          const newUrl = await refreshSignedUrl(doc.storagePath!);
-                          if (newUrl) {
-                            setDocumentos(prev => prev.map(d => d.id === doc.id ? { ...d, url: newUrl } : d));
-                            toast.success('URL regenerada');
-                          } else {
-                            toast.error('No se pudo regenerar la URL');
-                          }
-                        }}
-                        className="text-xs text-blue-600 hover:underline"
-                      >
-                        Regenerar URL firmada
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="text-center py-10">
-                      <svg className="mx-auto mb-3" width="48" height="48" viewBox="0 0 48 48" fill="none" stroke="#9CA3AF" strokeWidth="1.5">
-                        <path d="M12 6h16l8 8v24a4 4 0 01-4 4H12a4 4 0 01-4-4V10a4 4 0 014-4z" />
-                        <path d="M28 6v8h8" />
-                      </svg>
-                      <p className="text-xs text-gray-500">El archivo fue cargado en una sesión anterior y no está disponible para previsualización.</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          );
-        })()}
-
-        {/* ═══ Modal de resultado de validación IA ═══ */}
-        {iaResultModal && (() => {
-          const doc = documentos.find(d => d.id === iaResultModal.docId);
-          const r = iaResultModal.result;
-          const esValido = r.valido === true;
-          const confianza = typeof r.confianza === 'number' ? Math.round(r.confianza * 100) : null;
-          return (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setIaResultModal(null)}>
-              <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full max-h-[80vh] overflow-hidden border border-gray-200/50" onClick={e => e.stopPropagation()}>
-                {/* Header */}
-                <div className={`flex items-center justify-between px-5 py-4 border-b ${esValido ? 'bg-gradient-to-r from-emerald-50 to-green-50/50 border-emerald-100' : 'bg-gradient-to-r from-red-50 to-rose-50/50 border-red-100'}`}>
-                  <div className="flex items-center gap-3">
-                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${esValido ? 'bg-emerald-100' : 'bg-red-100'}`}>
-                      {esValido ? (
-                        <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="#059669" strokeWidth="2.5"><path d="M4 10l4 4 8-8" strokeLinecap="round" strokeLinejoin="round" /></svg>
-                      ) : (
-                        <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="#DC2626" strokeWidth="2.5"><path d="M5 5l10 10M15 5l-10 10" strokeLinecap="round" /></svg>
-                      )}
-                    </div>
-                    <div>
-                      <h5 className={`text-sm font-bold ${esValido ? 'text-emerald-800' : 'text-red-800'}`}>
-                        {esValido ? 'Documento VALIDADO' : 'Documento RECHAZADO'}
-                      </h5>
-                      {confianza !== null && (
-                        <div className="flex items-center gap-2 mt-1">
-                          <div className="w-16 h-1.5 rounded-full bg-gray-200 overflow-hidden">
-                            <div
-                              className={`h-full rounded-full transition-all ${
-                                confianza >= 80 ? 'bg-emerald-500' :
-                                confianza >= 50 ? 'bg-amber-500' : 'bg-red-500'
-                              }`}
-                              style={{ width: `${confianza}%` }}
-                            />
-                          </div>
-                          <span className={`text-[10px] font-bold ${
-                            confianza >= 80 ? 'text-emerald-600' :
-                            confianza >= 50 ? 'text-amber-600' : 'text-red-600'
-                          }`}>
-                            {confianza}%
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  <button onClick={() => setIaResultModal(null)} className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-white/60 transition-colors">
-                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M3 3l8 8M11 3l-8 8" /></svg>
-                  </button>
-                </div>
-
-                <div className="p-5 overflow-auto max-h-[60vh] space-y-4">
-                  {/* Info del documento */}
-                  <div className="bg-slate-50 rounded-xl p-4 text-xs space-y-2 border border-slate-100">
-                    <div className="flex items-center justify-between">
-                      <span className="text-gray-400 font-medium">Documento</span>
-                      <span className="font-semibold text-gray-800">{doc?.tipoDocumento || r.tipoDocumento}</span>
-                    </div>
-                    <div className="flex items-center justify-between border-t border-slate-100 pt-2">
-                      <span className="text-gray-400 font-medium">Archivo</span>
-                      <span className="text-gray-600">{doc?.archivo}</span>
-                    </div>
-                    <div className="flex items-center justify-between border-t border-slate-100 pt-2">
-                      <span className="text-gray-400 font-medium">Modelo IA</span>
-                      <span className="text-gray-600 font-mono text-[11px]">{r.modelo || 'Llama 3.2 Vision'}</span>
-                    </div>
-                    {r.timestamp && (
-                      <div className="flex items-center justify-between border-t border-slate-100 pt-2">
-                        <span className="text-gray-400 font-medium">Procesado</span>
-                        <span className="text-gray-600">{new Date(r.timestamp).toLocaleString('es-MX')}</span>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Motivos */}
-                  {Array.isArray(r.motivos) && r.motivos.length > 0 && (
-                    <div>
-                      <h6 className="text-[11px] font-bold text-gray-600 uppercase tracking-wider mb-2.5">Motivos de la decisión</h6>
-                      <div className="space-y-2">
-                        {r.motivos.map((m: string, i: number) => (
-                          <div key={i} className={`flex items-start gap-2.5 p-2.5 rounded-lg ${esValido ? 'bg-emerald-50/60' : 'bg-red-50/60'}`}>
-                            <span className={`mt-0.5 shrink-0 w-5 h-5 flex items-center justify-center rounded-md text-[10px] font-bold ${
-                              esValido ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'
-                            }`}>
-                              {i + 1}
-                            </span>
-                            <span className="text-xs text-gray-700 leading-relaxed">{m}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Datos extraídos */}
-                  {r.extraido && Object.keys(r.extraido).length > 0 && (
-                    <div>
-                      <h6 className="text-[11px] font-bold text-gray-600 uppercase tracking-wider mb-2.5">Datos extraídos</h6>
-                      <div className="bg-blue-50/60 border border-blue-100 rounded-xl p-3.5">
-                        <div className="space-y-1.5">
-                          {Object.entries(r.extraido).filter(([, v]) => v && v !== '...' && v !== 'N/A').map(([key, val]) => (
-                            <div key={key} className="flex items-baseline justify-between py-1.5 border-b border-blue-100/60 last:border-0">
-                              <span className="text-[11px] text-blue-600 font-medium">{key.replace(/_/g, ' ')}</span>
-                              <span className="text-xs text-gray-800 font-medium ml-4 text-right">{String(val)}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Uso de tokens */}
-                  {r.usage && (
-                    <div className="flex items-center gap-4 pt-2 border-t border-gray-100">
-                      <span className="text-[10px] text-gray-400 flex items-center gap-1">
-                        <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.2"><circle cx="5" cy="5" r="4" /><path d="M5 2.5V5l2 1" /></svg>
-                        Total: {r.usage.total_tokens || '?'}
-                      </span>
-                      <span className="text-[10px] text-gray-400">Prompt: {r.usage.prompt_tokens || '?'}</span>
-                      <span className="text-[10px] text-gray-400">Completion: {r.usage.completion_tokens || '?'}</span>
-                    </div>
-                  )}
-                </div>
-
-                {/* Footer */}
-                <div className="px-5 py-3.5 border-t border-gray-100 bg-gray-50/50 flex justify-end">
-                  <button
-                    onClick={() => setIaResultModal(null)}
-                    className="px-5 py-2 bg-white border border-gray-200 text-gray-600 rounded-lg text-xs font-medium hover:bg-gray-50 hover:border-gray-300 transition-colors shadow-sm"
-                  >
-                    Cerrar
-                  </button>
-                </div>
-              </div>
-            </div>
-          );
-        })()}
       </div>
+
+      <AgregarDocumentoModal
+        isOpen={showAgregarModal}
+        onClose={() => setShowAgregarModal(false)}
+        solicitudId={String(solicitudId)}
+        faseIdActual={faseIdActual}
+        requisitos={requisitos}
+        onAdd={(doc) => {
+          const updated = [...documentos, doc];
+          setDocumentos(updated);
+          saveToSession(solicitudId, 'documentos', updated);
+        }}
+      />
     </div>
   );
 }

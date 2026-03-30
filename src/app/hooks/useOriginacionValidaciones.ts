@@ -58,13 +58,16 @@ export function validarDocumentosFase(
 
   if (reqFase.length === 0) return { valid: true, errors: [] };
 
-  // Docs de la fase actual (por faseId o sin fase)
+  // Docs candidatos: incluye documentos de esta fase y fases anteriores.
+  // Un documento puede haberse subido en una fase distinta a la que lo configuró
+  // como obligatorio (ej: CSF subida en Fase 1 pero requerida en Fase 3).
+  // Se excluyen documentos de fases FUTURAS (faseId > faseSeq).
   // NOTA: faseId puede venir como string "1" o número 1 desde distintas fuentes —
-  // usar Number() para normalizar antes de comparar estrictamente.
+  // usar Number() para normalizar antes de comparar.
   const docsFase = documentosCargados.filter(d => {
     if (d.faseId == null) return true;           // sin faseId → aplica a todas
     const dId = Number(d.faseId);
-    return isNaN(dId) || dId === 0 || dId === faseSeq;
+    return isNaN(dId) || dId === 0 || dId <= faseSeq;
   });
 
   for (const req of reqFase) {
@@ -557,6 +560,19 @@ export function getRequisitosFromRawData(rawData: Record<string, any> | null | u
     'pagaré firmado': 5,
   };
 
+  /**
+   * Documentos que SOLO aplican a Persona Moral.
+   * Se usan como fallback cuando el rawData no tiene campo tipoPersona.
+   */
+  const DOC_SOLO_MORAL = new Set([
+    'acta constitutiva',
+    'poder notarial',
+    'rfc empresa',
+    'registro ante sat (moral)',
+    'estados financieros',
+    'balance general',
+  ]);
+
   /** Intenta inferir faseId por tipo de documento si no tiene faseId explícito */
   function inferFaseId(doc: any, parsedFaseId: number): number {
     // 1. Si tiene faseId/fase_id explícito, usarlo
@@ -576,16 +592,20 @@ export function getRequisitosFromRawData(rawData: Record<string, any> | null | u
     const faseStr = r.fase || 'Fase 1';
     const parsedFaseId = parseFaseId(faseStr);
     const faseId = inferFaseId(r, parsedFaseId);
+    const tipoDoc = (r.tipoDocumento || r.tipo_documento || r.tipo || r.claveDocumento || '').toLowerCase().trim();
+    // Extraer tipoPersona del rawData; si no existe, usar fallback para docs conocidos solo-moral
+    const tipoPersonaRaw = r.tipoPersona || r.tipo_persona || r.aplica_persona || r.aplicaPersona || '';
+    const tipoPersona = tipoPersonaRaw || (DOC_SOLO_MORAL.has(tipoDoc) ? 'Moral' : '');
     return {
       id: r.id ?? (idx + 1),
       fase: faseStr,
       faseId,
-      // tipoDocumento: preferir tipoDocumento/tipo_documento sobre clave, en ese orden
       tipoDocumento: r.tipoDocumento || r.tipo_documento || r.tipo || r.claveDocumento || `Doc-${idx + 1}`,
       descripcion: r.descripcion || '',
       area: r.area || 'General',
       obligatorio: r.obligatorio ?? true,
       promptIA: r.promptIA || r.prompt_ia || '',
+      tipoPersona,
     };
   });
 
@@ -597,6 +617,9 @@ export function getRequisitosFromRawData(rawData: Record<string, any> | null | u
       const faseStr = r.fase || 'Fase 1';
       const parsedFaseId = parseFaseId(faseStr);
       const faseId = inferFaseId(r, parsedFaseId);
+      const tipoDoc = (r.requisitoNombre || r.tipoDocumento || r.tipo_documento || '').toLowerCase().trim();
+      const tipoPersonaRaw = r.tipoPersona || r.tipo_persona || r.aplica_persona || r.aplicaPersona || '';
+      const tipoPersona = tipoPersonaRaw || (DOC_SOLO_MORAL.has(tipoDoc) ? 'Moral' : '');
       return {
         id: r.id ?? (10000 + idx),
         fase: faseStr,
@@ -606,6 +629,7 @@ export function getRequisitosFromRawData(rawData: Record<string, any> | null | u
         area: r.area || 'General',
         obligatorio: r.obligatorio ?? true,
         promptIA: r.promptIA || r.prompt_ia || '',
+        tipoPersona,
       };
     })
     .filter((r: RequisitoProducto) => !seenTypes.has(r.tipoDocumento));
@@ -700,11 +724,13 @@ export function validarDocumentosPorFase(
     if (!r.obligatorio) return false;
 
     // Filtro por tipo de persona
-    const persona = String((r as any).tipoPersona || (r as any).persona || '').toLowerCase();
-    if (!persona || persona.includes('todo') || persona.includes('all') || persona === '') return true;
+    const persona = String(r.tipoPersona || (r as any).persona || '').toLowerCase().trim();
+    if (!persona || persona.includes('todo') || persona.includes('all')) return true;
     const tp = tipoPersona.toLowerCase();
-    if (tp.includes('moral') && !persona.includes('moral')) return false;
-    if (!tp.includes('moral') && persona.includes('moral')) return false;
+    // Si el doc es solo para Moral y el cliente es Física → excluir
+    if (persona.includes('moral') && !tp.includes('moral')) return false;
+    // Si el doc es solo para Física y el cliente es Moral → excluir
+    if ((persona.includes('física') || persona.includes('fisica') || persona.includes('fisic')) && tp.includes('moral')) return false;
     return true;
   });
 
@@ -727,18 +753,20 @@ export function validarDocumentosPorFase(
     };
   }
 
-  // ── PASO 2: Obtener documentos cargados de ESTA fase ──
-  // Filtro ESTRICTO: solo documentos cuyo faseId coincida EXACTAMENTE con la fase actual.
-  // Si el documento no tiene faseId → NO se incluye (pertenece a una fase futura o no asignada).
+  // ── PASO 2: Documentos candidatos para búsqueda ──
+  // Se excluyen documentos de fases FUTURAS (faseId > faseActualSeq) para no
+  // contar adelantados, pero se aceptan documentos de cualquier fase anterior
+  // o sin faseId, ya que un documento puede haberse subido en una fase distinta
+  // a la que lo configuró como obligatorio (ej: CSF subida en Fase 1 pero requerida en Fase 3).
   const docsDeFase = documentosCargados.filter(d => {
-    if (d.faseId == null) return false; // sin faseId → no se valida aquí
+    if (d.faseId == null) return true; // sin faseId → se incluye para búsqueda
     const dId = Number(d.faseId);
-    if (isNaN(dId) || dId === 0) return false; // faseId inválido → no se valida
-    return dId === faseActualSeq; // solo documentos de esta fase exacta
+    if (isNaN(dId) || dId === 0) return true; // faseId inválido → se incluye
+    return dId <= faseActualSeq; // solo documentos de esta fase o anteriores
   });
 
-  console.log(`[validarFase] Documentos de ESTA fase (${faseActualSeq}): ${docsDeFase.length}`, docsDeFase.map(d => d.tipoDocumento));
-  console.log(`[validarFase] Documentos excluidos (otra fase):`, documentosCargados.filter(d => !docsDeFase.includes(d)).map(d => `"${d.tipoDocumento}"→faseId=${d.faseId}`));
+  console.log(`[validarFase] Documentos de ESTA fase o anteriores (${faseActualSeq}): ${docsDeFase.length}`, docsDeFase.map(d => d.tipoDocumento));
+  console.log(`[validarFase] Documentos excluidos (fase futura):`, documentosCargados.filter(d => !docsDeFase.includes(d)).map(d => `"${d.tipoDocumento}"→faseId=${d.faseId}`));
 
   // ── PASO 3: Validar cada documento requerido ──
   for (const req of reqDeFase) {

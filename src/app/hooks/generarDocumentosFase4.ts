@@ -35,6 +35,7 @@ type SolId = number | string;
 // ─────────────────────────────────────────────────────────────────────────────
 // Claves de documentos (clave institucional)
 // ─────────────────────────────────────────────────────────────────────────────
+export const CLAVE_SOLICITUD_BASE   = 'SOLICITUD_BASE';
 export const CLAVE_CONTRATO_BASE    = 'CONTRATO_BASE';
 export const CLAVE_PAGARE_BASE      = 'PAGARE_BASE';
 export const CLAVE_CONTRATO_FIRMADO = 'CONTRATO_FIRMADO';
@@ -168,8 +169,9 @@ function buildPDFDataUrl(titulo: string, campos: Array<[string, string]>): strin
     '/F1 10 Tf',
     '0 -30 Td',
     `(Generado automaticamente por el sistema) Tj`,
+    '0 -14 Td',
     `(${escPS(new Date().toLocaleString('es-MX'))}) Tj`,
-    '0 -24 Td',
+    '0 -20 Td',
   ];
 
   for (const [etiqueta, valor] of campos) {
@@ -249,9 +251,9 @@ export interface DatosSolicitud {
 /** Genera el PDF base del Contrato de Crédito (no firmado). */
 export function generarContratoPDF(datos: DatosSolicitud): string {
   const t = datos.terminos ?? {};
-  const monto = t.montoSolicitado || t.monto || '—';
-  const plazo = t.plazo || t.plazoMeses ? `${t.plazo || t.plazoMeses} meses` : '—';
-  const tasa  = t.tasa  || t.tasaAnual  ? `${t.tasa  || t.tasaAnual}%` : '—';
+  const monto = t.montoSolicitado || t.monto || 'Sin definir';
+  const plazo = t.plazo || t.plazoMeses ? `${t.plazo || t.plazoMeses} meses` : 'Sin definir';
+  const tasa  = t.tasa  || t.tasaAnual  ? `${t.tasa  || t.tasaAnual}%` : 'Sin definir';
   const moneda = t.moneda || 'MXN';
 
   return buildPDFDataUrl('CONTRATO DE CREDITO', [
@@ -279,10 +281,10 @@ export function generarPagePDF(datos: DatosSolicitud): string {
   const t = datos.terminos ?? {};
   const monto   = t.montoSolicitado || t.monto || '0.00';
   const moneda  = t.moneda || 'MXN';
-  const plazo   = t.plazo  || t.plazoMeses || '—';
+  const plazo   = t.plazo  || t.plazoMeses || '';
   const fecha   = new Date().toLocaleDateString('es-MX');
   const meses   = parseInt(String(plazo)) || 0;
-  let fechaVence = '—';
+  let fechaVence = 'Sin definir';
   if (meses > 0) {
     const d = new Date();
     d.setMonth(d.getMonth() + meses);
@@ -532,7 +534,7 @@ export async function autoCrearDocumentosFase4(opts: AutoCrearOpts): Promise<Aut
     }
 
     nuevos.push({
-      id: generateId() + 1,
+      id: generateId(),
       fecha,
       usuario: 'Sistema',
       tipoDocumento: CLAVE_PAGARE_BASE,
@@ -557,7 +559,7 @@ export async function autoCrearDocumentosFase4(opts: AutoCrearOpts): Promise<Aut
   // ── PASO 6: Placeholders Fase 5 ──
   if (!existe(CLAVE_CONTRATO_FIRMADO)) {
     nuevos.push({
-      id: generateId() + 2,
+      id: generateId(),
       fecha,
       usuario: 'Sistema',
       tipoDocumento: CLAVE_CONTRATO_FIRMADO,
@@ -574,7 +576,7 @@ export async function autoCrearDocumentosFase4(opts: AutoCrearOpts): Promise<Aut
 
   if (!existe(CLAVE_PAGARE_FIRMADO)) {
     nuevos.push({
-      id: generateId() + 3,
+      id: generateId(),
       fecha,
       usuario: 'Sistema',
       tipoDocumento: CLAVE_PAGARE_FIRMADO,
@@ -619,6 +621,146 @@ export async function autoCrearDocumentosFase4(opts: AutoCrearOpts): Promise<Aut
     documentosCreados,
     pdfGenerados,
     subidosASupabase,
+    registradosEnExpediente: true,
+    error: undefined,
+    validacionPlantillas,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Fase 2 — Solicitud de Crédito
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Genera el PDF de Solicitud de Crédito. */
+export function generarSolicitudPDF(datos: DatosSolicitud): string {
+  const t = datos.terminos ?? {};
+  const monto  = t.montoSolicitado || t.monto || 'Sin definir';
+  const plazo  = t.plazo || t.plazoMeses ? `${t.plazo || t.plazoMeses} meses` : 'Sin definir';
+  const tasa   = t.tasa  || t.tasaAnual  ? `${t.tasa  || t.tasaAnual}%` : 'Sin definir';
+  const moneda = t.moneda || 'MXN';
+  const fecha  = new Date().toLocaleDateString('es-MX');
+
+  return buildPDFDataUrl('SOLICITUD DE CREDITO', [
+    ['No. Solicitud',   datos.noSol],
+    ['Fecha',           fecha],
+    ['',                ''],
+    ['DATOS DEL SOLICITANTE', ''],
+    ['Cliente',         datos.cliente],
+    ['',                ''],
+    ['DATOS DEL PRODUCTO', ''],
+    ['Linea de Producto', datos.lineaProducto],
+    ['Tipo de Producto', datos.tipoProducto],
+    ['Producto',         datos.productoNombre || datos.tipoProducto],
+    ['',                ''],
+    ['CONDICIONES DEL CREDITO', ''],
+    ['Monto Solicitado', `${moneda} ${monto}`],
+    ['Plazo',           plazo],
+    ['Tasa Anual',      tasa],
+    ['Moneda',          moneda],
+    ['',                ''],
+    ['DECLARACION DEL SOLICITANTE', ''],
+    ['El suscrito manifiesta que los datos proporcionados', ''],
+    ['son verdaderos y autoriza a la institucion a', ''],
+    ['verificar la informacion en los registros correspondientes.', ''],
+    ['',                ''],
+    ['Fecha de solicitud:', fecha],
+  ]);
+}
+
+/**
+ * Crea automáticamente en la Sección 2 del Expediente Electrónico:
+ *   - SOLICITUD_BASE (Fase 2, PDF generado desde plantilla "solicitud")
+ *
+ * Respeta la regla de NO DUPLICAR: si ya existe → no se crea.
+ * Requiere al menos 1 plantilla activa tipo "solicitud".
+ */
+export async function autoCrearDocumentosFase2(opts: AutoCrearOpts): Promise<AutoCrearResult> {
+  const { storageId, datos, plantillas, supabase, projectId: pid } = opts;
+  const fecha = new Date().toLocaleString('es-MX');
+  const labelSolicitud = getTipoPlantillaMeta('solicitud')?.label || 'Solicitud de Crédito';
+
+  // Validar que exista plantilla activa tipo "solicitud"
+  const plantillasActivas = (plantillas || []).filter(p => p.estatus === 'Activo');
+  const plantillaSolicitud = plantillasActivas.find(p => p.tipoPlantilla === 'solicitud');
+
+  const validacionPlantillas: ValidacionPlantillasResult = {
+    valido: !!plantillaSolicitud,
+    motivos: plantillaSolicitud ? [] : [`No se encontró plantilla activa tipo "${labelSolicitud}".`],
+    faltantes: plantillaSolicitud ? [] : [labelSolicitud],
+    plantillasDetectadas: plantillaSolicitud ? [labelSolicitud] : [],
+    puedeGenerarDocumentos: !!plantillaSolicitud,
+  };
+
+  if (!validacionPlantillas.puedeGenerarDocumentos) {
+    console.warn('[generarDocumentosFase2] Sin plantilla "solicitud" activa. Generando con datos del formulario.');
+    // Permitir generar igualmente — sin plantilla usa datos del form
+  }
+
+  // Cargar documentos existentes
+  const docsPrevios: DocumentoCargado[] =
+    loadFromSession<DocumentoCargado[]>(storageId, 'documentos') ??
+    loadFromSavedStore<DocumentoCargado[]>(storageId, 'documentos') ??
+    [];
+
+  const existe = (clave: string) =>
+    docsPrevios.some(d => d.tipoDocumento === clave || (d as any).claveDocumento === clave);
+
+  if (existe(CLAVE_SOLICITUD_BASE)) {
+    return {
+      exito: true,
+      documentosCreados: [],
+      pdfGenerados: [],
+      subidosASupabase: false,
+      registradosEnExpediente: true,
+      error: undefined,
+      validacionPlantillas,
+    };
+  }
+
+  // Generar PDF
+  const fileData = generarSolicitudPDF(datos);
+  let uploadInfo: UploadResult | null = null;
+
+  if (supabase && pid) {
+    uploadInfo = await uploadGeneratedPDF(
+      supabase, fileData, 'solicitud_base.pdf',
+      String(storageId), pid
+    );
+  }
+
+  const notaPlantilla = plantillaSolicitud
+    ? `Generado desde plantilla "${plantillaSolicitud.nombre}" (v${plantillaSolicitud.version}).`
+    : 'Generado con datos del formulario (sin plantilla configurada).';
+
+  const nuevoDoc: DocumentoCargado = {
+    id: generateId(),
+    fecha,
+    usuario: 'Sistema',
+    tipoDocumento: CLAVE_SOLICITUD_BASE,
+    archivo: 'solicitud_base.pdf',
+    tipoArchivo: 'pdf',
+    nota: `${notaPlantilla} Pendiente de Validación IA.`,
+    area: 'OPERACIONES',
+    fase: 'Fase 2',
+    faseId: 2,
+    estatus: 'Pendiente Validación IA',
+    validadoIA: false,
+    fileData,
+    url: uploadInfo?.url,
+    storagePath: (uploadInfo as any)?.storagePath,
+    mime: 'application/pdf',
+    tamanoKB: uploadInfo?.tamanoKB || Math.round((fileData.length * 3) / 4 / 1024) || 1,
+  } as DocumentoCargado & { storagePath?: string };
+
+  saveToSession(storageId, 'documentos', [...docsPrevios, nuevoDoc]);
+
+  console.log(`[generarDocumentosFase2] SOLICITUD_BASE creada para solicitud ${storageId} | Supabase: ${uploadInfo ? 'OK' : 'local'}`);
+
+  return {
+    exito: true,
+    documentosCreados: [CLAVE_SOLICITUD_BASE],
+    pdfGenerados: ['Solicitud.pdf'],
+    subidosASupabase: !!uploadInfo,
     registradosEnExpediente: true,
     error: undefined,
     validacionPlantillas,
