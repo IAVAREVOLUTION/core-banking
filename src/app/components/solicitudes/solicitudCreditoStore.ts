@@ -74,6 +74,8 @@ export interface RequisitoProducto {
   area: string;
   obligatorio: boolean;
   promptIA: string;
+  /** Si se define, el requisito solo aplica a ese tipo de persona (ej: 'Moral', 'Física') */
+  tipoPersona?: string;
 }
 
 export interface DocumentoCargado {

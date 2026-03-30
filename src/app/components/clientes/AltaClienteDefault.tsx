@@ -3571,10 +3571,11 @@ export function AltaClienteDefault({ onBack, onSave, mode, cliente, onNavigateTo
               )}
 
               {activeTab === 'solicitudes' && (
-                <SolicitudesCredito 
+                <SolicitudesCredito
                   onBack={() => setActiveTab('default')}
                   mode={mode}
                   clienteId={clienteId}
+                  cliente={cliente}
                 />
               )}
 

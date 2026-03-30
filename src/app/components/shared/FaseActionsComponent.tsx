@@ -36,6 +36,8 @@ interface FaseActionsComponentProps {
   onEnviarFase: () => void;
   /** Regresar fase (requiere nota ≤30 min — validado en el llamador) */
   onRegresarFase?: () => void;
+  /** Generar Solicitud (Fase 2) */
+  onGenerarSolicitud?: () => void;
   /** Formalizar Contrato (Fase 4) */
   onFormalizarContrato?: () => void;
   /** Solicitud de Activación (Fase 6) */
@@ -59,6 +61,7 @@ export function FaseActionsComponent({
   modo,
   onEnviarFase,
   onRegresarFase,
+  onGenerarSolicitud,
   onFormalizarContrato,
   onSolicitudActivacion,
   onActivarCuenta,
@@ -88,6 +91,8 @@ export function FaseActionsComponent({
   const puedeEnviar = !!faseSiguiente && seqActual >= 1 && seqActual <= 5;
   // Todas las fases con anterior
   const puedeRegresar = !!faseAnterior;
+  // Solo fase 2
+  const puedeGenerarSolicitud = seqActual === 2;
   // Solo fase 4
   const puedeFormalizar = seqActual === 4;
   // Fase 6: Solicitud de Activación (reemplaza a Enviar)
@@ -221,6 +226,21 @@ export function FaseActionsComponent({
                   <path d="M8 12l3 3 5-5" />
                 </svg>
                 {enviandoFase ? 'Activando...' : 'Activar Cuenta'}
+              </button>
+            )}
+
+            {/* ── Fase 2: Generar Solicitud ── */}
+            {puedeGenerarSolicitud && (
+              <button
+                onClick={onGenerarSolicitud}
+                disabled={enviandoFase || !onGenerarSolicitud}
+                className="px-4 py-1.5 bg-[#0369A1] text-white rounded text-xs hover:bg-[#075985] flex items-center gap-1.5 disabled:opacity-50"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+                  <path d="M14 2v6h6M16 13H8M16 17H8M10 9H8" />
+                </svg>
+                Generar Solicitud
               </button>
             )}
 

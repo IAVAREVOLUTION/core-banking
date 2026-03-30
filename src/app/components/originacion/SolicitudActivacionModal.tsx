@@ -1,26 +1,20 @@
 /**
- * SolicitudActivacionModal — Overlay de pantalla completa que integra
- * SolicitudActivacionForm desde el flujo de Originación (Fase 6).
+ * SolicitudActivacionModal — Abre el módulo completo de Solicitudes de Activación
+ * en modo "nuevo" con los datos de la Originación pre-cargados.
  *
- * Originación NO duplica lógica del módulo de Solicitudes de Activación.
- * Este componente SOLO:
- *  1. Pre-rellena los datos del formulario externo con datos de Originación
- *  2. Renderiza el formulario del módulo externo (SolicitudActivacionForm)
- *  3. Persiste via useSolicitudesActivacionDB (mismo hook que el módulo externo)
- *  4. Comunica el resultado a Originación vía callbacks (onSaved / onClose)
+ * Usa SolicitudActivacionList (el módulo real) con initialNewData para que abra
+ * directamente en el formulario de alta con los campos pre-rellenados.
  */
-import { useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
-import { SolicitudActivacionForm } from '../solicitudes-activacion/SolicitudActivacionForm';
+import { SolicitudActivacionList } from '../solicitudes-activacion/SolicitudActivacionList';
 import {
   type SolicitudActivacionFormData,
   type SolicitudActivacionListItem,
   EMPTY_FORM,
-  saveToSession as saveActivSession,
-  clearSession as clearActivSession,
   getFechaSolicitudNow,
 } from '../solicitudes-activacion/solicitudActivacionStore';
-import { useSolicitudesActivacionDB } from '../../hooks/useSolicitudesActivacionDB';
+import { supabase } from '../../lib/supabaseClient';
 
 // ─── Props ───────────────────────────────────────────────────────────────────
 
@@ -30,6 +24,7 @@ export interface SolicitudActivacionModalProps {
   /** Datos de contexto de Originación para pre-rellenar el formulario */
   seed: {
     cliente: string;
+    clienteId: string;
     lineaProducto: string;
     montoTransaccion: string;
     moneda: string;
@@ -45,7 +40,6 @@ export interface SolicitudActivacionModalProps {
 
 // ─── Helper ──────────────────────────────────────────────────────────────────
 
-/** Convierte lineaProducto al tipo de solicitud (Por Pagar / Por Cobrar) */
 function lineaToTipo(linea: string): string {
   const n = linea.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   if (n.includes('captacion')) return 'Por Cobrar';
@@ -61,73 +55,78 @@ export function SolicitudActivacionModal({
   onClose,
   onSaved,
 }: SolicitudActivacionModalProps) {
-  // Usar el mismo hook que el módulo externo — sin duplicar lógica de persistencia
-  const { saveSolicitudActivacion } = useSolicitudesActivacionDB(false);
+  const isNew = !existingActivacion;
 
-  const isNew       = !existingActivacion;
-  const storageKey  = isNew
-    ? 'new'
-    : String(existingActivacion!._dbId || existingActivacion!.id);
+  const [cuentaBancaria,    setCuentaBancaria]    = useState<string>('');
+  const [clienteNombreDB,   setClienteNombreDB]   = useState<string>('');
+  // Para modo nuevo: esperar hasta que el fetch termine antes de montar el formulario
+  const [accountReady, setAccountReady] = useState(!isNew);
 
-  // ── Pre-rellenar sesión con datos de Originación (solo para registros nuevos) ──
   useEffect(() => {
-    if (!isNew) return;
-    clearActivSession('new');
-    const monto = parseFloat(seed.montoTransaccion.replace(/[^0-9.-]/g, '')) || 0;
-    const seedForm: SolicitudActivacionFormData = {
-      ...EMPTY_FORM,
-      solicitudId:         originacionSolicitudId,
-      type:                lineaToTipo(seed.lineaProducto),
-      cliente:             seed.cliente,
-      fechaSolicitud:      getFechaSolicitudNow(),
-      estatus:             'Pendiente',
-      montoTransaccion:    seed.montoTransaccion,
-      moneda:              seed.moneda,
-      detailClaveProducto: seed.productoId,
-      detailMonto:         monto,
-      detailSubTotal:      monto,
-    };
-    saveActivSession('new', 'form', seedForm);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    if (!isNew) { setAccountReady(true); return; }
+    if (!seed.clienteId) { setAccountReady(true); return; }
 
-  // ── Guardar: delega completamente al hook externo ──────────────────────────
-  const handleSave = async (data: SolicitudActivacionFormData) => {
-    const dbId   = isNew ? undefined : String(existingActivacion!._dbId || existingActivacion!.id);
-    const result = await saveSolicitudActivacion(data, dbId);
+    // Cuenta de ahorro principal del cliente via RPC (schema EFINANCIANET_DB no está expuesto en PostgREST)
+    (async () => {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data, error } = await (supabase.rpc as any)('get_cuentas_ahorro');
+        if (!error && Array.isArray(data)) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const cuenta = (data as any[]).find((r: any) => r.cliente_id === seed.clienteId);
+          if (cuenta?.no_cuenta) setCuentaBancaria(String(cuenta.no_cuenta));
+          if (!seed.cliente) {
+            const nombre = [cuenta?.cliente_nombre, cuenta?.cliente_ap_paterno, cuenta?.cliente_ap_materno]
+              .filter(Boolean).join(' ');
+            if (nombre) setClienteNombreDB(nombre);
+          }
+        }
+      } catch { /* continuar sin cuenta */ }
+      finally { setAccountReady(true); }
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seed.clienteId, isNew]);
 
-    const savedItem: SolicitudActivacionListItem = {
-      id:              result.id || existingActivacion?.id || String(Date.now()),
-      solicitudId:     data.solicitudId,
-      cliente:         data.cliente,
-      numeroDocumento: data.numeroDocumento,
-      tipo:            data.type,
-      fechaSolicitud:  (data.fechaSolicitud || '').split(' ')[0],
-      estatus:         data.estatus || 'Pendiente',
-      montoTransaccion: data.montoTransaccion,
-      moneda:          data.moneda,
-      _dbId:           result.id || String(existingActivacion?._dbId || ''),
-      _fromDB:         result.ok,
-    };
+  const monto = parseFloat((seed.montoTransaccion || '0').replace(/[^0-9.-]/g, '')) || 0;
 
-    if (!result.ok) {
-      toast.warning('Solicitud guardada localmente (sin conexión BD)', {
-        description: result.error,
-      });
+  // Datos pre-rellenos para el formulario nuevo
+  const initialNewData: Partial<SolicitudActivacionFormData> | undefined = isNew ? {
+    ...EMPTY_FORM,
+    solicitudId:         originacionSolicitudId,
+    clienteId:           seed.clienteId,
+    type:                lineaToTipo(seed.lineaProducto),
+    cliente:             seed.cliente || clienteNombreDB,
+    fechaSolicitud:      getFechaSolicitudNow(),
+    estatus:             'Pendiente',
+    montoTransaccion:    seed.montoTransaccion,
+    moneda:              seed.moneda,
+    cuentaBancaria:      cuentaBancaria,
+    detailClaveProducto: seed.productoId,
+    detailMonto:         monto,
+    detailSubTotal:      monto,
+  } : undefined;
+
+  const handleSaved = (item: SolicitudActivacionListItem) => {
+    if (!item._fromDB) {
+      toast.warning('Solicitud guardada localmente (sin conexión BD)');
     }
-
-    // Siempre notificar a Originación (online u offline) para que valide el resultado
-    onSaved(savedItem);
+    onSaved(item);
   };
 
-  // ── Render: overlay de pantalla completa ──────────────────────────────────
+  if (!accountReady) {
+    return (
+      <div className="fixed inset-0 z-50 bg-white flex items-center justify-center">
+        <span className="text-sm text-gray-500">Cargando datos...</span>
+      </div>
+    );
+  }
+
   return (
     <div className="fixed inset-0 z-50 bg-white overflow-auto">
-      <SolicitudActivacionForm
-        key={storageKey}
-        mode={isNew ? 'nuevo' : 'editar'}
-        solicitudId={isNew ? undefined : storageKey as string}
-        onCancel={onClose}
-        onSave={handleSave}
+      <SolicitudActivacionList
+        initialNewData={isNew ? initialNewData : undefined}
+        onSavedFromOriginacion={handleSaved}
+        onCancelFromOriginacion={onClose}
       />
     </div>
   );

@@ -36,6 +36,8 @@ type FormMode = 'nuevo' | 'editar' | 'ver';
 interface SolicitudActivacionFormProps {
   mode: FormMode;
   solicitudId?: string | number;
+  /** Datos de pre-relleno (usados cuando mode='nuevo' y se abre desde Originación) */
+  initialData?: Partial<SolicitudActivacionFormData>;
   onCancel: () => void;
   onSave?: (data: SolicitudActivacionFormData, dbId?: string) => void;
 }
@@ -183,7 +185,7 @@ function DatosGeneralesGrid({ formData, onChange, errors, isRO, canEditEstatus }
         {/* Col 3 */}
         <div className="space-y-1.5">
           {f({ label: 'Fecha Solicitud',  field: 'fechaSolicitud',  forceRO: true })}
-          {f({ label: 'Fecha Compromiso', field: 'fechaCompromiso', forceRO: true })}
+          {f({ label: 'Fecha Compromiso', field: 'fechaCompromiso', placeholder: 'DD/MM/YYYY' })}
         </div>
 
       </div>
@@ -229,6 +231,7 @@ function InfoPagoGrid({ formData, onChange, errors, isRO }: FieldGridProps) {
 export function SolicitudActivacionForm({
   mode,
   solicitudId,
+  initialData,
   onCancel,
   onSave,
 }: SolicitudActivacionFormProps) {
@@ -237,11 +240,15 @@ export function SolicitudActivacionForm({
 
   // ── Form state ───────────────────────────────────────────────────
   const getInitial = useCallback((): SolicitudActivacionFormData => {
+    // 1. initialData tiene prioridad sobre sessionStorage (evita race condition)
+    if (initialData && mode === 'nuevo') {
+      return { ...EMPTY_FORM, fechaSolicitud: getFechaSolicitudNow(), estatus: 'Pendiente', ...initialData };
+    }
     const session = loadFromSession<SolicitudActivacionFormData>(storageId, 'form');
     if (session) return { ...EMPTY_FORM, ...session };
     if (mode === 'nuevo') return { ...EMPTY_FORM, fechaSolicitud: getFechaSolicitudNow(), estatus: 'Pendiente' };
     return { ...EMPTY_FORM };
-  }, [mode, solicitudId, storageId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [mode, solicitudId, storageId, initialData]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [formData,  setFormData]  = useState<SolicitudActivacionFormData>(getInitial);
   const [errors,    setErrors]    = useState<Record<string, string>>({});
