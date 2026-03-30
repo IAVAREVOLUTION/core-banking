@@ -67,7 +67,18 @@ export interface Product {
   requeridoPor?: string;
   esquemaFirma?: string;
   procede?: string;
-  fases?: any[] | string | {
+  // Canonical phases array (normalized — same structure as Productos Crédito)
+  fases?: Array<{
+    id: number;
+    seq: string;
+    area: string;
+    fase: string;
+    notes: string;
+    promptIA: string;
+    assetBoolean: boolean;
+  }>;
+  // Fases configuration object (authorization flags, etc.)
+  fasesConfig?: {
     requiereAutorizacionGerencia?: boolean;
     requiereValidacionCompliance?: boolean;
     requiereRevisionMesaControl?: boolean;

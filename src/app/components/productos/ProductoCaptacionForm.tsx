@@ -18,6 +18,27 @@ import { projectId, publicAnonKey } from '/utils/supabase/info';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-7e2d13d9`;
 
+/**
+ * Normaliza el array de fases al formato estándar compartido con Productos Crédito.
+ * Acepta tanto el formato legacy { id, fase, plazo, responsable }
+ * como el formato nuevo { id, seq, area, fase, notes, promptIA, assetBoolean }.
+ * Es idempotente: aplicar múltiples veces produce el mismo resultado.
+ */
+function normalizeFases(source: any[]): Array<{
+  id: number; seq: string; area: string; fase: string;
+  notes: string; promptIA: string; assetBoolean: boolean;
+}> {
+  return source.map((item: any, index: number) => ({
+    id: item.id ?? index + 1,
+    seq: String(item.seq ?? item.id ?? index + 1),
+    area: item.area ?? item.responsable ?? '',
+    fase: item.fase ?? '',
+    notes: item.notes ?? item.fase ?? '',
+    promptIA: item.promptIA ?? '',
+    assetBoolean: item.assetBoolean ?? true,
+  }));
+}
+
 // ⚠️ Flag institucional: la ruta GET /productos/:id NO está desplegada.
 // Cuando se redespliegue la edge function con soporte para esta ruta,
 // cambiar a true para activar el Nivel 1 (más eficiente).
@@ -247,13 +268,19 @@ export function ProductoCaptacionForm({ mode, productoId, producto, onCancel, on
         comisionesCobraRetiroAnticipado: (producto as any).comisionesConfig?.cobraComisionRetiroAnticipado || false,
         comisionesPorcentajeRetiroAnticipado: (producto as any).comisionesConfig?.porcentajeRetiroAnticipado?.toString() || '',
         comisionesObservaciones: (producto as any).comisionesConfig?.observaciones || '',
-        // Fases
-        fasesRequiereAutorizacionGerencia: typeof producto.fases === 'object' ? producto.fases.requiereAutorizacionGerencia || false : false,
-        fasesRequiereValidacionCompliance: typeof producto.fases === 'object' ? producto.fases.requiereValidacionCompliance || false : false,
-        fasesRequiereRevisionMesaControl: typeof producto.fases === 'object' ? producto.fases.requiereRevisionMesaControl || false : false,
-        fasesRequiereAprobacionComite: typeof producto.fases === 'object' ? producto.fases.requiereAprobacionComite || false : false,
-        fasesDiasVigenciaAutorizacion: typeof producto.fases === 'object' ? producto.fases.diasVigenciaAutorizacion?.toString() || '' : '',
-        fasesObservaciones: typeof producto.fases === 'object' ? producto.fases.observaciones || '' : '',
+        // Fases config — prefer 'fasesConfig' (new key), fall back to 'fases' if it's a plain object (legacy)
+        ...((() => {
+          const fc = (producto as any).fasesConfig
+            ?? (typeof producto.fases === 'object' && !Array.isArray(producto.fases) ? producto.fases : null);
+          return {
+            fasesRequiereAutorizacionGerencia: fc?.requiereAutorizacionGerencia || false,
+            fasesRequiereValidacionCompliance: fc?.requiereValidacionCompliance || false,
+            fasesRequiereRevisionMesaControl: fc?.requiereRevisionMesaControl || false,
+            fasesRequiereAprobacionComite: fc?.requiereAprobacionComite || false,
+            fasesDiasVigenciaAutorizacion: fc?.diasVigenciaAutorizacion?.toString() || '',
+            fasesObservaciones: fc?.observaciones || '',
+          };
+        })()),
       };
     }
     
@@ -552,13 +579,19 @@ export function ProductoCaptacionForm({ mode, productoId, producto, onCancel, on
           comisionesCobraRetiroAnticipado: d.comisiones?.cobraComisionRetiroAnticipado ?? false,
           comisionesPorcentajeRetiroAnticipado: String(d.comisiones?.porcentajeRetiroAnticipado ?? ''),
           comisionesObservaciones: d.comisiones?.observaciones || '',
-          // ── Fases ──
-          fasesRequiereAutorizacionGerencia: d.fases?.requiereAutorizacionGerencia ?? false,
-          fasesRequiereValidacionCompliance: d.fases?.requiereValidacionCompliance ?? false,
-          fasesRequiereRevisionMesaControl: d.fases?.requiereRevisionMesaControl ?? false,
-          fasesRequiereAprobacionComite: d.fases?.requiereAprobacionComite ?? false,
-          fasesDiasVigenciaAutorizacion: String(d.fases?.diasVigenciaAutorizacion ?? ''),
-          fasesObservaciones: d.fases?.observaciones || '',
+          // ── Fases config — prefer 'fasesConfig' (new key), fall back to 'fases' obj (legacy) ──
+          ...((() => {
+            const fc = d.fasesConfig
+              ?? (d.fases && typeof d.fases === 'object' && !Array.isArray(d.fases) ? d.fases : null);
+            return {
+              fasesRequiereAutorizacionGerencia: fc?.requiereAutorizacionGerencia ?? false,
+              fasesRequiereValidacionCompliance: fc?.requiereValidacionCompliance ?? false,
+              fasesRequiereRevisionMesaControl: fc?.requiereRevisionMesaControl ?? false,
+              fasesRequiereAprobacionComite: fc?.requiereAprobacionComite ?? false,
+              fasesDiasVigenciaAutorizacion: String(fc?.diasVigenciaAutorizacion ?? ''),
+              fasesObservaciones: fc?.observaciones || '',
+            };
+          })()),
         };
 
         console.log(`[CaptacionForm] Aplicando ${Object.keys(freshFields).length} campos frescos desde BD al formulario`);
@@ -887,7 +920,8 @@ export function ProductoCaptacionForm({ mode, productoId, producto, onCancel, on
       const tasaInversion = newProduct.tasaInversion || {};
       const constitucion = newProduct.constitucion || {};
       const comisiones = newProduct.comisiones || {};
-      const fases = newProduct.fases || {};
+      // fases here is the config object (booleans, dias, observaciones)
+      const fases = (newProduct as any).fases || {};
 
       // ── C. Arrays de registros de tabs ──
       const checkListRegistros = newProduct.checkListRegistros || [];
@@ -927,7 +961,8 @@ export function ProductoCaptacionForm({ mode, productoId, producto, onCancel, on
         tasaInversion,
         constitucion,
         comisionesConfig: comisiones,
-        fases,
+        // Fases: config object bajo clave 'fasesConfig', array normalizado bajo 'fases'
+        fasesConfig: fases,
         // Arrays de registros
         checkListRegistros,
         tasaInversionRegistros,
@@ -935,7 +970,8 @@ export function ProductoCaptacionForm({ mode, productoId, producto, onCancel, on
         constitucionRegistros,
         comisiones: comisionesRegistros,
         cargoRegistros,
-        fasesRegistros,
+        // Persist phases array under canonical key 'fases'; 'fasesRegistros' is removed
+        fases: normalizeFases(fasesRegistros),
         accesoCuenta: accesoCuentaData,
         // Arrays homologados desde Productos Crédito
         matrizTasaFijaRegistros,
@@ -1948,11 +1984,15 @@ export function ProductoCaptacionForm({ mode, productoId, producto, onCancel, on
         </div>
 
         <div className={activeTab === 'fases' ? '' : 'hidden'}>
-          <FasesTab 
+          <FasesTab
             ref={fasesTabRef}
             mode={mode}
             productId={productoId || 'nuevo'}
-            initialData={producto?.fasesRegistros}
+            initialData={
+              Array.isArray(producto?.fases) ? producto.fases
+              : Array.isArray(producto?.fasesRegistros) ? producto.fasesRegistros
+              : undefined
+            }
             persistToStorage
             storagePrefix="captacion"
           />
@@ -1979,7 +2019,7 @@ export function ProductoCaptacionForm({ mode, productoId, producto, onCancel, on
         </div>
 
         <div style={{ display: activeTab === 'expedientes' ? 'block' : 'none' }}>
-          <ExpedientesProductoTab ref={expedientesRef} mode={mode} productId={productoId || 'nuevo'} persistToStorage storagePrefix="captacion" initialData={producto?.expedientesRegistros} fases={producto?.fasesRegistros} />
+          <ExpedientesProductoTab ref={expedientesRef} mode={mode} productId={productoId || 'nuevo'} persistToStorage storagePrefix="captacion" initialData={producto?.expedientesRegistros} fases={Array.isArray(producto?.fases) ? producto.fases : producto?.fasesRegistros} />
         </div>
 
         {activeTab === 'acceso-cuenta' && (

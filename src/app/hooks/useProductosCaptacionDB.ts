@@ -58,6 +58,29 @@ interface ProductoCaptacionRow {
  *
  * El campo `estatus` se lee del JSONB data (no existe como columna física)
  */
+/**
+ * Normaliza el array de fases desde cualquiera de los dos keys posibles en el JSONB:
+ *   - data.fases        (key nuevo / estándar)
+ *   - data.fasesRegistros (key legacy — solo Captación)
+ *
+ * Transforma objetos legacy { id, fase, plazo, responsable } al formato estándar
+ * compartido con Productos Crédito: { id, seq, area, fase, notes, promptIA, assetBoolean }
+ */
+function normalizeFases(d: Record<string, any>): any[] {
+  const source = Array.isArray(d.fases) ? d.fases
+    : Array.isArray(d.fasesRegistros) ? d.fasesRegistros
+    : [];
+  return source.map((item: any, index: number) => ({
+    id: item.id ?? index + 1,
+    seq: String(item.seq ?? item.id ?? index + 1),
+    area: item.area ?? item.responsable ?? '',
+    fase: item.fase ?? '',
+    notes: item.notes ?? item.fase ?? '',
+    promptIA: item.promptIA ?? '',
+    assetBoolean: item.assetBoolean ?? true,
+  }));
+}
+
 function mapRowToProduct(row: ProductoCaptacionRow, index: number): Product {
   const d = (row.data || {}) as Record<string, any>;
 
@@ -87,7 +110,8 @@ function mapRowToProduct(row: ProductoCaptacionRow, index: number): Product {
   const ti = extractObj(d.tasaInversion);
   const co = extractObj(d.constitucion);
   const cmConfig = extractObj(d.comisionesConfig) || (d.comisiones && !Array.isArray(d.comisiones) ? extractObj(d.comisiones) : undefined);
-  const fa = extractObj(d.fases);
+  // Config object: prefer fasesConfig (new key), fall back to fases if it's a plain object (legacy)
+  const fa = extractObj(d.fasesConfig) ?? extractObj(!Array.isArray(d.fases) ? d.fases : undefined);
 
   return {
     // ── PK de J_PRODUCTOS (UUID) — para CRUD via Liga de Edit / Liga de View ──
@@ -149,7 +173,8 @@ function mapRowToProduct(row: ProductoCaptacionRow, index: number): Product {
     periodosRegistros: Array.isArray(d.periodosRegistros) ? d.periodosRegistros : undefined,
     constitucionRegistros: Array.isArray(d.constitucionRegistros) ? d.constitucionRegistros : undefined,
     comisionesRegistros: Array.isArray(d.comisionesRegistros) ? d.comisionesRegistros : undefined,
-    fasesRegistros: Array.isArray(d.fasesRegistros) ? d.fasesRegistros : undefined,
+    // Normalize from either key (data.fases new | data.fasesRegistros legacy)
+    fasesRegistros: normalizeFases(d).length > 0 ? normalizeFases(d) : undefined,
     cargoRegistros: Array.isArray(d.cargoRegistros) ? d.cargoRegistros : undefined,
     checkListRegistros: Array.isArray(d.checkListRegistros) ? d.checkListRegistros : undefined,
 
