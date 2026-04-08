@@ -3,6 +3,8 @@
 Documento de referencia para el formulario `SolicitudCreditoForm` y su ciclo de vida completo:
 creación → guardado en BD → lista → reapertura.
 
+Última actualización: 2026-04-08
+
 ---
 
 ## 1. Tabla principal: `J_CUENTAS_CORP_CLIENTES`
@@ -20,11 +22,11 @@ Columnas dedicadas (lectura/escritura directa):
 | `fecha_autori` | `date` | — | No mapeado aún |
 | `fecha_disper` | `date` | — | No mapeado aún |
 | `fecha_cancel` | `date` | — | No mapeado aún |
-| `fecha_inicio` | `date` | `form.fechaInicio` | Vigencia inicio crédito |
-| `fecha_fin_cu` | `date` | `form.fechaFin` | Vigencia fin crédito |
+| `fecha_inicio` | `date` | `form.fechaInicio` | Para Captación: primera fecha del calendario de aportaciones (DD/MM/YYYY) |
+| `fecha_fin_cu` | `date` | `form.fechaFin` | Para Captación: última fecha del calendario de aportaciones (DD/MM/YYYY) |
 | `descripcion` | `text` | `form.descripcion` | Texto libre |
 | `linea_produc` | `text` | `form.lineaProducto` | `Crédito` / `Captación` / `Línea de Crédito` |
-| `tipo_produc` | `text` | `form.tipoProducto` | Crédito Simple, Revolvente… |
+| `tipo_produc` | `text` | `form.tipoProducto` | Crédito Simple, Revolvente, Ahorro, **Aportación/Ahorro**… |
 | `producto_id` | `uuid` | `form.productoId` | FK a J_PRODUCTOS — **debe ser UUID** |
 | `producto_eje` | `uuid` | — | No usado en solicitudes |
 | `cliente_id` | `uuid` | `form._clienteId` | FK a J_CLIENTES |
@@ -55,6 +57,8 @@ La Edge Function hace JOIN al cargar la lista. Nunca se persisten de regreso.
 | `curp` | `_clienteCurp` | `form._curp` |
 | `tipo` | `_clienteTipo` | Fallback para `tipoPersona` |
 | `subtipo` | — | No usado en form |
+
+> **Nota:** Al seleccionar cliente desde el modal (`SeleccionarClienteModal`), se enriquece el form con `_rfc`, `_curp`, `_domicilio`, `_telefono`, `_email`, `_fechaNacimiento` tomados directamente de `J_CLIENTES.data.direcciones[0]`. El campo `estado` en el JSON del cliente mapea a domicilio (no `entidadFederativa`). El UUID correcto es `row.id`, no `idCliente` (código legible).
 
 ### De `J_PRODUCTOS`
 
@@ -99,22 +103,22 @@ Escrito por `formToDBPayload()` en `useSolicitudesDB.ts`.
 
 Copia camelCase de los términos para roundtrip exacto:
 
-| Clave JSONB `_raw` | Campo frontend (`TerminosCondiciones`) |
-|---|---|
-| `montoSolicitado` | `terminos.montoSolicitado` |
-| `plazo` | `terminos.plazo` |
-| `tasa` | `terminos.tasa` |
-| `frecuencia` | `terminos.frecuencia` |
-| `tipoTasa` | `terminos.tipoTasa` |
-| `tipoCalculo` | `terminos.tipoCalculo` |
-| `moneda` | `terminos.moneda` |
-| `montoGarantia` | `terminos.montoGarantia` |
-| `seguroFinanciado` | `terminos.seguroFinanciado` |
-| `montoSeguro` | `terminos.montoSeguro` |
-| `fechaPrimerPago` | `terminos.fechaPrimerPago` |
-| `fechaPrimeraAportacion` | `terminos.fechaPrimeraAportacion` |
-| `fechaInicio` | `terminos.fechaInicio` |
-| `fechaFin` | `terminos.fechaFin` |
+| Clave JSONB `_raw` | Campo frontend (`TerminosCondiciones`) | Aplica a |
+|---|---|---|
+| `montoSolicitado` | `terminos.montoSolicitado` | Crédito + Captación |
+| `plazo` | `terminos.plazo` | Crédito + Captación |
+| `tasa` | `terminos.tasa` | Crédito + Captación |
+| `frecuencia` | `terminos.frecuencia` | Crédito + Captación |
+| `tipoTasa` | `terminos.tipoTasa` | Crédito |
+| `tipoCalculo` | `terminos.tipoCalculo` | Crédito únicamente — oculto para Captación |
+| `moneda` | `terminos.moneda` | Crédito + Captación |
+| `montoGarantia` | `terminos.montoGarantia` | Crédito |
+| `seguroFinanciado` | `terminos.seguroFinanciado` | Crédito |
+| `montoSeguro` | `terminos.montoSeguro` | Crédito |
+| `fechaPrimerPago` | `terminos.fechaPrimerPago` | Crédito |
+| `fechaPrimeraAportacion` | `terminos.fechaPrimeraAportacion` | Captación |
+| `fechaInicio` | `terminos.fechaInicio` / `form.fechaInicio` | Captación: primera fecha del calendario |
+| `fechaFin` | `terminos.fechaFin` / `form.fechaFin` | Captación: última fecha del calendario |
 
 ### `data.solicitud.terminos_condiciones.parametros_simulacion`
 
@@ -129,6 +133,27 @@ Versión snake_case enviada al motor de simulación:
 | `fecha_primer_pago` | `terminos.fechaPrimerPago` |
 | `fecha_primera_aportacion` | `terminos.fechaPrimeraAportacion` |
 
+### `data.solicitud.simulacion`
+
+| Clave JSONB | Fuente | Notas |
+|---|---|---|
+| `tipo_tabla` | `terminos.tipoCalculo` | `Francés` / `Alemán` / `Simple` |
+| `resultado_simulacion[]` | `SimulacionRow[]` | Solo para Crédito/Línea de Crédito |
+| `resultado_simulacion[].no_pago` | `r.noPago` | |
+| `resultado_simulacion[].fecha_pago` | `r.fechaPago` | |
+| `resultado_simulacion[].saldo_insoluto` | `r.saldoInsoluto` | |
+| `resultado_simulacion[].pago_capital` | `r.pagoCapital` | |
+| `resultado_simulacion[].pago_interes` | `r.pagoInteres` | |
+| `resultado_simulacion[].iva_interes` | `r.ivaInteres` | |
+| `resultado_simulacion[].pago_periodo` | `r.pagoPeriodo` | |
+| `resultado_simulacion[].pago_seguro` | `r.pagoSeguro` | |
+| `resultado_simulacion[].pago_total` | `r.pagoTotal` | |
+| `calendario_aportaciones[]` | `form._calendarioAportaciones` | **Solo Captación/Aportación** — heredado de Cotización |
+| `calendario_aportaciones[].noAportacion` | `r.noAportacion` | Número de aportación |
+| `calendario_aportaciones[].fecha` | `r.fecha` | Formato `YYYY-MM-DD` en DB, `DD/MM/YYYY` en UI |
+| `calendario_aportaciones[].monto` | `r.monto` | Monto por aportación |
+| `calendario_aportaciones[].moneda` | `r.moneda` | `MXN` |
+
 ### `data.solicitud.expediente_electronico.documentos[]`
 
 | Clave JSONB | Campo en subtab Expediente |
@@ -136,7 +161,7 @@ Versión snake_case enviada al motor de simulación:
 | `id` | `doc.id` |
 | `fecha_creacion` | `doc.fecha` |
 | `usuario` | `doc.usuario` |
-| `tipo_documento` | `doc.tipoDocumento` |
+| `tipo_documento` | `doc.tipoDocumento` — dinámico desde catálogo `J_CATALOGOS` tipo `'Documento'` |
 | `archivo_adjunto` | `doc.archivo` |
 | `tipo_archivo` | `doc.tipoArchivo` |
 | `nota` | `doc.nota` |
@@ -193,7 +218,24 @@ Versión snake_case enviada al motor de simulación:
 
 ---
 
-## 4. Flujo completo de un campo (ejemplo: `tipoPersona`)
+## 4. Campos internos del form (`form._*`)
+
+Campos que viven en `SolicitudFormData` pero **no tienen columna dedicada** en BD — se persisten dentro del JSONB.
+
+| Campo `form._*` | Origen | Dónde se guarda en JSONB |
+|---|---|---|
+| `_clienteId` | UUID de `J_CLIENTES.id` al seleccionar cliente | `data.solicitud.header` (implícito vía `cliente_id` columna) |
+| `_curp` | `J_CLIENTES.data.curp` | `data.solicitud.header.curp` |
+| `_rfc` | `J_CLIENTES.data.rfc` | `data.solicitud.header.rfc` |
+| `_domicilio` | `J_CLIENTES.data.direcciones[0].estado` | Usado en generación de documentos — no persiste en JSONB |
+| `_telefono` | `J_CLIENTES.data.telefono` | Usado en generación de documentos — no persiste en JSONB |
+| `_email` | `J_CLIENTES.data.correoElectronico` | Usado en generación de documentos — no persiste en JSONB |
+| `_fechaNacimiento` | `J_CLIENTES.data.fechaNacimiento` | Usado en generación de documentos — no persiste en JSONB |
+| `_calendarioAportaciones` | `J_COTIZACIONES.data.calendarioAportaciones` | `data.solicitud.simulacion.calendario_aportaciones[]` |
+
+---
+
+## 5. Flujo completo de un campo (ejemplo: `tipoPersona`)
 
 ```
 GUARDAR
@@ -214,9 +256,53 @@ REABRIR (buildFormDataFromListItem)
     → normalizeTipoPersona(rawTipoPersona) → form.tipoPersona
 ```
 
+## Flujo del calendario de aportaciones (Captación/Aportación)
+
+```
+COTIZACIÓN
+  CotizacionCaptacionForm genera calendario via useMemo()
+    → setData({ calendarioAportaciones: [...] })
+    → saveCotizacion(form) → RPC update_jcotizacion
+    → J_COTIZACIONES.data.calendarioAportaciones = [...]
+
+CREAR SOLICITUD DESDE COTIZACIÓN
+  handleCrearSolicitudCaptacion(c)
+    → mappedData._calendarioAportaciones = c.data.calendarioAportaciones
+    → mappedData.fechaInicio = isoToDMY(calendario[0].fecha)       // DD/MM/YYYY
+    → mappedData.fechaFin    = isoToDMY(calendario[last].fecha)    // DD/MM/YYYY
+    → onCrearSolicitudDesdeCotizacion(mappedData)
+    → App.tsx setCotizacionParaSolicitud(mappedData)
+
+SolicitudCreditoList useEffect()
+    → const cp = cotizacionParaSolicitud  // captura local antes del consumed
+    → formData._calendarioAportaciones = cp._calendarioAportaciones
+    → formData.fechaInicio / fechaFin     // ya en DD/MM/YYYY
+    → saveToSession('new', 'form', formData)
+    → onCotizacionConsumed()  // App pone el prop en null
+    → setView({ type: 'form', mode: 'nuevo' })
+
+SolicitudCreditoForm getInitial()
+    → loadFromSession('new', 'form')
+    → formData._calendarioAportaciones disponible
+
+SimulacionTab
+    → prop calendarioAportaciones = formData._calendarioAportaciones
+    → esCaptacion(lineaProducto, tipoProducto) === true
+    → render tabla de solo lectura (sin botones, sin amortización)
+
+GUARDAR SOLICITUD EN BD
+  formToDBPayload(form)
+    → data.solicitud.simulacion.calendario_aportaciones = form._calendarioAportaciones
+
+REABRIR SOLICITUD
+  buildFormDataFromListItem(s)
+    → sol.simulacion.calendario_aportaciones → form._calendarioAportaciones
+    → SimulacionTab vuelve a mostrar el calendario
+```
+
 ---
 
-## 5. Reconstrucción al reabrir — cadena de fallbacks completa
+## 6. Reconstrucción al reabrir — cadena de fallbacks completa
 
 `SolicitudCreditoList.tsx → buildFormDataFromListItem()`
 
@@ -246,18 +332,108 @@ REABRIR (buildFormDataFromListItem)
 | `_clienteId` | `_clienteId` | `hdr.cliente_id` | `d._clienteId` | — |
 | `_curp` | `_clienteCurp` | `hdr.curp` | `d._curp` | — |
 | `_rfc` | `_clienteRfc` | `hdr.rfc` | `d._rfc` | — |
+| `_calendarioAportaciones` | `sol.simulacion.calendario_aportaciones` | — | — | `undefined` |
 
 ---
 
-## 6. Diferencias Crédito vs Captación en `rawData` del producto
+## 7. Diferencias Crédito vs Captación/Aportación
 
-Al seleccionar un producto, el form lee `rawData` de `J_PRODUCTOS`.
+### Comportamiento del subtab Simulación
+
+| | Crédito / Línea de Crédito | Captación / Aportación/Ahorro |
+|---|---|---|
+| Tabla mostrada | Tabla de amortización (generada en Solicitud) | Calendario de aportaciones (generado en Cotización) |
+| Botón "Generar" | Sí | No — solo lectura |
+| Editable | Sí (nuevo/editar) | No — siempre readonly |
+| Origen datos | `generarSimulacion()` desde Términos | `form._calendarioAportaciones` heredado de Cotización |
+| Tipo Cálculo Amortización | Visible | **Oculto** |
+
+### Comportamiento del subtab Términos y Condiciones
+
+| Campo | Crédito | Captación |
+|---|---|---|
+| Monto Solicitado | Sí | Sí |
+| Fecha Primer Pago | Sí | No |
+| Fecha Primera Aportación | No | Sí |
+| Plazo | Sí | Sí (igual al plazo del producto) |
+| Frecuencia | Sí | Sí |
+| Tasa | Sí | Sí |
+| Tipo de Tasa | Sí | Sí |
+| **Tipo Cálculo Amortización** | Sí | **No** |
+| Moneda | Sí | Sí |
+| Monto Garantía | Sí | No |
+| Seguro Financiado | Sí | No |
+
+### Tipos de producto por línea
+
+| `lineaProducto` | `tipoProducto` válidos | Lógica `esCaptacion()` |
+|---|---|---|
+| `Captación` | `Ahorro`, `Inversión`, `Aportación/Ahorro`, `Cuenta Corriente` | `true` |
+| `Crédito` | Crédito Simple, Revolvente, etc. | `false` |
+| `Línea de Crédito` | Revolvente, etc. | `false` |
+
+> **Detección de captación** (`SimulacionTab → esCaptacion()`): normaliza tildes y busca `captac`, `ahorro`, `aportac`, `invers` tanto en `lineaProducto` como en `tipoProducto` — cualquiera de los dos que coincida activa el modo calendario.
+
+---
+
+## 8. Generación de documentos desde plantillas (`generarDocumentosFase4.ts`)
+
+Las plantillas HTML se guardan en `J_PRODUCTOS.data.plantillas[]` como base64.
+
+### Variables disponibles en plantillas `{{ }}`
+
+| Variable plantilla | Fuente en `DatosSolicitud` |
+|---|---|
+| `{{folio}}` | `datos.noSol` |
+| `{{fecha}}` | Fecha actual `toLocaleDateString('es-MX')` |
+| `{{cliente_nombre}}` | `datos.cliente` |
+| `{{cliente_rfc}}` | `datos.rfc` (de `J_CLIENTES.data.rfc`) |
+| `{{cliente_curp}}` | `datos.curp` |
+| `{{fecha_nacimiento}}` | `datos.fechaNacimiento` |
+| `{{telefono}}` | `datos.telefono` |
+| `{{email}}` | `datos.email` |
+| `{{domicilio}}` / `{{cliente_domicilio}}` | `datos.domicilio` (de `J_CLIENTES.data.direcciones[0].estado`) |
+| `{{producto}}` | `datos.productoNombre` |
+| `{{monto}}` / `{{monto_solicitado}}` | `terminos.montoSolicitado` |
+| `{{plazo}}` | `terminos.plazo` (solo número — la plantilla puede agregar " meses") |
+| `{{tasa}}` | `terminos.tasa` |
+| `{{cat}}` | `terminos.cat` |
+| `{{finalidad}}` | `datos.finalidad` |
+| `{{sucursal}}` | `datos.sucursal` |
+| `{{ejecutivo}}` | `'N/A'` (no implementado) |
+| `{{empresa_nombre}}` / `{{empresa_razon_social}}` | `'N/A'` |
+
+### Pipeline de generación
+
+```
+plantilla.archivoData (base64 data URL)
+  → atob() + TextDecoder → HTML plano
+  → sustituir() → HTML con datos reales
+  → iframe oculto (794px, opacity:0)
+  → html2canvas (scale:2) → canvas
+  → jsPDF.addImage() → PDF A4
+  → PDF Blob URL → download Solicitud_XXX.pdf
+```
+
+---
+
+## 9. Diferencias en rawData del producto (`J_PRODUCTOS`)
+
+Al seleccionar un producto, el form lee `rawData`:
 
 | Campo | Crédito | Captación |
 |---|---|---|
 | Fases | `rawData.fases` (array) | `rawData.fasesRegistros` (array) — `rawData.fases` es `{}` vacío |
 | Expediente | `rawData.expedientesElectronicos` | `rawData.expedientesRegistros` |
+| Plantillas | `rawData.plantillas[]` | `rawData.plantillas[]` |
 | ID del producto | `c.producto_id` (UUID) | `c.producto_id` (UUID) — **nunca** `claveProducto` |
 
 > **Regla crítica:** Usar siempre `Array.isArray(x) && x.length > 0 ? x : null` antes de `??`
 > — el campo `fases: {}` en Captación es truthy y bloquea el fallback con `??` simple.
+
+### Tipos de producto Captación disponibles (`ProductoCaptacionForm`)
+
+- `Ahorro`
+- `Inversión`
+- `Aportación/Ahorro` ← nuevo
+- `Cuenta Corriente`
