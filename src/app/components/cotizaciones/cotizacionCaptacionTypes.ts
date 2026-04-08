@@ -159,16 +159,37 @@ export function validarCotizacionCaptacion(c: CotizacionCaptacion): ValidacionRe
   if (!d.producto?.claveProducto) errors.push('Falta clave del producto (data.producto.claveProducto).');
 
   // Validación Monto >= montoMinimo — spec §4.3
-  if (d.producto.montoMinimo > 0 && d.montoCotizado < d.producto.montoMinimo) {
-    errors.push(`Monto Cotizado ($${d.montoCotizado}) debe ser ≥ Monto Mínimo ($${d.producto.montoMinimo}).`);
+  // Normalizar ambos valores a número real, eliminando comas, espacios, símbolos de moneda
+  const normalizeNum = (v: number | string | undefined | null): number | null => {
+    if (v === undefined || v === null || v === '') return null;
+    const cleaned = String(v).replace(/[^0-9.-]/g, '');
+    if (cleaned === '' || isNaN(Number(cleaned))) return null;
+    return Number(cleaned);
+  };
+
+  const montoCotizadoNum = normalizeNum(d.montoCotizado);
+  const montoMinimoNum = normalizeNum(d.producto.montoMinimo);
+
+  // DEBUG: ver valores exactos en consola
+  console.log('[validarCotizacionCaptacion] montoCotizado raw:', d.montoCotizado, '→ normalized:', montoCotizadoNum);
+  console.log('[validarCotizacionCaptacion] montoMinimo raw:', d.producto.montoMinimo, '→ normalized:', montoMinimoNum);
+
+  // Solo validar la comparación cuando:
+  // 1. AMBOS valores son numéricos válidos
+  // 2. El monto cotizado es mayor a 0 (si es 0 o vacío, el error de "campo requerido" se valida en otro lado)
+  // 3. El monto mínimo está configurado (> 0)
+  if (montoCotizadoNum !== null && montoCotizadoNum > 0 && montoMinimoNum !== null && montoMinimoNum > 0 && montoCotizadoNum < montoMinimoNum) {
+    errors.push(`Monto Cotizado ($${montoCotizadoNum.toLocaleString('es-MX', { minimumFractionDigits: 2 })}) debe ser ≥ Monto Mínimo ($${montoMinimoNum.toLocaleString('es-MX', { minimumFractionDigits: 2 })}).`);
   }
 
   // Validación Plazo — spec §4.5
-  if (d.plazoCumplirMontoMinimo < 0) {
+  const plazoNum = Number(d.plazoCumplirMontoMinimo);
+  const plazoProdNum = Number(d.producto.plazoCumplirMontoMinimo);
+  if (isNaN(plazoNum) || plazoNum < 0) {
     errors.push('Plazo Cumplir Monto Mínimo no puede ser menor que 0.');
   }
-  if (d.producto.plazoCumplirMontoMinimo > 0 && d.plazoCumplirMontoMinimo > d.producto.plazoCumplirMontoMinimo) {
-    errors.push(`Plazo (${d.plazoCumplirMontoMinimo}) debe ser ≤ Plazo del Producto (${d.producto.plazoCumplirMontoMinimo}).`);
+  if (!isNaN(plazoProdNum) && plazoProdNum > 0 && !isNaN(plazoNum) && plazoNum < plazoProdNum) {
+    errors.push(`Plazo (${plazoNum}) debe ser ≥ Plazo del Producto (${plazoProdNum}).`);
   }
 
   // Fecha primera aportación obligatoria si plazo > 0 — spec §6

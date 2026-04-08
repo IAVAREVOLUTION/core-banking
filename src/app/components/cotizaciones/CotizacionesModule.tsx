@@ -664,6 +664,14 @@ export function CotizacionesModule({ deepLinkCotizacionId, deepLinkLinea, onDeep
   const handleView = (c: CotizacionCaptacion) => { setSelectedCap(c); setFormMode('view'); setView('form'); };
   const handleEdit = (c: CotizacionCaptacion) => { setSelectedCap(c); setFormMode('edit'); setView('form'); };
 
+  /** Convierte YYYY-MM-DD → DD/MM/YYYY (formato DatePicker). Devuelve '' si inválido. */
+  const isoToDMY = (iso: string): string => {
+    if (!iso) return '';
+    const parts = iso.split('-');
+    if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
+    return iso; // ya estaba en otro formato
+  };
+
   /** Crear Solicitud desde Cotización Captación — spec solicitudes-financieras §1–§4 */
   const handleCrearSolicitudCaptacion = (c: CotizacionCaptacion) => {
     if (c.estatus_cotiza === 'Aceptada') {
@@ -680,9 +688,17 @@ export function CotizacionesModule({ deepLinkCotizacionId, deepLinkLinea, onDeep
       nombrePersona: nameParts[0] || '',
       apellidoPaternoPersona: nameParts[1] || '',
       apellidoMaternoPersona: nameParts.slice(2).join(' ') || '',
-      productoId: c.data.producto?.claveProducto || c.producto_id || '',
+      // FIX: usar c.producto_id (UUID de J_PRODUCTOS) — claveProducto es la clave textual, no el UUID
+      productoId: c.producto_id || '',
       nombreProducto: c.data.producto?.nombreProducto || '',
       montoSolicitado: String(parseFloat(String(c.data.montoCotizado || '0').replace(/[^0-9.-]/g, '')) || 0),
+      // Fechas derivadas del calendario de aportaciones — convertir YYYY-MM-DD → DD/MM/YYYY
+      fechaInicio: isoToDMY(c.data.calendarioAportaciones?.[0]?.fecha || ''),
+      fechaFin: c.data.calendarioAportaciones?.length > 0
+        ? isoToDMY(c.data.calendarioAportaciones[c.data.calendarioAportaciones.length - 1].fecha)
+        : '',
+      // Calendario completo — se muestra directamente en el subtab Simulación de la Solicitud
+      _calendarioAportaciones: c.data.calendarioAportaciones || [],
       _terminosCondiciones: {
         montoSolicitado: String(parseFloat(String(c.data.montoCotizado || '0').replace(/[^0-9.-]/g, '')) || 0),
         fechaPrimeraAportacion: c.data.fechaPrimeraAportacion || '',

@@ -183,7 +183,10 @@ function mapRowToListItem(row: SolicitudDBRow): SolicitudListItem {
     _clienteNombre: row.cliente_nombre || null,
     _clienteApPaterno: row.cliente_ap_paterno || null,
     _clienteApMaterno: row.cliente_ap_materno || null,
+    _clienteCurp: row.cliente_curp || null,
+    _clienteRfc: row.cliente_rfc || null,
     _clienteTipo: row.cliente_tipo || null,
+    _tipoPersona: hdr.tipo_persona || d.tipoPersona || row.cliente_tipo || null,
     _productoNombre: row.producto_nombre || null,
     _productoClave: row.producto_clave || null,
     _productoSucursal: row.producto_sucursal || null,
@@ -255,6 +258,8 @@ function formToDBPayload(form: SolicitudFormData, allSubtabs?: Record<string, an
           fase_id: form.faseId || null,
           descripcion_fase: form.descripcionFase || null,
           estatus: form.estatusSolicitud || null,
+          curp: (form as any)._curp || null,
+          rfc: (form as any)._rfc || null,
         },
         terminos_condiciones: {
           tipo_producto: form.tipoProducto || null,
@@ -274,8 +279,8 @@ function formToDBPayload(form: SolicitudFormData, allSubtabs?: Record<string, an
             frecuencia: terminos.frecuencia || '',
             fechaPrimerPago: terminos.fechaPrimerPago || '',
             fechaPrimeraAportacion: terminos.fechaPrimeraAportacion || '',
-            fechaInicio: (terminos as any).fechaInicio || terminos.fechaPrimerPago || '',
-            fechaFin: (terminos as any).fechaFin || '',
+            fechaInicio: (terminos as any).fechaInicio || terminos.fechaPrimerPago || (form as any).fechaInicio || '',
+            fechaFin: (terminos as any).fechaFin || (form as any).fechaFin || '',
             tipoTasa: terminos.tipoTasa || '',
             tipoCalculo: terminos.tipoCalculo || '',
             moneda: terminos.moneda || '',
@@ -297,6 +302,10 @@ function formToDBPayload(form: SolicitudFormData, allSubtabs?: Record<string, an
             pago_seguro: r.pagoSeguro,
             pago_total: r.pagoTotal,
           })),
+          // Calendario de aportaciones (solo Captación/Aportación — heredado de Cotización)
+          calendario_aportaciones: Array.isArray((form as any)._calendarioAportaciones)
+            ? (form as any)._calendarioAportaciones
+            : [],
         },
         expediente_electronico: {
           documentos: documentos.map((doc: any) => ({

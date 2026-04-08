@@ -3,6 +3,7 @@ import { toast } from 'sonner';
 import { Eye, Download, Upload, Loader2, Database, AlertTriangle } from 'lucide-react';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 import { supabase } from '../../lib/supabaseClient';
+import { useCatalogoDocumentosDB } from '../../hooks/useCatalogoDocumentosDB';
 import { currentUser } from '../../data/mockData';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-7e2d13d9`;
@@ -73,7 +74,7 @@ function normalizeExpediente(raw: any, index: number): Expediente {
     tamanoKB: raw.tamanoKB || 0,
     fechaCarga: raw.fechaCarga || raw.fechaHora || '',
     usuarioCarga: raw.usuarioCarga || raw.usuario || 'Usuario Actual',
-    tipoDocumento: raw.tipoDocumento || '',
+    tipoDocumento: raw.tipoDocumento || raw.tipo_documento || raw.tipoDoc || '',
     descripcion: raw.descripcion || '',
     estatus: raw.estatus || 'Pendiente',
     observaciones: raw.observaciones || '',
@@ -521,6 +522,8 @@ export function ExpedientesElectronicos({
   onDataChange,
   prospectoData,
 }: ExpedientesElectronicosProps) {
+  const { tiposDocumento } = useCatalogoDocumentosDB();
+
   // Función para cargar datos persistidos
   const loadPersistedData = (key: string, defaultValue: any) => {
     try {
@@ -1099,22 +1102,13 @@ export function ExpedientesElectronicos({
                       onClick={(e) => e.stopPropagation()}
                     >
                       <option value="">Seleccione...</option>
-                      <option>Credencial de elector</option>
-                      <option>Pasaporte</option>
-                      <option>Licencia de conducir</option>
-                      <option>Cartilla militar</option>
-                      <option>Visa</option>
-                      <option>Tarjeta de residencia</option>
-                      <option>Cédula de ciudadanía</option>
-                      <option>Registro Federal de Contribuyentes (RFC)</option>
-                      <option>Número de Identificación Personal (NIP)</option>
-                      <option>Documento migratorio</option>
-                      <option>Documento de propiedad</option>
-                      <option>Estado de cuenta bancario</option>
-                      <option>Comprobante de domicilio</option>
-                      <option>Certificado de nacimiento</option>
-                      <option>Certificado de matrimonio</option>
-                      <option>Certificado de defunción</option>
+                      {tiposDocumento.map(tipo => (
+                        <option key={tipo} value={tipo}>{tipo}</option>
+                      ))}
+                      {/* Mostrar valor guardado si no está en el catálogo (compatibilidad) */}
+                      {expediente.tipoDocumento && !tiposDocumento.includes(expediente.tipoDocumento) && (
+                        <option value={expediente.tipoDocumento}>{expediente.tipoDocumento}</option>
+                      )}
                     </select>
                     )}
                   </td>

@@ -31,6 +31,7 @@ export interface ProductoCatalogo {
   type: string;
   source: 'db' | 'local';
   rawData?: Record<string, any>;
+  plantillas?: any[];
 }
 
 interface ProductoRow {
@@ -108,6 +109,8 @@ function mapRowToCatalogo(row: ProductoRow): ProductoCatalogo | null {
     type: row.type,
     source: 'db',
     rawData: d,
+    // Plantillas del nivel raíz del JSON (hermano de data)
+    plantillas: d.plantillas || row.data?.plantillas || [],
   };
 }
 

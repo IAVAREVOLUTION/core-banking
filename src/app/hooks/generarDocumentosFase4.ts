@@ -23,6 +23,8 @@
  * Los PDFs se generan sin librerías externas usando sintaxis PDF-1.4 nativa.
  */
 
+import jsPDF from 'jspdf';
+import html2canvas from 'html2canvas';
 import type { DocumentoCargado } from '../components/solicitudes/solicitudCreditoStore';
 import {
   loadFromSession, loadFromSavedStore, saveToSession, generateId,
@@ -246,6 +248,14 @@ export interface DatosSolicitud {
   tipoProducto: string;
   productoNombre: string;
   terminos: Record<string, any>;
+  rfc?: string;
+  curp?: string;
+  domicilio?: string;
+  finalidad?: string;
+  sucursal?: string;
+  telefono?: string;
+  email?: string;
+  fechaNacimiento?: string;
 }
 
 /** Genera el PDF base del Contrato de Crédito (no firmado). */
@@ -414,6 +424,7 @@ export interface AutoCrearResult {
   registradosEnExpediente: boolean;
   error?: string;
   validacionPlantillas: ValidacionPlantillasResult;
+  fileData?: string;
 }
 
 /**
@@ -674,6 +685,71 @@ export function generarSolicitudPDF(datos: DatosSolicitud): string {
  * Respeta la regla de NO DUPLICAR: si ya existe → no se crea.
  * Requiere al menos 1 plantilla activa tipo "solicitud".
  */
+
+/**
+ * Renderiza HTML a PDF usando html2canvas + jsPDF y devuelve un Blob URL.
+ * El contenedor se inserta en el DOM con opacidad 0 para que los estilos se apliquen,
+ * luego se elimina al terminar.
+ */
+async function htmlToPdfBlobUrl(html: string): Promise<string> {
+  // Crear iframe oculto para aislar estilos del HTML de la plantilla
+  const iframe = document.createElement('iframe');
+  iframe.style.cssText = 'position:fixed;left:0;top:0;width:794px;height:1123px;opacity:0;pointer-events:none;border:none;z-index:-1;';
+  document.body.appendChild(iframe);
+
+  try {
+    const iframeDoc = iframe.contentDocument!;
+    iframeDoc.open();
+    iframeDoc.write(html);
+    iframeDoc.close();
+
+    // Esperar a que carguen estilos e imágenes
+    await new Promise<void>(resolve => {
+      if (iframeDoc.readyState === 'complete') { resolve(); return; }
+      iframe.onload = () => resolve();
+      setTimeout(resolve, 800);
+    });
+    await new Promise(r => setTimeout(r, 300)); // pequeño delay para layout
+
+    const pageEl = iframeDoc.querySelector('.page') as HTMLElement || iframeDoc.body;
+
+    const canvas = await html2canvas(pageEl, {
+      scale: 2,
+      useCORS: true,
+      logging: false,
+      backgroundColor: '#ffffff',
+      width: pageEl.scrollWidth,
+      height: pageEl.scrollHeight,
+      windowWidth: 794,
+    });
+
+    const imgData = canvas.toDataURL('image/jpeg', 0.95);
+    const PAGE_W = 210;  // mm A4
+    const PAGE_H = 297;  // mm A4
+    const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+
+    const imgW = PAGE_W;
+    const imgH = (canvas.height / canvas.width) * PAGE_W;
+    let yLeft = imgH;
+    let yOffset = 0;
+
+    pdf.addImage(imgData, 'JPEG', 0, yOffset, imgW, imgH);
+    yLeft -= PAGE_H;
+
+    while (yLeft > 0) {
+      yOffset -= PAGE_H;
+      pdf.addPage();
+      pdf.addImage(imgData, 'JPEG', 0, yOffset, imgW, imgH);
+      yLeft -= PAGE_H;
+    }
+
+    const pdfBlob = pdf.output('blob');
+    return `blob:application/pdf::${URL.createObjectURL(pdfBlob)}`;
+  } finally {
+    document.body.removeChild(iframe);
+  }
+}
+
 export async function autoCrearDocumentosFase2(opts: AutoCrearOpts): Promise<AutoCrearResult> {
   const { storageId, datos, plantillas, supabase, projectId: pid } = opts;
   const fecha = new Date().toLocaleString('es-MX');
@@ -682,6 +758,19 @@ export async function autoCrearDocumentosFase2(opts: AutoCrearOpts): Promise<Aut
   // Validar que exista plantilla activa tipo "solicitud"
   const plantillasActivas = (plantillas || []).filter(p => p.estatus === 'Activo');
   const plantillaSolicitud = plantillasActivas.find(p => p.tipoPlantilla === 'solicitud');
+
+  console.log('[autoCrearDocumentosFase2] plantillasActivas:', plantillasActivas.map(p => ({
+    nombre: p.nombre,
+    tipo: p.tipoPlantilla,
+    estatus: p.estatus,
+    archivoBase: p.archivoBase,
+    archivoDataLen: p.archivoData?.length || 0,
+  })));
+  console.log('[autoCrearDocumentosFase2] plantillaSolicitud encontrada:', !!plantillaSolicitud, plantillaSolicitud ? {
+    nombre: plantillaSolicitud.nombre,
+    archivoBase: plantillaSolicitud.archivoBase,
+    archivoDataLen: plantillaSolicitud.archivoData?.length || 0,
+  } : null);
 
   const validacionPlantillas: ValidacionPlantillasResult = {
     valido: !!plantillaSolicitud,
@@ -717,52 +806,86 @@ export async function autoCrearDocumentosFase2(opts: AutoCrearOpts): Promise<Aut
     };
   }
 
-  // Generar PDF
-  const fileData = generarSolicitudPDF(datos);
-  let uploadInfo: UploadResult | null = null;
+  // Generar PDF — usar plantilla real si existe, sino fallback
+  let fileData: string;
 
-  if (supabase && pid) {
-    uploadInfo = await uploadGeneratedPDF(
-      supabase, fileData, 'solicitud_base.pdf',
-      String(storageId), pid
-    );
+  if (plantillaSolicitud?.archivoData) {
+    const t = datos.terminos ?? {};
+    const fechaStr = new Date().toLocaleDateString('es-MX');
+
+    // Valores calculados
+    const monto = t.montoSolicitado || t.monto || '';
+    // {{plazo}} — la plantilla puede tener " meses" hardcodeado después, así que solo el número
+    const plazoRaw = String(t.plazo || t.plazoMeses || '');
+
+    // Función central de sustitución — opera sobre texto plano decodificado
+    const sustituir = (html: string): string => html
+      // ── Fecha y folio ──
+      .replace(/\{\{fecha\}\}/g, fechaStr)
+      .replace(/\{\{folio\}\}/g, datos.noSol || '')
+      // ── Datos del cliente ──
+      .replace(/\{\{cliente_nombre\}\}/g, datos.cliente)
+      .replace(/\{\{cliente_rfc\}\}/g, datos.rfc || 'N/A')
+      .replace(/\{\{cliente_curp\}\}/g, datos.curp || 'N/A')
+      .replace(/\{\{fecha_nacimiento\}\}/g, datos.fechaNacimiento || 'N/A')
+      .replace(/\{\{telefono\}\}/g, datos.telefono || 'N/A')
+      .replace(/\{\{email\}\}/g, datos.email || 'N/A')
+      // Domicilio: la plantilla usa {{domicilio}} y también {{cliente_domicilio}}
+      .replace(/\{\{domicilio\}\}/g, datos.domicilio || 'N/A')
+      .replace(/\{\{cliente_domicilio\}\}/g, datos.domicilio || 'N/A')
+      // ── Producto y condiciones ──
+      .replace(/\{\{producto\}\}/g, datos.productoNombre || datos.tipoProducto)
+      // Monto: la plantilla usa {{monto}} y también {{monto_solicitado}}
+      .replace(/\{\{monto\}\}/g, monto)
+      .replace(/\{\{monto_solicitado\}\}/g, monto)
+      // Plazo: solo el número (la plantilla ya tiene " meses" hardcodeado)
+      .replace(/\{\{plazo\}\}/g, plazoRaw)
+      .replace(/\{\{tasa\}\}/g, String(t.tasa || t.tasaAnual || t.tasaMinInteres || 'N/A'))
+      .replace(/\{\{cat\}\}/g, String(t.cat || 'N/A'))
+      .replace(/\{\{finalidad\}\}/g, datos.finalidad || 'N/A')
+      // ── Sucursal y ejecutivo ──
+      .replace(/\{\{sucursal\}\}/g, datos.sucursal || 'N/A')
+      .replace(/\{\{ejecutivo\}\}/g, 'N/A')
+      // ── Empresa (institución) ──
+      .replace(/\{\{empresa_nombre\}\}/g, 'N/A')
+      .replace(/\{\{empresa_razon_social\}\}/g, 'N/A')
+      .replace(/\{\{direccion_empresa\}\}/g, 'N/A')
+      // ── Datos laborales del cliente ──
+      .replace(/\{\{empresa\}\}/g, 'N/A')
+      .replace(/\{\{puesto\}\}/g, 'N/A')
+      .replace(/\{\{ingreso\}\}/g, 'N/A')
+      .replace(/\{\{antiguedad\}\}/g, 'N/A');
+
+    const raw = plantillaSolicitud.archivoData;
+    // archivoData se guarda con FileReader.readAsDataURL → siempre base64.
+    // Decodificar → sustituir placeholders → renderizar HTML a PDF con html2canvas + jsPDF.
+    const b64Match = raw.match(/^data:([^;]+);base64,(.+)$/s);
+    const htmlSource = b64Match
+      ? sustituir(new TextDecoder('utf-8').decode(Uint8Array.from(atob(b64Match[2]), c => c.charCodeAt(0))))
+      : sustituir(raw);
+
+    try {
+      fileData = await htmlToPdfBlobUrl(htmlSource);
+    } catch (e) {
+      console.warn('[generarDocumentosFase2] Error renderizando plantilla a PDF:', e);
+      fileData = generarSolicitudPDF(datos);
+    }
+
+    console.log(`[generarDocumentosFase2] Usando plantilla: "${plantillaSolicitud.nombre}" v${plantillaSolicitud.version} con datos reemplazados`);
+  } else {
+    fileData = generarSolicitudPDF(datos);
+    console.log('[generarDocumentosFase2] Sin plantilla — generando PDF con datos del formulario');
   }
 
-  const notaPlantilla = plantillaSolicitud
-    ? `Generado desde plantilla "${plantillaSolicitud.nombre}" (v${plantillaSolicitud.version}).`
-    : 'Generado con datos del formulario (sin plantilla configurada).';
-
-  const nuevoDoc: DocumentoCargado = {
-    id: generateId(),
-    fecha,
-    usuario: 'Sistema',
-    tipoDocumento: CLAVE_SOLICITUD_BASE,
-    archivo: 'solicitud_base.pdf',
-    tipoArchivo: 'pdf',
-    nota: `${notaPlantilla} Pendiente de Validación IA.`,
-    area: 'OPERACIONES',
-    fase: 'Fase 2',
-    faseId: 2,
-    estatus: 'Pendiente Validación IA',
-    validadoIA: false,
-    fileData,
-    url: uploadInfo?.url,
-    storagePath: (uploadInfo as any)?.storagePath,
-    mime: 'application/pdf',
-    tamanoKB: uploadInfo?.tamanoKB || Math.round((fileData.length * 3) / 4 / 1024) || 1,
-  } as DocumentoCargado & { storagePath?: string };
-
-  saveToSession(storageId, 'documentos', [...docsPrevios, nuevoDoc]);
-
-  console.log(`[generarDocumentosFase2] SOLICITUD_BASE creada para solicitud ${storageId} | Supabase: ${uploadInfo ? 'OK' : 'local'}`);
-
+  // NO registrar en expediente ni subir a Supabase — solo generar y descargar
   return {
     exito: true,
-    documentosCreados: [CLAVE_SOLICITUD_BASE],
+    documentosCreados: [],
     pdfGenerados: ['Solicitud.pdf'],
-    subidosASupabase: !!uploadInfo,
-    registradosEnExpediente: true,
+    subidosASupabase: false,
+    registradosEnExpediente: false,
     error: undefined,
     validacionPlantillas,
+    fileData,
   };
 }

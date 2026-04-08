@@ -13,6 +13,7 @@ export interface SolicitudFormData {
   lineaProducto: string;           // Crédito | Captación | Línea de Crédito
   tipoProducto: string;            // Crédito Simple, Revolvente, etc.
   tipoPersona: string;             // Física | Moral
+  noCliente: string;               // ID del cliente seleccionado
   nombrePersona: string;
   apellidoPaternoPersona: string;
   apellidoMaternoPersona: string;
@@ -33,6 +34,13 @@ export interface SolicitudFormData {
   // Fechas de vigencia del crédito (unificadas con Originación)
   fechaInicio?: string;
   fechaFin?: string;
+
+  // Campos internos
+  _clienteId?: string;             // UUID del cliente en BD
+  _curp?: string;                  // CURP del cliente (para validación IA de INE)
+  _rfc?: string;                   // RFC del cliente (para validación IA de CSF)
+  /** Calendario de aportaciones heredado desde Cotización (solo Captación) */
+  _calendarioAportaciones?: Array<{ noAportacion: number; fecha: string; monto: number; moneda: string }>;
 }
 
 // Términos y Condiciones
@@ -555,6 +563,7 @@ export const EMPTY_FORM: SolicitudFormData = {
   lineaProducto: 'Crédito',
   tipoProducto: '',
   tipoPersona: '',
+  noCliente: '',
   nombrePersona: '',
   apellidoPaternoPersona: '',
   apellidoMaternoPersona: '',
@@ -572,6 +581,7 @@ export const EMPTY_FORM: SolicitudFormData = {
   montoAutorizado: '',
   fechaInicio: '',
   fechaFin: '',
+  _clienteId: '',
 };
 
 export const EMPTY_TERMINOS: TerminosCondiciones = {

@@ -25,6 +25,8 @@ interface SolicitudCreditoListProps {
     apellidoPaterno: string;
     apellidoMaterno: string;
     tipoPersona?: string;
+    curp?: string;
+    rfc?: string;
   };
 }
 
@@ -39,11 +41,21 @@ function parseDate(dateStr: string): Date {
  * Reconstruye SolicitudFormData completo desde un SolicitudListItem + JSONB _data.
  * Exportada para uso en OriginacionModule (siembra namespace sol_credito_).
  */
+/** Normaliza "Persona Física" / "Persona Moral" → "Física" / "Moral" para el select del form */
+function normalizeTipoPersona(raw: string): string {
+  if (!raw) return '';
+  const l = raw.toLowerCase();
+  if (l.includes('moral')) return 'Moral';
+  if (l.includes('f') || l.includes('física') || l.includes('fisica')) return 'Física';
+  return raw;
+}
+
 export function buildFormDataFromListItem(s: SolicitudListItem): Record<string, any> {
   const extra = s as any;
   const d = extra._data || {};
   const sol = d.solicitud || {};
   const hdr = sol.header || {};
+  const rawTerminos = sol.terminos_condiciones?._raw || {};
   const joinNombre = extra._clienteNombre || '';
   const joinApPaterno = extra._clienteApPaterno || '';
   const joinApMaterno = extra._clienteApMaterno || '';
@@ -54,13 +66,14 @@ export function buildFormDataFromListItem(s: SolicitudListItem): Record<string, 
   const joinTipoProducto = extra._tipoProducto || '';
   const joinDescripcion = extra._descripcion || '';
   const joinFases = extra._fases || '';
+  const rawTipoPersona = extra._tipoPersona || hdr.tipo_persona || d.tipoPersona || joinTipoPersona || '';
   return {
     id: extra._dbId || String(s.id) || '',
     noSol: s.noSol || hdr.no_sol || d.noSol || '',
     cotizacionId: hdr.cotizacion_id || d.cotizacionId || '',
     lineaProducto: hdr.linea_producto || d.lineaProducto || joinLineaProducto || 'Crédito',
     tipoProducto: s.tipoProducto || hdr.tipo_producto || d.tipoProducto || joinTipoProducto || '',
-    tipoPersona: hdr.tipo_persona || d.tipoPersona || joinTipoPersona || '',
+    tipoPersona: normalizeTipoPersona(rawTipoPersona),
     nombrePersona: hdr.nombre_persona || d.nombrePersona || joinNombre || '',
     apellidoPaternoPersona: hdr.apellido_paterno_persona || d.apellidoPaternoPersona || joinApPaterno || '',
     apellidoMaternoPersona: hdr.apellido_materno_persona || d.apellidoMaternoPersona || joinApMaterno || '',
@@ -78,9 +91,16 @@ export function buildFormDataFromListItem(s: SolicitudListItem): Record<string, 
     montoAutorizado: hdr.monto_autorizado
       || (typeof s.montoAutorizado === 'number' && s.montoAutorizado > 0 ? s.montoAutorizado.toFixed(2) : null)
       || d.montoAutorizado || '0.00',
-    fechaInicio: extra._fechaInicio || hdr.fecha_inicio || '',
-    fechaFin: extra._fechaFin || hdr.fecha_fin || '',
+    fechaInicio: rawTerminos.fechaInicio || rawTerminos.fechaPrimerPago || extra._fechaInicio || '',
+    fechaFin: rawTerminos.fechaFin || extra._fechaFin || '',
     _clienteId: extra._clienteId || hdr.cliente_id || d._clienteId || '',
+    _curp: extra._clienteCurp || hdr.curp || d._curp || d.curp || '',
+    _rfc: extra._clienteRfc || hdr.rfc || d._rfc || d.rfc || '',
+    // Calendario de aportaciones heredado de Cotización — persistido en data.solicitud.simulacion
+    _calendarioAportaciones: (() => {
+      const cal = sol.simulacion?.calendario_aportaciones;
+      return Array.isArray(cal) && cal.length > 0 ? cal : undefined;
+    })(),
   };
 }
 
@@ -223,47 +243,65 @@ export function SolicitudCreditoList({ cotizacionParaSolicitud, onCotizacionCons
   // ─── Flujo "Crear desde Cotización" — spec solicitudes-financieras §1–§4 ───
   useEffect(() => {
     if (!cotizacionParaSolicitud) return;
-    // Pre-llenar sessionStorage con los datos mapeados de la cotización
+
+    // Capturar referencia local ANTES de llamar onCotizacionConsumed (que pone el prop en null)
+    const cp = cotizacionParaSolicitud;
+
+    /** Convierte YYYY-MM-DD → DD/MM/YYYY si aplica */
+    const isoToDMY = (s: string) => {
+      if (!s) return '';
+      if (/^\d{4}-\d{2}-\d{2}$/.test(s)) { const [y, m, d] = s.split('-'); return `${d}/${m}/${y}`; }
+      return s;
+    };
+
     clearSession('new');
     const noSol = consumeNoSol();
     const fechaSol = getFechaSolicitudNow();
+
+    // Calendario de aportaciones — array de objetos {noAportacion, fecha, monto, moneda}
+    const calendario = Array.isArray(cp._calendarioAportaciones) && cp._calendarioAportaciones.length > 0
+      ? cp._calendarioAportaciones
+      : undefined;
+
+    // Fechas inicio/fin derivadas del calendario
+    const fechaInicio = cp.fechaInicio || (calendario ? isoToDMY(calendario[0]?.fecha || '') : '');
+    const fechaFin = cp.fechaFin || (calendario ? isoToDMY(calendario[calendario.length - 1]?.fecha || '') : '');
+
     const formData = {
       ...EMPTY_FORM,
       noSol,
       fechaSolicitud: fechaSol,
-      cotizacionId: cotizacionParaSolicitud.cotizacionId || '',
-      lineaProducto: cotizacionParaSolicitud.lineaProducto || 'Crédito',
-      tipoProducto: cotizacionParaSolicitud.tipoProducto || '',
-      tipoPersona: cotizacionParaSolicitud.tipoPersona || '',
-      nombrePersona: cotizacionParaSolicitud.nombrePersona || '',
-      apellidoPaternoPersona: cotizacionParaSolicitud.apellidoPaternoPersona || '',
-      apellidoMaternoPersona: cotizacionParaSolicitud.apellidoMaternoPersona || '',
-      productoId: cotizacionParaSolicitud.productoId || '',
-      nombreProducto: cotizacionParaSolicitud.nombreProducto || '',
-      montoSolicitado: cotizacionParaSolicitud.montoSolicitado || '',
-      descripcion: `Solicitud generada desde Cotización ${cotizacionParaSolicitud.cotizacionId || ''}`,
+      cotizacionId: cp.cotizacionId || '',
+      lineaProducto: cp.lineaProducto || 'Crédito',
+      tipoProducto: cp.tipoProducto || '',
+      tipoPersona: cp.tipoPersona || '',
+      nombrePersona: cp.nombrePersona || '',
+      apellidoPaternoPersona: cp.apellidoPaternoPersona || '',
+      apellidoMaternoPersona: cp.apellidoMaternoPersona || '',
+      productoId: cp.productoId || '',
+      nombreProducto: cp.nombreProducto || '',
+      montoSolicitado: cp.montoSolicitado || '',
+      descripcion: `Solicitud generada desde Cotización ${cp.cotizacionId || ''}`,
+      faseId: '1',
+      descripcionFase: 'Fase 1 — Recepción de Documentos',
+      area: 'Mesa de Control',
+      estatusSolicitud: 'En proceso',
+      // Fechas vigencia
+      fechaInicio,
+      fechaFin,
+      // Calendario de aportaciones — persiste en formData para SimulacionTab y guardado en DB
+      ...(calendario ? { _calendarioAportaciones: calendario } : {}),
     };
     saveToSession('new', 'form', formData);
-    // Pre-llenar términos y condiciones si vienen de la cotización
-    if (cotizacionParaSolicitud._terminosCondiciones) {
-      const tc = cotizacionParaSolicitud._terminosCondiciones;
-      // Convertir fecha de YYYY-MM-DD a DD/MM/YYYY si es necesario
-      let fechaPrimerPago = tc.fechaPrimerPago || '';
-      if (fechaPrimerPago && /^\d{4}-\d{2}-\d{2}$/.test(fechaPrimerPago)) {
-        const [y, m, d] = fechaPrimerPago.split('-');
-        fechaPrimerPago = `${d}/${m}/${y}`;
-      }
-      // Captación usa fechaPrimeraAportacion en vez de fechaPrimerPago
-      let fechaPrimeraAportacion = tc.fechaPrimeraAportacion || '';
-      if (fechaPrimeraAportacion && /^\d{4}-\d{2}-\d{2}$/.test(fechaPrimeraAportacion)) {
-        const [y, m, d] = fechaPrimeraAportacion.split('-');
-        fechaPrimeraAportacion = `${d}/${m}/${y}`;
-      }
+
+    // Pre-llenar términos y condiciones
+    if (cp._terminosCondiciones) {
+      const tc = cp._terminosCondiciones;
       const terminos = {
         ...EMPTY_TERMINOS,
         montoSolicitado: tc.montoSolicitado || '',
-        fechaPrimerPago,
-        fechaPrimeraAportacion,
+        fechaPrimerPago: isoToDMY(tc.fechaPrimerPago || ''),
+        fechaPrimeraAportacion: isoToDMY(tc.fechaPrimeraAportacion || ''),
         plazo: tc.plazo || '',
         frecuencia: tc.frecuencia || 'Mensual',
         tasa: tc.tasa || '',
@@ -276,9 +314,10 @@ export function SolicitudCreditoList({ cotizacionParaSolicitud, onCotizacionCons
       };
       saveToSession('new', 'terminos', terminos);
     }
-    // Abrir formulario en modo nuevo
-    setView({ type: 'form', mode: 'nuevo' });
+
+    // Abrir formulario — consumir DESPUÉS de guardar en session para evitar race condition
     onCotizacionConsumed?.();
+    setView({ type: 'form', mode: 'nuevo' });
   }, [cotizacionParaSolicitud]);
 
   const handleExportExcel = () => toast.success('Exportando a Excel', { description: 'El archivo se está descargando...', duration: 3000 });
@@ -305,6 +344,8 @@ export function SolicitudCreditoList({ cotizacionParaSolicitud, onCotizacionCons
         apellidoPaternoPersona: initialClienteData.apellidoPaterno,
         apellidoMaternoPersona: initialClienteData.apellidoMaterno,
         _clienteId: initialClienteData.clienteId,
+        _curp: initialClienteData.curp || '',
+        _rfc: initialClienteData.rfc || '',
       });
     }
     setView({ type: 'form', mode: 'nuevo' });
@@ -583,7 +624,7 @@ export function SolicitudCreditoList({ cotizacionParaSolicitud, onCotizacionCons
 
   // ─── FORM VIEW ───
   if (view.type === 'form') {
-    return <SolicitudCreditoForm key={`${view.mode}-${view.solicitudId ?? 'new'}`} mode={view.mode} solicitudId={view.solicitudId} onCancel={handleBack} onSave={handleSave} />;
+    return <SolicitudCreditoForm key={`${view.mode}-${view.solicitudId ?? 'new'}`} mode={view.mode} solicitudId={view.solicitudId} onCancel={handleBack} onSave={handleSave} cotizacionData={cotizacionParaSolicitud} />;
   }
 
   // ─── LIST VIEW ───

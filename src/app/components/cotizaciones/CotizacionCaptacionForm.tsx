@@ -75,6 +75,7 @@ interface ClientePickerItem {
   nombre: string;
   apellidoPaterno: string;
   apellidoMaterno: string;
+  institucionGobierno?: string;
 }
 
 /** Normaliza un Product a la interfaz interna del picker de productos */
@@ -88,6 +89,7 @@ interface ProductoPickerItem {
   plazoCumplirMontoMinimo: number;
   tasaMinInteres: number;
   matrizTasaFija: MatrizTasaFijaRow[];
+  periodosRegistros: Array<{ id: number; periodoId: number; descripcion: string; dias?: number }>;
 }
 
 /** Fila de la Matriz de Tasa Fija del producto */
@@ -134,6 +136,7 @@ export function CotizacionCaptacionForm({ mode, cotizacion, onSave, onBack, onCr
         nombre: c.nombre,
         apellidoPaterno: c.apellidoPaterno,
         apellidoMaterno: c.apellidoMaterno,
+        institucionGobierno: c._rawData?.institucionGobierno || '',
       }));
     }
     return MOCK_CLIENTES_FALLBACK;
@@ -150,10 +153,14 @@ export function CotizacionCaptacionForm({ mode, cotizacion, onSave, onBack, onCr
           nombreProducto: p.nombre || p.producto || '',
           tipoProducto: p.tipoProducto || '',
           montoMinimo: typeof p.montoMinimo === 'number' ? p.montoMinimo : parseFloat(String(p.montoMinimo)) || 0,
-          periodoCumplirMontoMinimo: (p as any).frecuenciaPagoIntereses || (p as any).periodoCorte || 'Mensual',
+          periodoCumplirMontoMinimo: (p as any).frecuenciaPagoIntereses
+            || (Array.isArray((p as any).periodosRegistros) && (p as any).periodosRegistros[0]?.descripcion)
+            || (p as any).periodoCorte
+            || 'Mensual',
           plazoCumplirMontoMinimo: parseInt(String((p as any).plazo)) || 12,
           tasaMinInteres: parseFloat(String((p as any).tasaMinima || (p as any).tasaInicial)) || 0,
           matrizTasaFija: extractMatrizTasaFija(p),
+          periodosRegistros: Array.isArray((p as any).periodosRegistros) ? (p as any).periodosRegistros : [],
         }));
     }
     return MOCK_PRODUCTOS_FALLBACK;
@@ -202,6 +209,16 @@ export function CotizacionCaptacionForm({ mode, cotizacion, onSave, onBack, onCr
   }, [form.data, mode]);
 
   const data = form.data;
+
+  // ── Periodos disponibles para el dropdown (desde el producto seleccionado) ──
+  // Usa periodosRegistros del producto; fallback a FRECUENCIAS si no están configurados
+  const periodosDropdown = useMemo((): string[] => {
+    const prod = productoPickerItems.find(p => p.id === form.producto_id);
+    if (prod?.periodosRegistros?.length > 0) {
+      return prod.periodosRegistros.map(p => p.descripcion).filter(Boolean);
+    }
+    return FRECUENCIAS.map(f => f.label);
+  }, [form.producto_id, productoPickerItems]);
 
   // ── Helpers para actualizar ──
   const setData = useCallback((partial: Partial<CotizacionCaptacionData>) => {
@@ -287,7 +304,10 @@ export function CotizacionCaptacionForm({ mode, cotizacion, onSave, onBack, onCr
   // ── Cliente selection handler — spec §3.3 ──
   const handleSelectCliente = (cl: ClientePickerItem) => {
     const nombreCompleto = [cl.nombre, cl.apellidoPaterno, cl.apellidoMaterno].filter(Boolean).join(' ');
-    setData({ cliente: { claveCliente: cl.idCliente, nombreCompleto } });
+    setData({
+      cliente: { claveCliente: cl.idCliente, nombreCompleto },
+      institucionGobierno: cl.institucionGobierno || '',
+    });
     setForm(prev => ({ ...prev, cliente_id: cl.id }));
 
     setShowClienteModal(false);
@@ -299,8 +319,11 @@ export function CotizacionCaptacionForm({ mode, cotizacion, onSave, onBack, onCr
 
     // Inversión-specific validations
     if (isInversion) {
-      if (data.montoCotizado > 0 && data.producto.montoMinimo > 0 && data.montoCotizado < data.producto.montoMinimo) {
-        errors.push(`Monto cotizado (${formatMoney(data.montoCotizado)}) es menor al monto mínimo del producto (${formatMoney(data.producto.montoMinimo)})`);
+      const montoCotNum = normalizeNum(data.montoCotizado);
+      const montoMinNum = normalizeNum(data.producto.montoMinimo);
+      // Solo validar si AMBOS son válidos, mayores a 0, y cotizado < mínimo
+      if (montoCotNum !== null && montoCotNum > 0 && montoMinNum !== null && montoMinNum > 0 && montoCotNum < montoMinNum) {
+        errors.push(`Monto cotizado (${formatMoney(montoCotNum)}) es menor al monto mínimo del producto (${formatMoney(montoMinNum)})`);
       }
       if (matrizTasaFija.length > 0 && selectedPlazoIdx < 0) {
         errors.push('Debe seleccionar un plazo de la Matriz de Tasa Fija');
@@ -415,8 +438,16 @@ export function CotizacionCaptacionForm({ mode, cotizacion, onSave, onBack, onCr
     }
   }, [selectedMatrizRow, isInversion]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Inversión validation: block if monto < montoMinimo from product
-  const inversionMontoError = isInversion && data.montoCotizado > 0 && data.producto.montoMinimo > 0 && data.montoCotizado < data.producto.montoMinimo;
+  // Inversión validation: block if monto < montoMinimo from product (con normalización numérica)
+  const normalizeNum = (v: number | string | undefined | null): number | null => {
+    if (v === undefined || v === null || v === '') return null;
+    const cleaned = String(v).replace(/[^0-9.-]/g, '');
+    if (cleaned === '' || isNaN(Number(cleaned))) return null;
+    return Number(cleaned);
+  };
+  const montoCotNum = normalizeNum(data.montoCotizado);
+  const montoMinNum = normalizeNum(data.producto.montoMinimo);
+  const inversionMontoError = isInversion && montoCotNum !== null && montoCotNum > 0 && montoMinNum !== null && montoMinNum > 0 && montoCotNum < montoMinNum;
   // Inversión validation: block if plazo not selected
   const inversionPlazoError = isInversion && matrizTasaFija.length > 0 && selectedPlazoIdx < 0;
 
@@ -591,7 +622,7 @@ export function CotizacionCaptacionForm({ mode, cotizacion, onSave, onBack, onCr
                       )}
                     </div>
                   </div>
-                  {/* Institución Gobierno — campo directo de data.institucionGobierno (J_COTIZACIONES) */}
+                  {/* Institución Gobierno — auto-cargado desde data.institucionGobierno del cliente */}
                   <div className="flex flex-col">
                     <label className="text-[10px] text-gray-600 mb-1">Institución Gobierno <span className="text-[9px] text-gray-400">(data.institucionGobierno)</span></label>
                     <input
@@ -599,8 +630,8 @@ export function CotizacionCaptacionForm({ mode, cotizacion, onSave, onBack, onCr
                       value={data.institucionGobierno || ''}
                       disabled={isView}
                       onChange={e => setData({ institucionGobierno: e.target.value })}
-                      placeholder="Valor almacenado en J_COTIZACIONES.data"
-                      className={fieldClass}
+                      placeholder="Se carga automáticamente al seleccionar un cliente"
+                      className={data.institucionGobierno ? fieldClass : `${fieldClass} text-gray-400 italic`}
                     />
                   </div>
                 </div>
@@ -794,13 +825,13 @@ export function CotizacionCaptacionForm({ mode, cotizacion, onSave, onBack, onCr
                           setData({ montoCotizado: val });
                         }}
                         className={`${fieldClass} ${
-                          !isView && data.producto.montoMinimo > 0 && data.montoCotizado > 0 && data.montoCotizado < data.producto.montoMinimo
+                          !isView && montoCotNum !== null && montoCotNum > 0 && montoMinNum !== null && montoMinNum > 0 && montoCotNum < montoMinNum
                             ? 'border-red-400 bg-red-50'
                             : ''
                         }`}
                       />
-                      {!isView && data.producto.montoMinimo > 0 && data.montoCotizado > 0 && data.montoCotizado < data.producto.montoMinimo && (
-                        <span className="text-[9px] text-red-600 mt-0.5">Monto debe ser ≥ {formatMoney(data.producto.montoMinimo)}</span>
+                      {!isView && montoCotNum !== null && montoCotNum > 0 && montoMinNum !== null && montoMinNum > 0 && montoCotNum < montoMinNum && (
+                        <span className="text-[9px] text-red-600 mt-0.5">Monto debe ser ≥ {formatMoney(montoMinNum)}</span>
                       )}
                     </div>
                     {/* spec §5: Tasa — read-only when inversión (auto from matriz) */}
@@ -831,9 +862,13 @@ export function CotizacionCaptacionForm({ mode, cotizacion, onSave, onBack, onCr
                         onChange={e => setData({ frecuenciaCapitalizacion: e.target.value })}
                         className={fieldClass}
                       >
-                        {FRECUENCIAS.map(f => (
-                          <option key={f.label} value={f.label}>{f.label} ({f.dias} días)</option>
+                        <option value="">— Seleccionar —</option>
+                        {periodosDropdown.map(p => (
+                          <option key={p} value={p}>{p}</option>
                         ))}
+                        {data.frecuenciaCapitalizacion && !periodosDropdown.includes(data.frecuenciaCapitalizacion) && (
+                          <option value={data.frecuenciaCapitalizacion}>{data.frecuenciaCapitalizacion}</option>
+                        )}
                       </select>
                     </div>
                   </div>
@@ -888,13 +923,13 @@ export function CotizacionCaptacionForm({ mode, cotizacion, onSave, onBack, onCr
                             min={data.producto.plazoCumplirMontoMinimo || 0}
                             onChange={e => setData({ plazoCumplirMontoMinimo: parseInt(e.target.value) || 0 })}
                             className={`${fieldClass} ${
-                              !isView && data.producto.plazoCumplirMontoMinimo > 0 && data.plazoCumplirMontoMinimo < data.producto.plazoCumplirMontoMinimo
+                              !isView && Number(data.producto.plazoCumplirMontoMinimo) > 0 && Number(data.plazoCumplirMontoMinimo) < Number(data.producto.plazoCumplirMontoMinimo)
                                 ? 'border-red-400 bg-red-50'
                                 : ''
                             }`}
                           />
-                          {!isView && !isInversion && data.producto.plazoCumplirMontoMinimo > 0 && data.plazoCumplirMontoMinimo < data.producto.plazoCumplirMontoMinimo && (
-                            <span className="text-[9px] text-red-600 mt-0.5">Plazo debe ser ≥ {data.producto.plazoCumplirMontoMinimo}</span>
+                          {!isView && !isInversion && Number(data.producto.plazoCumplirMontoMinimo) > 0 && Number(data.plazoCumplirMontoMinimo) < Number(data.producto.plazoCumplirMontoMinimo) && (
+                            <span className="text-[9px] text-red-600 mt-0.5">Plazo debe ser ≥ {Number(data.producto.plazoCumplirMontoMinimo)}</span>
                           )}
                         </>
                       )}
@@ -1029,9 +1064,13 @@ export function CotizacionCaptacionForm({ mode, cotizacion, onSave, onBack, onCr
                         className={isView ? readonlyClass : fieldClass}
                       >
                         <option value="">— Seleccionar —</option>
-                        {FRECUENCIAS.map(f => (
-                          <option key={f.label} value={f.label}>{f.label}</option>
+                        {periodosDropdown.map(p => (
+                          <option key={p} value={p}>{p}</option>
                         ))}
+                        {/* Compatibilidad: mostrar valor guardado si no está en los periodos del producto */}
+                        {data.periodoCumplirMontoMinimo && !periodosDropdown.includes(data.periodoCumplirMontoMinimo) && (
+                          <option value={data.periodoCumplirMontoMinimo}>{data.periodoCumplirMontoMinimo}</option>
+                        )}
                       </select>
                     </div>
                     <div className="flex flex-col">

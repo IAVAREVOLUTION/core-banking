@@ -1,8 +1,6 @@
 import { useState, useRef, useMemo, useEffect } from 'react';
 import { toast } from 'sonner';
 import { K_PERIODS } from '../../data/mockData';
-import { CheckListCaptacionesTab } from './tabs/CheckListCaptacionesTab';
-import { TasaInversionTab } from './tabs/TasaInversionTab';
 import { ConstitucionTab } from './tabs/ConstitucionTab';
 import { ComisionesTab } from './tabs/ComisionesTab';
 import { CargoTab } from './tabs/CargoTab';
@@ -73,25 +71,6 @@ interface FormDataCaptacion {
   porcentajeIncremento: string;
   tasaMinima: string;
   tasaMaxima: string;
-  // Check List Captaciones
-  checkListRequiereIdentificacion: boolean;
-  checkListRequiereComprobante: boolean;
-  checkListRequiereRFC: boolean;
-  checkListRequiereCURP: boolean;
-  checkListRequiereEstadoCuenta: boolean;
-  checkListRequiereActaConstitutiva: boolean;
-  checkListRequierePoderNotarial: boolean;
-  checkListObservaciones: string;
-  // Tasa de Inversión
-  tasaInversionTipoCalculo: string;
-  tasaInversionPorcentajeBase: string;
-  tasaInversionPorcentajeAdicional: string;
-  tasaInversionTotalCalculada: string;
-  tasaInversionIndexada: string;
-  tasaInversionPuntosSobreTasa: string;
-  tasaInversionAplicaCapitalizacion: boolean;
-  tasaInversionFrecuenciaCapitalizacion: string;
-  tasaInversionDiasBaseCalculo: string;
   // Constitución
   constitucionMontoMinimoCuenta: string;
   constitucionMontoMaximoCuenta: string;
@@ -129,8 +108,6 @@ export function ProductoCaptacionForm({ mode, productoId, producto, onCancel, on
   const modeCredito: 'create' | 'edit' | 'view' = mode === 'nuevo' ? 'create' : mode === 'editar' ? 'edit' : 'view';
 
   // Referencias a los tabs para capturar sus datos al guardar
-  const checkListTabRef = useRef<TabDataRef>(null);
-  const tasaInversionTabRef = useRef<TabDataRef>(null);
   const constitucionTabRef = useRef<TabDataRef>(null);
   const comisionesTabRef = useRef<TabDataRef>(null);
   const cargoTabRef = useRef<TabDataRef>(null);
@@ -206,26 +183,6 @@ export function ProductoCaptacionForm({ mode, productoId, producto, onCancel, on
         porcentajeIncremento: producto.porcentajeIncremento || '',
         tasaMinima: producto.tasaMinima || '',
         tasaMaxima: producto.tasaMaxima || '',
-        // === Cargar datos de los objetos anidados ===
-        // Check List Captaciones
-        checkListRequiereIdentificacion: producto.checkListCaptaciones?.requiereIdentificacion || false,
-        checkListRequiereComprobante: producto.checkListCaptaciones?.requiereComprobantedomicilio || false,
-        checkListRequiereRFC: producto.checkListCaptaciones?.requiereRFC || false,
-        checkListRequiereCURP: producto.checkListCaptaciones?.requiereCURP || false,
-        checkListRequiereEstadoCuenta: producto.checkListCaptaciones?.requiereEstadoCuenta || false,
-        checkListRequiereActaConstitutiva: producto.checkListCaptaciones?.requiereActaConstitutiva || false,
-        checkListRequierePoderNotarial: producto.checkListCaptaciones?.requierePoderNotarial || false,
-        checkListObservaciones: producto.checkListCaptaciones?.observaciones || '',
-        // Tasa de Inversión
-        tasaInversionTipoCalculo: producto.tasaInversion?.tasaTipoCalculo || 'Simple',
-        tasaInversionPorcentajeBase: producto.tasaInversion?.tasaPorcentajeBase?.toString() || '',
-        tasaInversionPorcentajeAdicional: producto.tasaInversion?.tasaPorcentajeAdicional?.toString() || '',
-        tasaInversionTotalCalculada: producto.tasaInversion?.tasaTotalCalculada?.toString() || '',
-        tasaInversionIndexada: producto.tasaInversion?.tasaIndexada || '',
-        tasaInversionPuntosSobreTasa: producto.tasaInversion?.puntosSobreTasa?.toString() || '',
-        tasaInversionAplicaCapitalizacion: producto.tasaInversion?.aplicaCapitalizacion || false,
-        tasaInversionFrecuenciaCapitalizacion: producto.tasaInversion?.frecuenciaCapitalizacion || '',
-        tasaInversionDiasBaseCalculo: producto.tasaInversion?.diasBaseCalculo?.toString() || '360',
         // Constitución
         constitucionMontoMinimoCuenta: producto.constitucion?.montoMinimoCuenta?.toString() || '',
         constitucionMontoMaximoCuenta: producto.constitucion?.montoMaximoCuenta?.toString() || '',
@@ -286,25 +243,6 @@ export function ProductoCaptacionForm({ mode, productoId, producto, onCancel, on
       porcentajeIncremento: '',
       tasaMinima: '',
       tasaMaxima: '',
-      // Check List Captaciones
-      checkListRequiereIdentificacion: false,
-      checkListRequiereComprobante: false,
-      checkListRequiereRFC: false,
-      checkListRequiereCURP: false,
-      checkListRequiereEstadoCuenta: false,
-      checkListRequiereActaConstitutiva: false,
-      checkListRequierePoderNotarial: false,
-      checkListObservaciones: '',
-      // Tasa de Inversión
-      tasaInversionTipoCalculo: 'Simple',
-      tasaInversionPorcentajeBase: '',
-      tasaInversionPorcentajeAdicional: '',
-      tasaInversionTotalCalculada: '',
-      tasaInversionIndexada: '',
-      tasaInversionPuntosSobreTasa: '',
-      tasaInversionAplicaCapitalizacion: false,
-      tasaInversionFrecuenciaCapitalizacion: '',
-      tasaInversionDiasBaseCalculo: '360',
       // Constitución
       constitucionMontoMinimoCuenta: '',
       constitucionMontoMaximoCuenta: '',
@@ -512,25 +450,6 @@ export function ProductoCaptacionForm({ mode, productoId, producto, onCancel, on
           porcentajeIncremento: r('porcentajeIncremento') || '',
           tasaMinima: r('tasaMinima') || '',
           tasaMaxima: r('tasaMaxima') || '',
-          // ── Check List Captaciones ──
-          checkListRequiereIdentificacion: d.checkListCaptaciones?.requiereIdentificacion ?? false,
-          checkListRequiereComprobante: d.checkListCaptaciones?.requiereComprobantedomicilio ?? false,
-          checkListRequiereRFC: d.checkListCaptaciones?.requiereRFC ?? false,
-          checkListRequiereCURP: d.checkListCaptaciones?.requiereCURP ?? false,
-          checkListRequiereEstadoCuenta: d.checkListCaptaciones?.requiereEstadoCuenta ?? false,
-          checkListRequiereActaConstitutiva: d.checkListCaptaciones?.requiereActaConstitutiva ?? false,
-          checkListRequierePoderNotarial: d.checkListCaptaciones?.requierePoderNotarial ?? false,
-          checkListObservaciones: d.checkListCaptaciones?.observaciones || '',
-          // ── Tasa de Inversión ──
-          tasaInversionTipoCalculo: d.tasaInversion?.tasaTipoCalculo || 'Simple',
-          tasaInversionPorcentajeBase: String(d.tasaInversion?.tasaPorcentajeBase ?? ''),
-          tasaInversionPorcentajeAdicional: String(d.tasaInversion?.tasaPorcentajeAdicional ?? ''),
-          tasaInversionTotalCalculada: String(d.tasaInversion?.tasaTotalCalculada ?? ''),
-          tasaInversionIndexada: d.tasaInversion?.tasaIndexada || '',
-          tasaInversionPuntosSobreTasa: String(d.tasaInversion?.puntosSobreTasa ?? ''),
-          tasaInversionAplicaCapitalizacion: d.tasaInversion?.aplicaCapitalizacion ?? false,
-          tasaInversionFrecuenciaCapitalizacion: d.tasaInversion?.frecuenciaCapitalizacion || '',
-          tasaInversionDiasBaseCalculo: String(d.tasaInversion?.diasBaseCalculo ?? '360'),
           // ── Constitución ──
           constitucionMontoMinimoCuenta: String(d.constitucion?.montoMinimoCuenta ?? ''),
           constitucionMontoMaximoCuenta: String(d.constitucion?.montoMaximoCuenta ?? ''),
@@ -665,8 +584,6 @@ export function ProductoCaptacionForm({ mode, productoId, producto, onCancel, on
     // Limpiar sessionStorage de todos los tabs al cancelar
     const pid = productoId || 'nuevo';
     // Tabs específicos de Captación
-    sessionStorage.removeItem(`captacion_checklist_${pid}`);
-    sessionStorage.removeItem(`captacion_tasainversion_${pid}`);
     sessionStorage.removeItem(`captacion_constitucion_${pid}`);
     sessionStorage.removeItem(`captacion_fases_${pid}`);
     localStorage.removeItem(`captacion_comisiones_producto_${pid}`);
@@ -756,29 +673,6 @@ export function ProductoCaptacionForm({ mode, productoId, producto, onCancel, on
       porcentajeIncremento: formData.porcentajeIncremento,
       tasaMinima: formData.tasaMinima,
       tasaMaxima: formData.tasaMaxima,
-      // Check List Captaciones
-      checkListCaptaciones: {
-        requiereIdentificacion: formData.checkListRequiereIdentificacion,
-        requiereComprobantedomicilio: formData.checkListRequiereComprobante,
-        requiereRFC: formData.checkListRequiereRFC,
-        requiereCURP: formData.checkListRequiereCURP,
-        requiereEstadoCuenta: formData.checkListRequiereEstadoCuenta,
-        requiereActaConstitutiva: formData.checkListRequiereActaConstitutiva,
-        requierePoderNotarial: formData.checkListRequierePoderNotarial,
-        observaciones: formData.checkListObservaciones,
-      },
-      // Tasa de Inversión
-      tasaInversion: {
-        tasaTipoCalculo: formData.tasaInversionTipoCalculo,
-        tasaPorcentajeBase: parseFloat(formData.tasaInversionPorcentajeBase) || 0,
-        tasaPorcentajeAdicional: parseFloat(formData.tasaInversionPorcentajeAdicional) || 0,
-        tasaTotalCalculada: parseFloat(formData.tasaInversionTotalCalculada) || 0,
-        tasaIndexada: formData.tasaInversionIndexada,
-        puntosSobreTasa: parseFloat(formData.tasaInversionPuntosSobreTasa) || 0,
-        aplicaCapitalizacion: formData.tasaInversionAplicaCapitalizacion,
-        frecuenciaCapitalizacion: formData.tasaInversionFrecuenciaCapitalizacion,
-        diasBaseCalculo: parseInt(formData.tasaInversionDiasBaseCalculo) || 360,
-      },
       // Constitución
       constitucion: {
         montoMinimoCuenta: parseFloat(formData.constitucionMontoMinimoCuenta) || 0,
@@ -817,8 +711,6 @@ export function ProductoCaptacionForm({ mode, productoId, producto, onCancel, on
       },
       // ===  ARRAYS DE REGISTROS DE LOS TABS ===
       // Capturar los datos de las tablas dentro de los tabs
-      checkListRegistros: checkListTabRef.current?.getData() || [],
-      tasaInversionRegistros: tasaInversionTabRef.current?.getData() || [],
       periodosRegistros: periodos,
       constitucionRegistros: constitucionTabRef.current?.getData() || [],
       comisionesRegistros: comisionesTabRef.current?.getData() || [],
@@ -887,15 +779,11 @@ export function ProductoCaptacionForm({ mode, productoId, producto, onCancel, on
       };
 
       // ── B. Nodos hijos: SubTabs (objetos, NO arrays de un solo elemento) ──
-      const checkListCaptaciones = newProduct.checkListCaptaciones || {};
-      const tasaInversion = newProduct.tasaInversion || {};
       const constitucion = newProduct.constitucion || {};
       const comisiones = newProduct.comisiones || {};
       const fases = newProduct.fases || {};
 
       // ── C. Arrays de registros de tabs ──
-      const checkListRegistros = newProduct.checkListRegistros || [];
-      const tasaInversionRegistros = newProduct.tasaInversionRegistros || [];
       const periodosRegistros = newProduct.periodosRegistros || [];
       const constitucionRegistros = newProduct.constitucionRegistros || [];
       const comisionesRegistros = newProduct.comisionesRegistros || [];
@@ -927,14 +815,10 @@ export function ProductoCaptacionForm({ mode, productoId, producto, onCancel, on
         // Nodo default — copia de referencia
         default: { ...nodoPadre },
         // Nodos hijos — SubTabs
-        checkListCaptaciones,
-        tasaInversion,
         constitucion,
         comisionesConfig: comisiones,
         fases,
         // Arrays de registros
-        checkListRegistros,
-        tasaInversionRegistros,
         periodosRegistros,
         constitucionRegistros,
         comisiones: comisionesRegistros,
@@ -1017,8 +901,6 @@ export function ProductoCaptacionForm({ mode, productoId, producto, onCancel, on
     { id: 'constitucion', label: 'Constitución' },
     { id: 'acceso-cuenta', label: 'Acceso Cuenta' },
     // === Tabs adicionales de Captación ===
-    { id: 'tasaInversion', label: 'Tasa de Inversión' },
-    { id: 'checklist', label: 'Check List Captaciones' },
     { id: 'plantillas', label: 'Plantillas' },
   ];
 
@@ -1171,6 +1053,7 @@ export function ProductoCaptacionForm({ mode, productoId, producto, onCancel, on
                 <option value="">Seleccionar...</option>
                 <option value="Ahorro">Ahorro</option>
                 <option value="Inversión">Inversión</option>
+                <option value="Aportación/Ahorro">Aportación/Ahorro</option>
                 <option value="Cuenta Corriente">Cuenta Corriente</option>
               </select>
             </div>
@@ -1325,11 +1208,13 @@ export function ProductoCaptacionForm({ mode, productoId, producto, onCancel, on
                 className={selectFieldClass}
               >
                 <option value="">Seleccionar...</option>
-                <option value="Mensual">Mensual</option>
-                <option value="Trimestral">Trimestral</option>
-                <option value="Semestral">Semestral</option>
-                <option value="Anual">Anual</option>
+                {periodos.map((p) => (
+                  <option key={p.id} value={p.descripcion}>{p.descripcion}</option>
+                ))}
               </select>
+              {periodos.length === 0 && (
+                <span className="text-[10px] text-amber-600 mt-0.5 block">Configure periodos en el subtab "Periodos"</span>
+              )}
             </div>
           </div>
         </div>
@@ -1373,10 +1258,13 @@ export function ProductoCaptacionForm({ mode, productoId, producto, onCancel, on
                 className={selectFieldClass}
               >
                 <option value="">Seleccionar...</option>
-                {K_PERIODS.map((p) => (
+                {periodos.map((p) => (
                   <option key={p.id} value={p.descripcion}>{p.descripcion} ({p.dias} días)</option>
                 ))}
               </select>
+              {periodos.length === 0 && (
+                <span className="text-[10px] text-amber-600 mt-0.5 block">Configure periodos en el subtab "Periodos"</span>
+              )}
             </div>
 
             <div>
@@ -1386,13 +1274,13 @@ export function ProductoCaptacionForm({ mode, productoId, producto, onCancel, on
                 value={formData.plazoCompletarMinimo ?? ''}
                 onChange={(e) => {
                   const val = e.target.value;
-                  if (val === '' || (Number.isInteger(Number(val)) && Number(val) > 0)) {
+                  if (val === '' || (Number.isInteger(Number(val)) && Number(val) >= 0)) {
                     handleInputChange('plazoCompletarMinimo', val);
                   }
                 }}
                 disabled={isViewMode}
-                placeholder="1"
-                min="1"
+                placeholder="0"
+                min="0"
                 step="1"
                 className={fieldClass}
               />
@@ -1472,6 +1360,7 @@ export function ProductoCaptacionForm({ mode, productoId, producto, onCancel, on
                   <option value="">Seleccionar...</option>
                   <option value="Ahorro">Ahorro</option>
                   <option value="Inversión">Inversión</option>
+                  <option value="Aportación/Ahorro">Aportación/Ahorro</option>
                   <option value="Cuenta Corriente">Cuenta Corriente</option>
                 </select>
               </div>
@@ -1570,11 +1459,13 @@ export function ProductoCaptacionForm({ mode, productoId, producto, onCancel, on
                   className={selectFieldClass}
                 >
                   <option value="">Seleccionar...</option>
-                  <option value="Mensual">Mensual</option>
-                  <option value="Trimestral">Trimestral</option>
-                  <option value="Semestral">Semestral</option>
-                  <option value="Anual">Anual</option>
+                  {periodos.map((p) => (
+                    <option key={p.id} value={p.descripcion}>{p.descripcion}</option>
+                  ))}
                 </select>
+                {periodos.length === 0 && (
+                  <span className="text-[10px] text-amber-600 mt-0.5 block">Configure periodos en el subtab "Periodos"</span>
+                )}
               </div>
 
               <div>
@@ -1627,15 +1518,27 @@ export function ProductoCaptacionForm({ mode, productoId, producto, onCancel, on
                   className={selectFieldClass}
                 >
                   <option value="">Seleccionar...</option>
-                  <option value="Diario">Diario</option>
-                  <option value="Semanal">Semanal</option>
-                  <option value="Catorcenal">Catorcenal</option>
-                  <option value="Quincenal">Quincenal</option>
-                  <option value="Mensual">Mensual</option>
-                  <option value="Trimestral">Trimestral</option>
-                  <option value="Semestral">Semestral</option>
-                  <option value="Anual">Anual</option>
+                  {periodos.length > 0
+                    ? periodos.map((p) => (
+                        <option key={p.id} value={p.descripcion}>{p.descripcion} ({p.dias} días)</option>
+                      ))
+                    : (
+                      <>
+                        <option value="Diario">Diario</option>
+                        <option value="Semanal">Semanal</option>
+                        <option value="Catorcenal">Catorcenal</option>
+                        <option value="Quincenal">Quincenal</option>
+                        <option value="Mensual">Mensual</option>
+                        <option value="Trimestral">Trimestral</option>
+                        <option value="Semestral">Semestral</option>
+                        <option value="Anual">Anual</option>
+                      </>
+                    )
+                  }
                 </select>
+                {periodos.length === 0 && (
+                  <span className="text-[10px] text-amber-600 mt-0.5 block">Configure periodos en el subtab "Periodos"</span>
+                )}
               </div>
 
               <div>
@@ -1645,13 +1548,13 @@ export function ProductoCaptacionForm({ mode, productoId, producto, onCancel, on
                   value={formData.plazoCompletarMinimo ?? ''}
                   onChange={(e) => {
                     const val = e.target.value;
-                    if (val === '' || (Number.isInteger(Number(val)) && Number(val) > 0)) {
+                    if (val === '' || (Number.isInteger(Number(val)) && Number(val) >= 0)) {
                       handleInputChange('plazoCompletarMinimo', val);
                     }
                   }}
                   disabled={isViewMode}
-                  placeholder="1"
-                  min="1"
+                  placeholder="0"
+                  min="0"
                   step="1"
                   className={fieldClass}
                 />
@@ -1899,26 +1802,6 @@ export function ProductoCaptacionForm({ mode, productoId, producto, onCancel, on
             )}
           </div>
         )}
-
-        <div className={activeTab === 'checklist' ? '' : 'hidden'}>
-          <CheckListCaptacionesTab 
-            ref={checkListTabRef}
-            mode={mode}
-            productId={productoId || 'nuevo'}
-            initialData={producto?.checkListRegistros}
-          />
-        </div>
-
-        <div className={activeTab === 'tasaInversion' ? '' : 'hidden'}>
-          <TasaInversionTab 
-            ref={tasaInversionTabRef}
-            mode={mode}
-            productId={productoId || 'nuevo'}
-            initialData={producto?.tasaInversionRegistros}
-            persistToStorage
-            periodosDisponibles={periodos}
-          />
-        </div>
 
         <div className={activeTab === 'constitucion' ? '' : 'hidden'}>
           <ConstitucionTab 
