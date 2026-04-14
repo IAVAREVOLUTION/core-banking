@@ -417,21 +417,27 @@ function formToDBPayload(form: SolicitudFormData, allSubtabs?: Record<string, an
     ? deepMerge(originalData, { solicitud: mergedSolicitud })
     : { solicitud: mergedSolicitud };
 
+  // Helper: truncate string to fit VARCHAR(n) — avoids "value too long" DB errors
+  const vc = (val: string | null | undefined, max: number): string | null => {
+    if (!val) return null;
+    return val.length > max ? val.substring(0, max) : val;
+  };
+
   return {
     type: 'Solicitud',
-    no_sol: form.noSol,
+    no_sol: vc(form.noSol, 50) ?? '',           // stored as no_sol — allow up to 50
     no_cuenta: '',
-    no_referenc1: form.cotizacionId || null,
+    no_referenc1: vc(form.cotizacionId, 36),     // UUID = 36 chars max
     fecha_sol: parseFechaSolToISO(form.fechaSolicitud),
-    descripcion: form.descripcion || null,
-    linea_produc: form.lineaProducto || 'Crédito',
-    tipo_produc: form.tipoProducto || '',
+    descripcion: vc(form.descripcion, 255),
+    linea_produc: vc(form.lineaProducto || 'Crédito', 50),
+    tipo_produc: vc(form.tipoProducto || '', 50),
     producto_id: safeUuid(form.productoId),
     cliente_id: safeUuid((form as any)._clienteId) || null,
     monto_sol: isNaN(montoSolNum) ? 0 : montoSolNum,
     monto_aut: isNaN(montoAutNum) ? 0 : montoAutNum,
-    estatus_sol: form.estatusSolicitud || 'Pendiente',
-    fases: form.faseId || '1',
+    estatus_sol: vc(form.estatusSolicitud || 'Pendiente', 50),
+    fases: vc(form.faseId || '1', 10),
     data: mergedData,
   };
 }
