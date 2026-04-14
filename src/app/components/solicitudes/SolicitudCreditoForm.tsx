@@ -496,26 +496,32 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
 
         try {
           // Contexto: todos los docs de esta fase O ANTERIORES (dId <= seqActual)
+          // Docs sin faseId (banca móvil) se incluyen — no tienen fase asignada pero están cargados
           const docsDeFase = documentos.filter(d => {
-            if (d.faseId == null) return false;
+            if (d.faseId == null) return true;
             const dId = Number(d.faseId);
-            return !isNaN(dId) && dId > 0 && dId <= seqActual;
+            if (isNaN(dId) || dId === 0) return true; // sin fase → incluir
+            return dId <= seqActual;
           });
 
           const contextoDocs = docsDeFase.map(d => ({
             tipoDocumento: d.tipoDocumento,
             estatus: d.estatus,
             validadoIA: d.validadoIA,
+            tieneArchivo: !!(d.archivo || (d as any).url || (d as any).storagePath || (d as any).fileData),
+            faseId: d.faseId ?? 0,
             ia_motivos: (d as any).iaMotivos || [],
             ia_extraido: (d as any).iaExtraido || {},
           }));
 
           // Resumen claro de documentos para el prompt
           const resumenDocs = contextoDocs.map(d => {
-            const estado = d.validadoIA 
+            const archivoTag = d.tieneArchivo ? '[ARCHIVO PRESENTE]' : '[SIN ARCHIVO]';
+            const faseTag = d.faseId > 0 ? `[Fase ${d.faseId}]` : '[Sin fase/Banca Móvil]';
+            const estado = d.validadoIA
               ? (d.estatus === 'Validado' ? '✓ VALIDADO POR IA' : d.estatus === 'Rechazado' ? '✗ RECHAZADO POR IA' : d.estatus)
-              : '○ CARGADO (pendiente de validación IA)';
-            return `- ${d.tipoDocumento}: ${estado}` +
+              : `○ CARGADO ${archivoTag} (pendiente de validación IA)`;
+            return `- ${d.tipoDocumento} ${faseTag}: ${estado}` +
               (d.ia_motivos?.length ? ` | ${d.ia_motivos.slice(0, 2).join('; ')}` : '');
           }).join('\n');
 
@@ -560,6 +566,11 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
 
           const promptConContexto =
             (fasePromptIA || '') + '\n\n' +
+            'INSTRUCCIÓN IMPORTANTE: Algunos documentos provienen de banca móvil y pueden tener nombres ' +
+            'abreviados o en formato snake_case (ej: "ine", "identificacion_oficial", "comprobante_domicilio"). ' +
+            'Debes hacer matching SEMÁNTICO: si el nombre del documento cargado corresponde al tipo requerido ' +
+            '(aunque el texto sea diferente), considera que SÍ está cubierto. Documentos sin fase asignada ' +
+            '(faseId=0 o vacío) también deben considerarse presentes para la validación.\n\n' +
             '=== DATOS DEL CLIENTE ===\n' +
             `Nombre: ${nombreCliente}\n` +
             `Tipo persona: ${formData.tipoPersona || 'No especificado'}\n` +
@@ -574,9 +585,9 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
             `=== FASE ACTUAL: ${faseNombre} (Fase ${seqActual}) ===\n\n` +
             '=== DOCUMENTOS OBLIGATORIOS PARA ESTA FASE ===\n' +
             reqResumen + '\n\n' +
-            '=== DOCUMENTOS CARGADOS EN EL EXPEDIENTE ===\n' +
+            '=== DOCUMENTOS CARGADOS EN EL EXPEDIENTE (incluyendo banca móvil) ===\n' +
             (resumenDocs || 'Sin documentos registrados.') + '\n\n' +
-            `Total documentos: ${documentos.length} | Validados por IA: ${documentos.filter(d => d.validadoIA).length}\n\n` +
+            `Total documentos: ${docsDeFase.length} | Validados por IA: ${docsDeFase.filter(d => d.validadoIA).length} | Pendientes validación: ${docsDeFase.filter(d => !d.validadoIA).length}\n\n` +
             'Responde ÚNICAMENTE en JSON válido con esta estructura exacta:\n' +
             '{ "valido": true|false, "motivos": ["motivo1", "motivo2"], "confianza": 0.0 }';
 
