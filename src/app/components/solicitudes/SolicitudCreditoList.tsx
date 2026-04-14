@@ -8,6 +8,7 @@ import {
 } from './solicitudCreditoStore';
 import { createCreditoFromSolicitud } from '../creditos/creditoStore';
 import { useSolicitudesDB } from '../../hooks/useSolicitudesDB';
+import { useProductosCatalogoDB } from '../../hooks/useProductosCatalogoDB';
 
 type ViewState = { type: 'list' } | { type: 'form'; mode: 'nuevo' | 'editar' | 'ver'; solicitudId?: number | string; dbId?: string };
 
@@ -109,6 +110,9 @@ export function buildFormDataFromListItem(s: SolicitudListItem): Record<string, 
  * Exportada para uso en OriginacionModule.
  */
 export function preloadSubtabsFromDBData(storageId: number | string, d: Record<string, any>) {
+  // Preserve original JSONB so that on UPDATE we can merge instead of overwrite
+  saveToSession(storageId, '_originalData', d);
+
   const sol = d.solicitud || {};
   const tc = sol.terminos_condiciones || {};
   const ps = tc.parametros_simulacion || {};
@@ -127,6 +131,13 @@ export function preloadSubtabsFromDBData(storageId: number | string, d: Record<s
       montoGarantia: rawTerminos.montoGarantia || '',
       seguroFinanciado: rawTerminos.seguroFinanciado ?? false,
       montoSeguro: rawTerminos.montoSeguro || '',
+      // Captación — Rendimientos
+      rendimientos: rawTerminos.rendimientos || [],
+      // Captación — Perfil del Inversionista
+      perfilInversionista: rawTerminos.perfilInversionista || '',
+      riesgoInversionista: rawTerminos.riesgoInversionista || '',
+      horizonteInversion: rawTerminos.horizonteInversion || '',
+      experienciaInversion: rawTerminos.experienciaInversion || '',
     });
   }
   const sim = sol.simulacion || {};
@@ -138,17 +149,53 @@ export function preloadSubtabsFromDBData(storageId: number | string, d: Record<s
     })));
   }
   const exp = sol.expediente_electronico || {};
-  if (exp.documentos?.length > 0) {
-    saveToSession(storageId, 'documentos', exp.documentos.map((doc: any, i: number) => ({
-      id: doc.id || (i + 1), fecha: doc.fecha_creacion || '', usuario: doc.usuario || '',
-      tipoDocumento: doc.tipo_documento || '', archivo: doc.archivo_adjunto || '',
-      tipoArchivo: doc.tipo_archivo || '', nota: doc.nota || '', area: doc.area || '',
-      fase: doc.fase || '', faseId: doc.fase_id || 0, estatus: doc.estatus || 'Pendiente',
-      validadoIA: doc.validado_ia ?? false,
-      url: doc.url || '', storagePath: doc.storage_path || '',
-      storageBucket: doc.storage_bucket || '', mime: doc.mime || '', tamanoKB: doc.tamano_kb || 0,
-      iaMotivos: doc.ia_motivos || [], iaExtraido: doc.ia_extraido || {},
-    })));
+  // Claves de documentos auto-generados por el sistema que ya no deben aparecer
+  // (fueron creados por una versión anterior del código y guardados en BD por error).
+  const CLAVES_AUTO_SISTEMA = new Set([
+    'CONTRATO_BASE', 'PAGARE_BASE', 'CONTRATO_FIRMADO', 'PAGARE_FIRMADO',
+  ]);
+  const docsDB: any[] = (exp.documentos || []).filter((doc: any) => {
+    const tipo = (doc.tipo_documento || '').trim();
+    // Filtrar placeholders sin archivo (los firmados legítimos del usuario SÍ tienen archivo)
+    if (CLAVES_AUTO_SISTEMA.has(tipo)) {
+      const tieneArchivo = !!(doc.url || doc.storage_path || doc.archivo_adjunto);
+      return tieneArchivo; // conservar solo si el usuario subió el archivo firmado
+    }
+    return true;
+  });
+  if (docsDB.length > 0) {
+    saveToSession(storageId, 'documentos', docsDB.map((doc: any, i: number) => {
+      const url        = doc.url || '';
+      const storagePath = doc.storage_path || '';
+      const archivo    = doc.archivo_adjunto || '';
+      const tieneArchivo = !!(url || storagePath || archivo);
+      // Docs de banca móvil pueden llegar sin estatus — si tienen archivo, no deben quedar 'Pendiente'
+      // pues el tab los mostraría como "Sin cargar". Se normaliza a 'Pendiente' (pendiente de IA)
+      // pero la lógica de canAdvance ya acepta 'Pendiente' con archivo.
+      const estatus = doc.estatus || (tieneArchivo ? 'Pendiente' : 'Sin cargar');
+      return {
+        id:            doc.id || (i + 1),
+        fecha:         doc.fecha_creacion || '',
+        usuario:       doc.usuario || '',
+        // Normalizar tipoDocumento: trim para eliminar espacios extra de banca móvil
+        tipoDocumento: (doc.tipo_documento || '').trim(),
+        archivo,
+        tipoArchivo:   doc.tipo_archivo || '',
+        nota:          doc.nota || '',
+        area:          doc.area || '',
+        fase:          doc.fase || '',
+        faseId:        doc.fase_id ?? 0,
+        estatus,
+        validadoIA:    doc.validado_ia ?? false,
+        url,
+        storagePath,
+        storageBucket: doc.storage_bucket || '',
+        mime:          doc.mime || '',
+        tamanoKB:      doc.tamano_kb || 0,
+        iaMotivos:     doc.ia_motivos || [],
+        iaExtraido:    doc.ia_extraido || {},
+      };
+    }));
   }
   if (sol.garantias?.length > 0) {
     saveToSession(storageId, 'garantias', sol.garantias.map((g: any, i: number) => ({
@@ -176,6 +223,20 @@ export function preloadSubtabsFromDBData(storageId: number | string, d: Record<s
     saveToSession(storageId, 'notas', sol.notas.map((n: any, i: number) => ({
       id: i + 1, fecha: n.fecha || '', usuario: n.usuario || '',
       puesto: n.puesto || '', nota: n.nota || '', archivoAdjunto: n.archivo_adjunto || '',
+    })));
+  }
+  if (sol.partes_relacionadas?.length > 0) {
+    saveToSession(storageId, 'partesRelacionadas', sol.partes_relacionadas.map((p: any, i: number) => ({
+      id: i + 1,
+      tipoRelacion: p.relacionLegal || p.tipoRelacion || '',
+      nombreCompleto: p.persona?.nombreCompleto || p.nombreCompleto || '',
+      participacion: String(p.participacion || ''),
+      telefono: p.persona?.telefono || p.telefono || '',
+      email: p.persona?.email || p.email || '',
+      curp: p.persona?.curp || p.curp || '',
+      rfc: p.persona?.rfc || p.rfc || '',
+      rolAsignado: p.rolAsignado || '',
+      nombreEjecutivo: p.nombreEjecutivo || '',
     })));
   }
 }
@@ -313,6 +374,12 @@ export function SolicitudCreditoList({ cotizacionParaSolicitud, onCotizacionCons
         montoSeguro: tc.montoSeguro || '',
       };
       saveToSession('new', 'terminos', terminos);
+
+      // Pre-llenar tabla de amortización (Crédito / Línea de Crédito)
+      const simRows = tc._simulacion;
+      if (Array.isArray(simRows) && simRows.length > 0) {
+        saveToSession('new', 'simulacion', simRows);
+      }
     }
 
     // Abrir formulario — consumir DESPUÉS de guardar en session para evitar race condition

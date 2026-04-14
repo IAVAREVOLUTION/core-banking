@@ -216,13 +216,25 @@ function formToDBPayload(form: SolicitudFormData, allSubtabs?: Record<string, an
   const montoSolNum = parseFloat((form.montoSolicitado || '0').replace(/[^0-9.-]/g, ''));
   const montoAutNum = parseFloat((form.montoAutorizado || '0').replace(/[^0-9.-]/g, ''));
 
+  // Original JSONB from DB (present when editing an existing record)
+  const originalData: Record<string, any> | undefined = allSubtabs?._originalData;
+  const origSol: Record<string, any> = originalData?.solicitud || {};
+
+  // Helper: use session value if it was loaded; otherwise fall back to original JSONB array
+  function subtabArr(key: string, origKey: string): any[] {
+    if (allSubtabs?.[key] !== undefined) return allSubtabs[key] as any[];
+    const orig = origSol[origKey];
+    return Array.isArray(orig) ? orig : [];
+  }
+
   const terminos = allSubtabs?.terminos || {};
-  const simulacion: any[] = allSubtabs?.simulacion || [];
-  const documentos: any[] = allSubtabs?.documentos || [];
-  const garantias: any[] = allSubtabs?.garantias || [];
-  const comisiones: any[] = allSubtabs?.comisiones || [];
-  const autorizaciones: any[] = allSubtabs?.autorizaciones || [];
-  const notas: any[] = allSubtabs?.notas || [];
+  const simulacion: any[] = allSubtabs?.simulacion || []; // simulacion is computed, not preserved from original
+  const documentos: any[] = allSubtabs?.documentos !== undefined ? allSubtabs.documentos : (origSol.expediente_electronico?.documentos || []);
+  const garantias: any[] = subtabArr('garantias', 'garantias');
+  const comisiones: any[] = subtabArr('comisiones', 'comisiones');
+  const autorizaciones: any[] = subtabArr('autorizaciones', 'autorizaciones');
+  const notas: any[] = subtabArr('notas', 'notas');
+  const partesRelacionadas: any[] = subtabArr('partesRelacionadas', 'partes_relacionadas');
 
   return {
     type: 'Solicitud',
@@ -287,6 +299,13 @@ function formToDBPayload(form: SolicitudFormData, allSubtabs?: Record<string, an
             montoGarantia: terminos.montoGarantia || '',
             seguroFinanciado: terminos.seguroFinanciado ?? false,
             montoSeguro: terminos.montoSeguro || '',
+            // Captación — Rendimientos
+            rendimientos: terminos.rendimientos || [],
+            // Captación — Perfil del Inversionista
+            perfilInversionista: terminos.perfilInversionista || '',
+            riesgoInversionista: terminos.riesgoInversionista || '',
+            horizonteInversion: terminos.horizonteInversion || '',
+            experienciaInversion: terminos.experienciaInversion || '',
           },
         },
         simulacion: {
@@ -369,7 +388,42 @@ function formToDBPayload(form: SolicitudFormData, allSubtabs?: Record<string, an
           nota: n.nota || null,
           archivo_adjunto: n.archivoAdjunto || null,
         })),
+        partes_relacionadas: partesRelacionadas.map((p: any) => ({
+          relacionLegal: p.tipoRelacion || null,
+          participacion: p.participacion || null,
+          persona: {
+            nombreCompleto: p.nombreCompleto || null,
+            telefono: p.telefono || null,
+            email: p.email || null,
+            curp: p.curp || null,
+            rfc: p.rfc || null,
+          },
+          rolAsignado: p.rolAsignado || null,
+          nombreEjecutivo: p.nombreEjecutivo || null,
+        })),
+        // Preserve any extra keys from original JSONB that Core doesn't manage
+        ...(() => {
+          if (!origSol) return {};
+          const coreKeys = new Set([
+            'header', 'terminos_condiciones', 'simulacion', 'expediente_electronico',
+            'garantias', 'comisiones', 'autorizaciones', 'notas', 'partes_relacionadas',
+          ]);
+          const extra: Record<string, any> = {};
+          for (const k of Object.keys(origSol)) {
+            if (!coreKeys.has(k)) extra[k] = origSol[k];
+          }
+          return extra;
+        })(),
       },
+      // Preserve any top-level keys in data that Core doesn't manage
+      ...(() => {
+        if (!originalData) return {};
+        const extra: Record<string, any> = {};
+        for (const k of Object.keys(originalData)) {
+          if (k !== 'solicitud') extra[k] = originalData[k];
+        }
+        return extra;
+      })(),
     },
   };
 }
