@@ -16,6 +16,7 @@ import {
   parsePct,
   lineaProdToTipo,
 } from '../../hooks/useSolicitudesActivacionDB';
+import { activarCuentaDB } from '../../hooks/useSolicitudesDB';
 
 type ViewState =
   | { type: 'list' }
@@ -31,6 +32,10 @@ function parseDate(dateStr: string): Date {
 interface SolicitudActivacionListProps {
   /** Si se provee, el módulo abre directamente en modo "nuevo" con estos datos pre-cargados */
   initialNewData?: Partial<SolicitudActivacionFormData>;
+  /** Si se provee, el módulo abre directamente en modo "editar" con este registro */
+  initialEditItem?: SolicitudActivacionListItem;
+  /** Si true, fuerza modo "ver" en vez de "editar" cuando se provee initialEditItem */
+  initialReadOnly?: boolean;
   /** Callback cuando se guarda desde modo originación (para notificar a Fase 6) */
   onSavedFromOriginacion?: (item: SolicitudActivacionListItem) => void;
   /** Callback cuando se cierra/cancela desde modo originación */
@@ -39,12 +44,52 @@ interface SolicitudActivacionListProps {
 
 export function SolicitudActivacionList({
   initialNewData,
+  initialEditItem,
+  initialReadOnly = false,
   onSavedFromOriginacion,
   onCancelFromOriginacion,
 }: SolicitudActivacionListProps = {}) {
-  const [view,        setView]        = useState<ViewState>(
-    initialNewData ? { type: 'form', mode: 'nuevo' } : { type: 'list' }
-  );
+  const [view,        setView]        = useState<ViewState>(() => {
+    if (initialEditItem) {
+      const sid = (initialEditItem._dbId && typeof initialEditItem._dbId === 'string')
+        ? initialEditItem._dbId
+        : (typeof initialEditItem.id === 'number' ? initialEditItem.id : String(initialEditItem.id));
+      // Poblar sesión SÍNCRONAMENTE para que SolicitudActivacionForm la encuentre en getInitial()
+      clearSession(sid);
+      const raw    = (initialEditItem._raw || {}) as Record<string, unknown>;
+      const d      = (raw.data || {}) as Record<string, unknown>;
+      const header = (d.header || {}) as Record<string, unknown>;
+      const detail = (d.detail || {}) as Record<string, unknown>;
+      saveToSession(sid, 'form', {
+        ...EMPTY_FORM,
+        id:                    String(initialEditItem._dbId || initialEditItem.id || ''),
+        solicitudId:           initialEditItem.solicitudId || String(raw.solicitud_id || ''),
+        clienteId:             String(raw.cliente_id || ''),
+        type:                  initialEditItem.tipo || String(raw.type || ''),
+        fechaSolicitud:        initialEditItem.fechaSolicitud || '',
+        estatus:               initialEditItem.estatus || 'Pendiente',
+        cliente:               initialEditItem.cliente || String(header.cliente || ''),
+        numeroDocumento:       initialEditItem.numeroDocumento || String(header.numeroDocumento || raw.cliente_curp || ''),
+        cuentaBancaria:        String(raw.solicitud_no_cuenta || header.cuentaBancaria || ''),
+        formaDePago:           String(header.formaDePago || 'Banca por internet'),
+        institucionFinanciera: String(header.institucionFinanciera || ''),
+        referencia:            String(header.referencia || initialEditItem._dbId || ''),
+        montoTransaccion:      initialEditItem.montoTransaccion || String(header.montoTransaccion || ''),
+        moneda:                initialEditItem.moneda || String(header.moneda || 'MXN'),
+        nota:                  String(header.nota || ''),
+        detailClaveProducto:   String(detail.claveProducto || raw.solicitud_producto_id || ''),
+        detailCantidad:        Number(detail.cantidad) || 1,
+        detailMonto:           Number(detail.monto) || 0,
+        detailPctImpuesto:     Number(detail.pctImpuesto) || 0,
+        detailMoneda:          String(detail.moneda || header.moneda || 'MXN'),
+        detailSubTotal:        Number(detail.subTotal) || 0,
+        detailEstatus:         'Pendiente',
+      });
+      return { type: 'form', mode: initialReadOnly ? 'ver' : 'editar', solicitudId: sid, dbId: initialEditItem._dbId || String(initialEditItem.id) };
+    }
+    if (initialNewData) return { type: 'form', mode: 'nuevo' };
+    return { type: 'list' };
+  });
   const [solicitudes, setSolicitudes] = useState<SolicitudActivacionListItem[]>([]);
   const [searchTerm,  setSearchTerm]  = useState('');
   const [sortOrder,   setSortOrder]   = useState<'desc' | 'asc'>('desc');
@@ -118,7 +163,8 @@ export function SolicitudActivacionList({
     const header = (d.header || {}) as Record<string, unknown>;
     const detail = (d.detail || {}) as Record<string, unknown>;
 
-    const montoTransaccion = String(header.montoTransaccion ?? parseMoney(raw.solicitud_monto) ?? '0.00');
+    // montoTransaccion is the first payment amount — never fall back to solicitud_monto (total)
+    const montoTransaccion = String(header.montoTransaccion ?? '0.00');
     const moneda           = String(header.moneda || raw.solicitud_moneda || 'MXN');
     const detailMonto      = (detail.monto as number)       ?? parseMoney(raw.solicitud_monto);
     // % Impuesto: DB stores as whole number (e.g. 3 = 3%); divide by 100 for decimal form used internally
@@ -190,9 +236,22 @@ export function SolicitudActivacionList({
     setView({ type: 'list' });
   };
 
+  const UUID_RE_LIST = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
   const handleSave = async (data: SolicitudActivacionFormData) => {
-    const isNew = view.type === 'form' && view.mode === 'nuevo';
-    const dbId  = view.type === 'form' ? (view as { dbId?: string }).dbId : undefined;
+    const modeIsNew = view.type === 'form' && view.mode === 'nuevo';
+    const rawDbId   = view.type === 'form' ? (view as { dbId?: string }).dbId : undefined;
+    // If dbId is not a real UUID (e.g. local-only timestamp), treat as INSERT
+    const dbId  = rawDbId && UUID_RE_LIST.test(rawDbId) ? rawDbId : undefined;
+    const isNew = modeIsNew || !dbId;
+
+    console.log('[DIAG Activacion] handleSave:', {
+      viewMode: view.mode,
+      rawDbId,
+      dbId,
+      isNew,
+      solicitudId: data.solicitudId,
+    });
 
     let savedItem: SolicitudActivacionListItem | null = null;
 
@@ -204,32 +263,36 @@ export function SolicitudActivacionList({
           duration: 3000,
         });
         savedItem = {
-          id:              result.id || String(Date.now()),
-          solicitudId:     data.solicitudId,
-          cliente:         data.cliente,
-          numeroDocumento: data.numeroDocumento,
-          tipo:            data.type,
-          fechaSolicitud:  data.fechaSolicitud.split(' ')[0],
-          estatus:         data.estatus || 'Pendiente',
+          id:               result.id || String(Date.now()),
+          solicitudId:      data.solicitudId,
+          cliente:          data.cliente,
+          numeroDocumento:  data.numeroDocumento,
+          tipo:             data.type,
+          fechaSolicitud:   data.fechaSolicitud.split(' ')[0],
+          estatus:          data.estatus || 'Pendiente',
           montoTransaccion: data.montoTransaccion,
-          moneda:          data.moneda,
-          _dbId:           result.id,
-          _fromDB:         true,
+          moneda:           data.moneda,
+          _dbId:            result.id,
+          _fromDB:          true,
+          _fromActivar:     !!data._fromActivar,
         };
       } else {
         toast.error('Error al guardar en BD', { description: result.error || 'Revise la consola', duration: 5000 });
+        // En modo originación no navegar — el error se muestra y el formulario sigue abierto
+        if (onSavedFromOriginacion) return;
         if (isNew) {
           savedItem = {
-            id:              Date.now(),
-            solicitudId:     data.solicitudId,
-            cliente:         data.cliente,
-            numeroDocumento: data.numeroDocumento,
-            tipo:            data.type,
-            fechaSolicitud:  data.fechaSolicitud.split(' ')[0],
-            estatus:         data.estatus || 'Pendiente',
+            id:               Date.now(),
+            solicitudId:      data.solicitudId,
+            cliente:          data.cliente,
+            numeroDocumento:  data.numeroDocumento,
+            tipo:             data.type,
+            fechaSolicitud:   data.fechaSolicitud.split(' ')[0],
+            estatus:          data.estatus || 'Pendiente',
             montoTransaccion: data.montoTransaccion,
-            moneda:          data.moneda,
-            _fromDB:         false,
+            moneda:           data.moneda,
+            _fromDB:          false,
+            _fromActivar:     !!data._fromActivar,
           };
           setSolicitudes(prev => [savedItem!, ...prev]);
           toast.info('Guardado localmente (sin BD)', { duration: 3000 });
@@ -238,6 +301,7 @@ export function SolicitudActivacionList({
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       toast.error('Error inesperado al guardar', { description: msg, duration: 5000 });
+      if (onSavedFromOriginacion) return;
     }
 
     // Notificar a Originación si aplica
@@ -251,6 +315,9 @@ export function SolicitudActivacionList({
 
   // ─── FORM VIEW ───────────────────────────────────────────────────
   if (view.type === 'form') {
+    const rawDbIdForEnviar = view.type === 'form' ? (view as { dbId?: string }).dbId : undefined;
+    // Only treat as existing record if dbId is a real UUID
+    const dbIdForEnviar    = rawDbIdForEnviar && UUID_RE_LIST.test(rawDbIdForEnviar) ? rawDbIdForEnviar : undefined;
     return (
       <SolicitudActivacionForm
         key={`${view.mode}-${view.solicitudId ?? 'new'}`}
@@ -259,6 +326,59 @@ export function SolicitudActivacionList({
         initialData={view.mode === 'nuevo' && initialNewData ? initialNewData : undefined}
         onCancel={handleBack}
         onSave={handleSave}
+        onEnviar={async (data) => {
+          // Guardar con estatus Enviada/Activar y notificar a Originación
+          const isNew2 = view.mode === 'nuevo' || !dbIdForEnviar;
+          console.log('[PROMPT_IA] onEnviar:', {
+            solicitud_id: data.solicitudId,
+            estatus: data.estatus,
+            _fromActivar: data._fromActivar,
+            isNew2,
+            dbIdForEnviar,
+          });
+          const result = await saveSolicitudActivacion(data, isNew2 ? undefined : dbIdForEnviar);
+          console.log('[PROMPT_IA] saveSolicitudActivacion result:', result);
+          if (!result.ok) {
+            toast.error('Error al enviar la solicitud', { description: result.error });
+            return;
+          }
+
+          // Si es activar (_fromActivar), finalizar la solicitud principal via activarCuentaDB
+          if (data._fromActivar && data.solicitudId) {
+            const UUID_RE_ACT = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+            if (UUID_RE_ACT.test(data.solicitudId)) {
+              try {
+                const activResult = await activarCuentaDB(data.solicitudId, {});
+                if (activResult.ok) {
+                  toast.success('¡Solicitud completada!', { description: 'Cuenta activada — Estatus: Autorizada' });
+                } else {
+                  toast.warning('No se pudo finalizar la solicitud', { description: activResult.error || 'Revise la consola' });
+                }
+              } catch (err) {
+                console.error('Error al activar cuenta desde módulo standalone:', err);
+              }
+            }
+          }
+
+          toast.success('Solicitud de Activación enviada', { description: `Estatus: ${data.estatus}` });
+          const sentItem: SolicitudActivacionListItem = {
+            id:              result.id || String(Date.now()),
+            solicitudId:     data.solicitudId,
+            cliente:         data.cliente,
+            numeroDocumento: data.numeroDocumento,
+            tipo:            data.type,
+            fechaSolicitud:  data.fechaSolicitud.split(' ')[0],
+            estatus:         data.estatus || 'Enviada',
+            montoTransaccion: data.montoTransaccion,
+            moneda:           data.moneda,
+            _dbId:           result.id,
+            _fromDB:         true,
+            _fromActivar:    !!data._fromActivar,
+          };
+          console.log('[PROMPT_IA] sentItem a onSavedFromOriginacion:', sentItem);
+          if (onSavedFromOriginacion) { onSavedFromOriginacion(sentItem); return; }
+          setView({ type: 'list' });
+        }}
       />
     );
   }
