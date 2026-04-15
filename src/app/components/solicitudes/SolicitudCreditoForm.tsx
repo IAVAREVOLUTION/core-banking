@@ -2336,17 +2336,33 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
             originacionSolicitudId={String(storageId)}
             seed={(() => {
               const _t: any = loadFromSession<any>(storageId, 'terminos') || loadFromSavedStore<any>(storageId, 'terminos') || {};
-              const _s: any[] = loadFromSession<any[]>(storageId, 'simulacion') || [];
+              // Simulación: session → savedStore → JSONB original (registros de banca móvil)
+              const _sSession: any[] = loadFromSession<any[]>(storageId, 'simulacion') || loadFromSavedStore<any[]>(storageId, 'simulacion') || [];
+              const _origData: any = loadFromSession<any>(storageId, '_originalData') || {};
+              const _sOrig: any[] = (() => {
+                const res = _origData?.solicitud?.simulacion?.resultado_simulacion;
+                if (Array.isArray(res) && res.length > 0) {
+                  // Banca móvil usa snake_case: no_pago, pago_periodo, etc.
+                  return res.map((r: any) => ({
+                    noPago: r.noPago ?? r.no_pago,
+                    pagoPeriodo: r.pagoPeriodo ?? r.pago_periodo ?? r.pago_total ?? 0,
+                    pagoCapital: r.pagoCapital ?? r.pago_capital ?? 0,
+                    pagoInteres: r.pagoInteres ?? r.pago_interes ?? 0,
+                  }));
+                }
+                return [];
+              })();
+              const _s: any[] = _sSession.length > 0 ? _sSession : _sOrig;
               const frecuencia = _t.frecuencia || '';
-              // Obtener el pago del primer periodo de la simulación (garantiza que es el pago real de 1 mes/período)
-              const primerPago = _s && _s.length > 0 && _s[0].pagoPeriodo > 0
-                ? _s[0].pagoPeriodo
+              // Primer pago real de la simulación (pagoPeriodo del periodo 1)
+              const primerPago = _s.length > 0 && (_s[0].pagoPeriodo ?? 0) > 0
+                ? (_s[0].pagoPeriodo as number)
                 : 0;
               const montoTotalRaw = _t.montoSolicitado || formData.montoSolicitado || '0';
               const montoTotal = parseFloat(String(montoTotalRaw).replace(/[^0-9.-]/g, '')) || 0;
               const plazoMeses = parseInt(String(_t.plazo || '0'), 10) || 1;
               const numPeriodos = calcularNumeroPeriodos(plazoMeses, frecuencia);
-              // Si no hay simulación, calcular (monto / numeroPeriodos para crédito simple sin interés)
+              // Fallback solo si realmente no hay simulación (registro sin tabla de amortización)
               const pagoPeriodo = primerPago > 0 ? primerPago : (montoTotal > 0 && numPeriodos > 0 ? montoTotal / numPeriodos : 0);
               // Fecha Compromiso = fecha del PRIMER PAGO (fechaInicio + 1 periodo)
               // Para crédito: fechaPrimerPago ya es la fecha real del primer pago → usar directo
