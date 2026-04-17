@@ -28,6 +28,25 @@ const DB_AVAILABLE = true;
 const API_BASE = `${SUPABASE_URL}/functions/v1/make-server-7e2d13d9`;
 const SS_KEY = 'solicitudes_credito_db';
 
+// Catálogo de fases — traduce faseId a nombre legible
+const CAT_FASES_MAP: Record<string, string> = {
+  '1': 'Fase 1 — Recepción de Documentos',
+  '2': 'Fase 2 — Análisis de Crédito',
+  '3': 'Fase 3 — Comité de Crédito',
+  '4': 'Fase 4 — Formalización',
+  '5': 'Fase 5 — Desembolso',
+  'fase1': 'Fase 1 — Recepción de Documentos',
+  'fase2': 'Fase 2 — Análisis de Crédito',
+  'fase3': 'Fase 3 — Comité de Crédito',
+  'fase4': 'Fase 4 — Formalización',
+  'fase5': 'Fase 5 — Desembolso',
+};
+
+function getFaseDescripcion(faseId: string | null | undefined): string {
+  if (!faseId) return '';
+  return CAT_FASES_MAP[faseId] || faseId; // Si no está en el mapa, devolver tal cual
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // UUID + date helpers
 // ═══════════════════════════════════════════════════════════════════
@@ -171,7 +190,7 @@ function mapRowToListItem(row: SolicitudDBRow): SolicitudListItem {
     montoSolicitado: parseMoney(row.monto_sol),
     montoAutorizado: parseMoney(row.monto_aut),
     sucursal,
-    faseDescripcion: hdr.descripcion_fase || d.descripcionFase || row.fases || '',
+    faseDescripcion: hdr.descripcion_fase || d.descripcionFase || getFaseDescripcion(row.fases) || '',
     estatusSolicitud: row.estatus_sol || hdr.estatus || d.estatusSolicitud || 'Pendiente',
     // Extra fields for form reconstruction
     _dbId: row.id,
@@ -183,7 +202,10 @@ function mapRowToListItem(row: SolicitudDBRow): SolicitudListItem {
     _clienteNombre: row.cliente_nombre || null,
     _clienteApPaterno: row.cliente_ap_paterno || null,
     _clienteApMaterno: row.cliente_ap_materno || null,
+    _clienteCurp: row.cliente_curp || null,
+    _clienteRfc: row.cliente_rfc || null,
     _clienteTipo: row.cliente_tipo || null,
+    _tipoPersona: hdr.tipo_persona || d.tipoPersona || row.cliente_tipo || null,
     _productoNombre: row.producto_nombre || null,
     _productoClave: row.producto_clave || null,
     _productoSucursal: row.producto_sucursal || null,
@@ -209,159 +231,233 @@ function mapRowToListItem(row: SolicitudDBRow): SolicitudListItem {
 //   data.solicitud.autorizaciones[]
 //   data.solicitud.notas[]
 // ═══════════════════════════════════════════════════════════════════
+/**
+ * Deep merge: obj2 keys override obj1 keys recursively.
+ * Arrays are replaced (not concatenated) — caller decides which array to use.
+ * Null/undefined values in obj2 do NOT override existing obj1 values.
+ */
+function deepMerge(base: Record<string, any>, patch: Record<string, any>): Record<string, any> {
+  const result: Record<string, any> = { ...base };
+  for (const key of Object.keys(patch)) {
+    const pv = patch[key];
+    const bv = base[key];
+    if (pv === null || pv === undefined) {
+      // Don't wipe existing data with null — keep base value
+      continue;
+    }
+    if (Array.isArray(pv)) {
+      // Arrays: use patch value always (caller decided which array to send)
+      result[key] = pv;
+    } else if (typeof pv === 'object' && typeof bv === 'object' && bv !== null && !Array.isArray(bv)) {
+      result[key] = deepMerge(bv, pv);
+    } else {
+      result[key] = pv;
+    }
+  }
+  return result;
+}
+
 function formToDBPayload(form: SolicitudFormData, allSubtabs?: Record<string, any>) {
   const montoSolNum = parseFloat((form.montoSolicitado || '0').replace(/[^0-9.-]/g, ''));
   const montoAutNum = parseFloat((form.montoAutorizado || '0').replace(/[^0-9.-]/g, ''));
 
+  // Original JSONB from DB (present when editing an existing record from any source)
+  const originalData: Record<string, any> | undefined = allSubtabs?._originalData;
+  const origSol: Record<string, any> = originalData?.solicitud || {};
+
+  // Helper: use session array if it was explicitly loaded; otherwise fall back to original JSONB array
+  function subtabArr(sessionKey: string, origKey: string): any[] {
+    if (allSubtabs?.[sessionKey] !== undefined) return allSubtabs[sessionKey] as any[];
+    const orig = origSol[origKey];
+    return Array.isArray(orig) ? orig : [];
+  }
+
   const terminos = allSubtabs?.terminos || {};
   const simulacion: any[] = allSubtabs?.simulacion || [];
-  const documentos: any[] = allSubtabs?.documentos || [];
-  const garantias: any[] = allSubtabs?.garantias || [];
-  const comisiones: any[] = allSubtabs?.comisiones || [];
-  const autorizaciones: any[] = allSubtabs?.autorizaciones || [];
-  const notas: any[] = allSubtabs?.notas || [];
+  const documentos: any[] = allSubtabs?.documentos !== undefined ? allSubtabs.documentos : (origSol.expediente_electronico?.documentos || []);
+  const garantias: any[] = subtabArr('garantias', 'garantias');
+  const comisiones: any[] = subtabArr('comisiones', 'comisiones');
+  const autorizaciones: any[] = subtabArr('autorizaciones', 'autorizaciones');
+  const notas: any[] = subtabArr('notas', 'notas');
+  const partesRelacionadas: any[] = subtabArr('partesRelacionadas', 'partes_relacionadas');
+
+  // ── Build the Core-managed header fields ──
+  // Only non-null values are included so deepMerge won't wipe original fields
+  const coreHeader: Record<string, any> = {};
+  if (form.id) coreHeader.id = form.id;
+  if (form.noSol) coreHeader.no_sol = form.noSol;
+  if (form.cotizacionId) coreHeader.cotizacion_id = form.cotizacionId;
+  if (form.lineaProducto) coreHeader.linea_producto = form.lineaProducto;
+  if (form.tipoProducto) coreHeader.tipo_producto = form.tipoProducto;
+  if (form.tipoPersona) coreHeader.tipo_persona = form.tipoPersona;
+  if (form.nombrePersona) coreHeader.nombre_persona = form.nombrePersona;
+  if (form.apellidoPaternoPersona) coreHeader.apellido_paterno_persona = form.apellidoPaternoPersona;
+  if (form.apellidoMaternoPersona) coreHeader.apellido_materno_persona = form.apellidoMaternoPersona;
+  if (form.productoId) coreHeader.producto_id = form.productoId;
+  if (form.nombreProducto) coreHeader.nombre_producto = form.nombreProducto;
+  if (form.fechaSolicitud) coreHeader.fecha_solicitud = form.fechaSolicitud;
+  if (form.descripcion) coreHeader.descripcion = form.descripcion;
+  if (form.faseId) coreHeader.fase_id = form.faseId;
+  if (form.descripcionFase) coreHeader.descripcion_fase = form.descripcionFase;
+  if (form.estatusSolicitud) coreHeader.estatus = form.estatusSolicitud;
+  if ((form as any)._curp) coreHeader.curp = (form as any)._curp;
+  if ((form as any)._rfc) coreHeader.rfc = (form as any)._rfc;
+
+  // Merge Core header on top of original header (preserves banca móvil-specific fields)
+  const mergedHeader = origSol.header ? deepMerge(origSol.header, coreHeader) : coreHeader;
+
+  // ── Build Core-managed terminos fields (only non-empty) ──
+  const coreTerminosRaw: Record<string, any> = {};
+  if (terminos.montoSolicitado || form.montoSolicitado) coreTerminosRaw.montoSolicitado = terminos.montoSolicitado || form.montoSolicitado || '';
+  if (terminos.plazo) coreTerminosRaw.plazo = terminos.plazo;
+  if (terminos.tasa) coreTerminosRaw.tasa = terminos.tasa;
+  if (terminos.frecuencia) coreTerminosRaw.frecuencia = terminos.frecuencia;
+  if (terminos.fechaPrimerPago) coreTerminosRaw.fechaPrimerPago = terminos.fechaPrimerPago;
+  if (terminos.fechaPrimeraAportacion) coreTerminosRaw.fechaPrimeraAportacion = terminos.fechaPrimeraAportacion;
+  if ((terminos as any).fechaInicio || terminos.fechaPrimerPago || (form as any).fechaInicio) coreTerminosRaw.fechaInicio = (terminos as any).fechaInicio || terminos.fechaPrimerPago || (form as any).fechaInicio;
+  if ((terminos as any).fechaFin || (form as any).fechaFin) coreTerminosRaw.fechaFin = (terminos as any).fechaFin || (form as any).fechaFin;
+  if (terminos.tipoTasa) coreTerminosRaw.tipoTasa = terminos.tipoTasa;
+  if (terminos.tipoCalculo) coreTerminosRaw.tipoCalculo = terminos.tipoCalculo;
+  if (terminos.moneda) coreTerminosRaw.moneda = terminos.moneda;
+  if (terminos.montoGarantia) coreTerminosRaw.montoGarantia = terminos.montoGarantia;
+  if (terminos.seguroFinanciado !== undefined) coreTerminosRaw.seguroFinanciado = terminos.seguroFinanciado;
+  if (terminos.montoSeguro) coreTerminosRaw.montoSeguro = terminos.montoSeguro;
+  if (terminos.rendimientos?.length) coreTerminosRaw.rendimientos = terminos.rendimientos;
+  if (terminos.perfilInversionista) coreTerminosRaw.perfilInversionista = terminos.perfilInversionista;
+  if (terminos.riesgoInversionista) coreTerminosRaw.riesgoInversionista = terminos.riesgoInversionista;
+  if (terminos.horizonteInversion) coreTerminosRaw.horizonteInversion = terminos.horizonteInversion;
+  if (terminos.experienciaInversion) coreTerminosRaw.experienciaInversion = terminos.experienciaInversion;
+
+  const origRaw = origSol.terminos_condiciones?._raw || {};
+  const mergedRaw = Object.keys(coreTerminosRaw).length > 0
+    ? deepMerge(origRaw, coreTerminosRaw)
+    : origRaw;
+
+  const origTcParams = origSol.terminos_condiciones?.parametros_simulacion || {};
+  const coreParams: Record<string, any> = {};
+  if (terminos.montoSolicitado || form.montoSolicitado) coreParams.monto_solicitado = terminos.montoSolicitado || form.montoSolicitado;
+  if (terminos.plazo) coreParams.plazo = terminos.plazo;
+  if (terminos.tasa) coreParams.tasa_interes = terminos.tasa;
+  if (terminos.frecuencia) coreParams.periodicidad = terminos.frecuencia;
+  if (terminos.fechaPrimerPago) coreParams.fecha_primer_pago = terminos.fechaPrimerPago;
+  if (terminos.fechaPrimeraAportacion) coreParams.fecha_primera_aportacion = terminos.fechaPrimeraAportacion;
+  const mergedTcParams = Object.keys(coreParams).length > 0 ? deepMerge(origTcParams, coreParams) : origTcParams;
+
+  const origTc = origSol.terminos_condiciones || {};
+  const mergedTc = deepMerge(origTc, {
+    tipo_producto: form.tipoProducto || origTc.tipo_producto || null,
+    parametros_simulacion: mergedTcParams,
+    _raw: mergedRaw,
+  });
+
+  // ── Build the full data.solicitud via deep merge ──
+  const coreSolicitud: Record<string, any> = {
+    header: mergedHeader,
+    terminos_condiciones: mergedTc,
+    simulacion: {
+      tipo_tabla: terminos.tipoCalculo || origSol.simulacion?.tipo_tabla || null,
+      resultado_simulacion: simulacion.map((r: any) => ({
+        no_pago: r.noPago, fecha_pago: r.fechaPago, saldo_insoluto: r.saldoInsoluto,
+        pago_capital: r.pagoCapital, pago_interes: r.pagoInteres, iva_interes: r.ivaInteres,
+        pago_periodo: r.pagoPeriodo, pago_seguro: r.pagoSeguro, pago_total: r.pagoTotal,
+      })),
+      calendario_aportaciones: Array.isArray((form as any)._calendarioAportaciones)
+        ? (form as any)._calendarioAportaciones
+        : (origSol.simulacion?.calendario_aportaciones || []),
+    },
+    expediente_electronico: {
+      documentos: documentos.map((doc: any) => ({
+        id: doc.id || null,
+        fecha_creacion: doc.fecha || null,
+        usuario: doc.usuario || null,
+        tipo_documento: doc.tipoDocumento || null,
+        archivo_adjunto: doc.archivo || null,
+        tipo_archivo: doc.tipoArchivo || null,
+        nota: doc.nota || null,
+        area: doc.area || null,
+        fase: doc.fase || null,
+        fase_id: doc.faseId || null,
+        validado_ia: doc.validadoIA ?? null,
+        estatus: doc.estatus || null,
+        url: doc.url || null,
+        storage_path: doc.storagePath || null,
+        storage_bucket: doc.storageBucket || null,
+        mime: doc.mime || null,
+        tamano_kb: doc.tamanoKB || null,
+        ia_motivos: doc.iaMotivos || null,
+        ia_extraido: doc.iaExtraido || null,
+      })),
+    },
+    garantias: garantias.map((g: any) => ({
+      tipo_garantia: g.tipo || null, subtipo: g.subtipo || null,
+      descripcion: g.descripcion || null, valor_garantia: g.valorNominal || null,
+      ubicacion: g.ubicacion || null, estatus: g.estatus || null,
+      observaciones: g.nota || null, fase: g.fase || null,
+      fase_id: g.faseId || null, area: g.area || null,
+    })),
+    comisiones: comisiones.map((c: any) => ({
+      tipo_comision: c.tipoComision ?? null, descripcion: c.descripcion ?? null,
+      monto: c.montoCalculado ?? null, porcentaje: c.porcentaje ?? null,
+      base: c.base ?? null, estatus: c.estatus ?? null, periodicidad: null,
+    })),
+    autorizaciones: autorizaciones.map((a: any) => ({
+      usuario: a.usuario || null, puesto: a.puesto || null,
+      estado_autorizacion: a.estatus || null, fecha_autorizacion: a.fechaHora || null,
+      comentario: a.observaciones || null, area: a.area || null,
+      descripcion: a.descripcion || null,
+    })),
+    notas: notas.map((n: any) => ({
+      fecha: n.fecha || null, usuario: n.usuario || null,
+      puesto: n.puesto || null, nota: n.nota || null,
+      archivo_adjunto: n.archivoAdjunto || null,
+    })),
+    partes_relacionadas: partesRelacionadas.map((p: any) => ({
+      relacionLegal: p.tipoRelacion || null,
+      participacion: p.participacion || null,
+      persona: {
+        nombreCompleto: p.nombreCompleto || null,
+        telefono: p.telefono || null,
+        email: p.email || null,
+        curp: p.curp || null,
+        rfc: p.rfc || null,
+      },
+      rolAsignado: p.rolAsignado || null,
+      nombreEjecutivo: p.nombreEjecutivo || null,
+    })),
+  };
+
+  // Deep merge Core solicitud on top of original — preserves ALL banca móvil fields not managed by Core
+  const mergedSolicitud = origSol && Object.keys(origSol).length > 0
+    ? deepMerge(origSol, coreSolicitud)
+    : coreSolicitud;
+
+  // Deep merge Core data on top of original — preserves top-level keys from banca móvil
+  const mergedData = originalData && Object.keys(originalData).length > 0
+    ? deepMerge(originalData, { solicitud: mergedSolicitud })
+    : { solicitud: mergedSolicitud };
+
+  // no_referenc1 is VARCHAR(30) in DB — UUID (36 chars) doesn't fit, so omit it on updates
+  // (it was set correctly on INSERT and should not change)
+  const noReferenc1 = form.cotizacionId && form.cotizacionId.length <= 30
+    ? form.cotizacionId
+    : null;
 
   return {
-    type: 'Solicitud',
-    no_sol: form.noSol,
+    type: 'Solicitudes',
+    no_sol: form.noSol || '',
     no_cuenta: '',
-    no_referenc1: form.cotizacionId || null,
+    no_referenc1: noReferenc1,
     fecha_sol: parseFechaSolToISO(form.fechaSolicitud),
     descripcion: form.descripcion || null,
     linea_produc: form.lineaProducto || 'Crédito',
     tipo_produc: form.tipoProducto || '',
     producto_id: safeUuid(form.productoId),
-    cliente_id: safeUuid((form as any)._clienteId) || null, // UUID explícito si viene del módulo Clientes
+    cliente_id: safeUuid((form as any)._clienteId) || null,
     monto_sol: isNaN(montoSolNum) ? 0 : montoSolNum,
     monto_aut: isNaN(montoAutNum) ? 0 : montoAutNum,
     estatus_sol: form.estatusSolicitud || 'Pendiente',
     fases: form.faseId || '1',
-    data: {
-      solicitud: {
-        header: {
-          id: form.id || null,
-          no_sol: form.noSol || null,
-          cotizacion_id: form.cotizacionId || null,
-          linea_producto: form.lineaProducto || null,
-          tipo_producto: form.tipoProducto || null,
-          tipo_persona: form.tipoPersona || null,
-          nombre_persona: form.nombrePersona || null,
-          apellido_paterno_persona: form.apellidoPaternoPersona || null,
-          apellido_materno_persona: form.apellidoMaternoPersona || null,
-          producto_id: form.productoId || null,
-          nombre_producto: form.nombreProducto || null,
-          fecha_solicitud: form.fechaSolicitud || null,
-          descripcion: form.descripcion || null,
-          fase_id: form.faseId || null,
-          descripcion_fase: form.descripcionFase || null,
-          estatus: form.estatusSolicitud || null,
-        },
-        terminos_condiciones: {
-          tipo_producto: form.tipoProducto || null,
-          parametros_simulacion: {
-            monto_solicitado: terminos.montoSolicitado || form.montoSolicitado || null,
-            plazo: terminos.plazo || null,
-            tasa_interes: terminos.tasa || null,
-            periodicidad: terminos.frecuencia || null,
-            fecha_primer_pago: terminos.fechaPrimerPago || null,
-            fecha_primera_aportacion: terminos.fechaPrimeraAportacion || null,
-          },
-          // Preservar campos camelCase originales para roundtrip (preloadSubtabsFromDBData los lee)
-          _raw: {
-            montoSolicitado: terminos.montoSolicitado || form.montoSolicitado || '',
-            plazo: terminos.plazo || '',
-            tasa: terminos.tasa || '',
-            frecuencia: terminos.frecuencia || '',
-            fechaPrimerPago: terminos.fechaPrimerPago || '',
-            fechaPrimeraAportacion: terminos.fechaPrimeraAportacion || '',
-            fechaInicio: (terminos as any).fechaInicio || terminos.fechaPrimerPago || '',
-            fechaFin: (terminos as any).fechaFin || '',
-            tipoTasa: terminos.tipoTasa || '',
-            tipoCalculo: terminos.tipoCalculo || '',
-            moneda: terminos.moneda || '',
-            montoGarantia: terminos.montoGarantia || '',
-            seguroFinanciado: terminos.seguroFinanciado ?? false,
-            montoSeguro: terminos.montoSeguro || '',
-          },
-        },
-        simulacion: {
-          tipo_tabla: terminos.tipoCalculo || null,
-          resultado_simulacion: simulacion.map((r: any) => ({
-            no_pago: r.noPago,
-            fecha_pago: r.fechaPago,
-            saldo_insoluto: r.saldoInsoluto,
-            pago_capital: r.pagoCapital,
-            pago_interes: r.pagoInteres,
-            iva_interes: r.ivaInteres,
-            pago_periodo: r.pagoPeriodo,
-            pago_seguro: r.pagoSeguro,
-            pago_total: r.pagoTotal,
-          })),
-        },
-        expediente_electronico: {
-          documentos: documentos.map((doc: any) => ({
-            id: doc.id || null,
-            fecha_creacion: doc.fecha || null,
-            usuario: doc.usuario || null,
-            tipo_documento: doc.tipoDocumento || null,
-            archivo_adjunto: doc.archivo || null,
-            tipo_archivo: doc.tipoArchivo || null,
-            nota: doc.nota || null,
-            area: doc.area || null,
-            fase: doc.fase || null,
-            fase_id: doc.faseId || null,
-            validado_ia: doc.validadoIA ?? null,
-            estatus: doc.estatus || null,
-            // ── Campos de referencia al archivo en Storage (críticos para recuperación) ──
-            url: doc.url || null,
-            storage_path: doc.storagePath || null,
-            storage_bucket: doc.storageBucket || null,
-            mime: doc.mime || null,
-            tamano_kb: doc.tamanoKB || null,
-            // ── Resultados de validación IA ──
-            ia_motivos: doc.iaMotivos || null,
-            ia_extraido: doc.iaExtraido || null,
-          })),
-        },
-        garantias: garantias.map((g: any) => ({
-          tipo_garantia: g.tipo || null,
-          subtipo: g.subtipo || null,
-          descripcion: g.descripcion || null,
-          valor_garantia: g.valorNominal || null,
-          ubicacion: g.ubicacion || null,
-          estatus: g.estatus || null,
-          observaciones: g.nota || null,
-          fase: g.fase || null,
-          fase_id: g.faseId || null,
-          area: g.area || null,
-        })),
-        comisiones: comisiones.map((c: any) => ({
-          tipo_comision: c.tipoComision ?? null,
-          descripcion: c.descripcion ?? null,
-          monto: c.montoCalculado ?? null,
-          porcentaje: c.porcentaje ?? null,
-          base: c.base ?? null,
-          estatus: c.estatus ?? null,
-          periodicidad: null,
-        })),
-        autorizaciones: autorizaciones.map((a: any) => ({
-          usuario: a.usuario || null,
-          puesto: a.puesto || null,
-          estado_autorizacion: a.estatus || null,
-          fecha_autorizacion: a.fechaHora || null,
-          comentario: a.observaciones || null,
-          area: a.area || null,
-          descripcion: a.descripcion || null,
-        })),
-        notas: notas.map((n: any) => ({
-          fecha: n.fecha || null,
-          usuario: n.usuario || null,
-          puesto: n.puesto || null,
-          nota: n.nota || null,
-          archivo_adjunto: n.archivoAdjunto || null,
-        })),
-      },
-    },
+    data: mergedData,
   };
 }
 
@@ -557,9 +653,9 @@ async function updateSolicitud(id: string, payload: Partial<ReturnType<typeof fo
     console.warn('[SolicDB] UPDATE Supabase directo EXCEPCIÓN:', err?.message);
   }
 
-  // ── Todos los intentos fallaron — los datos ya están en estado local ──
-  console.warn('[SolicDB] UPDATE — todos los intentos fallaron. Datos preservados localmente.');
-  return { ok: true };
+  // ── Todos los intentos fallaron ──
+  console.warn('[SolicDB] UPDATE — todos los intentos fallaron.');
+  return { ok: false, error: 'Todos los intentos de actualización fallaron' };
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -716,28 +812,10 @@ export async function avanzarFaseSolicitudDB(
   if (!DB_AVAILABLE) return { ok: false, error: 'DB no disponible' };
   if (!UUID_RE.test(id)) return { ok: false, error: 'ID inválido (no UUID)' };
 
-  // Intento 1: Endpoint dedicado /avanzarFase
-  try {
-    const payload: Record<string, any> = {
-      nuevaFaseId,
-      nuevaDescripcionFase,
-      nuevaArea,
-    };
-    if (nuevoEstatus) payload.nuevoEstatus = nuevoEstatus;
-    const res = await fetch(`${API_BASE}/solicitudes-credito/${id}/avanzarFase`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${publicAnonKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    if (res.ok) {
-      console.log('[SolicDB] avanzarFase POST OK — faseId:', nuevaFaseId);
-      return { ok: true };
-    }
-  } catch {
-    // fallthrough
-  }
-
-  // Fallback: reutilizar updateFaseSolicitudDB
+  // Usar updateFaseSolicitudDB directamente — el RPC update_fase_solicitud hace JSONB merge
+  // y NO toca la columna data, por lo que preserva los datos de banca móvil.
+  // El endpoint /avanzarFase del Edge Function fue eliminado porque su comportamiento
+  // server-side sobre la columna data no está garantizado.
   return updateFaseSolicitudDB(id, nuevaFaseId, nuevaDescripcionFase, nuevaArea, nuevoEstatus);
 }
 
@@ -1023,10 +1101,13 @@ export function useSolicitudesDB(active: boolean) {
 
       setFetchMethod(method);
       setDbRowCount(rows.length);
-      console.log(`[SolicDB] === RESULTADO: method=${method}, rows=${rows.length} ===`);
 
-      if (rows.length > 0) {
-        const mapped = rows.map(mapRowToListItem);
+      // Filtrar solo registros de tipo 'Solicitudes' o 'Solicitud' — excluye captación, cuentas eje, etc.
+      const solicitudesRows = rows.filter(r => r.type === 'Solicitudes' || r.type === 'Solicitud');
+      console.log(`[SolicDB] === RESULTADO: method=${method}, rows=${rows.length}, solicitudes=${solicitudesRows.length} ===`);
+
+      if (solicitudesRows.length > 0) {
+        const mapped = solicitudesRows.map(mapRowToListItem);
         setSolicitudes(mapped);
         saveToSession(mapped);
         setBackendStatus('ready');

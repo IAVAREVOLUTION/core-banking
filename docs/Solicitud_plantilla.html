@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<title>Solicitud de Crédito</title>
+
+<style>
+  body {
+    font-family: "Helvetica Neue", Arial, sans-serif;
+    margin: 0;
+    padding: 0;
+    color: #1a1a1a;
+    font-size: 12px;
+  }
+
+  .page {
+    width: 210mm;
+    min-height: 297mm;
+    padding: 35mm 25mm 25mm 25mm;
+    box-sizing: border-box;
+  }
+
+  /* HEADER */
+  .header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 25px;
+  }
+
+  .brand {
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+  }
+
+  .brand small {
+    display: block;
+    font-weight: 400;
+    font-size: 11px;
+    color: #666;
+  }
+
+  .doc-meta {
+    text-align: right;
+    font-size: 11px;
+  }
+
+  .doc-meta div {
+    margin-bottom: 3px;
+  }
+
+  /* TITLE */
+  .title {
+    text-align: center;
+    font-size: 18px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    margin: 20px 0 30px 0;
+  }
+
+  /* SECTIONS */
+  .section {
+    margin-bottom: 22px;
+  }
+
+  .section-title {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    color: #444;
+    margin-bottom: 10px;
+    text-transform: uppercase;
+    border-bottom: 1px solid #000;
+    padding-bottom: 4px;
+  }
+
+  /* GRID TABLE */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  td {
+    padding: 6px 4px;
+    vertical-align: top;
+  }
+
+  .label {
+    width: 28%;
+    font-weight: 600;
+    color: #555;
+  }
+
+  .value {
+    width: 72%;
+    border-bottom: 1px solid #999;
+    padding-bottom: 2px;
+  }
+
+  /* TWO COLUMNS */
+  .grid-2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+  }
+
+  /* DECLARATION */
+  .declaration {
+    font-size: 11px;
+    line-height: 1.5;
+    text-align: justify;
+  }
+
+  /* SIGNATURE */
+  .signature-block {
+    margin-top: 60px;
+    display: flex;
+    justify-content: space-between;
+  }
+
+  .signature {
+    width: 45%;
+    text-align: center;
+  }
+
+  .line {
+    margin-top: 60px;
+    border-top: 1px solid #000;
+    padding-top: 5px;
+    font-size: 11px;
+  }
+
+  /* FOOTER */
+  .footer {
+    position: absolute;
+    bottom: 20mm;
+    left: 25mm;
+    right: 25mm;
+    font-size: 10px;
+    color: #666;
+    border-top: 1px solid #ccc;
+    padding-top: 6px;
+    display: flex;
+    justify-content: space-between;
+  }
+
+</style>
+</head>
+
+<body>
+<div class="page">
+
+  <!-- HEADER -->
+  <div class="header">
+    <div class="brand">
+      {{empresa_nombre}}
+      <small>{{empresa_razon_social}}</small>
+    </div>
+
+    <div class="doc-meta">
+      <div><strong>Folio:</strong> {{folio}}</div>
+      <div><strong>Fecha:</strong> {{fecha}}</div>
+      <div><strong>Sucursal:</strong> {{sucursal}}</div>
+      <div><strong>Ejecutivo:</strong> {{ejecutivo}}</div>
+    </div>
+  </div>
+
+  <!-- TITLE -->
+  <div class="title">SOLICITUD DE CRÉDITO</div>
+
+  <!-- CLIENTE -->
+  <div class="section">
+    <div class="section-title">Información del Cliente</div>
+
+    <table>
+      <tr>
+        <td class="label">Nombre completo</td>
+        <td class="value">{{cliente_nombre}}</td>
+      </tr>
+      <tr>
+        <td class="label">RFC</td>
+        <td class="value">{{cliente_rfc}}</td>
+      </tr>
+      <tr>
+        <td class="label">CURP</td>
+        <td class="value">{{cliente_curp}}</td>
+      </tr>
+      <tr>
+        <td class="label">Fecha de nacimiento</td>
+        <td class="value">{{fecha_nacimiento}}</td>
+      </tr>
+      <tr>
+        <td class="label">Teléfono</td>
+        <td class="value">{{telefono}}</td>
+      </tr>
+      <tr>
+        <td class="label">Correo electrónico</td>
+        <td class="value">{{email}}</td>
+      </tr>
+      <tr>
+        <td class="label">Domicilio</td>
+        <td class="value">{{domicilio}}</td>
+      </tr>
+    </table>
+  </div>
+
+  <!-- CRÉDITO -->
+  <div class="section">
+    <div class="section-title">Condiciones del Crédito</div>
+
+    <div class="grid-2">
+      <table>
+        <tr>
+          <td class="label">Producto</td>
+          <td class="value">{{producto}}</td>
+        </tr>
+        <tr>
+          <td class="label">Monto solicitado</td>
+          <td class="value">$ {{monto}}</td>
+        </tr>
+        <tr>
+          <td class="label">Plazo</td>
+          <td class="value">{{plazo}} meses</td>
+        </tr>
+      </table>
+
+      <table>
+        <tr>
+          <td class="label">Tasa anual</td>
+          <td class="value">{{tasa}} %</td>
+        </tr>
+        <tr>
+          <td class="label">CAT estimado</td>
+          <td class="value">{{cat}} %</td>
+        </tr>
+        <tr>
+          <td class="label">Destino</td>
+          <td class="value">{{finalidad}}</td>
+        </tr>
+      </table>
+    </div>
+  </div>
+
+  <!-- LABORAL -->
+  <div class="section">
+    <div class="section-title">Información Financiera</div>
+
+    <table>
+      <tr>
+        <td class="label">Empresa</td>
+        <td class="value">{{empresa}}</td>
+      </tr>
+      <tr>
+        <td class="label">Puesto</td>
+        <td class="value">{{puesto}}</td>
+      </tr>
+      <tr>
+        <td class="label">Ingreso mensual</td>
+        <td class="value">$ {{ingreso}}</td>
+      </tr>
+      <tr>
+        <td class="label">Antigüedad</td>
+        <td class="value">{{antiguedad}}</td>
+      </tr>
+    </table>
+  </div>
+
+  <!-- DECLARACIÓN -->
+  <div class="section">
+    <div class="section-title">Declaración del Solicitante</div>
+
+    <div class="declaration">
+      El solicitante declara que la información proporcionada es completa y verídica,
+      autorizando a {{empresa_nombre}} a validar los datos con las entidades correspondientes.
+      Asimismo, acepta que esta solicitud no constituye una aprobación de crédito y que
+      estará sujeta a evaluación conforme a las políticas internas de la institución.
+    </div>
+  </div>
+
+  <!-- FIRMAS -->
+  <div class="signature-block">
+    <div class="signature">
+      <div class="line">{{cliente_nombre}}</div>
+      Solicitante
+    </div>
+
+    <div class="signature">
+      <div class="line">{{ejecutivo}}</div>
+      Ejecutivo Responsable
+    </div>
+  </div>
+
+  <!-- FOOTER -->
+  <div class="footer">
+    <div>
+      {{empresa_nombre}} · {{direccion_empresa}}
+    </div>
+    <div>
+      Documento confidencial · Uso interno
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

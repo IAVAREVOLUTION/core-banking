@@ -13,6 +13,7 @@ interface SolicitudesCreditoProps {
   mode: 'nuevo' | 'editar' | 'ver';
   clienteId?: string;
   cliente?: Cliente;
+  onVerSolicitudCompleta?: (solicitudId: string, noSol: string) => void;
 }
 
 function mapPersonalidad(personalidad?: string): string {
@@ -48,7 +49,7 @@ const emptyModalForm = () => ({
   estatusSolicitud: 'Pendiente',
 });
 
-export function SolicitudesCredito({ mode, clienteId, cliente }: SolicitudesCreditoProps) {
+export function SolicitudesCredito({ mode, clienteId, cliente, onVerSolicitudCompleta }: SolicitudesCreditoProps) {
   const isView = mode === 'ver';
 
   const { productos: productosDB } = useProductosCatalogoDB(true);
@@ -146,6 +147,8 @@ export function SolicitudesCredito({ mode, clienteId, cliente }: SolicitudesCred
       apellidoMaternoPersona: cliente?.apellidoMaterno || '',
       estatusSolicitud: formData.estatusSolicitud,
       _clienteId: clienteId || '',
+      _curp: cliente?.curp || '',
+      _rfc: cliente?.rfc || '',
     };
 
     const terminos = {
@@ -260,7 +263,20 @@ export function SolicitudesCredito({ mode, clienteId, cliente }: SolicitudesCred
                       }`}>{s.estatusSolicitud}</span>
                     </td>
                     <td className="px-3 py-2 text-center">
-                      <button onClick={e => { e.stopPropagation(); handleVerSolicitud(s); }} className="inline-flex items-center justify-center px-3 py-1 btn-secondary-theme text-xs rounded font-medium">Ver</button>
+                      <button 
+                        onClick={e => { 
+                          e.stopPropagation(); 
+                          const dbId = (s as any)._dbId;
+                          if (onVerSolicitudCompleta && dbId) {
+                            onVerSolicitudCompleta(dbId, s.noSol, clienteId);
+                          } else {
+                            handleVerSolicitud(s);
+                          }
+                        }} 
+                        className="inline-flex items-center justify-center px-3 py-1 btn-secondary-theme text-xs rounded font-medium"
+                      >
+                        Ver
+                      </button>
                     </td>
                   </tr>
                 );

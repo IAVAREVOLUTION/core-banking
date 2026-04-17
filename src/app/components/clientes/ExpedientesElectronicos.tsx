@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useMemo } from 'react';
 import { toast } from 'sonner';
 import { Eye, Download, Loader2 } from 'lucide-react';
 import { useClienteSubtabList } from '@/app/hooks/useClientePersistence';
+import { useCatalogoDocumentosDB } from '@/app/hooks/useCatalogoDocumentosDB';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 import { supabase } from '../../lib/supabaseClient';
 import { currentUser } from '../../data/mockData';
@@ -367,6 +368,7 @@ async function uploadFileToStorage(
 // Componente principal
 // ═══════════════════════════════════════════════════════════════════
 export function ExpedientesElectronicos({ isView = false, clienteId, mode = 'nuevo', diagData = null, diagKeys = [], diagUuid = '', clienteData = {} }: ExpedientesElectronicosProps) {
+  const { tiposDocumento } = useCatalogoDocumentosDB();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [selectedExpedientes, setSelectedExpedientes] = useState<number[]>([]);
   const [showDiag, setShowDiag] = useState(false);
@@ -969,23 +971,13 @@ export function ExpedientesElectronicos({ isView = false, clienteId, mode = 'nue
                       onClick={(e) => e.stopPropagation()}
                     >
                       <option value="">Seleccione...</option>
-                      <option>Credencial de elector</option>
-                      <option>Pasaporte</option>
-                      <option>Licencia de conducir</option>
-                      <option>Cartilla militar</option>
-                      <option>Visa</option>
-                      <option>Tarjeta de residencia</option>
-                      <option>Cédula de ciudadanía</option>
-                      <option>Registro Federal de Contribuyentes (RFC)</option>
-                      <option>Número de Identificación Personal (NIP)</option>
-                      <option>Documento migratorio</option>
-                      <option>Documento de propiedad</option>
-                      <option>Estado de cuenta bancario</option>
-                      <option>Comprobante de domicilio</option>
-                      <option>Certificado de nacimiento</option>
-                      <option>Certificado de matrimonio</option>
-                      <option>Certificado de defunción</option>
-                      <option>Documento web</option>
+                      {tiposDocumento.map(tipo => (
+                        <option key={tipo} value={tipo}>{tipo}</option>
+                      ))}
+                      {/* Mostrar valor guardado si no está en el catálogo (compatibilidad) */}
+                      {expediente.tipoDocumento && !tiposDocumento.includes(expediente.tipoDocumento) && (
+                        <option value={expediente.tipoDocumento}>{expediente.tipoDocumento}</option>
+                      )}
                     </select>
                   </td>
                   <td className="border-b border-gray-200 px-2 py-1.5">

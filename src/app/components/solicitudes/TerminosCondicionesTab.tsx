@@ -14,6 +14,8 @@ interface Props {
   productoSeleccionado?: ProductoCatalogo;
   /** Monto solicitado del header — se sincroniza automáticamente */
   montoSolicitadoHeader?: string;
+  /** Tasa pre-cargada desde cotización — tiene prioridad sobre la del producto */
+  tasaCotizacion?: string;
 }
 
 /**
@@ -63,11 +65,14 @@ function extractTerminosFromProduct(prod: ProductoCatalogo): Partial<TerminosCon
 
   const result: Partial<TerminosCondiciones> = {};
 
-  // Tasa — priorizar matrizTasaFija que es la fuente de verdad
+  // Tasa — solo aceptar valores numéricos válidos, NUNCA texto como "Fija"
   const tasa = pick('tasa', 'tasaBase', 'tasaInicial', 'tasaOrdinaria', 'tasaPorcentaje', 'tasaPorcentajeBase');
   if (tasa) {
     const num = parseFloat(tasa);
-    result.tasa = !isNaN(num) ? num.toFixed(4) : tasa;
+    if (!isNaN(num) && num > 0) {
+      result.tasa = num.toFixed(4);
+    }
+    // Si no es numérico (ej: "Fija", "Variable"), se ignora completamente
   }
 
   // Tipo de tasa (Fija / Variable)
@@ -106,7 +111,7 @@ function extractTerminosFromProduct(prod: ProductoCatalogo): Partial<TerminosCon
   return result;
 }
 
-export function TerminosCondicionesTab({ mode, solicitudId, lineaProducto, productoSeleccionado, montoSolicitadoHeader }: Props) {
+export function TerminosCondicionesTab({ mode, solicitudId, lineaProducto, productoSeleccionado, montoSolicitadoHeader, tasaCotizacion }: Props) {
   // Track which productoId was last applied to avoid re-applying
   const lastAppliedProductoId = useRef<string>('');
 
@@ -131,12 +136,25 @@ export function TerminosCondicionesTab({ mode, solicitudId, lineaProducto, produ
   useEffect(() => {
     if (isRO) return;
     if (!montoSolicitadoHeader) return;
-    // Only sync if the header has a value and terminos monto is empty or different
     if (montoSolicitadoHeader !== data.montoSolicitado) {
       console.log('[TerminosTab] Sync montoSolicitado from header:', montoSolicitadoHeader);
       setData(prev => ({ ...prev, montoSolicitado: montoSolicitadoHeader }));
     }
   }, [montoSolicitadoHeader]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Aplicar tasa desde cotización (tiene prioridad absoluta, se ejecuta al montar) ──
+  useEffect(() => {
+    if (isRO) return;
+    if (!tasaCotizacion) return;
+    const tasaNum = parseFloat(String(tasaCotizacion).replace(/[^0-9.-]/g, ''));
+    if (isNaN(tasaNum) || tasaNum <= 0) return;
+    const tasaFormatted = tasaNum.toFixed(4);
+    setData(prev => {
+      if (prev.tasa === tasaFormatted) return prev;
+      console.log('[TerminosTab] Applying tasa from cotizacion:', tasaCotizacion, '→', tasaFormatted, '(prev was:', prev.tasa, ')');
+      return { ...prev, tasa: tasaFormatted };
+    });
+  }, [tasaCotizacion, isRO]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Auto-fill from product when it changes ──
   useEffect(() => {
@@ -163,12 +181,16 @@ export function TerminosCondicionesTab({ mode, solicitudId, lineaProducto, produ
     setData(prev => {
       const updated = { ...prev };
       for (const key of keys) {
+        // NUNCA sobrescribir tasa si vino de cotización
+        if (key === 'tasa' && tasaCotizacion) continue;
+        // NUNCA sobrescribir tasa si ya tiene un valor numérico válido
+        if (key === 'tasa' && prev.tasa && !isNaN(parseFloat(prev.tasa))) continue;
         // Sobrescribir campos con valores del producto (el producto es la fuente de verdad)
         (updated as any)[key] = extracted[key];
       }
       return updated;
     });
-  }, [productoSeleccionado, isRO]);
+  }, [productoSeleccionado, isRO, tasaCotizacion]);
 
   const set = (field: keyof TerminosCondiciones, value: any) => {
     if (isRO) return;
@@ -310,12 +332,14 @@ export function TerminosCondicionesTab({ mode, solicitudId, lineaProducto, produ
 
         {/* Col 3 */}
         <div className="space-y-3">
-          <div>
-            <label className="block text-xs text-gray-700 mb-1">Tipo Cálculo Amortización</label>
-            <select value={data.tipoCalculo} onChange={e => set('tipoCalculo', e.target.value)} disabled={isRO} className={sc()}>
-              {CAT_TIPO_CALCULO.map(t => <option key={t} value={t}>{t}</option>)}
-            </select>
-          </div>
+          {!isCaptacion && (
+            <div>
+              <label className="block text-xs text-gray-700 mb-1">Tipo Cálculo Amortización</label>
+              <select value={data.tipoCalculo} onChange={e => set('tipoCalculo', e.target.value)} disabled={isRO} className={sc()}>
+                {CAT_TIPO_CALCULO.map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </div>
+          )}
 
           <div>
             <label className="block text-xs text-gray-700 mb-1">Moneda</label>

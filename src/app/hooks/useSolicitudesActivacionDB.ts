@@ -128,7 +128,8 @@ function mapRowToListItem(row: SolicitudActivacionDBRow): SolicitudActivacionLis
     row.cliente_ap_materno,
   ].filter(Boolean).join(' ') || (header.cliente as string) || '(sin nombre)';
 
-  const rawMonto = parseMoney(header.montoTransaccion ?? row.solicitud_monto);
+  // montoTransaccion is the first payment amount — never fall back to solicitud_monto (total)
+  const rawMonto = parseMoney(header.montoTransaccion);
   const montoStr = rawMonto > 0
     ? rawMonto.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
     : '';
@@ -183,10 +184,16 @@ function mapBaseRowToListItem(row: SolicitudActivacionBaseRow): SolicitudActivac
 // FORM → DB PAYLOAD
 // ═══════════════════════════════════════════════════════════════════
 
+// UUID helper — ensures only valid UUIDs reach the DB cast; anything else → null
+const UUID_RE_DB = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function toUUID(v: string | null | undefined): string | null {
+  return v && UUID_RE_DB.test(v) ? v : null;
+}
+
 function formToDBPayload(form: SolicitudActivacionFormData) {
-  return {
-    cliente_id:       form.clienteId   || null,
-    solicitud_id:     form.solicitudId || null,
+  const payload = {
+    cliente_id:       toUUID(form.clienteId),
+    solicitud_id:     toUUID(form.solicitudId),
     type:             form.type        || null,
     // created_at is auto-set by the DB — never sent in the payload
     fecha_compromiso: form.fechaCompromiso ? parseDisplayToISO(form.fechaCompromiso) : null,
@@ -210,11 +217,14 @@ function formToDBPayload(form: SolicitudActivacionFormData) {
         monto:         form.detailMonto,
         pctImpuesto:   form.detailPctImpuesto,
         moneda:        form.detailMoneda,
-        subTotal:      form.detailSubTotal,
-        estatus:       form.detailEstatus,
+        subTotal:     form.detailSubTotal,
+        estatus:      form.detailEstatus,
       },
     },
   };
+  
+  console.log('[DIAG formToDBPayload] form.estatus:', form.estatus, '| payload.estatus:', payload.estatus);
+  return payload;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -362,27 +372,96 @@ export function useSolicitudesActivacionDB(enabled: boolean) {
       const payload = formToDBPayload(form);
       const isNew   = !dbId;
 
+      console.log('[PROMPT_IA][saveSolicitudActivacion] iniciando:', {
+        isNew,
+        dbId,
+        solicitud_id: payload.solicitud_id,
+        estatus: payload.estatus,
+        cliente_id: payload.cliente_id,
+      });
+
+      // Columnas directas para el fallback schema (excluye undefined y campos auto-generados)
+      const directCols = {
+        cliente_id:       payload.cliente_id       ?? null,
+        solicitud_id:     payload.solicitud_id      ?? null,
+        type:             payload.type              ?? null,
+        fecha_compromiso: payload.fecha_compromiso  ?? null,
+        estatus:          payload.estatus           || 'Pendiente',
+        data:             payload.data              ?? null,
+      };
+
       try {
         if (isNew) {
-          const { data, error } = await supabase.rpc('insert_solicitud_activacion', {
-            p_payload: payload,
-          });
-          if (error) throw new Error(error.message);
-          const savedId = (data as { id?: string }[])?.[0]?.id || '';
+          // ── Intento 1: RPC insert_solicitud_activacion ──────────────────
+          let savedId = '';
+          try {
+            const { data: rpcData, error: rpcErr } = await supabase.rpc('insert_solicitud_activacion', {
+              p_payload: payload,
+            });
+            console.log('[PROMPT_IA][saveSolicitudActivacion] INSERT RPC result:', { rpcData, rpcErr });
+            if (!rpcErr) {
+              savedId = (rpcData as { id?: string }[])?.[0]?.id
+                ?? (rpcData as { id?: string } | null)?.id
+                ?? (typeof rpcData === 'string' ? rpcData : '');
+            } else {
+              throw new Error(rpcErr.message);
+            }
+          } catch (rpcEx: unknown) {
+            // ── Fallback: Supabase schema directo ──────────────────────────
+            console.warn('[PROMPT_IA][saveSolicitudActivacion] INSERT RPC falló, intentando schema directo:', (rpcEx as Error).message);
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const { data: directData, error: directErr } = await (supabase as any)
+              .schema('EFINANCIANET_DB')
+              .from('J_SOLICITUDES_ACTIVACION')
+              .insert([directCols])
+              .select('id')
+              .single();
+            console.log('[PROMPT_IA][saveSolicitudActivacion] INSERT schema directo:', { directData, directErr });
+            if (directErr) throw new Error(directErr.message);
+            savedId = (directData as { id?: string })?.id ?? '';
+          }
+
+          console.log('[PROMPT_IA][saveSolicitudActivacion] INSERT savedId:', savedId);
           await refetch();
           return { ok: true, id: savedId };
+
         } else {
-          const { error } = await supabase.rpc('update_solicitud_activacion', {
-            p_id:      dbId,
-            p_payload: payload,
-          });
-          if (error) throw new Error(error.message);
+          // ── Validar que dbId sea UUID antes de llamar al RPC ─────────────
+          if (!dbId || !UUID_RE_DB.test(dbId)) {
+            console.error('[PROMPT_IA][saveSolicitudActivacion] dbId no es UUID, no se puede actualizar:', dbId);
+            return { ok: false, error: `ID de registro inválido (${dbId}) — no se puede actualizar` };
+          }
+
+          // ── Intento 1: RPC update_solicitud_activacion ──────────────────
+          try {
+            const { data: updData, error: updErr } = await supabase.rpc('update_solicitud_activacion', {
+              p_id:      dbId,
+              p_payload: payload,
+            });
+            console.log('[DIAG UPDATE] RPC call result:', { data: updData, error: updErr });
+            console.log('[DIAG UPDATE] payload sent to RPC:', JSON.stringify(payload));
+            if (updErr) throw new Error(updErr.message);
+          } catch (rpcEx: unknown) {
+            // ── Fallback: Supabase schema directo ──────────────────────────
+            console.warn('[DIAG UPDATE] RPC falló, intentando schema directo:', (rpcEx as Error).message);
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const { error: directErr } = await (supabase as any)
+              .schema('EFINANCIANET_DB')
+              .from('J_SOLICITUDES_ACTIVACION')
+              .update({ estatus: directCols.estatus, fecha_compromiso: directCols.fecha_compromiso, data: directCols.data })
+              .eq('id', dbId);
+            console.log('[DIAG UPDATE] schema directo result:', { error: directErr, dbId, estatus: directCols.estatus });
+            if (directErr) throw new Error(directErr.message);
+          }
+
           await refetch();
           return { ok: true, id: dbId };
         }
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : 'Error al guardar';
-        console.error('[useSolicitudesActivacionDB] save error:', msg);
+        console.error('[PROMPT_IA][saveSolicitudActivacion] TODOS LOS INTENTOS FALLARON:', msg, {
+          isNew, dbId, solicitud_id: payload.solicitud_id, estatus: payload.estatus,
+        });
         return { ok: false, error: msg };
       } finally {
         setSaving(false);

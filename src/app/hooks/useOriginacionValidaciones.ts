@@ -70,16 +70,24 @@ export function validarDocumentosFase(
     return isNaN(dId) || dId === 0 || dId <= faseSeq;
   });
 
+  // Helper: normalización robusta para comparar tipoDocumento (soporta banca móvil)
+  const normTipo = (s: string) => (s || '').trim().toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+  const warnings: string[] = [];
+
   for (const req of reqFase) {
+    // Matching case-insensitive + NFD para tolerar diferencias entre plataformas
     const docEncontrado = docsFase.find(d =>
-      (d.tipoDocumento || '').toLowerCase() === (req.tipoDocumento || '').toLowerCase()
+      normTipo(d.tipoDocumento) === normTipo(req.tipoDocumento)
     );
 
     if (!docEncontrado) {
       errors.push(`Documento obligatorio no cargado: "${req.tipoDocumento}"`);
       continue;
     }
-    if (!docEncontrado.archivo && !docEncontrado.url && !docEncontrado.fileData) {
+    const tieneArchivo = !!(docEncontrado.archivo || (docEncontrado as any).url || (docEncontrado as any).fileData || (docEncontrado as any).storagePath);
+    if (!tieneArchivo) {
       errors.push(`Documento sin archivo adjunto: "${req.tipoDocumento}"`);
       continue;
     }
@@ -87,25 +95,27 @@ export function validarDocumentosFase(
       errors.push(`Documento rechazado: "${req.tipoDocumento}". Vuelva a cargarlo.`);
       continue;
     }
-    if (docEncontrado.estatus === 'Pendiente' || docEncontrado.estatus !== 'Validado') {
-      errors.push(`Documento pendiente de validación: "${req.tipoDocumento}"`);
+    // Documento cargado pero sin validar IA → advertencia, NO bloquea el avance de fase.
+    // Esto permite avanzar cuando el documento viene de banca móvil o aún no se validó con IA.
+    if (docEncontrado.estatus !== 'Validado') {
+      warnings.push(`Documento pendiente de validación IA: "${req.tipoDocumento}"`);
     }
   }
 
-  // Verificar documentos rechazados o pendientes en esta fase (aunque no sean obligatorios)
+  // Documentos rechazados en esta fase (aunque no sean obligatorios) → sí bloquean
   const rechazados = docsFase.filter(d => d.estatus === 'Rechazado').map(d => d.tipoDocumento);
   if (rechazados.length > 0) {
     errors.push(`Documentos rechazados que deben corregirse: ${rechazados.join(', ')}`);
   }
 
   // Verificar duplicados
-  const tipos = docsFase.map(d => (d.tipoDocumento || '').toLowerCase()).filter(Boolean);
+  const tipos = docsFase.map(d => normTipo(d.tipoDocumento)).filter(Boolean);
   const dupes = tipos.filter((t, i) => tipos.indexOf(t) !== i);
   if (dupes.length > 0) {
     errors.push(`Documentos duplicados: ${[...new Set(dupes)].join(', ')}`);
   }
 
-  return { valid: errors.length === 0, errors };
+  return { valid: errors.length === 0, errors, warnings };
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -440,13 +450,14 @@ export function validarFase7(opts: {
         'Cree y pague la solicitud de activación antes de activar la cuenta.'
       );
     } else {
-      const pagada = opts.solicitudesActivacion.some(s =>
-        (s.estatus || s.status || s.estatusPago || '').toLowerCase() === 'pagado'
-      );
-      if (!pagada) {
+      const aprobada = opts.solicitudesActivacion.some(s => {
+        const est = (s.estatus || s.status || s.estatusPago || '').toLowerCase();
+        return est === 'enviada' || est === 'pagado';
+      });
+      if (!aprobada) {
         errors.push(
-          'La Solicitud de Activación no tiene estatus "Pagado". ' +
-          'Confirme el pago antes de activar la cuenta.'
+          'La Solicitud de Activación no tiene estatus "Enviada" o "Pagado". ' +
+          'Envíe o confirme el pago antes de activar la cuenta.'
         );
       }
     }
@@ -482,24 +493,22 @@ export function validarResultadoActivacion(opts: {
     return { valid: false, errors };
   }
 
-  // Estatus válido: Pendiente o En proceso
+  // Estatus válido: Pendiente, En proceso, Enviada, Pagado
   const estatusNorm = (s.estatus || '').toLowerCase().trim();
-  const estatusOk   = estatusNorm === 'pendiente' || estatusNorm === 'en proceso';
+  const estatusOk   = ['pendiente', 'en proceso', 'enviada', 'pagado'].includes(estatusNorm);
   if (!estatusOk) {
     errors.push(
       `Solicitud de Activación con estatus inválido: "${s.estatus}". ` +
-      'Se esperaba "Pendiente" o "En proceso".'
+      'Se esperaba "Pendiente", "Enviada" o "Pagado".'
     );
-  }
+}
 
-  // Monto debe coincidir (tolerancia ±$1 para diferencias de redondeo)
-  if (opts.montoEsperado !== undefined && opts.montoEsperado > 0 && s.montoTransaccion) {
+  // El montoTransaccion de la activación es siempre el pago de 1 período (primer pago),
+  // no el monto total de la solicitud — no se compara contra montoEsperado (monto total).
+  if (s.montoTransaccion) {
     const montoAct = parseFloat(String(s.montoTransaccion).replace(/[^0-9.-]/g, '')) || 0;
-    if (montoAct > 0 && Math.abs(montoAct - opts.montoEsperado) > 1) {
-      errors.push(
-        `El monto de la Solicitud de Activación ($${montoAct.toLocaleString('es-MX', { minimumFractionDigits: 2 })}) ` +
-        `no coincide con el monto de la originación ($${opts.montoEsperado.toLocaleString('es-MX', { minimumFractionDigits: 2 })}).`
-      );
+    if (montoAct <= 0) {
+      errors.push('El monto de la Solicitud de Activación debe ser mayor a $0.');
     }
   }
 
@@ -551,13 +560,18 @@ export function getRequisitosFromRawData(rawData: Record<string, any> | null | u
     return m ? parseInt(m[1], 10) : 1;
   }
 
-  /** Mapeo de tipos de documento conocidos → faseId correcta (basado en flujo institucional) */
+  /** Mapeo de tipos de documento conocidos → faseId correcta (basado en flujo institucional).
+   *  Tiene PRIORIDAD sobre el faseId explícito del producto — evita que configuraciones
+   *  incorrectas del producto bloqueen el avance de la fase de formalización. */
   const DOC_TYPE_TO_PHASE: Record<string, number> = {
     'contrato firmado': 5,
     'contrato_firmado': 5,
+    'contrato firmado por cliente': 5,
     'pagare firmado': 5,
     'pagare_firmado': 5,
     'pagaré firmado': 5,
+    'pagare firmado por cliente': 5,
+    'pagaré firmado por cliente': 5,
   };
 
   /**
@@ -575,15 +589,15 @@ export function getRequisitosFromRawData(rawData: Record<string, any> | null | u
 
   /** Intenta inferir faseId por tipo de documento si no tiene faseId explícito */
   function inferFaseId(doc: any, parsedFaseId: number): number {
-    // 1. Si tiene faseId/fase_id explícito, usarlo
+    // 1. Docs firmados siempre van en fase posterior — el mapa tiene prioridad absoluta
+    const tipoDoc = String(doc.tipoDocumento || doc.tipo || doc.tipo_documento || '').toLowerCase().trim();
+    if (DOC_TYPE_TO_PHASE[tipoDoc]) return DOC_TYPE_TO_PHASE[tipoDoc];
+    // 2. Si tiene faseId/fase_id explícito, usarlo
     const explicit = doc.faseId ?? doc.fase_id;
     if (explicit != null) {
       const n = parseInt(String(explicit), 10);
       if (!isNaN(n) && n > 0) return n;
     }
-    // 2. Si el tipo de documento está en el mapa conocido, usar ese faseId
-    const tipoDoc = String(doc.tipoDocumento || doc.tipo || doc.tipo_documento || '').toLowerCase().trim();
-    if (DOC_TYPE_TO_PHASE[tipoDoc]) return DOC_TYPE_TO_PHASE[tipoDoc];
     // 3. Usar el faseId parseado del string de fase
     return parsedFaseId;
   }
@@ -711,6 +725,7 @@ export function validarDocumentosPorFase(
   documentosCargados: DocumentoCargado[],
   tipoPersona: string,
 ): ValidacionFaseResult {
+  console.log(`[validarDocumentosPorFase] tipoPersona recibido: "${tipoPersona}"`);
   const faltantes: string[] = [];
   const pendientesValidacion: string[] = [];
   const documentosValidados: string[] = [];
@@ -727,8 +742,12 @@ export function validarDocumentosPorFase(
     const persona = String(r.tipoPersona || (r as any).persona || '').toLowerCase().trim();
     if (!persona || persona.includes('todo') || persona.includes('all')) return true;
     const tp = tipoPersona.toLowerCase();
+    console.log(`[validarDocumentosPorFase] "${r.tipoDocumento}" persona="${persona}" tp="${tp}"`);
     // Si el doc es solo para Moral y el cliente es Física → excluir
-    if (persona.includes('moral') && !tp.includes('moral')) return false;
+    if (persona.includes('moral') && !tp.includes('moral')) {
+      console.log(`[validarDocumentosPorFase] EXCLUYENDO "${r.tipoDocumento}" - es para Moral, cliente es ${tipoPersona}`);
+      return false;
+    }
     // Si el doc es solo para Física y el cliente es Moral → excluir
     if ((persona.includes('física') || persona.includes('fisica') || persona.includes('fisic')) && tp.includes('moral')) return false;
     return true;
@@ -768,14 +787,32 @@ export function validarDocumentosPorFase(
   console.log(`[validarFase] Documentos de ESTA fase o anteriores (${faseActualSeq}): ${docsDeFase.length}`, docsDeFase.map(d => d.tipoDocumento));
   console.log(`[validarFase] Documentos excluidos (fase futura):`, documentosCargados.filter(d => !docsDeFase.includes(d)).map(d => `"${d.tipoDocumento}"→faseId=${d.faseId}`));
 
+  // Documentos que se auto-satisfacen por el hecho de existir una solicitud activa
+  const DOC_AUTO_VALIDOS = new Set([
+    'solicitud de credito',
+    'solicitud de crédito',
+    'solicitud credito',
+    'formulario de solicitud',
+    'solicitud',
+  ]);
+
+  const normalize = (s: string) =>
+    s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
   // ── PASO 3: Validar cada documento requerido ──
   for (const req of reqDeFase) {
     const nombreDoc = req.tipoDocumento;
-    const nombreLower = nombreDoc.toLowerCase();
+    const nombreNorm = normalize(nombreDoc);
 
-    // 1. ¿Está cargado en el expediente?
+    // Documentos auto-generados por el sistema → se consideran válidos automáticamente
+    if (DOC_AUTO_VALIDOS.has(nombreNorm)) {
+      documentosValidados.push(nombreDoc);
+      continue;
+    }
+
+    // 1. ¿Está cargado en el expediente? (con normalización de acentos)
     const docCargado = docsDeFase.find(d =>
-      (d.tipoDocumento || '').toLowerCase() === nombreLower
+      normalize(d.tipoDocumento || '') === nombreNorm
     );
 
     if (!docCargado) {
@@ -785,7 +822,8 @@ export function validarDocumentosPorFase(
     }
 
     // 2. ¿Tiene archivo adjunto? (legible)
-    if (!docCargado.archivo && !docCargado.url && !docCargado.fileData) {
+    const tieneArchivo = !!(docCargado.archivo || (docCargado as any).url || docCargado.fileData || (docCargado as any).storagePath);
+    if (!tieneArchivo) {
       faltantes.push(nombreDoc);
       motivos.push(`"${nombreDoc}": cargado pero sin archivo adjunto.`);
       continue;
@@ -799,20 +837,15 @@ export function validarDocumentosPorFase(
     }
 
     // 4. ¿Fue validado por IA?
-    if (!docCargado.validadoIA) {
+    // Documentos de banca móvil y docs recién subidos no tienen validación IA aún.
+    // Se registran como pendientes de validación (advertencia) pero NO bloquean el avance de fase.
+    if (!docCargado.validadoIA || docCargado.estatus !== 'Validado') {
       pendientesValidacion.push(nombreDoc);
-      motivos.push(`"${nombreDoc}": cargado pero pendiente de validación IA.`);
-      continue;
+      motivos.push(`"${nombreDoc}": archivo presente pero pendiente de validación IA.`);
+      // ✅ No hacemos continue — el documento SÍ cuenta como cubierto
     }
 
-    // 5. ¿Está validado por el sistema?
-    if (docCargado.estatus !== 'Validado') {
-      pendientesValidacion.push(nombreDoc);
-      motivos.push(`"${nombreDoc}": validado por IA pero estatus "${docCargado.estatus}".`);
-      continue;
-    }
-
-    // ✅ Documento OK
+    // ✅ Documento con archivo presente (validado o pendiente de IA)
     documentosValidados.push(nombreDoc);
   }
 
@@ -825,7 +858,9 @@ export function validarDocumentosPorFase(
     }
   }
 
-  const valido = faltantes.length === 0 && pendientesValidacion.length === 0;
+  // Solo los "faltantes" (sin archivo o rechazados) bloquean el avance.
+  // Los "pendientesValidacion" (tienen archivo pero sin IA) son advertencias, no bloquean.
+  const valido = faltantes.length === 0;
 
   return {
     valido,

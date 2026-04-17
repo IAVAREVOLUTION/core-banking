@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { toast } from 'sonner';
 import { usePersonasRelacionadasDB } from '../../../hooks/usePersonasRelacionadasDB';
+import { saveToSession, loadFromSession } from '../solicitudCreditoStore';
 
 interface ParteRelacionada {
   id: number;
@@ -74,20 +75,14 @@ export function PartesRelacionadasTab({ mode, solicitudId, montoSolicitado, clie
   const rolAsignado = useMemo(() => getRolPorMonto(montoNum), [montoNum]);
 
   useEffect(() => {
-    const STORAGE_KEY = `partes_relacionadas_${solicitudId}`;
-    try {
-      const stored = sessionStorage.getItem(STORAGE_KEY);
-      if (stored) {
-        setPartes(JSON.parse(stored));
-      }
-    } catch { /* ignore */ }
+    const stored = loadFromSession<ParteRelacionada[]>(solicitudId, 'partesRelacionadas');
+    if (stored && stored.length > 0) {
+      setPartes(stored);
+    }
   }, [solicitudId]);
 
   useEffect(() => {
-    const STORAGE_KEY = `partes_relacionadas_${solicitudId}`;
-    try {
-      sessionStorage.setItem(STORAGE_KEY, JSON.stringify(partes));
-    } catch { /* ignore */ }
+    saveToSession(solicitudId, 'partesRelacionadas', partes);
   }, [partes, solicitudId]);
 
   // Actualizar personas disponibles cuando cambian los datos de DB

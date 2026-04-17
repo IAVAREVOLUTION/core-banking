@@ -109,6 +109,7 @@ function App() {
 
   // ── Deep-link para navegar al módulo Cotizaciones con un ID específico ──
   const [cotizacionDeepLink, setCotizacionDeepLink] = useState<{ id: string; linea: string } | null>(null);
+  const [solicitudDeepLink, setSolicitudDeepLink] = useState<{ dbId: string; noSol: string; fromClienteId?: string } | null>(null);
 
   // ── Datos de cotización para pre-llenar nueva solicitud (flujo Cotización → Solicitud) ──
   const [cotizacionParaSolicitud, setCotizacionParaSolicitud] = useState<any>(null);
@@ -117,6 +118,13 @@ function App() {
     console.log(`[App] Navegando a Cotizaciones → id=${cotizacionId}, línea=${linea}`);
     setCotizacionDeepLink({ id: cotizacionId, linea });
     setCurrentModule('cotizaciones');
+  };
+
+  const handleNavigateToSolicitud = (solicitudId: string, noSol: string, fromClienteId?: string) => {
+    console.log(`[App] Navegando a Solicitudes → dbId=${solicitudId}, noSol=${noSol}, fromClienteId=${fromClienteId}`);
+    setSolicitudDeepLink({ dbId: solicitudId, noSol, fromClienteId });
+    setCurrentModule('solicitudes-creditos');
+    setSolicitudView('list');
   };
 
   /** Flujo "Crear Solicitud desde Cotización" — spec solicitudes-financieras §1–§4 */
@@ -1127,6 +1135,7 @@ function App() {
                 onBack={handleCancel}
                 onSave={handleSaveCliente}
                 onNavigateToCotizacion={handleNavigateToCotizacion}
+                onNavigateToSolicitud={handleNavigateToSolicitud}
               />
             ) : (
               <ClienteDireccionForm
@@ -1279,6 +1288,12 @@ function App() {
               <SolicitudCreditoList
                 cotizacionParaSolicitud={cotizacionParaSolicitud}
                 onCotizacionConsumed={() => setCotizacionParaSolicitud(null)}
+                solicitudDeepLink={solicitudDeepLink}
+                onSolicitudDeepLinkConsumed={() => setSolicitudDeepLink(null)}
+                onBackToCliente={() => {
+                  setCurrentModule('clientes');
+                  setSolicitudView('dashboard');
+                }}
               />
             )}
           </>

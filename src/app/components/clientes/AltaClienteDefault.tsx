@@ -31,9 +31,10 @@ import { CampoInstitucionGobierno } from '../ui/CatalogoInstitucionGobierno';
 import type { InstitucionGobiernoSeleccion } from '../ui/CatalogoInstitucionGobierno';
 import { useCatalogoClasificaciones } from '../../hooks/useCatalogoClasificaciones';
 import { syncToJClientes } from '../../hooks/useSyncJClientes';
-// REGLA INSTITUCIONAL: El módulo Cliente NO valida cuentas.
-// La validación de Cuenta Eje solo se ejecuta en el módulo Cuentas de Ahorro.
-// Ver: /src/imports/cliente-cuenta-validacion-fix.md
+import { generarCuentaEje, clienteTieneCuentaEje } from '../../hooks/useCuentaEjeGenerator';
+
+// Semáforo en memoria: evita doble creación si se guarda rápido dos veces
+const _cuentaEjeEnProceso = new Set<string>();
 import { 
   useClientePersistence, 
   useClienteTabs, 
@@ -49,6 +50,7 @@ interface AltaClienteDefaultProps {
   mode: FormMode;
   cliente?: Cliente;
   onNavigateToCotizacion?: (cotizacionId: string, linea: string) => void;
+  onNavigateToSolicitud?: (solicitudId: string, noSol: string, clienteId?: string) => void;
 }
 
 /**
@@ -167,7 +169,7 @@ interface FormData {
  * Ver: /src/app/hooks/useClientePersistence.ts
  * Documentación: /PERSISTENCIA_CLIENTES.md
  */
-export function AltaClienteDefault({ onBack, onSave, mode, cliente, onNavigateToCotizacion }: AltaClienteDefaultProps) {
+export function AltaClienteDefault({ onBack, onSave, mode, cliente, onNavigateToCotizacion, onNavigateToSolicitud }: AltaClienteDefaultProps) {
   const isView = mode === 'ver';
 
   // ── Catálogo de clasificaciones de cliente desde DB ──
@@ -1567,6 +1569,38 @@ export function AltaClienteDefault({ onBack, onSave, mode, cliente, onNavigateTo
       }
 
       console.log(`[AltaClienteDefault] ✅ J_CLIENTES ${existingUuid ? 'UPDATE' : 'INSERT'} exitoso — UUID: ${returnedId}`);
+
+      // ── Cuenta Eje: crear una sola vez si el cliente no tiene ninguna ──
+      if (returnedId && !_cuentaEjeEnProceso.has(returnedId)) {
+        _cuentaEjeEnProceso.add(returnedId);
+        try {
+          const yaTiene = await clienteTieneCuentaEje(returnedId);
+          if (!yaTiene) {
+            console.log(`[AltaClienteDefault] Generando Cuenta Eje para ${returnedId}…`);
+            const nombreCliente = nombreCompleto || formData.nombre || formData.razonSocial || 'Cliente';
+            const cuentaEjeResult = await generarCuentaEje(returnedId, nombreCliente);
+            if (cuentaEjeResult) {
+              console.log(`[AltaClienteDefault] ✅ Cuenta Eje creada: ${cuentaEjeResult.noCuenta}`);
+              // Persistir noCuenta en J_CLIENTES.data para consultas posteriores
+              dataJson.cuentaEje = cuentaEjeResult.noCuenta;
+              dataJson.fechaCuentaEje = new Date().toISOString();
+              await syncToJClientes({
+                type: typeValue,
+                tipoFormulario: subtipoValue,
+                estatus: estatusValue,
+                data: dataJson,
+                label: 'Cliente (actualización cuenta eje)',
+                existingId: returnedId,
+                par_cliente_id: formData.institucionGobiernoId || null,
+              });
+            }
+          } else {
+            console.log(`[AltaClienteDefault] Cliente ${returnedId} ya tiene Cuenta Eje — no se crea nueva`);
+          }
+        } finally {
+          _cuentaEjeEnProceso.delete(returnedId);
+        }
+      }
 
       // Notificar al padre con los datos completos
       const clienteData = {
@@ -3576,6 +3610,7 @@ export function AltaClienteDefault({ onBack, onSave, mode, cliente, onNavigateTo
                   mode={mode}
                   clienteId={clienteId}
                   cliente={cliente}
+                  onVerSolicitudCompleta={onNavigateToSolicitud}
                 />
               )}
 
@@ -3600,6 +3635,10 @@ export function AltaClienteDefault({ onBack, onSave, mode, cliente, onNavigateTo
                   onBack={() => setActiveTab('default')}
                   mode={mode}
                   clienteId={clienteId}
+                  saldoCuentaEje={formData.saldoCuentaEje}
+                  onSaldoChange={(nuevoSaldo) => {
+                    setFormData(prev => ({ ...prev, saldoCuentaEje: nuevoSaldo }));
+                  }}
                 />
               )}
 

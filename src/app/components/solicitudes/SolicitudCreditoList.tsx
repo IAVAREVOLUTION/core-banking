@@ -8,6 +8,7 @@ import {
 } from './solicitudCreditoStore';
 import { createCreditoFromSolicitud } from '../creditos/creditoStore';
 import { useSolicitudesDB } from '../../hooks/useSolicitudesDB';
+import { useProductosCatalogoDB } from '../../hooks/useProductosCatalogoDB';
 
 type ViewState = { type: 'list' } | { type: 'form'; mode: 'nuevo' | 'editar' | 'ver'; solicitudId?: number | string; dbId?: string };
 
@@ -16,6 +17,12 @@ interface SolicitudCreditoListProps {
   cotizacionParaSolicitud?: any;
   /** Callback para limpiar el dato de cotización después de consumirlo */
   onCotizacionConsumed?: () => void;
+  /** Deep link: abrir directamente una solicitud por dbId */
+  solicitudDeepLink?: { dbId: string; noSol: string; fromClienteId?: string } | null;
+  /** Callback para limpiar el deep link después de usarlo */
+  onSolicitudDeepLinkConsumed?: () => void;
+  /** Callback para regresar al cliente después de ver una solicitud */
+  onBackToCliente?: () => void;
   /** Si se pasa, filtra la lista para mostrar solo las solicitudes de este cliente */
   clienteIdFilter?: string;
   /** Datos del cliente para pre-llenar automáticamente una nueva solicitud */
@@ -25,6 +32,8 @@ interface SolicitudCreditoListProps {
     apellidoPaterno: string;
     apellidoMaterno: string;
     tipoPersona?: string;
+    curp?: string;
+    rfc?: string;
   };
 }
 
@@ -39,11 +48,21 @@ function parseDate(dateStr: string): Date {
  * Reconstruye SolicitudFormData completo desde un SolicitudListItem + JSONB _data.
  * Exportada para uso en OriginacionModule (siembra namespace sol_credito_).
  */
+/** Normaliza "Persona Física" / "Persona Moral" → "Física" / "Moral" para el select del form */
+function normalizeTipoPersona(raw: string): string {
+  if (!raw) return '';
+  const l = raw.toLowerCase();
+  if (l.includes('moral')) return 'Moral';
+  if (l.includes('f') || l.includes('física') || l.includes('fisica')) return 'Física';
+  return raw;
+}
+
 export function buildFormDataFromListItem(s: SolicitudListItem): Record<string, any> {
   const extra = s as any;
   const d = extra._data || {};
   const sol = d.solicitud || {};
   const hdr = sol.header || {};
+  const rawTerminos = sol.terminos_condiciones?._raw || {};
   const joinNombre = extra._clienteNombre || '';
   const joinApPaterno = extra._clienteApPaterno || '';
   const joinApMaterno = extra._clienteApMaterno || '';
@@ -54,13 +73,14 @@ export function buildFormDataFromListItem(s: SolicitudListItem): Record<string, 
   const joinTipoProducto = extra._tipoProducto || '';
   const joinDescripcion = extra._descripcion || '';
   const joinFases = extra._fases || '';
+  const rawTipoPersona = extra._tipoPersona || hdr.tipo_persona || d.tipoPersona || joinTipoPersona || '';
   return {
     id: extra._dbId || String(s.id) || '',
     noSol: s.noSol || hdr.no_sol || d.noSol || '',
     cotizacionId: hdr.cotizacion_id || d.cotizacionId || '',
     lineaProducto: hdr.linea_producto || d.lineaProducto || joinLineaProducto || 'Crédito',
     tipoProducto: s.tipoProducto || hdr.tipo_producto || d.tipoProducto || joinTipoProducto || '',
-    tipoPersona: hdr.tipo_persona || d.tipoPersona || joinTipoPersona || '',
+    tipoPersona: normalizeTipoPersona(rawTipoPersona),
     nombrePersona: hdr.nombre_persona || d.nombrePersona || joinNombre || '',
     apellidoPaternoPersona: hdr.apellido_paterno_persona || d.apellidoPaternoPersona || joinApPaterno || '',
     apellidoMaternoPersona: hdr.apellido_materno_persona || d.apellidoMaternoPersona || joinApMaterno || '',
@@ -78,9 +98,16 @@ export function buildFormDataFromListItem(s: SolicitudListItem): Record<string, 
     montoAutorizado: hdr.monto_autorizado
       || (typeof s.montoAutorizado === 'number' && s.montoAutorizado > 0 ? s.montoAutorizado.toFixed(2) : null)
       || d.montoAutorizado || '0.00',
-    fechaInicio: extra._fechaInicio || hdr.fecha_inicio || '',
-    fechaFin: extra._fechaFin || hdr.fecha_fin || '',
+    fechaInicio: rawTerminos.fechaInicio || rawTerminos.fechaPrimerPago || extra._fechaInicio || '',
+    fechaFin: rawTerminos.fechaFin || extra._fechaFin || '',
     _clienteId: extra._clienteId || hdr.cliente_id || d._clienteId || '',
+    _curp: extra._clienteCurp || hdr.curp || d._curp || d.curp || '',
+    _rfc: extra._clienteRfc || hdr.rfc || d._rfc || d.rfc || '',
+    // Calendario de aportaciones heredado de Cotización — persistido en data.solicitud.simulacion
+    _calendarioAportaciones: (() => {
+      const cal = sol.simulacion?.calendario_aportaciones;
+      return Array.isArray(cal) && cal.length > 0 ? cal : undefined;
+    })(),
   };
 }
 
@@ -89,6 +116,9 @@ export function buildFormDataFromListItem(s: SolicitudListItem): Record<string, 
  * Exportada para uso en OriginacionModule.
  */
 export function preloadSubtabsFromDBData(storageId: number | string, d: Record<string, any>) {
+  // Preserve original JSONB so that on UPDATE we can merge instead of overwrite
+  saveToSession(storageId, '_originalData', d);
+
   const sol = d.solicitud || {};
   const tc = sol.terminos_condiciones || {};
   const ps = tc.parametros_simulacion || {};
@@ -107,6 +137,13 @@ export function preloadSubtabsFromDBData(storageId: number | string, d: Record<s
       montoGarantia: rawTerminos.montoGarantia || '',
       seguroFinanciado: rawTerminos.seguroFinanciado ?? false,
       montoSeguro: rawTerminos.montoSeguro || '',
+      // Captación — Rendimientos
+      rendimientos: rawTerminos.rendimientos || [],
+      // Captación — Perfil del Inversionista
+      perfilInversionista: rawTerminos.perfilInversionista || '',
+      riesgoInversionista: rawTerminos.riesgoInversionista || '',
+      horizonteInversion: rawTerminos.horizonteInversion || '',
+      experienciaInversion: rawTerminos.experienciaInversion || '',
     });
   }
   const sim = sol.simulacion || {};
@@ -118,17 +155,53 @@ export function preloadSubtabsFromDBData(storageId: number | string, d: Record<s
     })));
   }
   const exp = sol.expediente_electronico || {};
-  if (exp.documentos?.length > 0) {
-    saveToSession(storageId, 'documentos', exp.documentos.map((doc: any, i: number) => ({
-      id: doc.id || (i + 1), fecha: doc.fecha_creacion || '', usuario: doc.usuario || '',
-      tipoDocumento: doc.tipo_documento || '', archivo: doc.archivo_adjunto || '',
-      tipoArchivo: doc.tipo_archivo || '', nota: doc.nota || '', area: doc.area || '',
-      fase: doc.fase || '', faseId: doc.fase_id || 0, estatus: doc.estatus || 'Pendiente',
-      validadoIA: doc.validado_ia ?? false,
-      url: doc.url || '', storagePath: doc.storage_path || '',
-      storageBucket: doc.storage_bucket || '', mime: doc.mime || '', tamanoKB: doc.tamano_kb || 0,
-      iaMotivos: doc.ia_motivos || [], iaExtraido: doc.ia_extraido || {},
-    })));
+  // Claves de documentos auto-generados por el sistema que ya no deben aparecer
+  // (fueron creados por una versión anterior del código y guardados en BD por error).
+  const CLAVES_AUTO_SISTEMA = new Set([
+    'CONTRATO_BASE', 'PAGARE_BASE', 'CONTRATO_FIRMADO', 'PAGARE_FIRMADO',
+  ]);
+  const docsDB: any[] = (exp.documentos || []).filter((doc: any) => {
+    const tipo = (doc.tipo_documento || '').trim();
+    // Filtrar placeholders sin archivo (los firmados legítimos del usuario SÍ tienen archivo)
+    if (CLAVES_AUTO_SISTEMA.has(tipo)) {
+      const tieneArchivo = !!(doc.url || doc.storage_path || doc.archivo_adjunto);
+      return tieneArchivo; // conservar solo si el usuario subió el archivo firmado
+    }
+    return true;
+  });
+  if (docsDB.length > 0) {
+    saveToSession(storageId, 'documentos', docsDB.map((doc: any, i: number) => {
+      const url        = doc.url || '';
+      const storagePath = doc.storage_path || '';
+      const archivo    = doc.archivo_adjunto || '';
+      const tieneArchivo = !!(url || storagePath || archivo);
+      // Docs de banca móvil pueden llegar sin estatus — si tienen archivo, no deben quedar 'Pendiente'
+      // pues el tab los mostraría como "Sin cargar". Se normaliza a 'Pendiente' (pendiente de IA)
+      // pero la lógica de canAdvance ya acepta 'Pendiente' con archivo.
+      const estatus = doc.estatus || (tieneArchivo ? 'Pendiente' : 'Sin cargar');
+      return {
+        id:            doc.id || (i + 1),
+        fecha:         doc.fecha_creacion || '',
+        usuario:       doc.usuario || '',
+        // Normalizar tipoDocumento: trim para eliminar espacios extra de banca móvil
+        tipoDocumento: (doc.tipo_documento || '').trim(),
+        archivo,
+        tipoArchivo:   doc.tipo_archivo || '',
+        nota:          doc.nota || '',
+        area:          doc.area || '',
+        fase:          doc.fase || '',
+        faseId:        doc.fase_id ?? 0,
+        estatus,
+        validadoIA:    doc.validado_ia ?? false,
+        url,
+        storagePath,
+        storageBucket: doc.storage_bucket || '',
+        mime:          doc.mime || '',
+        tamanoKB:      doc.tamano_kb || 0,
+        iaMotivos:     doc.ia_motivos || [],
+        iaExtraido:    doc.ia_extraido || {},
+      };
+    }));
   }
   if (sol.garantias?.length > 0) {
     saveToSession(storageId, 'garantias', sol.garantias.map((g: any, i: number) => ({
@@ -158,9 +231,31 @@ export function preloadSubtabsFromDBData(storageId: number | string, d: Record<s
       puesto: n.puesto || '', nota: n.nota || '', archivoAdjunto: n.archivo_adjunto || '',
     })));
   }
+  if (sol.partes_relacionadas?.length > 0) {
+    saveToSession(storageId, 'partesRelacionadas', sol.partes_relacionadas.map((p: any, i: number) => ({
+      id: i + 1,
+      tipoRelacion: p.relacionLegal || p.tipoRelacion || '',
+      nombreCompleto: p.persona?.nombreCompleto || p.nombreCompleto || '',
+      participacion: String(p.participacion || ''),
+      telefono: p.persona?.telefono || p.telefono || '',
+      email: p.persona?.email || p.email || '',
+      curp: p.persona?.curp || p.curp || '',
+      rfc: p.persona?.rfc || p.rfc || '',
+      rolAsignado: p.rolAsignado || '',
+      nombreEjecutivo: p.nombreEjecutivo || '',
+    })));
+  }
 }
 
-export function SolicitudCreditoList({ cotizacionParaSolicitud, onCotizacionConsumed, clienteIdFilter, initialClienteData }: SolicitudCreditoListProps = {}) {
+export function SolicitudCreditoList({ 
+  cotizacionParaSolicitud, 
+  onCotizacionConsumed,
+  solicitudDeepLink,
+  onSolicitudDeepLinkConsumed,
+  onBackToCliente,
+  clienteIdFilter, 
+  initialClienteData 
+}: SolicitudCreditoListProps = {}) {
   const [view, setView] = useState<ViewState>({ type: 'list' });
   const [solicitudes, setSolicitudes] = useState<SolicitudListItem[]>(() =>
     [...SOLICITUDES_LISTA].sort((a, b) => parseDate(b.fechaSolicitud).getTime() - parseDate(a.fechaSolicitud).getTime())
@@ -220,50 +315,102 @@ export function SolicitudCreditoList({ cotizacionParaSolicitud, onCotizacionCons
 
   const formatCurrency = (value: number) => `$${value.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
+  // ─── Flujo "Ver solicitud desde Clientes" — abrir solicitud existente por dbId ───
+  const [cameFromCliente, setCameFromCliente] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!solicitudDeepLink || !solicitudesDB.length) return;
+    
+    const targetDbId = solicitudDeepLink.dbId;
+    const targetNoSol = solicitudDeepLink.noSol;
+    const fromCli = solicitudDeepLink.fromClienteId || null;
+    console.log(`[SolicList] DeepLink → dbId=${targetDbId}, noSol=${targetNoSol}, fromClienteId=${fromCli}, buscando en ${solicitudesDB.length} solicitudes...`);
+    
+    // Guardar el clienteId para saber si venimos del módulo Clientes
+    if (fromCli) {
+      setCameFromCliente(fromCli);
+    }
+    
+    // Buscar la solicitud en la lista cargada desde DB
+    const found = solicitudesDB.find(s => (s as any)._dbId === targetDbId || s.noSol === targetNoSol);
+    
+    if (found) {
+      console.log(`[SolicList] DeepLink → ENCONTRADA: ${found.noSol}`);
+      // Abrir en modo 'ver'
+      const sid = found.id;
+      setView({ type: 'form', mode: 'ver', solicitudId: sid, dbId: (found as any)._dbId || String(sid) });
+      // Limpiar deep link
+      onSolicitudDeepLinkConsumed?.();
+    } else {
+      console.warn(`[SolicList] DeepLink → NO ENCONTRADA: dbId=${targetDbId}`);
+      // Limpiar de todas formas para evitar loop
+      onSolicitudDeepLinkConsumed?.();
+    }
+  }, [solicitudDeepLink, solicitudesDB, onSolicitudDeepLinkConsumed]);
+
   // ─── Flujo "Crear desde Cotización" — spec solicitudes-financieras §1–§4 ───
   useEffect(() => {
     if (!cotizacionParaSolicitud) return;
-    // Pre-llenar sessionStorage con los datos mapeados de la cotización
+
+    // Capturar referencia local ANTES de llamar onCotizacionConsumed (que pone el prop en null)
+    const cp = cotizacionParaSolicitud;
+
+    /** Convierte YYYY-MM-DD → DD/MM/YYYY si aplica */
+    const isoToDMY = (s: string) => {
+      if (!s) return '';
+      if (/^\d{4}-\d{2}-\d{2}$/.test(s)) { const [y, m, d] = s.split('-'); return `${d}/${m}/${y}`; }
+      return s;
+    };
+
     clearSession('new');
     const noSol = consumeNoSol();
     const fechaSol = getFechaSolicitudNow();
+
+    // Calendario de aportaciones — array de objetos {noAportacion, fecha, monto, moneda}
+    const calendario = Array.isArray(cp._calendarioAportaciones) && cp._calendarioAportaciones.length > 0
+      ? cp._calendarioAportaciones
+      : undefined;
+
+    // Fechas inicio/fin derivadas del calendario
+    const fechaInicio = cp.fechaInicio || (calendario ? isoToDMY(calendario[0]?.fecha || '') : '');
+    const fechaFin = cp.fechaFin || (calendario ? isoToDMY(calendario[calendario.length - 1]?.fecha || '') : '');
+
     const formData = {
       ...EMPTY_FORM,
       noSol,
       fechaSolicitud: fechaSol,
-      cotizacionId: cotizacionParaSolicitud.cotizacionId || '',
-      lineaProducto: cotizacionParaSolicitud.lineaProducto || 'Crédito',
-      tipoProducto: cotizacionParaSolicitud.tipoProducto || '',
-      tipoPersona: cotizacionParaSolicitud.tipoPersona || '',
-      nombrePersona: cotizacionParaSolicitud.nombrePersona || '',
-      apellidoPaternoPersona: cotizacionParaSolicitud.apellidoPaternoPersona || '',
-      apellidoMaternoPersona: cotizacionParaSolicitud.apellidoMaternoPersona || '',
-      productoId: cotizacionParaSolicitud.productoId || '',
-      nombreProducto: cotizacionParaSolicitud.nombreProducto || '',
-      montoSolicitado: cotizacionParaSolicitud.montoSolicitado || '',
-      descripcion: `Solicitud generada desde Cotización ${cotizacionParaSolicitud.cotizacionId || ''}`,
+      cotizacionId: cp.cotizacionId || '',
+      lineaProducto: cp.lineaProducto || 'Crédito',
+      tipoProducto: cp.tipoProducto || '',
+      tipoPersona: cp.tipoPersona || '',
+      nombrePersona: cp.nombrePersona || '',
+      apellidoPaternoPersona: cp.apellidoPaternoPersona || '',
+      apellidoMaternoPersona: cp.apellidoMaternoPersona || '',
+      productoId: cp.productoId || '',
+      nombreProducto: cp.nombreProducto || '',
+      montoSolicitado: cp.montoSolicitado || '',
+      descripcion: `Solicitud generada desde Cotización ${cp.cotizacionId || ''}`,
+      faseId: '1',
+      descripcionFase: 'Fase 1 — Recepción de Documentos',
+      area: 'Mesa de Control',
+      estatusSolicitud: 'En proceso',
+      _clienteId: cp._clienteId || '',
+      // Fechas vigencia
+      fechaInicio,
+      fechaFin,
+      // Calendario de aportaciones — persiste en formData para SimulacionTab y guardado en DB
+      ...(calendario ? { _calendarioAportaciones: calendario } : {}),
     };
     saveToSession('new', 'form', formData);
-    // Pre-llenar términos y condiciones si vienen de la cotización
-    if (cotizacionParaSolicitud._terminosCondiciones) {
-      const tc = cotizacionParaSolicitud._terminosCondiciones;
-      // Convertir fecha de YYYY-MM-DD a DD/MM/YYYY si es necesario
-      let fechaPrimerPago = tc.fechaPrimerPago || '';
-      if (fechaPrimerPago && /^\d{4}-\d{2}-\d{2}$/.test(fechaPrimerPago)) {
-        const [y, m, d] = fechaPrimerPago.split('-');
-        fechaPrimerPago = `${d}/${m}/${y}`;
-      }
-      // Captación usa fechaPrimeraAportacion en vez de fechaPrimerPago
-      let fechaPrimeraAportacion = tc.fechaPrimeraAportacion || '';
-      if (fechaPrimeraAportacion && /^\d{4}-\d{2}-\d{2}$/.test(fechaPrimeraAportacion)) {
-        const [y, m, d] = fechaPrimeraAportacion.split('-');
-        fechaPrimeraAportacion = `${d}/${m}/${y}`;
-      }
+
+    // Pre-llenar términos y condiciones
+    if (cp._terminosCondiciones) {
+      const tc = cp._terminosCondiciones;
       const terminos = {
         ...EMPTY_TERMINOS,
         montoSolicitado: tc.montoSolicitado || '',
-        fechaPrimerPago,
-        fechaPrimeraAportacion,
+        fechaPrimerPago: isoToDMY(tc.fechaPrimerPago || ''),
+        fechaPrimeraAportacion: isoToDMY(tc.fechaPrimeraAportacion || ''),
         plazo: tc.plazo || '',
         frecuencia: tc.frecuencia || 'Mensual',
         tasa: tc.tasa || '',
@@ -275,10 +422,17 @@ export function SolicitudCreditoList({ cotizacionParaSolicitud, onCotizacionCons
         montoSeguro: tc.montoSeguro || '',
       };
       saveToSession('new', 'terminos', terminos);
+
+      // Pre-llenar tabla de amortización (Crédito / Línea de Crédito)
+      const simRows = tc._simulacion;
+      if (Array.isArray(simRows) && simRows.length > 0) {
+        saveToSession('new', 'simulacion', simRows);
+      }
     }
-    // Abrir formulario en modo nuevo
-    setView({ type: 'form', mode: 'nuevo' });
+
+    // Abrir formulario — consumir DESPUÉS de guardar en session para evitar race condition
     onCotizacionConsumed?.();
+    setView({ type: 'form', mode: 'nuevo' });
   }, [cotizacionParaSolicitud]);
 
   const handleExportExcel = () => toast.success('Exportando a Excel', { description: 'El archivo se está descargando...', duration: 3000 });
@@ -305,6 +459,8 @@ export function SolicitudCreditoList({ cotizacionParaSolicitud, onCotizacionCons
         apellidoPaternoPersona: initialClienteData.apellidoPaterno,
         apellidoMaternoPersona: initialClienteData.apellidoMaterno,
         _clienteId: initialClienteData.clienteId,
+        _curp: initialClienteData.curp || '',
+        _rfc: initialClienteData.rfc || '',
       });
     }
     setView({ type: 'form', mode: 'nuevo' });
@@ -496,7 +652,15 @@ export function SolicitudCreditoList({ cotizacionParaSolicitud, onCotizacionCons
     }
     setView({ type: 'form', mode: 'ver', solicitudId: sid, dbId: (s as any)._dbId || String(s.id) });
   };
-  const handleBack = () => setView({ type: 'list' });
+  const handleBack = () => {
+    // Si venimos del módulo Clientes, regressionar allá
+    if (cameFromCliente && onBackToCliente) {
+      onBackToCliente();
+      setCameFromCliente(null);
+    } else {
+      setView({ type: 'list' });
+    }
+  };
 
   const handleSave = async (data: any) => {
     const montoSol = typeof data.montoSolicitado === 'string' ? parseFloat(data.montoSolicitado.replace(/[^0-9.-]/g, '')) || 0 : (data.montoSolicitado || 0);
@@ -583,7 +747,7 @@ export function SolicitudCreditoList({ cotizacionParaSolicitud, onCotizacionCons
 
   // ─── FORM VIEW ───
   if (view.type === 'form') {
-    return <SolicitudCreditoForm key={`${view.mode}-${view.solicitudId ?? 'new'}`} mode={view.mode} solicitudId={view.solicitudId} onCancel={handleBack} onSave={handleSave} />;
+    return <SolicitudCreditoForm key={`${view.mode}-${view.solicitudId ?? 'new'}`} mode={view.mode} solicitudId={view.solicitudId} onCancel={handleBack} onSave={handleSave} cotizacionData={cotizacionParaSolicitud} />;
   }
 
   // ─── LIST VIEW ───
