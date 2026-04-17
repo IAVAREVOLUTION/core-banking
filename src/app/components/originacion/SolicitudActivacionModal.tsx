@@ -29,9 +29,15 @@ export interface SolicitudActivacionModalProps {
     montoTransaccion: string;
     moneda: string;
     productoId: string;
+    /** Fecha del primer pago/aportación — se usa como Fecha Compromiso */
+    fechaCompromiso?: string;
+    /** Frecuencia de pago (Mensual, Quincenal, etc.) */
+    periodicidad?: string;
   };
   /** Registro existente (si ya hay una Solicitud de Activación para esta originación) */
   existingActivacion?: SolicitudActivacionListItem;
+  /** Si true, el modal abre en modo solo lectura */
+  readOnly?: boolean;
   /** El usuario cerró el modal sin guardar */
   onClose: () => void;
   /** Guardado exitoso — Originación recibe el item para validar el resultado */
@@ -49,13 +55,18 @@ function lineaToTipo(linea: string): string {
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export function SolicitudActivacionModal({
-  originacionSolicitudId,
-  seed,
-  existingActivacion,
-  onClose,
-  onSaved,
+   originacionSolicitudId,
+   seed,
+   existingActivacion,
+   readOnly = false,
+   onClose,
+   onSaved,
 }: SolicitudActivacionModalProps) {
-  const isNew = !existingActivacion;
+   const isNew = !existingActivacion;
+
+   console.log('[DIAG SolicitudActivacionModal] incoming seed:', seed);
+   console.log('[DIAG SolicitudActivacionModal] incoming existingActivacion:', existingActivacion);
+   console.log('[DIAG SolicitudActivacionModal] incoming existingActivacion?.montoTransaccion:', existingActivacion?.montoTransaccion);
 
   const [cuentaBancaria,    setCuentaBancaria]    = useState<string>('');
   const [clienteNombreDB,   setClienteNombreDB]   = useState<string>('');
@@ -104,14 +115,23 @@ export function SolicitudActivacionModal({
     detailClaveProducto: seed.productoId,
     detailMonto:         monto,
     detailSubTotal:      monto,
+    lineaProducto:       seed.lineaProducto,
+    ...(seed.fechaCompromiso ? { fechaCompromiso: seed.fechaCompromiso } : {}),
+    ...(seed.periodicidad    ? { periodicidad: seed.periodicidad }       : {}),
   } : undefined;
 
   const handleSaved = (item: SolicitudActivacionListItem) => {
+    console.log('[DIAG SolicitudActivacionModal] handleSaved called, item:', item);
+    console.log('[DIAG SolicitudActivacionModal] existingActivacion passed to list:', existingActivacion);
+    console.log('[DIAG SolicitudActivacionModal] existingActivacion.montoTransaccion:', existingActivacion?.montoTransaccion);
+    console.log('[DIAG SolicitudActivacionModal] existingActivacion._raw:', existingActivacion?._raw);
     if (!item._fromDB) {
       toast.warning('Solicitud guardada localmente (sin conexión BD)');
     }
     onSaved(item);
   };
+
+  console.log('[DIAG SolicitudActivacionModal] Render:', { isNew, existingActivacion, accountReady, seed: { ...seed, clienteId: seed.clienteId?.substring(0,8)+'...' } });
 
   if (!accountReady) {
     return (
@@ -125,6 +145,8 @@ export function SolicitudActivacionModal({
     <div className="fixed inset-0 z-50 bg-white overflow-auto">
       <SolicitudActivacionList
         initialNewData={isNew ? initialNewData : undefined}
+        initialEditItem={!isNew ? existingActivacion : undefined}
+        initialReadOnly={readOnly}
         onSavedFromOriginacion={handleSaved}
         onCancelFromOriginacion={onClose}
       />

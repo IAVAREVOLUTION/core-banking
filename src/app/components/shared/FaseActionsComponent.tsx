@@ -7,13 +7,12 @@
  * MODO 'solicitudes' → solo "Enviar de Fase"
  * MODO 'originacion' → todos los botones aplicables (siempre visibles, ignora readOnly)
  *
- * Botones por numero_consecutivo (spec):
- *  seq 1         → Enviar
- *  seq 2-3       → Enviar + Regresar
- *  seq 4         → Enviar + Regresar + Formalizar Contrato
- *  seq 5         → Enviar + Regresar
- *  seq 6         → Solicitud de Activación + Regresar
- *  seq 7         → Activar Cuenta + Regresar
+ * Botones por nombre de fase (fuente de verdad exclusiva — sin fallback por seq):
+ *  seq 1                          → Imprimir Solicitud + Enviar
+ *  nombre contiene "formaliz"     → Enviar + Formalizar Contrato + Regresar
+ *  nombre contiene "activac"      → Solicitud de Activación + Regresar
+ *  nombre contiene "activar cuen" → Activar Cuenta + Regresar
+ *  resto                          → Enviar + Regresar
  */
 import type { SolicitudFormData } from '../solicitudes/solicitudCreditoStore';
 import type { FaseProductoItem } from '../../hooks/useFaseConsistency';
@@ -52,6 +51,8 @@ interface FaseActionsComponentProps {
   canActivarCuenta?: boolean;
   /** Indica si hay una operación de fase en curso */
   enviandoFase?: boolean;
+  /** Solicitud de Activación existente (para fase 3+) */
+  existingActivacion?: { id: string; estatus: string } | null;
 }
 
 export function FaseActionsComponent({
@@ -67,6 +68,7 @@ export function FaseActionsComponent({
   onActivarCuenta,
   canActivarCuenta,
   enviandoFase = false,
+  existingActivacion,
 }: FaseActionsComponentProps) {
   // ── Fuente de verdad ─────────────────────────────────────────────────────
   const { faseActualReal, seqActual, faseSiguiente, faseAnterior, isConsistent, inconsistencias } =
@@ -86,23 +88,46 @@ export function FaseActionsComponent({
     </div>
   );
 
-  // ── Visibilidad de botones por numero_consecutivo ─────────────────────────
-  // Fases 1-5: botón "Enviar de Fase"
-  const puedeEnviar = !!faseSiguiente && seqActual >= 1 && seqActual <= 5;
+  // ── Helpers de nombre de fase ─────────────────────────────────────────────
+  const faseNombre = (faseActualReal?.fase || formData.descripcionFase || '').toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+  /** true si el nombre de la fase contiene alguna de las palabras clave */
+  const faseContiene = (...keywords: string[]) =>
+    keywords.some(k => faseNombre.includes(k));
+
+  // ── Visibilidad de botones — detección exclusivamente por nombre de fase ──
+  // "Solicitud de Activación" — nombre contiene "solicitud" + "activac" (NO "activar cuenta")
+  const puedeSolicitudActivacion =
+    faseContiene('solicitud') && faseContiene('activac') && !faseContiene('activar cuenta', 'activar_cuenta');
+
+  // Fase de activación pura (sin "solicitud") — solo muestra botón "Ver Solicitud de Activación"
+  const puedeVerActivacion =
+    !puedeSolicitudActivacion && faseContiene('activac') && !faseContiene('activar cuenta', 'activar_cuenta');
+
+  // "Activar Cuenta" — nombre contiene "activar cuenta"
+  const puedeActivarCuenta = faseContiene('activar cuenta', 'activar_cuenta');
+
+  // "Formalizar Contrato" — nombre contiene "formaliz" (no cualquier mención de "contrato")
+  const puedeFormalizar = faseContiene('formaliz');
+
+  // "Imprimir Solicitud" — solo fase 1 (primera fase del producto)
+  const puedeGenerarSolicitud = seqActual === 1;
+
+  // "Enviar de Fase" — fases que no son Solicitud/Ver Activación, Activar Cuenta ni la última
+  const puedeEnviar =
+    !!faseSiguiente &&
+    !puedeSolicitudActivacion &&
+    !puedeVerActivacion &&
+    !puedeActivarCuenta;
+
   // Todas las fases con anterior
   const puedeRegresar = !!faseAnterior;
-  // Solo fase 2
-  const puedeGenerarSolicitud = seqActual === 2;
-  // Solo fase 4
-  const puedeFormalizar = seqActual === 4;
-  // Fase 6: Solicitud de Activación (reemplaza a Enviar)
-  const puedeSolicitudActivacion = seqActual === 6;
-  // Fase 7: Activar Cuenta (reemplaza a Enviar)
-  const puedeActivarCuenta = seqActual === 7;
 
-  // ── Modo Solicitudes: solo botón Enviar ──────────────────────────────────
+  // ── Modo Solicitudes: Enviar + Imprimir Solicitud + Formalizar + Activación + Activar ─────
   if (modo === 'solicitudes') {
-    if (!puedeEnviar) {
+    const tieneAccion = puedeEnviar || puedeGenerarSolicitud || puedeFormalizar || puedeSolicitudActivacion || puedeVerActivacion || puedeActivarCuenta;
+    if (!tieneAccion) {
       return (
         <div className="bg-green-50 border border-green-300 rounded px-4 py-3 mb-4 flex items-center gap-2">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10B981" strokeWidth="2">
@@ -129,20 +154,94 @@ export function FaseActionsComponent({
               )}
             </span>
             <div className="flex items-center gap-2">
-              <button
-                onClick={onEnviarFase}
-                disabled={enviandoFase || !isConsistent}
-                title={!isConsistent ? 'Corrija la desincronización antes de avanzar' : ''}
-                className="px-4 py-1.5 bg-[#10B981] text-white rounded text-xs hover:bg-[#059669] flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M5 12h14M12 5l7 7-7 7" />
-                </svg>
-                {enviandoFase ? 'Enviando...' : 'Enviar de Fase'}
-              </button>
+              {/* ── Fase 1: Imprimir Solicitud ── */}
+              {puedeGenerarSolicitud && (
+                <button
+                  onClick={onGenerarSolicitud}
+                  disabled={enviandoFase || !onGenerarSolicitud}
+                  className="px-4 py-1.5 bg-[#0369A1] text-white rounded text-xs hover:bg-[#075985] flex items-center gap-1.5 disabled:opacity-50"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+                    <path d="M14 2v6h6M16 13H8M16 17H8M10 9H8" />
+                  </svg>
+                  Imprimir Solicitud
+                </button>
+              )}
+              {/* ── Fase Solicitud de Activación: crear/editar ── */}
+              {puedeSolicitudActivacion && (
+                <button
+                  onClick={onSolicitudActivacion}
+                  disabled={enviandoFase || !onSolicitudActivacion}
+                  className="px-4 py-1.5 bg-[#2E5C91] text-white rounded text-xs hover:bg-[#1E4A75] flex items-center gap-1.5 disabled:opacity-50"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M9 12l2 2 4-4" />
+                    <path d="M21 12c0 4.97-4.03 9-9 9s-9-4.03-9-9 4.03-9 9-9 9 4.03 9 9z" />
+                  </svg>
+                  {enviandoFase ? 'Procesando...' : existingActivacion ? 'Ver Solicitud de Activación' : 'Solicitud de Activación'}
+                </button>
+              )}
+              {/* ── Fase Activación (sin "solicitud"): abrir formulario para activar ── */}
+              {puedeVerActivacion && (
+                <button
+                  onClick={onSolicitudActivacion}
+                  disabled={enviandoFase || !onSolicitudActivacion}
+                  className="px-4 py-1.5 bg-[#2E5C91] text-white rounded text-xs hover:bg-[#1E4A75] flex items-center gap-1.5 disabled:opacity-50"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M9 12l2 2 4-4" />
+                    <path d="M21 12c0 4.97-4.03 9-9 9s-9-4.03-9-9 4.03-9 9-9 9 4.03 9 9z" />
+                  </svg>
+                  {enviandoFase ? 'Procesando...' : existingActivacion ? 'Solicitud de Activación' : 'Solicitud de Activación'}
+                </button>
+              )}
+              {/* ── Activar Cuenta ── */}
+              {puedeActivarCuenta && (
+                <button
+                  onClick={onActivarCuenta}
+                  disabled={enviandoFase || !onActivarCuenta || canActivarCuenta === false}
+                  title={canActivarCuenta === false ? 'La Solicitud de Activación debe estar Enviada o Pagada.' : undefined}
+                  className="px-4 py-1.5 bg-[#059669] text-white rounded text-xs hover:bg-[#047857] flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M12 22c5.52 0 10-4.48 10-10S17.52 2 12 2 2 6.48 2 12s4.48 10 10 10z" />
+                    <path d="M8 12l3 3 5-5" />
+                  </svg>
+                  {enviandoFase ? 'Activando...' : 'Activar Cuenta'}
+                </button>
+              )}
+              {/* ── Fase Formalización: Generar Documentos ── */}
+              {puedeFormalizar && (
+                <button
+                  onClick={onFormalizarContrato}
+                  disabled={enviandoFase || !onFormalizarContrato}
+                  className="px-4 py-1.5 bg-[#7C3AED] text-white rounded text-xs hover:bg-[#6D28D9] flex items-center gap-1.5 disabled:opacity-50"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+                    <path d="M14 2v6h6M16 13H8M16 17H8M10 9H8" />
+                  </svg>
+                  {enviandoFase ? 'Generando...' : 'Generar Documentos'}
+                </button>
+              )}
+              {/* ── Fases 1-5: Enviar de Fase ── */}
+              {puedeEnviar && (
+                <button
+                  onClick={onEnviarFase}
+                  disabled={enviandoFase || !isConsistent}
+                  title={!isConsistent ? 'Corrija la desincronización antes de avanzar' : ''}
+                  className="px-4 py-1.5 bg-[#10B981] text-white rounded text-xs hover:bg-[#059669] flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M5 12h14M12 5l7 7-7 7" />
+                  </svg>
+                  {enviandoFase ? 'Enviando...' : 'Enviar de Fase'}
+                </button>
+              )}
             </div>
           </div>
-          {faseSiguiente && (
+          {faseSiguiente && !puedeSolicitudActivacion && !puedeActivarCuenta && (
             <div className="mt-1 text-[10px] text-gray-500">
               Siguiente: <span className="font-medium text-gray-700">{faseSiguiente.fase}</span>
             </div>
@@ -198,7 +297,7 @@ export function FaseActionsComponent({
               </button>
             )}
 
-            {/* ── Fase 6: Solicitud de Activación ── */}
+            {/* ── Fase Solicitud de Activación: crear/editar ── */}
             {puedeSolicitudActivacion && (
               <button
                 onClick={onSolicitudActivacion}
@@ -209,16 +308,37 @@ export function FaseActionsComponent({
                   <path d="M9 12l2 2 4-4" />
                   <path d="M21 12c0 4.97-4.03 9-9 9s-9-4.03-9-9 4.03-9 9-9 9 4.03 9 9z" />
                 </svg>
-                {enviandoFase ? 'Procesando...' : 'Solicitud de Activación'}
+                {enviandoFase ? 'Procesando...' : existingActivacion ? 'Ver Solicitud de Activación' : 'Solicitud de Activación'}
               </button>
             )}
 
-            {/* ── Fase 7: Activar Cuenta ── */}
+            {/* ── Fase Activación (sin "solicitud"): ver + completar si ya está Pagado ── */}
+            {puedeVerActivacion && (() => {
+              const activEst = (existingActivacion?.estatus || '').toLowerCase().trim();
+              const yaPagado = activEst === 'pagado';
+              return (
+                <>
+                  <button
+                    onClick={onSolicitudActivacion}
+                    disabled={!onSolicitudActivacion}
+                    className="px-4 py-1.5 bg-gray-600 text-white rounded text-xs hover:bg-gray-700 flex items-center gap-1.5 disabled:opacity-50"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                      <circle cx="12" cy="12" r="3" />
+                    </svg>
+                    Ver Solicitud de Activación
+                  </button>
+                </>
+              );
+            })()}
+
+            {/* ── Activar Cuenta ── */}
             {puedeActivarCuenta && (
               <button
                 onClick={onActivarCuenta}
                 disabled={enviandoFase || !onActivarCuenta || canActivarCuenta === false}
-                title={canActivarCuenta === false ? 'La Solicitud de Activación no está pagada.' : undefined}
+                title={canActivarCuenta === false ? 'La Solicitud de Activación debe estar Enviada o Pagada.' : undefined}
                 className="px-4 py-1.5 bg-[#059669] text-white rounded text-xs hover:bg-[#047857] flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -240,7 +360,7 @@ export function FaseActionsComponent({
                   <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
                   <path d="M14 2v6h6M16 13H8M16 17H8M10 9H8" />
                 </svg>
-                Generar Solicitud
+                Imprimir Solicitud
               </button>
             )}
 

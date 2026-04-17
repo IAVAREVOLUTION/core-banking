@@ -227,7 +227,9 @@ export function OriginacionModule() {
         montoSolicitado: String(solItem.montoSolicitado || ''),
         montoAutorizado: String(solItem.montoAutorizado || ''),
       } as import('../solicitudes/solicitudCreditoStore').SolicitudFormData;
-      await saveSolicitud(formForSave, dbId);
+      // Pasar _originalData para que formToDBPayload haga deep merge y preserve los campos
+      // de banca móvil que no son gestionados por CORE
+      await saveSolicitud(formForSave, dbId, { _originalData: solItem._data || {} });
     } catch (err) {
       console.warn('[Originación] FASE 7 DB update falló:', err);
     }
@@ -924,10 +926,14 @@ function OriginacionForm({ mode, originacionId, onCancel, onSave, onActivarCuent
   const fasesDelProducto = useMemo(() => {
     if (!productoSeleccionado) return [];
     const rd = productoSeleccionado.rawData;
-    const raw = rd?.fases ?? rd?.fasesRegistros ?? rd?.fase;
+    // Captación guarda fases en fasesRegistros; fases puede ser {} (objeto vacío) — usar Array.isArray para no bloquear el fallback
+    const raw = (Array.isArray(rd?.fases) && rd.fases.length > 0 ? rd.fases : null)
+      ?? (Array.isArray(rd?.fasesRegistros) && rd.fasesRegistros.length > 0 ? rd.fasesRegistros : null)
+      ?? (Array.isArray(rd?.fase) ? rd.fase : null);
     if (Array.isArray(raw) && raw.length > 0) {
-      return raw.map((f: any) => ({
-        faseId: String(f.seq ?? f.id ?? '1'),
+      return raw.map((f: any, idx: number) => ({
+        faseId: String(f.seq ?? f.id ?? idx + 1),
+        seq: parseInt(String(f.seq ?? f.numero_consecutivo ?? f.orden ?? idx + 1)),
         fase: f.fase || '',
         area: f.area || '',
         notes: f.notes || '',
@@ -1007,18 +1013,18 @@ function OriginacionForm({ mode, originacionId, onCancel, onSave, onActivarCuent
   // ── Subtabs unificados — idénticos a SolicitudCreditoForm (spec §B) ──
   const sections = [
     { id: 'default',            label: 'Default' },
-    { id: 'expediente',         label: 'Expediente Electrónico' },
-    { id: 'garantias',          label: 'Garantías' },
-    { id: 'comites',            label: 'Comités' },
-    { id: 'cargos',             label: 'Cargos' },
     { id: 'terminos',           label: 'Términos y Condiciones' },
     { id: 'simulacion',         label: 'Simulación' },
+    { id: 'expediente',         label: 'Expediente Electrónico' },
     { id: 'partesRelacionadas', label: 'Partes Relacionadas' },
+    { id: 'garantias',          label: 'Garantías' },
+    { id: 'comites',            label: 'Comités' },
+    { id: 'autorizaciones',     label: 'Autorizaciones' },
     { id: 'fases',              label: 'Fases' },
+    { id: 'cargos',             label: 'Cargos' },
+    { id: 'comisiones',         label: 'Comisiones' },
     { id: 'notas',              label: 'Notas' },
     { id: 'flujoTrabajo',       label: 'Flujo de Trabajo' },
-    { id: 'comisiones',         label: 'Comisiones' },
-    { id: 'autorizaciones',     label: 'Autorizaciones' },
   ];
 
   return (
@@ -1043,9 +1049,13 @@ function OriginacionForm({ mode, originacionId, onCancel, onSave, onActivarCuent
         {isRO && <button onClick={handleCancel} className="px-5 py-1.5 bg-white border border-gray-400 text-gray-700 rounded text-sm hover:bg-gray-50">Cerrar</button>}
       </div>
 
-      {/* ── Flujo de Trabajo — 7 fases ── */}
+      {/* ── Flujo de Trabajo — fases del producto ── */}
       <div className="px-6 py-3 border-b border-gray-200 bg-gray-50">
-        <FlujoTrabajo subEstatus={fd.subEstatus} faseActual={fd.subEstatus} />
+        <FlujoTrabajo
+          subEstatus={fd.subEstatus}
+          faseActual={fd.subEstatus}
+          fases={fasesDelProducto.map((f: any) => ({ seq: f.seq, fase: f.fase, area: f.area }))}
+        />
       </div>
 
       <FaseActionBar
@@ -1453,6 +1463,7 @@ function OriginacionForm({ mode, originacionId, onCancel, onSave, onActivarCuent
                     <FlujoTrabajo
                       subEstatus={fd.subEstatus}
                       faseActual={fd.subEstatus}
+                      fases={fasesDelProducto.map((f: any) => ({ seq: f.seq, fase: f.fase, area: f.area }))}
                       className="mt-2"
                     />
                   </div>

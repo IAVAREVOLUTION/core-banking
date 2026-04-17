@@ -119,6 +119,18 @@ export function ProductoCaptacionForm({ mode, productoId, producto, onCancel, on
   const expedientesRef = useRef<TabDataRef>(null);
   const plantillasRef = useRef<TabDataRef>(null);
 
+  // ── Limpiar sessionStorage stale al crear un producto nuevo ──
+  // nextId es siempre el mismo valor entre sesiones; sin este clear,
+  // los datos de un borrador anterior se cargan en el nuevo form.
+  const didClearDraftRef = useRef(false);
+  if (mode === 'nuevo' && !didClearDraftRef.current) {
+    didClearDraftRef.current = true;
+    const draftKey = `producto_captacion_${productoId || 'nuevo'}`;
+    try { sessionStorage.removeItem(draftKey); } catch (_) { /* ignore */ }
+    try { sessionStorage.removeItem(`${draftKey}_active_tab`); } catch (_) { /* ignore */ }
+    try { sessionStorage.removeItem(`${draftKey}_periodos`); } catch (_) { /* ignore */ }
+  }
+
   // Estado para los datos de comisiones (para sincronización)
   const [comisionesData, setComisionesData] = useState<any[]>(Array.isArray(producto?.comisiones) ? producto.comisiones : producto?.comisionesRegistros || []);
 
@@ -1053,7 +1065,7 @@ export function ProductoCaptacionForm({ mode, productoId, producto, onCancel, on
                 <option value="">Seleccionar...</option>
                 <option value="Ahorro">Ahorro</option>
                 <option value="Inversión">Inversión</option>
-                <option value="Aportación/Ahorro">Aportación/Ahorro</option>
+                <option value="Aportación">Aportación</option>
                 <option value="Cuenta Corriente">Cuenta Corriente</option>
               </select>
             </div>
@@ -1360,7 +1372,7 @@ export function ProductoCaptacionForm({ mode, productoId, producto, onCancel, on
                   <option value="">Seleccionar...</option>
                   <option value="Ahorro">Ahorro</option>
                   <option value="Inversión">Inversión</option>
-                  <option value="Aportación/Ahorro">Aportación/Ahorro</option>
+                  <option value="Aportación">Aportación</option>
                   <option value="Cuenta Corriente">Cuenta Corriente</option>
                 </select>
               </div>

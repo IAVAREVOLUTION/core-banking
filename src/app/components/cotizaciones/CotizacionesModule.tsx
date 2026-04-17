@@ -692,6 +692,8 @@ export function CotizacionesModule({ deepLinkCotizacionId, deepLinkLinea, onDeep
       productoId: c.producto_id || '',
       nombreProducto: c.data.producto?.nombreProducto || '',
       montoSolicitado: String(parseFloat(String(c.data.montoCotizado || '0').replace(/[^0-9.-]/g, '')) || 0),
+      // Cliente — requerido para Solicitud de Activación (Fase 6)
+      _clienteId: c.cliente_id || c.data?.cliente?.id || '',
       // Fechas derivadas del calendario de aportaciones — convertir YYYY-MM-DD → DD/MM/YYYY
       fechaInicio: isoToDMY(c.data.calendarioAportaciones?.[0]?.fecha || ''),
       fechaFin: c.data.calendarioAportaciones?.length > 0
@@ -706,11 +708,23 @@ export function CotizacionesModule({ deepLinkCotizacionId, deepLinkLinea, onDeep
         frecuencia: c.data.frecuenciaCapitalizacion || c.data.periodoCumplirMontoMinimo || 'Mensual',
         tasa: String(c.data.tasaMinInteres || ''),
         tipoTasa: 'Fija',
-        tipoCalculo: 'Simple',
-        moneda: 'MXN',
+        tipoCalculo: String(c.data.baseCalculo || c.data.tipoCalculo || 'Simple'),
+        moneda: c.data.moneda || 'MXN',
         montoGarantia: '',
         seguroFinanciado: false,
         montoSeguro: '',
+        // Captación — perfil del inversionista y rendimientos
+        perfilInversionista: c.data.perfilInversionista || '',
+        riesgoInversionista: c.data.riesgoInversionista || '',
+        horizonteInversion: c.data.horizonteInversion || '',
+        rendimientos: Array.isArray(c.data.tasaInversionRegistros)
+          ? c.data.tasaInversionRegistros.map((r: any) => ({
+              plazo: String(r.plazo || ''),
+              tasaAnual: String(r.tasaAnual ?? ''),
+              montoMinimo: String(r.montoMinimo ?? ''),
+              tasaMensual: String(r.tasaMensual ?? ''),
+            }))
+          : [],
       },
     };
     onCrearSolicitudDesdeCotizacion?.(mappedData);
@@ -749,9 +763,25 @@ export function CotizacionesModule({ deepLinkCotizacionId, deepLinkLinea, onDeep
       nombrePersona: nameParts[0] || '',
       apellidoPaternoPersona: nameParts[1] || '',
       apellidoMaternoPersona: nameParts.slice(2).join(' ') || '',
-      productoId: c.data.producto?.claveProducto || c.producto_id || '',
+      productoId: c.producto_id || '',
       nombreProducto: c.data.producto?.nombreProducto || '',
       montoSolicitado: Number(c.data.montoSolicitado || 0).toFixed(2),
+      // Cliente — requerido para Solicitud de Activación (Fase 6)
+      _clienteId: c.cliente_id || c.data?.cliente?.id || '',
+      // Fechas derivadas de la tabla de amortización
+      fechaInicio: isoToDMY(c.data.fechaPrimerPago || (c.data.tablaAmortizacion?.[0] as any)?.fechaPago || ''),
+      fechaFin: (() => {
+        const tabla = c.data.tablaAmortizacion || [];
+        const ultima = tabla[tabla.length - 1] as any;
+        return isoToDMY(ultima?.fechaPago || '');
+      })(),
+      // Calendario para el subtab Simulación (usa tablaAmortizacion de la cotización)
+      _calendarioAportaciones: (c.data.tablaAmortizacion || []).map((r: any) => ({
+        noAportacion: r.noPago,
+        fecha: r.fechaPago,
+        monto: r.pagoTotal ?? r.pagoPeriodo ?? 0,
+        moneda: c.data.moneda || 'MXN',
+      })),
       // Términos y condiciones para pre-llenar
       _terminosCondiciones: {
         montoSolicitado: Number(c.data.montoSolicitado || 0).toFixed(2),
@@ -773,6 +803,18 @@ export function CotizacionesModule({ deepLinkCotizacionId, deepLinkLinea, onDeep
           montoDisposicionMinima: Number((c.data as any).montoDisposicionMinima || 0).toFixed(2),
           vigenciaLinea: String((c.data as any).vigenciaLinea || ''),
         } : {}),
+        // Simulación completa — tabla de amortización desde Cotización
+        _simulacion: (c.data.tablaAmortizacion || []).map((r: any) => ({
+          noPago: r.noPago,
+          fechaPago: r.fechaPago,
+          saldoInsoluto: r.saldoInsoluto,
+          pagoCapital: r.pagoCapital,
+          pagoInteres: r.pagoInteres,
+          ivaInteres: r.ivaInteres,
+          pagoPeriodo: r.pagoPeriodo,
+          pagoSeguro: r.pagoSeguro || 0,
+          pagoTotal: r.pagoTotal,
+        })),
       },
     };
     // Marcar cotización como "Aceptada"

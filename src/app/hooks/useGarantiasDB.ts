@@ -363,7 +363,7 @@ export function useGarantiasDB(clienteId?: string | null) {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [clienteId]);
 
   // ── SAVE (Insert o Update) ──
   const saveGarantia = useCallback(async (g: Garantia): Promise<{ ok: boolean; source?: 'db' | 'local'; error?: string }> => {

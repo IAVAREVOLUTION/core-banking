@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { toast } from 'sonner';
 import { usePersonasRelacionadasDB } from '../../../hooks/usePersonasRelacionadasDB';
 import { saveToSession, loadFromSession } from '../solicitudCreditoStore';
@@ -55,11 +55,13 @@ interface PersonaRelacionadaDropdown {
 
 export function PartesRelacionadasTab({ mode, solicitudId, montoSolicitado, clienteNombre, clienteId }: PartesRelacionadasTabProps) {
   console.log('[PartesRelacionadasTab] Render - clienteId:', clienteId, '| clienteNombre:', clienteNombre);
-  
+
   const [partes, setPartes] = useState<ParteRelacionada[]>([]);
   const [showModal, setShowModal] = useState(false);
   const [editIndex, setEditIndex] = useState<number | null>(null);
   const [personasDisponibles, setPersonasDisponibles] = useState<PersonaRelacionadaDropdown[]>([]);
+  // Evita que el save effect escriba [] a session antes de que el load effect cargue los datos
+  const loadedRef = useRef(false);
 
   // Cargar personas relacionadas del cliente desde DB
   const { personas: personasDB, loading: loadingPersonas } = usePersonasRelacionadasDB(clienteId);
@@ -75,22 +77,26 @@ export function PartesRelacionadasTab({ mode, solicitudId, montoSolicitado, clie
   const rolAsignado = useMemo(() => getRolPorMonto(montoNum), [montoNum]);
 
   useEffect(() => {
+    loadedRef.current = false;
     const stored = loadFromSession<ParteRelacionada[]>(solicitudId, 'partesRelacionadas');
     if (stored && stored.length > 0) {
       setPartes(stored);
     }
+    loadedRef.current = true;
   }, [solicitudId]);
 
   useEffect(() => {
+    // No persiste hasta que el efecto de carga haya corrido al menos una vez
+    if (!loadedRef.current) return;
     saveToSession(solicitudId, 'partesRelacionadas', partes);
   }, [partes, solicitudId]);
 
-  // Actualizar personas disponibles cuando cambian los datos de DB
+  // Cuando cargan las personas del cliente: actualizar dropdown Y pre-poblar listado si está vacío
   useEffect(() => {
     console.log('[PartesRelacionadasTab] useEffect personasDB:', personasDB.length, personasDB);
     if (personasDB && personasDB.length > 0) {
       const mapped = personasDB.map(p => ({
-        id: p.id,
+        id: String(p.id),
         nombreCompleto: p.nombreCompleto || p.nombre || '',
         tipoPersona: p.personalidad || p.tipoRelacion || 'Persona Física',
         telefono: p.telefono || '',
@@ -98,7 +104,6 @@ export function PartesRelacionadasTab({ mode, solicitudId, montoSolicitado, clie
         curp: p.curp || '',
         rfc: p.rfc || '',
       }));
-      console.log('[PartesRelacionadasTab] mapped personasDisponibles:', mapped);
       setPersonasDisponibles(mapped);
     } else {
       console.log('[PartesRelacionadasTab] personasDB is empty, clearing personasDisponibles');

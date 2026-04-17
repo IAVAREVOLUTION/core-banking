@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { ProductoLineaCredito, FormModeLineaCredito, GarantiaLineaCredito, JerarquiaProductoLineaCredito, ComiteCreditoLineaCredito, PeriodicidadLineaCredito, FaseLineaCredito, MatrizTasaFijaLineaCredito, IvaPorcentajeLineaCredito, ExentoIvaLineaCredito, CheckListLineaCredito } from '@/app/types/productoLineaCredito';
+import { ProductoLineaCredito, FormModeLineaCredito, GarantiaLineaCredito, JerarquiaProductoLineaCredito, ComiteCreditoLineaCredito, PeriodicidadLineaCredito, FaseLineaCredito, MatrizTasaFijaLineaCredito, IvaPorcentajeLineaCredito, ExentoIvaLineaCredito } from '@/app/types/productoLineaCredito';
 import {
   lineProducts,
   sublineProducts,
@@ -13,7 +13,6 @@ import { toast } from 'sonner';
 import { ProductoLineaCreditoFormDefaultTab } from './ProductoLineaCreditoFormDefaultTab';
 import { ProductoLineaCreditoFormDatosProducto } from './ProductoLineaCreditoFormDatosProducto';
 import { ComitesCreditoLineaCreditoTab } from './ComitesCreditoLineaCreditoTab';
-import { CheckListLineaCreditoTab } from './CheckListLineaCreditoTab';
 // ── Tabs reutilizados del módulo Producto Crédito ──
 import { MatrizTasaFijaTab } from '../productos/tabs/MatrizTasaFijaTab';
 import { TasaReferenciaTab } from '../productos/tabs/TasaReferenciaTab';
@@ -98,7 +97,6 @@ export function ProductoLineaCreditoForm({
         matrizTasaFija: [],
         ivaPorcentaje: [],
         exentoIva: [],
-        checkList: [],
         // Campos sistema
         lineaProducto: 'Linea Credito',
         sublineaProducto: '',
@@ -392,11 +390,10 @@ export function ProductoLineaCreditoForm({
           tasasReferenciaRegistros: tasasReferencia || [],
           // Tabs sin forwardRef: datos desde formData
           jerarquiaProductos: formData.jerarquias || [],
-          comitesCredito: formData.comites || [],
+          comitesCredito: comitesRef.current?.getData() || formData.comites || [],
           periodicidad: formData.periodicidades || [],
           ivaPorcentaje: formData.ivaPorcentaje || [],
           exentoIVA: formData.exentoIva || [],
-          checkList: formData.checkList || [],
           condicionesDisposicion: formData.condicionesDisposicion || [],
           parametrosCalculo: formData.parametrosCalculo || [],
           plantillas: plantillasRef.current?.getData() || [],
@@ -449,6 +446,7 @@ export function ProductoLineaCreditoForm({
   const garantiasRef = useRef<{ getData: () => any[] }>(null);
   const comisionesRef = useRef<{ getData: () => any[] }>(null);
   const expedientesRef = useRef<{ getData: () => any[] }>(null);
+  const comitesRef = useRef<{ getData: () => any[] }>(null);
   const plantillasRef = useRef<{ getData: () => any[] }>(null);
 
   // Estado para Tasa Referencia (requerido por MatrizTasaVariableTab)
@@ -559,7 +557,6 @@ export function ProductoLineaCreditoForm({
     { id: 'sucursal', label: 'Sucursal' },
     { id: 'garantias', label: 'Garantías' },
     // === Tabs adicionales ===
-    { id: 'checkList', label: 'Check List' },
     { id: 'plantillas', label: 'Plantillas' },
   ];
 
@@ -679,27 +676,14 @@ export function ProductoLineaCreditoForm({
             )}
 
             {activeTab === 'comites' && (
-              <div>
-                <ComitesCreditoLineaCreditoTab
-                  mode={mode}
-                  comites={formData.comites || []}
-                  onComitesChange={(comites: ComiteCreditoLineaCredito[]) => {
-                    setFormData(prev => ({ ...prev, comites }));
-                  }}
-                />
-              </div>
-            )}
-
-            {activeTab === 'checkList' && (
-              <div>
-                <CheckListLineaCreditoTab
-                  mode={mode}
-                  checkList={formData.checkList || []}
-                  onCheckListChange={(checkList: CheckListLineaCredito[]) => {
-                    setFormData(prev => ({ ...prev, checkList }));
-                  }}
-                />
-              </div>
+              <ComitesCreditoLineaCreditoTab
+                ref={comitesRef}
+                mode={mode === 'create' ? 'create' : mode === 'edit' ? 'edit' : 'view'}
+                productId={productId}
+                montoSolicitado={formData.montoMinimo?.toString()}
+                initialData={formData.comites || []}
+                persistToStorage
+              />
             )}
 
             {activeTab === 'condiciones-disposicion' && (

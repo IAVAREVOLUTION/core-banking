@@ -3,7 +3,7 @@
 Documento de referencia para el formulario `SolicitudCreditoForm` y su ciclo de vida completo:
 creación → guardado en BD → lista → reapertura.
 
-Última actualización: 2026-04-08
+Última actualización: 2026-04-10
 
 ---
 
@@ -354,7 +354,7 @@ REABRIR SOLICITUD
 |---|---|---|
 | Monto Solicitado | Sí | Sí |
 | Fecha Primer Pago | Sí | No |
-| Fecha Primera Aportación | No | Sí |
+| Fecha Primera Aportación | No | Sí — **siempre igual a Fecha Inicio, solo lectura** |
 | Plazo | Sí | Sí (igual al plazo del producto) |
 | Frecuencia | Sí | Sí |
 | Tasa | Sí | Sí |
@@ -363,6 +363,12 @@ REABRIR SOLICITUD
 | Moneda | Sí | Sí |
 | Monto Garantía | Sí | No |
 | Seguro Financiado | Sí | No |
+| **Perfil del Inversionista** | No | **Sí** — Conservador / Moderado / Agresivo |
+| **Riesgo** | No | **Sí** — Bajo / Medio / Alto |
+| **Horizonte de Inversión** | No | **Sí** — Corto / Mediano / Largo plazo |
+| **Experiencia** | No | **Sí** — Ninguna / Básica / Intermedia / Avanzada |
+
+> **Regla Fecha Primera Aportación:** se sincroniza automáticamente con `form.fechaInicio` y es campo de solo lectura. Los campos Perfil, Riesgo, Horizonte y Experiencia se persisten en `terminos_condiciones._raw` y se usan para sustituir variables `{{perfil}}`, `{{riesgo}}`, `{{horizonte}}`, `{{experiencia}}` en las plantillas de inversión.
 
 ### Tipos de producto por línea
 
@@ -402,6 +408,14 @@ Las plantillas HTML se guardan en `J_PRODUCTOS.data.plantillas[]` como base64.
 | `{{sucursal}}` | `datos.sucursal` |
 | `{{ejecutivo}}` | `'N/A'` (no implementado) |
 | `{{empresa_nombre}}` / `{{empresa_razon_social}}` | `'N/A'` |
+| `{{rfc}}` | `datos.rfc` — alias corto de `{{cliente_rfc}}` |
+| `{{curp}}` | `datos.curp` — alias corto de `{{cliente_curp}}` |
+| `{{nombre}}` | `datos.cliente` — alias corto de `{{cliente_nombre}}` |
+| `{{perfil}}` | `terminos.perfilInversionista` — **solo Captación** |
+| `{{riesgo}}` | `terminos.riesgoInversionista` — **solo Captación** |
+| `{{horizonte}}` | `terminos.horizonteInversion` — **solo Captación** |
+| `{{experiencia}}` | `terminos.experienciaInversion` — **solo Captación** |
+| `{{rendimiento}}` | `terminos.tasa` — alias usado en plantillas de inversión |
 
 ### Pipeline de generación
 
@@ -437,3 +451,150 @@ Al seleccionar un producto, el form lee `rawData`:
 - `Inversión`
 - `Aportación/Ahorro` ← nuevo
 - `Cuenta Corriente`
+
+---
+
+## 10. Motor de Fases — detección por nombre (`FaseActionsComponent`)
+
+Los botones de acción de fase se detectan **exclusivamente por el nombre de la fase** (normalizado NFD, minúsculas). No se usa el número de secuencia como fuente de verdad.
+
+### Lógica de detección
+
+| Condición en nombre de fase | Botón mostrado | Notas |
+|---|---|---|
+| Contiene `"solicitud"` + `"activac"` (no `"activar cuenta"`) | **Solicitud de Activación** | Crea o edita el registro en `J_SOLICITUDES_ACTIVACION` |
+| Contiene `"activac"` pero NO `"solicitud"` ni `"activar cuenta"` | **Ver Solicitud de Activación** | Solo lectura — fase posterior a la creación |
+| Contiene `"activar cuenta"` o `"activar_cuenta"` | **Activar Cuenta** | Ejecuta activación final |
+| Contiene `"formaliz"` o `"contrato"` | **Formalizar Contrato** | Genera PDFs de contrato y pagaré |
+| `seq === 1` | **Imprimir Solicitud** | Primera fase del producto |
+| Hay fase siguiente y no aplica ninguno de los anteriores | **Enviar de Fase** | Avance estándar |
+
+> **Regla clave:** El número de secuencia (`seq`) ya no es fallback para detección de tipo de fase. Un producto puede tener la fase "Solicitud de Activación Cuenta" en cualquier posición y el botón aparece correctamente.
+
+### Botón "Solicitud de Activación" — label dinámico
+
+- Si `existingActivacion` existe (ya hay registro en BD) → label: `"Ver Solicitud de Activación"`
+- Si no existe → label: `"Solicitud de Activación"`
+
+---
+
+## 11. Tabla `J_SOLICITUDES_ACTIVACION` — Módulo de Activación
+
+### Columnas principales
+
+| Columna BD | Tipo | Campo frontend | Notas |
+|---|---|---|---|
+| `id` | `uuid` | `_dbId` / `id` | PK auto-generado |
+| `cliente_id` | `uuid` | `clienteId` | FK a `J_CLIENTES` — se toma de `form._clienteId` |
+| `solicitud_id` | `uuid` | `solicitudId` | FK a `J_CUENTAS_CORP_CLIENTES` — se toma del `storageId` de la originación |
+| `type` | `text` | `type` | `"Por Cobrar"` (Captación) / `"Por Pagar"` (Crédito) |
+| `created_at` | `timestamp` | `fechaSolicitud` | Auto-generado por BD |
+| `fecha_compromiso` | `date` | `fechaCompromiso` | DD/MM/YYYY → YYYY-MM-DD al guardar |
+| `estatus` | `text` | `estatus` | `Pendiente` / `Enviada` / `Pagado` / `Activo` / `Rechazada` |
+| `data` | `jsonb` | (ver abajo) | Toda la info extendida |
+
+### Estructura `data` JSONB
+
+```
+data.header:
+  cliente, numeroDocumento, cuentaBancaria, formaDePago,
+  institucionFinanciera, referencia, montoTransaccion,
+  moneda, nota, usuarioNota
+
+data.detail:
+  claveProducto, cantidad, monto, pctImpuesto,
+  moneda, subTotal, estatus
+```
+
+### RPCs de BD utilizadas
+
+| RPC | Cuándo | Parámetros |
+|---|---|---|
+| `get_solicitudes_activacion()` | Lectura con JOINs | — |
+| `insert_solicitud_activacion` | Crear nuevo registro | `p_payload` |
+| `update_solicitud_activacion` | Actualizar existente | `p_id`, `p_payload` |
+
+### Flujo de apertura del módulo
+
+```
+FaseActionsComponent → botón "Solicitud de Activación"
+  → SolicitudCreditoForm.handleSolicitudActivacion()
+    → detecta si es "solo ver" (nombre contiene "activac" sin "solicitud")
+    → setActivacionModalRO(esSoloVer)
+    → setShowActivacionModal(true)
+
+SolicitudActivacionModal (fixed inset-0 z-50)
+  isNew = !existingActivacion
+  Si isNew:
+    → busca cuenta bancaria del cliente via RPC get_cuentas_ahorro
+    → prepara initialNewData con seed (cliente, clienteId, lineaProducto, monto, moneda, productoId)
+    → SolicitudActivacionList abre en modo "nuevo"
+  Si !isNew:
+    → prepara sesión síncronamente (clearSession + saveToSession)
+    → SolicitudActivacionList abre en modo "editar" o "ver" (según readOnly)
+
+Al guardar (onSavedFromOriginacion):
+  → handleActivacionSaved(savedItem)
+  → Si estatus = "Enviada" o "Pagado":
+    → avanzarFaseSolicitudDB(dbId, sigFase.faseId, ..., 'Aprobado')
+    → setFormData({ faseId, descripcionFase, area, estatusSolicitud: 'Aprobado' })
+  → refetchActivaciones()
+```
+
+### Regla canActivarCuenta
+
+El botón "Activar Cuenta" (fase siguiente) está habilitado cuando:
+- **Línea de Crédito**: siempre habilitado (no requiere pago)
+- **Crédito / Captación**: requiere `activacionForThisSol.estatus` = `"Enviada"` O `"Pagado"`
+
+> `useSolicitudesActivacionDB` se habilita cuando `mode !== 'nuevo' && storageId !== 'new'` — aplica a todos los modos (solicitudes, originacion, ver).
+
+---
+
+## 12. Persistencia del Calendario de Aportaciones (`SimulacionTab`)
+
+El calendario de aportaciones se persiste en `sessionStorage` bajo la clave `simulacion_cal` para sobrevivir cambios de tab sin recalcularse.
+
+### Prioridad de carga (`getInitCalRows`)
+
+1. `sessionStorage → simulacion_cal` (persiste cambios del usuario)
+2. `loadFromSavedStore(solicitudId, 'simulacion_cal')` (datos guardados en BD)
+3. Prop `calendarioAportaciones` (heredado de Cotización)
+
+### Regla de recálculo
+
+El calendario **solo se regenera** cuando el usuario presiona "Simular Aportaciones" explícitamente. Cambiar de tab y volver **no** recalcula ni sobreescribe el calendario existente.
+
+---
+
+## 13. Componente `FlujoTrabajo` — prop `completada`
+
+Cuando `completada={true}`, la fase actual se pinta en verde (igual que las fases anteriores), indicando que el proceso está terminado aunque no haya fase siguiente.
+
+### Cuándo activar `completada`
+
+```typescript
+completada={['Aprobado', 'Autorizada', 'Activo', 'Activa'].includes(formData.estatusSolicitud || '')}
+```
+
+Esto aplica al `FlujoTrabajo` visible en el header de la solicitud y en el subtab "Flujo de Trabajo". Cuando la solicitud llega a estatus final, **todas las fases** (incluyendo la actual) se muestran en verde con ✓ y la conexión al nodo "Fin" también es verde.
+
+---
+
+## 14. Subtabs — Orden estándar
+
+Orden unificado en `SolicitudCreditoForm` y `OriginacionModule`:
+
+1. Default
+2. Términos y Condiciones
+3. Simulación
+4. Expediente Electrónico
+5. Partes Relacionadas
+6. Garantías
+7. Comités
+8. Autorizaciones
+9. Fases
+10. Cargos
+11. Comisiones
+12. Notas
+13. Flujo de Trabajo

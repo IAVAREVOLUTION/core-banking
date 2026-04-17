@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { toast } from 'sonner';
 import { SolicitudActivacionForm } from './SolicitudActivacionForm';
 import {
@@ -50,6 +50,7 @@ export function SolicitudActivacionList({
   onCancelFromOriginacion,
 }: SolicitudActivacionListProps = {}) {
   const [view,        setView]        = useState<ViewState>(() => {
+    console.log('[DIAG] inicialEditItem:', initialEditItem);
     if (initialEditItem) {
       const sid = (initialEditItem._dbId && typeof initialEditItem._dbId === 'string')
         ? initialEditItem._dbId
@@ -60,6 +61,8 @@ export function SolicitudActivacionList({
       const d      = (raw.data || {}) as Record<string, unknown>;
       const header = (d.header || {}) as Record<string, unknown>;
       const detail = (d.detail || {}) as Record<string, unknown>;
+      console.log('[DIAG] raw.data:', d);
+      console.log('[DIAG] header.montoTransaccion:', header.montoTransaccion);
       saveToSession(sid, 'form', {
         ...EMPTY_FORM,
         id:                    String(initialEditItem._dbId || initialEditItem.id || ''),
@@ -74,7 +77,11 @@ export function SolicitudActivacionList({
         formaDePago:           String(header.formaDePago || 'Banca por internet'),
         institucionFinanciera: String(header.institucionFinanciera || ''),
         referencia:            String(header.referencia || initialEditItem._dbId || ''),
-        montoTransaccion:      initialEditItem.montoTransaccion || String(header.montoTransaccion || ''),
+        // parseMoney strips locale formatting (commas) so type="number" input shows correctly
+        montoTransaccion: (() => {
+          const n = parseMoney(header.montoTransaccion ?? '') || parseMoney(initialEditItem.montoTransaccion ?? '');
+          return n > 0 ? n.toFixed(2) : '0.00';
+        })(),
         moneda:                initialEditItem.moneda || String(header.moneda || 'MXN'),
         nota:                  String(header.nota || ''),
         detailClaveProducto:   String(detail.claveProducto || raw.solicitud_producto_id || ''),
@@ -84,6 +91,7 @@ export function SolicitudActivacionList({
         detailMoneda:          String(detail.moneda || header.moneda || 'MXN'),
         detailSubTotal:        Number(detail.subTotal) || 0,
         detailEstatus:         'Pendiente',
+        lineaProducto:         String(raw.solicitud_linea_produc || ''),
       });
       return { type: 'form', mode: initialReadOnly ? 'ver' : 'editar', solicitudId: sid, dbId: initialEditItem._dbId || String(initialEditItem.id) };
     }
@@ -132,6 +140,43 @@ export function SolicitudActivacionList({
     }
   }, [solicitudesActivacion, backendStatus]);
 
+  // ─── Direct form data for initialEditItem (bypasses session storage) ─────────
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const editInitialData = useMemo<Partial<SolicitudActivacionFormData> | undefined>(() => {
+    if (!initialEditItem) return undefined;
+    const raw    = (initialEditItem._raw || {}) as Record<string, unknown>;
+    const d      = (raw.data || {}) as Record<string, unknown>;
+    const header = (d.header || {}) as Record<string, unknown>;
+    const detail = (d.detail || {}) as Record<string, unknown>;
+    const rawMonto = parseMoney(header.montoTransaccion ?? '') || parseMoney(initialEditItem.montoTransaccion ?? '');
+    return {
+      ...EMPTY_FORM,
+      id:                    String(initialEditItem._dbId || initialEditItem.id || ''),
+      solicitudId:           initialEditItem.solicitudId || String(raw.solicitud_id || ''),
+      clienteId:             String(raw.cliente_id || ''),
+      type:                  initialEditItem.tipo || String(raw.type || ''),
+      fechaSolicitud:        initialEditItem.fechaSolicitud || '',
+      estatus:               initialEditItem.estatus || 'Pendiente',
+      cliente:               initialEditItem.cliente || String(header.cliente || ''),
+      numeroDocumento:       initialEditItem.numeroDocumento || String(header.numeroDocumento || raw.cliente_curp || ''),
+      cuentaBancaria:        String(raw.solicitud_no_cuenta || header.cuentaBancaria || ''),
+      formaDePago:           String(header.formaDePago || 'Banca por internet'),
+      institucionFinanciera: String(header.institucionFinanciera || ''),
+      referencia:            String(header.referencia || initialEditItem._dbId || ''),
+      montoTransaccion:      rawMonto > 0 ? rawMonto.toFixed(2) : '',
+      moneda:                initialEditItem.moneda || String(header.moneda || 'MXN'),
+      nota:                  String(header.nota || ''),
+      detailClaveProducto:   String(detail.claveProducto || raw.solicitud_producto_id || ''),
+      detailCantidad:        Number(detail.cantidad) || 1,
+      detailMonto:           Number(detail.monto) || 0,
+      detailPctImpuesto:     Number(detail.pctImpuesto) || 0,
+      detailMoneda:          String(detail.moneda || header.moneda || 'MXN'),
+      detailSubTotal:        Number(detail.subTotal) || 0,
+      detailEstatus:         'Pendiente',
+      lineaProducto:         String(raw.solicitud_linea_produc || ''),
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ─── Handlers ────────────────────────────────────────────────────
   const handleExportCSV   = () => toast.success('Exportando a CSV',   { duration: 3000 });
   const handleExportExcel = () => toast.success('Exportando a Excel', { duration: 3000 });
@@ -164,7 +209,10 @@ export function SolicitudActivacionList({
     const detail = (d.detail || {}) as Record<string, unknown>;
 
     // montoTransaccion is the first payment amount — never fall back to solicitud_monto (total)
-    const montoTransaccion = String(header.montoTransaccion ?? '0.00');
+    const montoTransaccion = (() => {
+      const n = parseMoney(header.montoTransaccion ?? '');
+      return n > 0 ? n.toFixed(2) : '0.00';
+    })();
     const moneda           = String(header.moneda || raw.solicitud_moneda || 'MXN');
     const detailMonto      = (detail.monto as number)       ?? parseMoney(raw.solicitud_monto);
     // % Impuesto: DB stores as whole number (e.g. 3 = 3%); divide by 100 for decimal form used internally
@@ -183,8 +231,10 @@ export function SolicitudActivacionList({
       clienteId:      String(raw.cliente_id || ''),
       type:           derivedTipo,
       fechaSolicitud: s.fechaSolicitud || '',
-      fechaCompromiso: raw.solicitud_fecha_primera_aportacion
-        ? parseISOToDisplay(String(raw.solicitud_fecha_primera_aportacion))
+      // Fecha Compromiso = Fecha Inicio de la solicitud referenciada
+      // Prioridad: fecha_inicio (J_CUENTAS_CORP_CLIENTES) → fecha_primera_aportacion → fecha_compromiso guardada → header
+      fechaCompromiso: (raw.solicitud_fecha_inicio ?? raw.solicitud_fecha_primera_aportacion)
+        ? parseISOToDisplay(String(raw.solicitud_fecha_inicio ?? raw.solicitud_fecha_primera_aportacion))
         : raw.fecha_compromiso
           ? parseISOToDisplay(String(raw.fecha_compromiso))
           : String(header.fechaCompromiso || ''),
@@ -209,6 +259,7 @@ export function SolicitudActivacionList({
       detailMoneda: String(detail.moneda || moneda),
       detailSubTotal: (detail.subTotal as number) ?? (detailCantidad * detailMonto * (1 + detailPctImpuesto)),
       detailEstatus: 'Pendiente',
+      lineaProducto: String(raw.solicitud_linea_produc || ''),
     };
   };
 
@@ -323,7 +374,11 @@ export function SolicitudActivacionList({
         key={`${view.mode}-${view.solicitudId ?? 'new'}`}
         mode={view.mode}
         solicitudId={view.solicitudId}
-        initialData={view.mode === 'nuevo' && initialNewData ? initialNewData : undefined}
+        initialData={
+          view.mode === 'nuevo' && initialNewData
+            ? initialNewData
+            : editInitialData  // for edit/ver mode opened via initialEditItem prop
+        }
         onCancel={handleBack}
         onSave={handleSave}
         onEnviar={async (data) => {
@@ -348,7 +403,12 @@ export function SolicitudActivacionList({
             const UUID_RE_ACT = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
             if (UUID_RE_ACT.test(data.solicitudId)) {
               try {
-                const activResult = await activarCuentaDB(data.solicitudId, {});
+                const activResult = await activarCuentaDB(data.solicitudId, {
+                  estatus_sol:  'Autorizada',
+                  estatus_cuen: 'Activa',
+                  estatus_disp: 'Pagado',
+                  estatus_cart: 'Activa',
+                });
                 if (activResult.ok) {
                   toast.success('¡Solicitud completada!', { description: 'Cuenta activada — Estatus: Autorizada' });
                 } else {
@@ -649,7 +709,7 @@ export function SolicitudActivacionList({
                     <td className="px-2 py-2.5 text-xs text-gray-700">{s.tipo || '—'}</td>
                     <td className="px-2 py-2.5 text-xs text-gray-700">{s.fechaSolicitud}</td>
                     <td className="px-2 py-2.5 text-xs text-right text-gray-700 font-mono">
-                      {s.montoTransaccion ? `$${s.montoTransaccion}` : '—'}
+                      {s.montoTransaccion ? `$${Number(s.montoTransaccion).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}
                     </td>
                     <td className="px-2 py-2.5 text-xs text-gray-700">{s.moneda || '—'}</td>
                     <td className="px-2 py-2.5 text-xs">

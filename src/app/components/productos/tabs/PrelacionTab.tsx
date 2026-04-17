@@ -1,16 +1,12 @@
 import { useState, useEffect, forwardRef, useImperativeHandle } from 'react';
 import { toast } from 'sonner';
-import { creditProducts } from '@/app/data/mockData';
 import { useTabPersistence } from '@/app/hooks/useProductoPersistence';
 
 interface Prelacion {
   id: number;
   productId: number;
   ordenAplicacion: string;
-  productoRelacionadoId: number;
-  productoRelacionadoNombre: string;
   productosCargos: string;
-  puestoTrabajo: string;
 }
 
 interface PrelacionTabProps {
@@ -155,15 +151,13 @@ export const PrelacionTab = forwardRef<{ getData: () => Prelacion[] }, Prelacion
               <thead>
                 <tr className="bg-[#4A6FA5] text-white">
                   <th className="px-3 py-2 text-left font-medium text-xs border-r border-white/20 whitespace-nowrap">Orden de Aplicación</th>
-                  <th className="px-3 py-2 text-left font-medium text-xs border-r border-white/20 whitespace-nowrap">Producto</th>
-                  <th className="px-3 py-2 text-left font-medium text-xs border-r border-white/20 whitespace-nowrap">Productos Cargos</th>
-                  <th className="px-3 py-2 text-left font-medium text-xs whitespace-nowrap">Puesto de Trabajo</th>
+                  <th className="px-3 py-2 text-left font-medium text-xs whitespace-nowrap">Productos Cargos</th>
                 </tr>
               </thead>
               <tbody className="bg-white">
                 {data.length === 0 ? (
                   <tr>
-                    <td colSpan={4} className="px-3 py-6 text-center text-gray-500 text-xs">No se encontraron registros</td>
+                    <td colSpan={2} className="px-3 py-6 text-center text-gray-500 text-xs">No se encontraron registros</td>
                   </tr>
                 ) : (
                   data.map((item, index) => (
@@ -184,9 +178,7 @@ export const PrelacionTab = forwardRef<{ getData: () => Prelacion[] }, Prelacion
                       }}
                     >
                       <td className="px-3 py-2 text-xs text-gray-700 border-r border-gray-300">{item.ordenAplicacion}</td>
-                      <td className="px-3 py-2 text-xs text-gray-700 border-r border-gray-300">{item.productoRelacionadoNombre}</td>
-                      <td className="px-3 py-2 text-xs text-gray-700 border-r border-gray-300">{item.productosCargos}</td>
-                      <td className="px-3 py-2 text-xs text-gray-700">{item.puestoTrabajo}</td>
+                      <td className="px-3 py-2 text-xs text-gray-700">{item.productosCargos}</td>
                     </tr>
                   ))
                 )}
@@ -227,10 +219,7 @@ function FormModal({ mode, item, productId, onSave, onClose }: FormModalProps) {
   const isViewMode = mode === 'view';
   const [formData, setFormData] = useState({
     ordenAplicacion: item?.ordenAplicacion || '',
-    productoRelacionadoId: item?.productoRelacionadoId || 0,
-    productoRelacionadoNombre: item?.productoRelacionadoNombre || '',
     productosCargos: item?.productosCargos || '',
-    puestoTrabajo: item?.puestoTrabajo || '',
   });
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -240,29 +229,13 @@ function FormModal({ mode, item, productId, onSave, onClose }: FormModalProps) {
       return;
     }
 
-    // Validar campos requeridos
-    const requiredFields = [
-      { field: 'ordenAplicacion', label: 'Orden de Aplicación' },
-      { field: 'productoRelacionadoId', label: 'Producto' },
-    ];
-
-    const emptyFields = requiredFields.filter(({ field }) => {
-      const value = formData[field as keyof typeof formData];
-      if (typeof value === 'string') {
-        return value.trim() === '';
-      }
-      return value === 0 || value === null || value === undefined;
-    });
-
-    if (emptyFields.length > 0) {
-      const fieldNames = emptyFields.map(({ label }) => label).join(', ');
+    if (!formData.ordenAplicacion || formData.ordenAplicacion.trim() === '') {
       toast.error('Campos requeridos faltantes', {
-        description: `Por favor complete los siguientes campos: ${fieldNames}`,
+        description: 'Por favor complete el campo: Orden de Aplicación',
       });
       return;
     }
 
-    // Validar longitud máxima de Orden de Aplicación (VARCHAR 5)
     if (formData.ordenAplicacion.length > 5) {
       toast.error('Orden de Aplicación no puede exceder 5 caracteres');
       return;
@@ -273,17 +246,6 @@ function FormModal({ mode, item, productId, onSave, onClose }: FormModalProps) {
 
   const handleChange = (field: string, value: any) => {
     setFormData({ ...formData, [field]: value });
-    
-    // Si cambia el producto, actualizar el nombre también
-    if (field === 'productoRelacionadoId') {
-      const producto = creditProducts.find(prod => prod.id === parseInt(value));
-      if (producto) {
-        setFormData(prev => ({ 
-          ...prev, 
-          productoRelacionadoNombre: producto.nombre 
-        }));
-      }
-    }
   };
 
   const inputClassName = () => {
@@ -325,21 +287,6 @@ function FormModal({ mode, item, productId, onSave, onClose }: FormModalProps) {
                 </div>
 
                 <div>
-                  <label className="block text-xs text-gray-700 mb-1 font-medium">Producto <span className="text-red-600">*</span></label>
-                  <select 
-                    value={formData.productoRelacionadoId} 
-                    onChange={(e) => handleChange('productoRelacionadoId', e.target.value)} 
-                    disabled={isViewMode} 
-                    className={inputClassName()}
-                  >
-                    <option value="0">Seleccione...</option>
-                    {creditProducts.map((producto) => (
-                      <option key={producto.id} value={producto.id}>{producto.nombre}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
                   <label className="block text-xs text-gray-700 mb-1 font-medium">Productos Cargos</label>
                   <select 
                     value={formData.productosCargos} 
@@ -350,22 +297,6 @@ function FormModal({ mode, item, productId, onSave, onClose }: FormModalProps) {
                     <option value="">Seleccione...</option>
                     <option value="Capital">Capital</option>
                     <option value="Interés en IVA">Interés en IVA</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs text-gray-700 mb-1 font-medium">Puesto de Trabajo</label>
-                  <select 
-                    value={formData.puestoTrabajo} 
-                    onChange={(e) => handleChange('puestoTrabajo', e.target.value)} 
-                    disabled={isViewMode} 
-                    className={inputClassName()}
-                  >
-                    <option value="">Seleccione...</option>
-                    <option value="Gerente Juridico">Gerente Juridico</option>
-                    <option value="Gerente Mesa Control">Gerente Mesa Control</option>
-                    <option value="Gerente Comercial">Gerente Comercial</option>
-                    <option value="Gerente de Tesorería">Gerente de Tesorería</option>
                   </select>
                 </div>
               </div>

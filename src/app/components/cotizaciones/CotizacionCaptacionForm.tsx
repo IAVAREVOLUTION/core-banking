@@ -153,11 +153,12 @@ export function CotizacionCaptacionForm({ mode, cotizacion, onSave, onBack, onCr
           nombreProducto: p.nombre || p.producto || '',
           tipoProducto: p.tipoProducto || '',
           montoMinimo: typeof p.montoMinimo === 'number' ? p.montoMinimo : parseFloat(String(p.montoMinimo)) || 0,
-          periodoCumplirMontoMinimo: (p as any).frecuenciaPagoIntereses
+          periodoCumplirMontoMinimo: (p as any).periodoCompletarMinimo
+            || (p as any).frecuenciaPagoIntereses
             || (Array.isArray((p as any).periodosRegistros) && (p as any).periodosRegistros[0]?.descripcion)
             || (p as any).periodoCorte
             || 'Mensual',
-          plazoCumplirMontoMinimo: parseInt(String((p as any).plazo)) || 12,
+          plazoCumplirMontoMinimo: parseInt(String((p as any).plazoCompletarMinimo ?? '')) || 0,
           tasaMinInteres: parseFloat(String((p as any).tasaMinima || (p as any).tasaInicial)) || 0,
           matrizTasaFija: extractMatrizTasaFija(p),
           periodosRegistros: Array.isArray((p as any).periodosRegistros) ? (p as any).periodosRegistros : [],
@@ -252,7 +253,7 @@ export function CotizacionCaptacionForm({ mode, cotizacion, onSave, onBack, onCr
         data.montoCotizado,
         data.plazoCumplirMontoMinimo,
         data.fechaPrimeraAportacion,
-        data.periodoCumplirMontoMinimo || data.frecuenciaCapitalizacion
+        data.frecuenciaCapitalizacion || data.periodoCumplirMontoMinimo
       );
     }
     return [];
@@ -374,6 +375,7 @@ export function CotizacionCaptacionForm({ mode, cotizacion, onSave, onBack, onCr
   // INVERSIÓN — Spec cotizacion-inversion-validation §1–§7
   // ══════════════════════════════════════════════════════════════
   const isInversion = data.producto.tipoProducto.toLowerCase() === 'inversión' || data.producto.tipoProducto.toLowerCase() === 'inversion';
+  const isAportacion = data.producto.tipoProducto.toLowerCase().includes('aportaci');
 
   // Current selected product (full picker item with matrizTasaFija)
   const selectedProducto = useMemo(() => {
@@ -420,6 +422,39 @@ export function CotizacionCaptacionForm({ mode, cotizacion, onSave, onBack, onCr
     return matrizTasaFija[selectedPlazoIdx];
   }, [isInversion, matrizTasaFija, selectedPlazoIdx]);
 
+  // ── Restore selectedPlazoIdx when editing an existing cotización ──
+  // matrizTasaFija llega async (productosDB), entonces al montar en modo edit el idx es -1.
+  // Buscamos la fila cuyo plazo coincida con plazoCumplirMontoMinimo guardado.
+  useEffect(() => {
+    if (!isInversion) return;
+    if (matrizTasaFija.length === 0) return;
+    if (selectedPlazoIdx >= 0) return; // ya está restaurado
+    if (!data.plazoCumplirMontoMinimo && !data.tasaMinInteres) return;
+
+    const savedPlazo = data.plazoCumplirMontoMinimo;
+    const savedTasa  = data.tasaMinInteres;
+
+    // 1) Buscar por plazoDefault/plazoMinimo exacto
+    let idx = matrizTasaFija.findIndex(r =>
+      (r.plazoDefault ?? r.plazoMinimo) === savedPlazo ||
+      r.plazoMinimo === savedPlazo ||
+      r.plazoMaximo === savedPlazo
+    );
+
+    // 2) Si no se encontró por plazo, buscar por tasa
+    if (idx < 0 && savedTasa > 0) {
+      idx = matrizTasaFija.findIndex(r => {
+        const t = parseFloat(r.tasaMinima) || parseFloat(r.tasaDefault) || 0;
+        return Math.abs(t - savedTasa) < 0.001;
+      });
+    }
+
+    if (idx >= 0) {
+      console.log('[Matriz Restore] Restaurando selectedPlazoIdx:', idx, '| plazo:', savedPlazo, '| tasa:', savedTasa);
+      setSelectedPlazoIdx(idx);
+    }
+  }, [matrizTasaFija, isInversion]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Auto-set tasa when selected row changes (soft match: fills tasa even before monto is valid)
   useEffect(() => {
     if (!isInversion || !selectedMatrizRow) return;
@@ -431,6 +466,7 @@ export function CotizacionCaptacionForm({ mode, cotizacion, onSave, onBack, onCr
     }
     if (selectedMatrizRow.periodo && selectedMatrizRow.periodo !== data.periodoCumplirMontoMinimo) {
       updates.periodoCumplirMontoMinimo = selectedMatrizRow.periodo;
+      updates.frecuenciaCapitalizacion = selectedMatrizRow.periodo;
     }
     if (Object.keys(updates).length > 0) {
       console.log('[Matriz Effect] ✓ Setting:', updates);
@@ -886,7 +922,7 @@ export function CotizacionCaptacionForm({ mode, cotizacion, onSave, onBack, onCr
                     {/* spec §4.5: Plazo — dropdown from matriz when inversión, free number otherwise */}
                     <div className="flex flex-col">
                       <label className="text-[10px] text-gray-600 mb-1">
-                        {isInversion ? 'Plazo de Inversión' : 'Plazo Cumplir Monto Mínimo'} <span className="text-red-500">*</span>
+                        {isInversion ? 'Plazo de Inversión' : isAportacion ? 'Plazo' : 'Plazo Cumplir Monto Mínimo'} <span className="text-red-500">*</span>
                         {!isInversion && data.producto.plazoCumplirMontoMinimo > 0 && <span className="text-gray-400 ml-1">(mín: {data.producto.plazoCumplirMontoMinimo})</span>}
                         {isInversion && <span className="text-[9px] text-purple-500 ml-1">(desde matriz)</span>}
                       </label>
@@ -1129,7 +1165,7 @@ export function CotizacionCaptacionForm({ mode, cotizacion, onSave, onBack, onCr
                       </div>
                       <div className="bg-amber-50 border border-amber-200 rounded p-3">
                         <span className="text-[10px] text-amber-600">Periodo</span>
-                        <p className="text-lg text-amber-800">{data.periodoCumplirMontoMinimo || data.frecuenciaCapitalizacion}</p>
+                        <p className="text-lg text-amber-800">{data.frecuenciaCapitalizacion || data.periodoCumplirMontoMinimo}</p>
                       </div>
                       <div className="bg-purple-50 border border-purple-200 rounded p-3">
                         <span className="text-[10px] text-purple-600">Monto Total</span>

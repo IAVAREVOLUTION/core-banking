@@ -39,9 +39,13 @@ export function FasesSolicitudTab({ mode, productoId, faseIdActual, faseActualSe
     
     if (!rawData) return [];
 
-    const raw = rawData?.fases ?? rawData?.fasesRegistros ?? rawData?.fase ?? [];
+    // Captación guarda fases en fasesRegistros; fases puede ser {} (objeto vacío) — usar Array.isArray para no bloquear el fallback
+    const raw = (Array.isArray(rawData?.fases) && rawData.fases.length > 0 ? rawData.fases : null)
+      ?? (Array.isArray(rawData?.fasesRegistros) && rawData.fasesRegistros.length > 0 ? rawData.fasesRegistros : null)
+      ?? (Array.isArray(rawData?.fase) ? rawData.fase : null)
+      ?? [];
     console.log('[FasesSolicitudTab] raw array length:', Array.isArray(raw) ? raw.length : 'NOT ARRAY');
-    
+
     if (!Array.isArray(raw) || raw.length === 0) return [];
 
     return raw.map((f: any, idx: number): FaseDisplay & { seq: number } => ({

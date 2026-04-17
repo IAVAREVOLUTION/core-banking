@@ -262,123 +262,154 @@ export function GarantiasTab({ mode, solicitudId, montoSolicitado, clienteId, fa
           </div>
         )}
 
-        {/* Formulario inline de carga */}
+        {/* Modal — Agregar Garantía */}
         {showForm && !isRO && (
-          <div className="bg-gray-50 border border-gray-200 rounded p-4 mb-4">
-            <div className="grid grid-cols-3 gap-4 mb-3">
-              <div>
-                <label className="block text-xs text-gray-700 mb-1">Tipo de Garantía <span className="text-red-500">*</span></label>
-                <select
-                  value={newGarantia.tipo || ''}
-                  onChange={e => setNewGarantia(prev => ({ ...prev, tipo: e.target.value, subtipo: '' }))}
-                  className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-[#4A6FA5]"
+          <div className="fixed inset-0 z-50 flex items-center justify-center">
+            {/* Backdrop */}
+            <div
+              className="absolute inset-0 bg-black/40"
+              onClick={() => { setShowForm(false); setNewGarantia({}); }}
+            />
+            {/* Dialog */}
+            <div className="relative bg-white rounded-lg shadow-xl w-full max-w-2xl mx-4 flex flex-col max-h-[90vh]">
+              {/* Header */}
+              <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200">
+                <h3 className="text-sm font-semibold text-gray-800">Agregar Garantía</h3>
+                <button
+                  onClick={() => { setShowForm(false); setNewGarantia({}); }}
+                  className="text-gray-400 hover:text-gray-600 transition-colors"
                 >
-                  <option value="">Seleccionar...</option>
-                  {tiposPermitidos.map(t => (
-                    <option key={t} value={t}>{t}</option>
-                  ))}
-                </select>
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M2 2l12 12M14 2L2 14" />
+                  </svg>
+                </button>
               </div>
-              <div>
-                <label className="block text-xs text-gray-700 mb-1">Subtipo</label>
-                <select
-                  value={newGarantia.subtipo || ''}
-                  onChange={e => setNewGarantia(prev => ({ ...prev, subtipo: e.target.value }))}
-                  disabled={!newGarantia.tipo}
-                  className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-[#4A6FA5] disabled:bg-gray-100"
-                >
-                  <option value="">Seleccionar...</option>
-                  {getSubtipos(newGarantia.tipo || '').map(s => (
-                    <option key={s} value={s}>{s}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs text-gray-700 mb-1">Valor Nominal <span className="text-red-500">*</span></label>
-                <div className="relative">
-                  <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-500">$</span>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    value={newGarantia.valorNominal || ''}
-                    onChange={e => setNewGarantia(prev => ({ ...prev, valorNominal: parseFloat(e.target.value) || 0 }))}
-                    placeholder="0.00"
-                    className="w-full pl-5 pr-2 py-1.5 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-[#4A6FA5] text-right"
-                  />
+
+              {/* Body */}
+              <div className="overflow-y-auto px-5 py-4 flex-1">
+                <div className="grid grid-cols-2 gap-4 mb-4">
+                  <div>
+                    <label className="block text-xs text-gray-700 mb-1">Tipo de Garantía <span className="text-red-500">*</span></label>
+                    <select
+                      value={newGarantia.tipo || ''}
+                      onChange={e => setNewGarantia(prev => ({ ...prev, tipo: e.target.value, subtipo: '' }))}
+                      className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-[#4A6FA5]"
+                    >
+                      <option value="">Seleccionar...</option>
+                      {tiposPermitidos.map(t => (
+                        <option key={t} value={t}>{t}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-700 mb-1">Subtipo</label>
+                    <select
+                      value={newGarantia.subtipo || ''}
+                      onChange={e => setNewGarantia(prev => ({ ...prev, subtipo: e.target.value }))}
+                      disabled={!newGarantia.tipo}
+                      className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-[#4A6FA5] disabled:bg-gray-100"
+                    >
+                      <option value="">Seleccionar...</option>
+                      {getSubtipos(newGarantia.tipo || '').map(s => (
+                        <option key={s} value={s}>{s}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4 mb-4">
+                  <div>
+                    <label className="block text-xs text-gray-700 mb-1">Descripción <span className="text-red-500">*</span></label>
+                    <input
+                      type="text"
+                      value={newGarantia.descripcion || ''}
+                      onChange={e => setNewGarantia(prev => ({ ...prev, descripcion: e.target.value }))}
+                      placeholder="Descripción de la garantía..."
+                      className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-[#4A6FA5]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-700 mb-1">Valor Nominal <span className="text-red-500">*</span></label>
+                    <div className="relative">
+                      <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-500">$</span>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={newGarantia.valorNominal || ''}
+                        onChange={e => setNewGarantia(prev => ({ ...prev, valorNominal: parseFloat(e.target.value) || 0 }))}
+                        placeholder="0.00"
+                        className="w-full pl-5 pr-2 py-1.5 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-[#4A6FA5] text-right"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4 mb-4">
+                  <div>
+                    <label className="block text-xs text-gray-700 mb-1">Ubicación</label>
+                    <input
+                      type="text"
+                      value={newGarantia.ubicacion || ''}
+                      onChange={e => setNewGarantia(prev => ({ ...prev, ubicacion: e.target.value }))}
+                      placeholder="Ubicación del bien..."
+                      className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-[#4A6FA5]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-700 mb-1">Nota</label>
+                    <input
+                      type="text"
+                      value={newGarantia.nota || ''}
+                      onChange={e => setNewGarantia(prev => ({ ...prev, nota: e.target.value }))}
+                      placeholder="Observaciones..."
+                      className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-[#4A6FA5]"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs text-gray-700 mb-1">Área Responsable</label>
+                    <select
+                      value={newGarantia.area || ''}
+                      onChange={e => setNewGarantia(prev => ({ ...prev, area: e.target.value }))}
+                      className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-[#4A6FA5]"
+                    >
+                      <option value="">Seleccionar...</option>
+                      <option value="Jurídico">Jurídico</option>
+                      <option value="Mesa de Control">Mesa de Control</option>
+                      <option value="Análisis">Análisis</option>
+                      <option value="General">General</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-700 mb-1">Fase</label>
+                    <input
+                      type="text"
+                      value={`Fase ${faseIdActual}`}
+                      disabled
+                      className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded bg-gray-100"
+                    />
+                  </div>
                 </div>
               </div>
-            </div>
-            <div className="grid grid-cols-3 gap-4 mb-3">
-              <div>
-                <label className="block text-xs text-gray-700 mb-1">Descripción <span className="text-red-500">*</span></label>
-                <input
-                  type="text"
-                  value={newGarantia.descripcion || ''}
-                  onChange={e => setNewGarantia(prev => ({ ...prev, descripcion: e.target.value }))}
-                  placeholder="Descripción de la garantía..."
-                  className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-[#4A6FA5]"
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-gray-700 mb-1">Ubicación</label>
-                <input
-                  type="text"
-                  value={newGarantia.ubicacion || ''}
-                  onChange={e => setNewGarantia(prev => ({ ...prev, ubicacion: e.target.value }))}
-                  placeholder="Ubicación del bien..."
-                  className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-[#4A6FA5]"
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-gray-700 mb-1">Nota</label>
-                <input
-                  type="text"
-                  value={newGarantia.nota || ''}
-                  onChange={e => setNewGarantia(prev => ({ ...prev, nota: e.target.value }))}
-                  placeholder="Observaciones..."
-                  className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-[#4A6FA5]"
-                />
-              </div>
-            </div>
-            <div className="grid grid-cols-3 gap-4 mb-3">
-              <div>
-                <label className="block text-xs text-gray-700 mb-1">Área Responsable</label>
-                <select
-                  value={newGarantia.area || ''}
-                  onChange={e => setNewGarantia(prev => ({ ...prev, area: e.target.value }))}
-                  className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-[#4A6FA5]"
+
+              {/* Footer */}
+              <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-gray-200 bg-gray-50 rounded-b-lg">
+                <button
+                  onClick={() => { setShowForm(false); setNewGarantia({}); }}
+                  className="px-4 py-1.5 bg-white border border-gray-300 text-gray-700 rounded text-xs hover:bg-gray-50"
                 >
-                  <option value="">Seleccionar...</option>
-                  <option value="Jurídico">Jurídico</option>
-                  <option value="Mesa de Control">Mesa de Control</option>
-                  <option value="Análisis">Análisis</option>
-                  <option value="General">General</option>
-                </select>
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleAddGarantia}
+                  className="px-4 py-1.5 btn-secondary-theme rounded text-xs"
+                >
+                  Registrar
+                </button>
               </div>
-              <div>
-                <label className="block text-xs text-gray-700 mb-1">Documento Adjunto</label>
-                <input
-                  type="text"
-                  value={newGarantia.documentoAdjunto || ''}
-                  readOnly
-                  placeholder="(sin adjunto)"
-                  className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded bg-gray-100"
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-gray-700 mb-1">Fase</label>
-                <input
-                  type="text"
-                  value={`Fase ${faseIdActual}`}
-                  disabled
-                  className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded bg-gray-100"
-                />
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <button onClick={handleAddGarantia} className="px-4 py-1.5 btn-secondary-theme rounded text-xs">Registrar</button>
-              <button onClick={() => { setShowForm(false); setNewGarantia({}); }} className="px-4 py-1.5 bg-white border border-gray-400 text-gray-700 rounded text-xs hover:bg-gray-50">Cancelar</button>
             </div>
           </div>
         )}

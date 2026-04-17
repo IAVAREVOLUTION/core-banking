@@ -6,6 +6,10 @@ interface MovimientosProps {
   onBack: () => void;
   mode: 'nuevo' | 'editar' | 'ver';
   clienteId?: string | number;
+  /** Saldo actual de la Cuenta Eje (desde formData del cliente) */
+  saldoCuentaEje?: string;
+  /** Callback para actualizar el saldo de la Cuenta Eje en el padre */
+  onSaldoChange?: (nuevoSaldo: string) => void;
 }
 
 interface MovimientoData {
@@ -14,11 +18,12 @@ interface MovimientoData {
   saldoInicial: string;
   tipoMovimiento: string;
   concepto: string;
+  referencia: string;
   montoMovimiento: string;
   saldoFinal: string;
 }
 
-export function Movimientos({ onBack, mode, clienteId }: MovimientosProps) {
+export function Movimientos({ onBack, mode, clienteId, saldoCuentaEje, onSaldoChange }: MovimientosProps) {
   const isView = mode === 'ver';
   const storageKey = `cliente_${clienteId || 'temp'}_movimientos`;
   
@@ -33,8 +38,16 @@ export function Movimientos({ onBack, mode, clienteId }: MovimientosProps) {
     return `${day}/${month}/${year} ${hours}:${minutes}:${seconds}`;
   };
 
+  const parseMoney = (val: string): number => {
+    if (!val) return 0;
+    return parseFloat(String(val).replace(/[^0-9.-]/g, '')) || 0;
+  };
+
+  const formatMoney = (val: number): string => {
+    return `$ ${val.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  };
+
   // Estado con persistencia vinculada al clienteId
-  // SIEMPRE inicia vacío. Datos se cargan solo desde sessionStorage vinculado al clienteId.
   const [movimientos, setMovimientos] = useState<MovimientoData[]>(() => {
     try {
       const saved = sessionStorage.getItem(storageKey);
@@ -49,22 +62,16 @@ export function Movimientos({ onBack, mode, clienteId }: MovimientosProps) {
   // Catálogos
   const tiposMovimiento = ['Cargo', 'Abono'];
   
-  // Conceptos disponibles según tipo de movimiento
-  const getConceptosDisponibles = (tipoMovimiento: string): string[] => {
-    if (tipoMovimiento === 'Cargo') {
-      return ['Interés Moratorio', 'Comisión'];
-    } else if (tipoMovimiento === 'Abono') {
-      return ['Transferencia', 'Interés', 'Capital'];
-    }
-    return [];
-  };
+  // Concepto fijo según spec
+  const CONCEPTO_FIJO = 'Cargo abierto';
 
   const [formularioMovimiento, setFormularioMovimiento] = useState<MovimientoData>({
     id: movimientos.length + 1,
     fechaHora: getCurrentDate(),
     saldoInicial: '',
     tipoMovimiento: '',
-    concepto: '',
+    concepto: CONCEPTO_FIJO,
+    referencia: '',
     montoMovimiento: '',
     saldoFinal: ''
   });
@@ -74,23 +81,10 @@ export function Movimientos({ onBack, mode, clienteId }: MovimientosProps) {
     sessionStorage.setItem(storageKey, JSON.stringify(movimientos));
   }, [movimientos, storageKey]);
 
-  // Resetear concepto cuando cambia tipo de movimiento
-  useEffect(() => {
-    if (formularioMovimiento.tipoMovimiento) {
-      const conceptosPermitidos = getConceptosDisponibles(formularioMovimiento.tipoMovimiento);
-      if (!conceptosPermitidos.includes(formularioMovimiento.concepto)) {
-        setFormularioMovimiento(prev => ({
-          ...prev,
-          concepto: ''
-        }));
-      }
-    }
-  }, [formularioMovimiento.tipoMovimiento]);
-
   // Calcular saldo final automáticamente
   useEffect(() => {
-    const saldoInicial = parseFloat(formularioMovimiento.saldoInicial.replace(/[^0-9.-]/g, '')) || 0;
-    const monto = parseFloat(formularioMovimiento.montoMovimiento.replace(/[^0-9.-]/g, '')) || 0;
+    const saldoInicial = parseMoney(formularioMovimiento.saldoInicial);
+    const monto = parseMoney(formularioMovimiento.montoMovimiento);
     
     if (formularioMovimiento.tipoMovimiento && monto > 0) {
       let saldoFinal = saldoInicial;
@@ -103,7 +97,7 @@ export function Movimientos({ onBack, mode, clienteId }: MovimientosProps) {
       
       setFormularioMovimiento(prev => ({
         ...prev,
-        saldoFinal: `$ ${saldoFinal.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+        saldoFinal: formatMoney(saldoFinal)
       }));
     }
   }, [formularioMovimiento.saldoInicial, formularioMovimiento.montoMovimiento, formularioMovimiento.tipoMovimiento]);
@@ -116,15 +110,21 @@ export function Movimientos({ onBack, mode, clienteId }: MovimientosProps) {
   };
 
   const handleNuevo = () => {
-    // Obtener último saldo final como saldo inicial del nuevo movimiento
-    const ultimoSaldo = movimientos.length > 0 ? movimientos[movimientos.length - 1].saldoFinal : '$ 0.00';
+    // Saldo inicial: último saldoFinal de movimientos, o saldoCuentaEje del cliente, o $ 0.00
+    let ultimoSaldo = '$ 0.00';
+    if (movimientos.length > 0) {
+      ultimoSaldo = movimientos[movimientos.length - 1].saldoFinal;
+    } else if (saldoCuentaEje && parseMoney(saldoCuentaEje) > 0) {
+      ultimoSaldo = formatMoney(parseMoney(saldoCuentaEje));
+    }
     
     setFormularioMovimiento({
       id: movimientos.length + 1,
       fechaHora: getCurrentDate(),
       saldoInicial: ultimoSaldo,
       tipoMovimiento: '',
-      concepto: '',
+      concepto: CONCEPTO_FIJO,
+      referencia: '',
       montoMovimiento: '',
       saldoFinal: ''
     });
@@ -150,8 +150,8 @@ export function Movimientos({ onBack, mode, clienteId }: MovimientosProps) {
       return;
     }
 
-    if (!formularioMovimiento.concepto) {
-      toast.error('El Concepto es obligatorio');
+    if (!formularioMovimiento.referencia || formularioMovimiento.referencia.trim() === '') {
+      toast.error('La Referencia es obligatoria');
       return;
     }
 
@@ -160,14 +160,41 @@ export function Movimientos({ onBack, mode, clienteId }: MovimientosProps) {
       return;
     }
 
-    const monto = parseFloat(formularioMovimiento.montoMovimiento.replace(/[^0-9.-]/g, ''));
-    if (monto <= 0) {
-      toast.error('El Monto del Movimiento debe ser mayor a 0');
+    const monto = parseMoney(formularioMovimiento.montoMovimiento);
+    if (isNaN(monto) || monto <= 0) {
+      toast.error('El Monto del Movimiento debe ser un número mayor a 0');
       return;
     }
 
+    const saldoInicial = parseMoney(formularioMovimiento.saldoInicial);
+    const saldoFinal = formularioMovimiento.tipoMovimiento === 'Cargo'
+      ? saldoInicial - monto
+      : saldoInicial + monto;
+
+    // Validar que el saldo final no sea negativo
+    if (saldoFinal < 0) {
+      toast.error('Saldo insuficiente', {
+        description: `El saldo final sería negativo (${formatMoney(saldoFinal)}). No se puede realizar este cargo.`
+      });
+      return;
+    }
+
+    // Construir el movimiento final con saldoFinal recalculado
+    const nuevoMovimiento: MovimientoData = {
+      ...formularioMovimiento,
+      concepto: CONCEPTO_FIJO,
+      saldoFinal: formatMoney(saldoFinal)
+    };
+
     // Agregar el movimiento
-    setMovimientos([...movimientos, formularioMovimiento]);
+    const nuevosMovimientos = [...movimientos, nuevoMovimiento];
+    setMovimientos(nuevosMovimientos);
+
+    // Actualizar el saldo de la Cuenta Eje en el padre
+    if (onSaldoChange) {
+      onSaldoChange(formatMoney(saldoFinal));
+    }
+
     setShowModal(false);
     toast.success('Movimiento agregado exitosamente');
   };
@@ -194,9 +221,26 @@ export function Movimientos({ onBack, mode, clienteId }: MovimientosProps) {
 
   return (
     <div className="bg-white">
-      {/* Encabezado institucional con fondo azul claro, borde izquierdo y botones */}
+      {/* Encabezado institucional */}
       <div className="bg-blue-50 border-l-4 border-primary-theme px-3 py-2 mb-3 flex items-center justify-between">
         <span className="text-sm font-medium text-gray-800">MOVIMIENTOS</span>
+        {!isView && (
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleNuevo}
+              className="px-3 py-1 bg-primary-theme text-white text-xs hover:bg-[#3E5C91] border border-[#3E5C91]"
+            >
+              Nuevo
+            </button>
+            <button
+              onClick={handleEliminar}
+              disabled={selectedMovimientos.length === 0}
+              className="px-3 py-1 bg-white border border-gray-400 text-gray-700 text-xs hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Eliminar
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Tabla de Movimientos */}
@@ -217,6 +261,7 @@ export function Movimientos({ onBack, mode, clienteId }: MovimientosProps) {
               <th className="px-3 py-2 text-left font-medium text-xs text-gray-800 border-r border-gray-300">Saldo Inicial</th>
               <th className="px-3 py-2 text-left font-medium text-xs text-gray-800 border-r border-gray-300">Tipo de Movimiento</th>
               <th className="px-3 py-2 text-left font-medium text-xs text-gray-800 border-r border-gray-300">Concepto</th>
+              <th className="px-3 py-2 text-left font-medium text-xs text-gray-800 border-r border-gray-300">Referencia</th>
               <th className="px-3 py-2 text-left font-medium text-xs text-gray-800 border-r border-gray-300">Monto del Movimiento</th>
               <th className="px-3 py-2 text-left font-medium text-xs text-gray-800">Saldo Final</th>
             </tr>
@@ -224,7 +269,7 @@ export function Movimientos({ onBack, mode, clienteId }: MovimientosProps) {
           <tbody className="bg-white">
             {movimientos.length === 0 ? (
               <tr>
-                <td colSpan={7} className="px-3 py-8 text-center text-xs text-gray-500">
+                <td colSpan={8} className="px-3 py-8 text-center text-xs text-gray-500">
                   No hay movimientos registrados. Haga clic en "Nuevo" para agregar uno.
                 </td>
               </tr>
@@ -248,6 +293,7 @@ export function Movimientos({ onBack, mode, clienteId }: MovimientosProps) {
                   <td className="px-3 py-2 text-xs text-gray-700 border-r border-gray-300">{movimiento.saldoInicial}</td>
                   <td className="px-3 py-2 text-xs text-gray-700 border-r border-gray-300">{movimiento.tipoMovimiento}</td>
                   <td className="px-3 py-2 text-xs text-gray-700 border-r border-gray-300">{movimiento.concepto}</td>
+                  <td className="px-3 py-2 text-xs text-gray-700 border-r border-gray-300">{movimiento.referencia}</td>
                   <td className="px-3 py-2 text-xs text-gray-700 border-r border-gray-300">{movimiento.montoMovimiento}</td>
                   <td className="px-3 py-2 text-xs text-gray-700">{movimiento.saldoFinal}</td>
                 </tr>
@@ -329,24 +375,32 @@ export function Movimientos({ onBack, mode, clienteId }: MovimientosProps) {
 
                     <div>
                       <label className="block text-xs text-gray-700 mb-1 font-medium">
-                        Concepto <span className="text-red-600">*</span>
+                        Concepto
                       </label>
-                      <select
-                        className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded bg-white"
-                        value={formularioMovimiento.concepto}
-                        onChange={(e) => handleFormFieldChange('concepto', e.target.value)}
-                        disabled={!formularioMovimiento.tipoMovimiento}
-                      >
-                        <option value="">Seleccione...</option>
-                        {getConceptosDisponibles(formularioMovimiento.tipoMovimiento).map(concepto => (
-                          <option key={concepto} value={concepto}>{concepto}</option>
-                        ))}
-                      </select>
+                      <input
+                        type="text"
+                        className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded bg-gray-100 text-gray-600"
+                        value={CONCEPTO_FIJO}
+                        readOnly
+                      />
                     </div>
                   </div>
 
-                  {/* Fila 3: Monto del Movimiento, Saldo Final */}
+                  {/* Fila 3: Referencia, Monto del Movimiento */}
                   <div className="grid grid-cols-2 gap-6">
+                    <div>
+                      <label className="block text-xs text-gray-700 mb-1 font-medium">
+                        Referencia <span className="text-red-600">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded bg-white"
+                        value={formularioMovimiento.referencia}
+                        onChange={(e) => handleFormFieldChange('referencia', e.target.value)}
+                        placeholder="Ej: REF-001, Transferencia..."
+                      />
+                    </div>
+
                     <div>
                       <label className="block text-xs text-gray-700 mb-1 font-medium">
                         Monto del Movimiento <span className="text-red-600">*</span>
@@ -359,18 +413,19 @@ export function Movimientos({ onBack, mode, clienteId }: MovimientosProps) {
                         placeholder="$ 0.00"
                       />
                     </div>
+                  </div>
 
-                    <div>
-                      <label className="block text-xs text-gray-700 mb-1 font-medium">
-                        Saldo Final (Calculado)
-                      </label>
-                      <input
-                        type="text"
-                        className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded bg-gray-100 text-gray-600"
-                        value={formularioMovimiento.saldoFinal}
-                        readOnly
-                      />
-                    </div>
+                  {/* Fila 4: Saldo Final (calculado) */}
+                  <div>
+                    <label className="block text-xs text-gray-700 mb-1 font-medium">
+                      Saldo Final (Calculado automáticamente)
+                    </label>
+                    <input
+                      type="text"
+                      className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded bg-gray-100 text-gray-600"
+                      value={formularioMovimiento.saldoFinal || '—'}
+                      readOnly
+                    />
                   </div>
                 </div>
               </div>

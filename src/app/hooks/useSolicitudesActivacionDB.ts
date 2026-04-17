@@ -47,7 +47,11 @@ export function parseMoney(val: unknown): number {
   if (typeof val === 'number') return val;
   const s = String(val).replace(/[$,\s]/g, '');
   const n = parseFloat(s);
-  return isNaN(n) ? 0 : n;
+  if (isNaN(n)) {
+    console.warn('[parseMoney] Failed to parse value:', val, '-> string:', String(val));
+    return 0;
+  }
+  return n;
 }
 
 export function parsePct(val: unknown): number {
@@ -89,6 +93,7 @@ export interface SolicitudActivacionDBRow {
   solicitud_type: string | null;
   solicitud_no_cuenta: string | null;
   solicitud_producto_id: string | null;
+  solicitud_fecha_inicio: string | null;
   solicitud_fecha_primera_aportacion: string | null;
   solicitud_monto: unknown;
   solicitud_moneda: string | null;
@@ -130,9 +135,8 @@ function mapRowToListItem(row: SolicitudActivacionDBRow): SolicitudActivacionLis
 
   // montoTransaccion is the first payment amount — never fall back to solicitud_monto (total)
   const rawMonto = parseMoney(header.montoTransaccion);
-  const montoStr = rawMonto > 0
-    ? rawMonto.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-    : '';
+  const montoStr = rawMonto > 0 ? rawMonto.toFixed(2) : '';
+  console.log('[DIAG mapRowToListItem] header.montoTransaccion:', header.montoTransaccion, '-> rawMonto:', rawMonto, '-> montoStr:', montoStr);
 
   return {
     id:              row.id,
@@ -160,9 +164,7 @@ function mapBaseRowToListItem(row: SolicitudActivacionBaseRow): SolicitudActivac
   const header = (d.header as Record<string, unknown>) || {};
 
   const rawMonto = parseMoney(header.montoTransaccion);
-  const montoStr = rawMonto > 0
-    ? rawMonto.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-    : '';
+  const montoStr = rawMonto > 0 ? rawMonto.toFixed(2) : '';
 
   return {
     id:              row.id,
@@ -199,6 +201,7 @@ function formToDBPayload(form: SolicitudActivacionFormData) {
     fecha_compromiso: form.fechaCompromiso ? parseDisplayToISO(form.fechaCompromiso) : null,
     estatus:          form.estatus || 'Pendiente',
     data: {
+      estatus:  form.estatus || 'Pendiente',
       header: {
         cliente:               form.cliente,
         numeroDocumento:       form.numeroDocumento,
@@ -212,6 +215,7 @@ function formToDBPayload(form: SolicitudActivacionFormData) {
         usuarioNota:           form.usuarioNota,
       },
       detail: {
+        tipoProducto:  'CAPITAL',
         claveProducto: form.detailClaveProducto,
         cantidad:      form.detailCantidad,
         monto:         form.detailMonto,
