@@ -28,6 +28,25 @@ const DB_AVAILABLE = true;
 const API_BASE = `${SUPABASE_URL}/functions/v1/make-server-7e2d13d9`;
 const SS_KEY = 'solicitudes_credito_db';
 
+// Catálogo de fases — traduce faseId a nombre legible
+const CAT_FASES_MAP: Record<string, string> = {
+  '1': 'Fase 1 — Recepción de Documentos',
+  '2': 'Fase 2 — Análisis de Crédito',
+  '3': 'Fase 3 — Comité de Crédito',
+  '4': 'Fase 4 — Formalización',
+  '5': 'Fase 5 — Desembolso',
+  'fase1': 'Fase 1 — Recepción de Documentos',
+  'fase2': 'Fase 2 — Análisis de Crédito',
+  'fase3': 'Fase 3 — Comité de Crédito',
+  'fase4': 'Fase 4 — Formalización',
+  'fase5': 'Fase 5 — Desembolso',
+};
+
+function getFaseDescripcion(faseId: string | null | undefined): string {
+  if (!faseId) return '';
+  return CAT_FASES_MAP[faseId] || faseId; // Si no está en el mapa, devolver tal cual
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // UUID + date helpers
 // ═══════════════════════════════════════════════════════════════════
@@ -171,7 +190,7 @@ function mapRowToListItem(row: SolicitudDBRow): SolicitudListItem {
     montoSolicitado: parseMoney(row.monto_sol),
     montoAutorizado: parseMoney(row.monto_aut),
     sucursal,
-    faseDescripcion: hdr.descripcion_fase || d.descripcionFase || row.fases || '',
+    faseDescripcion: hdr.descripcion_fase || d.descripcionFase || getFaseDescripcion(row.fases) || '',
     estatusSolicitud: row.estatus_sol || hdr.estatus || d.estatusSolicitud || 'Pendiente',
     // Extra fields for form reconstruction
     _dbId: row.id,
@@ -424,7 +443,7 @@ function formToDBPayload(form: SolicitudFormData, allSubtabs?: Record<string, an
     : null;
 
   return {
-    type: 'Solicitud',
+    type: 'Solicitudes',
     no_sol: form.noSol || '',
     no_cuenta: '',
     no_referenc1: noReferenc1,
@@ -793,28 +812,10 @@ export async function avanzarFaseSolicitudDB(
   if (!DB_AVAILABLE) return { ok: false, error: 'DB no disponible' };
   if (!UUID_RE.test(id)) return { ok: false, error: 'ID inválido (no UUID)' };
 
-  // Intento 1: Endpoint dedicado /avanzarFase
-  try {
-    const payload: Record<string, any> = {
-      nuevaFaseId,
-      nuevaDescripcionFase,
-      nuevaArea,
-    };
-    if (nuevoEstatus) payload.nuevoEstatus = nuevoEstatus;
-    const res = await fetch(`${API_BASE}/solicitudes-credito/${id}/avanzarFase`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${publicAnonKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    if (res.ok) {
-      console.log('[SolicDB] avanzarFase POST OK — faseId:', nuevaFaseId);
-      return { ok: true };
-    }
-  } catch {
-    // fallthrough
-  }
-
-  // Fallback: reutilizar updateFaseSolicitudDB
+  // Usar updateFaseSolicitudDB directamente — el RPC update_fase_solicitud hace JSONB merge
+  // y NO toca la columna data, por lo que preserva los datos de banca móvil.
+  // El endpoint /avanzarFase del Edge Function fue eliminado porque su comportamiento
+  // server-side sobre la columna data no está garantizado.
   return updateFaseSolicitudDB(id, nuevaFaseId, nuevaDescripcionFase, nuevaArea, nuevoEstatus);
 }
 
@@ -1100,10 +1101,13 @@ export function useSolicitudesDB(active: boolean) {
 
       setFetchMethod(method);
       setDbRowCount(rows.length);
-      console.log(`[SolicDB] === RESULTADO: method=${method}, rows=${rows.length} ===`);
 
-      if (rows.length > 0) {
-        const mapped = rows.map(mapRowToListItem);
+      // Filtrar solo registros de tipo 'Solicitudes' o 'Solicitud' — excluye captación, cuentas eje, etc.
+      const solicitudesRows = rows.filter(r => r.type === 'Solicitudes' || r.type === 'Solicitud');
+      console.log(`[SolicDB] === RESULTADO: method=${method}, rows=${rows.length}, solicitudes=${solicitudesRows.length} ===`);
+
+      if (solicitudesRows.length > 0) {
+        const mapped = solicitudesRows.map(mapRowToListItem);
         setSolicitudes(mapped);
         saveToSession(mapped);
         setBackendStatus('ready');

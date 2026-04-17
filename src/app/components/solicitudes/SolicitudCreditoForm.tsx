@@ -1245,7 +1245,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
     //  3. Activar           (estatus='Pagado', _fromActivar=true)    → avanzar/finalizar, 'Aprobado'
     //
     const estatusNorm = (savedItem.estatus || '').toLowerCase().trim();
-    const esPagado    = estatusNorm === 'pagado';
+    const esPagado    = estatusNorm === 'pagado' || estatusNorm === 'aprobado';
     const fromActivar = !!savedItem._fromActivar;
 
     console.log('[PROMPT_IA] handleActivacionSaved - estatus:', savedItem.estatus, '| esPagado:', esPagado, '| fromActivar:', fromActivar);
@@ -1342,6 +1342,25 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
       // ── "Activar" → finalizar fase actual, estatusSolicitud: 'Aprobado' ──
       console.log('[PROMPT_IA] accion=activar_solicitud | faseAntes=', faseDebugBefore);
       await avanzarFase('Aprobado', 'activar_solicitud');
+
+      // Actualizar J_CUENTAS_CORP_CLIENTES con los 4 estatus de activación
+      const UUID_RE_ACT = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      const actDbId = String(storageId);
+      if (storageId !== 'new' && UUID_RE_ACT.test(actDbId)) {
+        try {
+          const actResult = await activarCuentaDB(actDbId, {
+            estatus_sol:  'Autorizada',
+            estatus_cuen: 'Activa',
+            estatus_disp: 'Pagado',
+            estatus_cart: 'Activa',
+          });
+          if (!actResult.ok) {
+            console.warn('[PROMPT_IA] activarCuentaDB (modal path) falló:', actResult.error);
+          }
+        } catch (err) {
+          console.error('[PROMPT_IA] Error en activarCuentaDB (modal path):', err);
+        }
+      }
 
     } else if (estatusNorm === 'enviada' && !fromActivar) {
       // ── "Enviar Solicitud" → avanzar a siguiente fase, estatusSolicitud: 'En proceso' ──
@@ -1537,7 +1556,9 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
     const allSubtabs: Record<string, any> = {};
     const subtabKeys = ['terminos', 'simulacion', 'documentos', 'garantias', 'comisiones', 'autorizaciones', 'notas', 'partesRelacionadas', '_originalData'];
     for (const key of subtabKeys) {
-      const data = loadFromSession(storageId, key);
+      // _originalData puede haber sido limpiado de session por commitAndClearSession en el save anterior;
+      // usar savedStore como fallback para no perder los datos de banca móvil al hacer deep merge
+      const data = loadFromSession(storageId, key) ?? loadFromSavedStore(storageId, key);
       if (data) allSubtabs[key] = data;
     }
 
@@ -2275,6 +2296,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
                     lineaProducto={formData.lineaProducto}
                     tipoProducto={formData.tipoProducto}
                     calendarioAportaciones={formData._calendarioAportaciones}
+                    montoAutorizado={typeof formData.montoAutorizado === 'number' ? formData.montoAutorizado : parseFloat(String(formData.montoAutorizado || '0').replace(/[^0-9.-]/g, ''))}
                   />
                 )}
                 {sec.id === 'expediente' && (
@@ -2332,6 +2354,9 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
       {showActivacionModal ? (
         <>
           {console.log('[DIAG] Renderizando SolicitudActivacionModal, storageId=', storageId)}
+          {console.log('[DIAG] activacionForThisSol passed to modal:', activacionForThisSol)}
+          {console.log('[DIAG] activacionForThisSol.montoTransaccion:', activacionForThisSol?.montoTransaccion)}
+          {console.log('[DIAG] activacionForThisSol._raw:', activacionForThisSol?._raw)}
           <SolicitudActivacionModal
             originacionSolicitudId={String(storageId)}
             seed={(() => {
@@ -2364,19 +2389,8 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
               const numPeriodos = calcularNumeroPeriodos(plazoMeses, frecuencia);
               // Fallback solo si realmente no hay simulación (registro sin tabla de amortización)
               const pagoPeriodo = primerPago > 0 ? primerPago : (montoTotal > 0 && numPeriodos > 0 ? montoTotal / numPeriodos : 0);
-              // Fecha Compromiso = fecha del PRIMER PAGO (fechaInicio + 1 periodo)
-              // Para crédito: fechaPrimerPago ya es la fecha real del primer pago → usar directo
-              // Para captación: fechaPrimeraAportacion = fechaInicio (inicio), no primer pago → sumar intervalo
-              const esCapt = (formData.lineaProducto || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').includes('captac');
-              let fechaCompromiso: string;
-              if (!esCapt && _t.fechaPrimerPago) {
-                // Crédito con fecha de primer pago explícita → usarla directamente
-                fechaCompromiso = _t.fechaPrimerPago;
-              } else {
-                // Captación (fechaPrimeraAportacion = fechaInicio) o fallback → calcular primer pago
-                const fechaBase = _t.fechaPrimeraAportacion || _t.fechaPrimerPago || formData.fechaInicio || '';
-                fechaCompromiso = calcularFechaPrimerPago(fechaBase, frecuencia);
-              }
+              // Fecha Compromiso = Fecha Inicio de la solicitud (spec: debe coincidir con fecha_inicio)
+              const fechaCompromiso: string = formData.fechaInicio || '';
               return {
                 cliente: [formData.nombrePersona, formData.apellidoPaternoPersona, formData.apellidoMaternoPersona]
                   .filter(Boolean).join(' ').trim(),

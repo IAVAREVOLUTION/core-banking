@@ -17,6 +17,12 @@ interface SolicitudCreditoListProps {
   cotizacionParaSolicitud?: any;
   /** Callback para limpiar el dato de cotización después de consumirlo */
   onCotizacionConsumed?: () => void;
+  /** Deep link: abrir directamente una solicitud por dbId */
+  solicitudDeepLink?: { dbId: string; noSol: string; fromClienteId?: string } | null;
+  /** Callback para limpiar el deep link después de usarlo */
+  onSolicitudDeepLinkConsumed?: () => void;
+  /** Callback para regresar al cliente después de ver una solicitud */
+  onBackToCliente?: () => void;
   /** Si se pasa, filtra la lista para mostrar solo las solicitudes de este cliente */
   clienteIdFilter?: string;
   /** Datos del cliente para pre-llenar automáticamente una nueva solicitud */
@@ -241,7 +247,15 @@ export function preloadSubtabsFromDBData(storageId: number | string, d: Record<s
   }
 }
 
-export function SolicitudCreditoList({ cotizacionParaSolicitud, onCotizacionConsumed, clienteIdFilter, initialClienteData }: SolicitudCreditoListProps = {}) {
+export function SolicitudCreditoList({ 
+  cotizacionParaSolicitud, 
+  onCotizacionConsumed,
+  solicitudDeepLink,
+  onSolicitudDeepLinkConsumed,
+  onBackToCliente,
+  clienteIdFilter, 
+  initialClienteData 
+}: SolicitudCreditoListProps = {}) {
   const [view, setView] = useState<ViewState>({ type: 'list' });
   const [solicitudes, setSolicitudes] = useState<SolicitudListItem[]>(() =>
     [...SOLICITUDES_LISTA].sort((a, b) => parseDate(b.fechaSolicitud).getTime() - parseDate(a.fechaSolicitud).getTime())
@@ -301,6 +315,39 @@ export function SolicitudCreditoList({ cotizacionParaSolicitud, onCotizacionCons
 
   const formatCurrency = (value: number) => `$${value.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
+  // ─── Flujo "Ver solicitud desde Clientes" — abrir solicitud existente por dbId ───
+  const [cameFromCliente, setCameFromCliente] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!solicitudDeepLink || !solicitudesDB.length) return;
+    
+    const targetDbId = solicitudDeepLink.dbId;
+    const targetNoSol = solicitudDeepLink.noSol;
+    const fromCli = solicitudDeepLink.fromClienteId || null;
+    console.log(`[SolicList] DeepLink → dbId=${targetDbId}, noSol=${targetNoSol}, fromClienteId=${fromCli}, buscando en ${solicitudesDB.length} solicitudes...`);
+    
+    // Guardar el clienteId para saber si venimos del módulo Clientes
+    if (fromCli) {
+      setCameFromCliente(fromCli);
+    }
+    
+    // Buscar la solicitud en la lista cargada desde DB
+    const found = solicitudesDB.find(s => (s as any)._dbId === targetDbId || s.noSol === targetNoSol);
+    
+    if (found) {
+      console.log(`[SolicList] DeepLink → ENCONTRADA: ${found.noSol}`);
+      // Abrir en modo 'ver'
+      const sid = found.id;
+      setView({ type: 'form', mode: 'ver', solicitudId: sid, dbId: (found as any)._dbId || String(sid) });
+      // Limpiar deep link
+      onSolicitudDeepLinkConsumed?.();
+    } else {
+      console.warn(`[SolicList] DeepLink → NO ENCONTRADA: dbId=${targetDbId}`);
+      // Limpiar de todas formas para evitar loop
+      onSolicitudDeepLinkConsumed?.();
+    }
+  }, [solicitudDeepLink, solicitudesDB, onSolicitudDeepLinkConsumed]);
+
   // ─── Flujo "Crear desde Cotización" — spec solicitudes-financieras §1–§4 ───
   useEffect(() => {
     if (!cotizacionParaSolicitud) return;
@@ -347,6 +394,7 @@ export function SolicitudCreditoList({ cotizacionParaSolicitud, onCotizacionCons
       descripcionFase: 'Fase 1 — Recepción de Documentos',
       area: 'Mesa de Control',
       estatusSolicitud: 'En proceso',
+      _clienteId: cp._clienteId || '',
       // Fechas vigencia
       fechaInicio,
       fechaFin,
@@ -604,7 +652,15 @@ export function SolicitudCreditoList({ cotizacionParaSolicitud, onCotizacionCons
     }
     setView({ type: 'form', mode: 'ver', solicitudId: sid, dbId: (s as any)._dbId || String(s.id) });
   };
-  const handleBack = () => setView({ type: 'list' });
+  const handleBack = () => {
+    // Si venimos del módulo Clientes, regressionar allá
+    if (cameFromCliente && onBackToCliente) {
+      onBackToCliente();
+      setCameFromCliente(null);
+    } else {
+      setView({ type: 'list' });
+    }
+  };
 
   const handleSave = async (data: any) => {
     const montoSol = typeof data.montoSolicitado === 'string' ? parseFloat(data.montoSolicitado.replace(/[^0-9.-]/g, '')) || 0 : (data.montoSolicitado || 0);
