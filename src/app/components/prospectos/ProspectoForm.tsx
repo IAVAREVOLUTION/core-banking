@@ -907,6 +907,24 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
   };
 
   const handleVerPdfSic = (consulta: any) => {
+    // ── Validar campos obligatorios antes de generar el PDF ──
+    const errores: string[] = [];
+    const nombreCompleto = `${formData.nombre || ''} ${formData.apellidoPaterno || ''} ${formData.apellidoMaterno || ''}`.trim();
+    if (!nombreCompleto) errores.push('Nombre completo del prospecto');
+    if (!formData.rfc || formData.rfc.trim() === '') errores.push('RFC');
+    if (!formData.curp || formData.curp.trim() === '') errores.push('CURP');
+    if (!formData.fechaNacimiento || formData.fechaNacimiento.trim() === '') errores.push('Fecha de nacimiento');
+    const idProspecto = formData.idProspecto || prospecto?.idProspecto || '';
+    if (!idProspecto) errores.push('Número de solicitud (ID Prospecto)');
+
+    if (errores.length > 0) {
+      toast.error('Datos incompletos para generar el reporte', {
+        description: `Los siguientes campos obligatorios están vacíos: ${errores.join(', ')}. Complete los datos del prospecto antes de generar el reporte SIC.`,
+        duration: 8000,
+      });
+      return;
+    }
+
     setConsultaSeleccionada(consulta);
     setShowPdfSicModal(true);
   };
@@ -2677,7 +2695,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
               </button>
             </div>
 
-            {/* PDF Viewer - Simulación de Reporte SIC */}
+            {/* PDF Viewer - Reporte SIC con datos del prospecto */}
             <div className="flex-1 overflow-auto p-6 bg-white">
               <div className="max-w-4xl mx-auto bg-white border border-gray-300 shadow-lg p-8">
                 {/* Header del Reporte */}
@@ -2690,7 +2708,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
                     </div>
                     <div className="text-right">
                       <div className="text-xs text-gray-600">
-                        <p>Folio de Consulta: <span className="font-semibold">BC-2024-00{consultaSeleccionada.id}7892</span></p>
+                        <p>Folio de Consulta: <span className="font-semibold">BC-{new Date().getFullYear()}-{String(consultaSeleccionada.id).padStart(6, '0')}</span></p>
                         <p>Fecha: {consultaSeleccionada.fechaHora}</p>
                         <p>Usuario: {consultaSeleccionada.usuario}</p>
                       </div>
@@ -2698,171 +2716,214 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
                   </div>
                 </div>
 
-                {/* Datos del Consultado */}
-                <div className="mb-6">
-                  <h2 className="text-sm font-bold text-gray-800 bg-gray-200 px-3 py-2 mb-3">DATOS DEL CONSULTADO</h2>
-                  <div className="grid grid-cols-2 gap-4 text-xs">
-                    <div>
-                      <p className="text-gray-600">Nombre:</p>
-                      <p className="font-semibold">JUAN CARLOS PÉREZ GARCÍA</p>
-                    </div>
-                    <div>
-                      <p className="text-gray-600">RFC:</p>
-                      <p className="font-semibold">PEGJ850315HDF</p>
-                    </div>
-                    <div>
-                      <p className="text-gray-600">CURP:</p>
-                      <p className="font-semibold">PEGJ850315HDFRRS08</p>
-                    </div>
-                    <div>
-                      <p className="text-gray-600">Fecha de Nacimiento:</p>
-                      <p className="font-semibold">15/03/1985</p>
-                    </div>
-                    <div>
-                      <p className="text-gray-600">Dirección:</p>
-                      <p className="font-semibold">AV. INSURGENTES SUR 1234, COL. DEL VALLE</p>
-                    </div>
-                    <div>
-                      <p className="text-gray-600">Estado:</p>
-                      <p className="font-semibold">CIUDAD DE MÉXICO</p>
-                    </div>
-                  </div>
-                </div>
+                {/* Datos del Prospecto — desde formData y prospecto prop */}
+                {(() => {
+                  const nombreCompleto = `${formData.nombre || ''} ${formData.apellidoPaterno || ''} ${formData.apellidoMaterno || ''}`.trim().toUpperCase();
+                  const rfc = formData.rfc || prospecto?.rfc || 'N/A';
+                  const curp = formData.curp || prospecto?.curp || 'N/A';
+                  const fechaNacimiento = formData.fechaNacimiento || prospecto?.fechaNacimiento || prospecto?.fechaOriginacion || 'N/A';
+                  const direccion = formData.direccion || prospecto?.direccion || 'N/A';
+                  const entidad = formData.entidadFederativa || prospecto?.entidadFederativa || prospecto?.sucursal || 'N/A';
+                  const idProspecto = formData.idProspecto || prospecto?.idProspecto || 'N/A';
+                  const fechaCaptura = prospecto?.fechaOriginacion || formData.fechaNacimiento || 'N/A';
+                  // Datos de cotización/solicitud
+                  const cotizacion = cotizaciones.length > 0 ? cotizaciones[0] : null;
+                  const productoSolicitado = cotizacion?.producto || 'N/A';
+                  const montoSolicitado = cotizacion?.montoSolicitado || 'N/A';
 
-                {/* Score Crediticio */}
-                <div className="mb-6">
-                  <h2 className="text-sm font-bold text-gray-800 bg-gray-200 px-3 py-2 mb-3">SCORE CREDITICIO</h2>
-                  <div className="flex items-center gap-8">
-                    <div className="text-center">
-                      <div className="text-4xl font-bold text-green-600">720</div>
-                      <p className="text-xs text-gray-600 mt-1">Puntuación</p>
-                    </div>
-                    <div className="flex-1">
-                      <div className="bg-gray-200 h-4 rounded-full overflow-hidden">
-                        <div className="bg-green-500 h-full" style={{ width: '72%' }}></div>
+                  return (
+                    <>
+                      {/* Datos de la Solicitud */}
+                      <div className="mb-6">
+                        <h2 className="text-sm font-bold text-gray-800 bg-gray-200 px-3 py-2 mb-3">DATOS DE LA SOLICITUD</h2>
+                        <div className="grid grid-cols-2 gap-4 text-xs">
+                          <div>
+                            <p className="text-gray-600">No. Solicitud:</p>
+                            <p className="font-semibold">{idProspecto}</p>
+                          </div>
+                          <div>
+                            <p className="text-gray-600">Fecha de Captura:</p>
+                            <p className="font-semibold">{fechaCaptura}</p>
+                          </div>
+                          <div>
+                            <p className="text-gray-600">Producto Solicitado:</p>
+                            <p className="font-semibold">{productoSolicitado}</p>
+                          </div>
+                          <div>
+                            <p className="text-gray-600">Monto Solicitado:</p>
+                            <p className="font-semibold">{montoSolicitado}</p>
+                          </div>
+                        </div>
                       </div>
-                      <div className="flex justify-between text-xs text-gray-600 mt-1">
-                        <span>300</span>
-                        <span>Bueno</span>
-                        <span>850</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
 
-                {/* Resumen de Créditos */}
-                <div className="mb-6">
-                  <h2 className="text-sm font-bold text-gray-800 bg-gray-200 px-3 py-2 mb-3">RESUMEN DE CRÉDITOS</h2>
-                  <div className="grid grid-cols-3 gap-4 text-xs">
-                    <div className="border border-gray-300 p-3 text-center">
-                      <p className="text-gray-600 mb-1">Cuentas Activas</p>
-                      <p className="text-2xl font-bold text-blue-600">5</p>
-                    </div>
-                    <div className="border border-gray-300 p-3 text-center">
-                      <p className="text-gray-600 mb-1">Saldo Total</p>
-                      <p className="text-2xl font-bold text-orange-600">$284,500</p>
-                    </div>
-                    <div className="border border-gray-300 p-3 text-center">
-                      <p className="text-gray-600 mb-1">Créditos Cerrados</p>
-                      <p className="text-2xl font-bold text-gray-600">8</p>
-                    </div>
-                  </div>
-                </div>
+                      {/* Datos del Consultado */}
+                      <div className="mb-6">
+                        <h2 className="text-sm font-bold text-gray-800 bg-gray-200 px-3 py-2 mb-3">DATOS DEL CONSULTADO</h2>
+                        <div className="grid grid-cols-2 gap-4 text-xs">
+                          <div>
+                            <p className="text-gray-600">Nombre:</p>
+                            <p className="font-semibold">{nombreCompleto || 'N/A'}</p>
+                          </div>
+                          <div>
+                            <p className="text-gray-600">RFC:</p>
+                            <p className="font-semibold">{rfc}</p>
+                          </div>
+                          <div>
+                            <p className="text-gray-600">CURP:</p>
+                            <p className="font-semibold">{curp}</p>
+                          </div>
+                          <div>
+                            <p className="text-gray-600">Fecha de Nacimiento:</p>
+                            <p className="font-semibold">{fechaNacimiento}</p>
+                          </div>
+                          <div className="col-span-2">
+                            <p className="text-gray-600">Dirección:</p>
+                            <p className="font-semibold">{direccion}</p>
+                          </div>
+                          <div>
+                            <p className="text-gray-600">Estado:</p>
+                            <p className="font-semibold">{entidad}</p>
+                          </div>
+                        </div>
+                      </div>
 
-                {/* Detalle de Créditos */}
-                <div className="mb-6">
-                  <h2 className="text-sm font-bold text-gray-800 bg-gray-200 px-3 py-2 mb-3">DETALLE DE CRÉDITOS VIGENTES</h2>
-                  <table className="w-full text-xs border border-gray-300">
-                    <thead className="bg-gray-100">
-                      <tr>
-                        <th className="border border-gray-300 px-2 py-1 text-left">Acreedor</th>
-                        <th className="border border-gray-300 px-2 py-1 text-left">Tipo</th>
-                        <th className="border border-gray-300 px-2 py-1 text-right">Saldo Actual</th>
-                        <th className="border border-gray-300 px-2 py-1 text-center">Estatus</th>
-                        <th className="border border-gray-300 px-2 py-1 text-center">MOP</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr>
-                        <td className="border border-gray-300 px-2 py-1">BANCO SANTANDER</td>
-                        <td className="border border-gray-300 px-2 py-1">Tarjeta de Crédito</td>
-                        <td className="border border-gray-300 px-2 py-1 text-right">$45,200</td>
-                        <td className="border border-gray-300 px-2 py-1 text-center"><span className="text-green-600 font-semibold">AL CORRIENTE</span></td>
-                        <td className="border border-gray-300 px-2 py-1 text-center">01</td>
-                      </tr>
-                      <tr>
-                        <td className="border border-gray-300 px-2 py-1">BBVA BANCOMER</td>
-                        <td className="border border-gray-300 px-2 py-1">Crédito Automotriz</td>
-                        <td className="border border-gray-300 px-2 py-1 text-right">$185,300</td>
-                        <td className="border border-gray-300 px-2 py-1 text-center"><span className="text-green-600 font-semibold">AL CORRIENTE</span></td>
-                        <td className="border border-gray-300 px-2 py-1 text-center">01</td>
-                      </tr>
-                      <tr>
-                        <td className="border border-gray-300 px-2 py-1">LIVERPOOL</td>
-                        <td className="border border-gray-300 px-2 py-1">Tarjeta de Crédito</td>
-                        <td className="border border-gray-300 px-2 py-1 text-right">$12,500</td>
-                        <td className="border border-gray-300 px-2 py-1 text-center"><span className="text-green-600 font-semibold">AL CORRIENTE</span></td>
-                        <td className="border border-gray-300 px-2 py-1 text-center">01</td>
-                      </tr>
-                      <tr>
-                        <td className="border border-gray-300 px-2 py-1">SCOTIABANK</td>
-                        <td className="border border-gray-300 px-2 py-1">Crédito Personal</td>
-                        <td className="border border-gray-300 px-2 py-1 text-right">$35,000</td>
-                        <td className="border border-gray-300 px-2 py-1 text-center"><span className="text-green-600 font-semibold">AL CORRIENTE</span></td>
-                        <td className="border border-gray-300 px-2 py-1 text-center">01</td>
-                      </tr>
-                      <tr>
-                        <td className="border border-gray-300 px-2 py-1">BANORTE</td>
-                        <td className="border border-gray-300 px-2 py-1">Tarjeta de Crédito</td>
-                        <td className="border border-gray-300 px-2 py-1 text-right">$6,500</td>
-                        <td className="border border-gray-300 px-2 py-1 text-center"><span className="text-green-600 font-semibold">AL CORRIENTE</span></td>
-                        <td className="border border-gray-300 px-2 py-1 text-center">01</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                  <p className="text-xs text-gray-500 mt-2">
-                    <strong>MOP:</strong> Manera de Pago (01 = Al día, 02 = 1-29 días vencido, 03 = 30-59 días vencido, etc.)
-                  </p>
-                </div>
+                      {/* Score Crediticio */}
+                      <div className="mb-6">
+                        <h2 className="text-sm font-bold text-gray-800 bg-gray-200 px-3 py-2 mb-3">SCORE CREDITICIO</h2>
+                        <div className="flex items-center gap-8">
+                          <div className="text-center">
+                            <div className="text-4xl font-bold text-green-600">720</div>
+                            <p className="text-xs text-gray-600 mt-1">Puntuación</p>
+                          </div>
+                          <div className="flex-1">
+                            <div className="bg-gray-200 h-4 rounded-full overflow-hidden">
+                              <div className="bg-green-500 h-full" style={{ width: '72%' }}></div>
+                            </div>
+                            <div className="flex justify-between text-xs text-gray-600 mt-1">
+                              <span>300</span>
+                              <span>Bueno</span>
+                              <span>850</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
 
-                {/* Consultas Recientes */}
-                <div className="mb-6">
-                  <h2 className="text-sm font-bold text-gray-800 bg-gray-200 px-3 py-2 mb-3">CONSULTAS RECIENTES (ÚLTIMOS 24 MESES)</h2>
-                  <div className="text-xs">
-                    <p className="mb-2"><span className="font-semibold">Total de consultas:</span> 8</p>
-                    <div className="border border-gray-300">
-                      <div className="bg-gray-100 border-b border-gray-300 px-2 py-1 flex">
-                        <span className="w-1/3 font-semibold">Fecha</span>
-                        <span className="w-1/3 font-semibold">Otorgante</span>
-                        <span className="w-1/3 font-semibold">Tipo</span>
+                      {/* Resumen de Créditos */}
+                      <div className="mb-6">
+                        <h2 className="text-sm font-bold text-gray-800 bg-gray-200 px-3 py-2 mb-3">RESUMEN DE CRÉDITOS</h2>
+                        <div className="grid grid-cols-3 gap-4 text-xs">
+                          <div className="border border-gray-300 p-3 text-center">
+                            <p className="text-gray-600 mb-1">Cuentas Activas</p>
+                            <p className="text-2xl font-bold text-blue-600">5</p>
+                          </div>
+                          <div className="border border-gray-300 p-3 text-center">
+                            <p className="text-gray-600 mb-1">Saldo Total</p>
+                            <p className="text-2xl font-bold text-orange-600">$284,500</p>
+                          </div>
+                          <div className="border border-gray-300 p-3 text-center">
+                            <p className="text-gray-600 mb-1">Créditos Cerrados</p>
+                            <p className="text-2xl font-bold text-gray-600">8</p>
+                          </div>
+                        </div>
                       </div>
-                      <div className="px-2 py-1 border-b border-gray-200 flex">
-                        <span className="w-1/3">30/01/2026</span>
-                        <span className="w-1/3">BANCO AZTECA</span>
-                        <span className="w-1/3">Tarjeta de Crédito</span>
-                      </div>
-                      <div className="px-2 py-1 border-b border-gray-200 flex">
-                        <span className="w-1/3">15/12/2025</span>
-                        <span className="w-1/3">HSBC</span>
-                        <span className="w-1/3">Crédito Personal</span>
-                      </div>
-                      <div className="px-2 py-1 flex">
-                        <span className="w-1/3">08/10/2025</span>
-                        <span className="w-1/3">COPPEL</span>
-                        <span className="w-1/3">Crédito de Nómina</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
 
-                {/* Footer */}
-                <div className="border-t-2 border-gray-800 pt-4 mt-8">
-                  <p className="text-xs text-gray-500 text-center">
-                    Este reporte es confidencial y fue generado exclusivamente para {consultaSeleccionada.usuario}<br />
-                    Buró de Crédito - Sociedad de Información Crediticia, S.A. de C.V.<br />
-                    Fecha de generación: {new Date().toLocaleString('es-MX')}
-                  </p>
-                </div>
+                      {/* Detalle de Créditos */}
+                      <div className="mb-6">
+                        <h2 className="text-sm font-bold text-gray-800 bg-gray-200 px-3 py-2 mb-3">DETALLE DE CRÉDITOS VIGENTES</h2>
+                        <table className="w-full text-xs border border-gray-300">
+                          <thead className="bg-gray-100">
+                            <tr>
+                              <th className="border border-gray-300 px-2 py-1 text-left">Acreedor</th>
+                              <th className="border border-gray-300 px-2 py-1 text-left">Tipo</th>
+                              <th className="border border-gray-300 px-2 py-1 text-right">Saldo Actual</th>
+                              <th className="border border-gray-300 px-2 py-1 text-center">Estatus</th>
+                              <th className="border border-gray-300 px-2 py-1 text-center">MOP</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <tr>
+                              <td className="border border-gray-300 px-2 py-1">BANCO SANTANDER</td>
+                              <td className="border border-gray-300 px-2 py-1">Tarjeta de Crédito</td>
+                              <td className="border border-gray-300 px-2 py-1 text-right">$45,200</td>
+                              <td className="border border-gray-300 px-2 py-1 text-center"><span className="text-green-600 font-semibold">AL CORRIENTE</span></td>
+                              <td className="border border-gray-300 px-2 py-1 text-center">01</td>
+                            </tr>
+                            <tr>
+                              <td className="border border-gray-300 px-2 py-1">BBVA BANCOMER</td>
+                              <td className="border border-gray-300 px-2 py-1">Crédito Automotriz</td>
+                              <td className="border border-gray-300 px-2 py-1 text-right">$185,300</td>
+                              <td className="border border-gray-300 px-2 py-1 text-center"><span className="text-green-600 font-semibold">AL CORRIENTE</span></td>
+                              <td className="border border-gray-300 px-2 py-1 text-center">01</td>
+                            </tr>
+                            <tr>
+                              <td className="border border-gray-300 px-2 py-1">LIVERPOOL</td>
+                              <td className="border border-gray-300 px-2 py-1">Tarjeta de Crédito</td>
+                              <td className="border border-gray-300 px-2 py-1 text-right">$12,500</td>
+                              <td className="border border-gray-300 px-2 py-1 text-center"><span className="text-green-600 font-semibold">AL CORRIENTE</span></td>
+                              <td className="border border-gray-300 px-2 py-1 text-center">01</td>
+                            </tr>
+                            <tr>
+                              <td className="border border-gray-300 px-2 py-1">SCOTIABANK</td>
+                              <td className="border border-gray-300 px-2 py-1">Crédito Personal</td>
+                              <td className="border border-gray-300 px-2 py-1 text-right">$35,000</td>
+                              <td className="border border-gray-300 px-2 py-1 text-center"><span className="text-green-600 font-semibold">AL CORRIENTE</span></td>
+                              <td className="border border-gray-300 px-2 py-1 text-center">01</td>
+                            </tr>
+                            <tr>
+                              <td className="border border-gray-300 px-2 py-1">BANORTE</td>
+                              <td className="border border-gray-300 px-2 py-1">Tarjeta de Crédito</td>
+                              <td className="border border-gray-300 px-2 py-1 text-right">$6,500</td>
+                              <td className="border border-gray-300 px-2 py-1 text-center"><span className="text-green-600 font-semibold">AL CORRIENTE</span></td>
+                              <td className="border border-gray-300 px-2 py-1 text-center">01</td>
+                            </tr>
+                          </tbody>
+                        </table>
+                        <p className="text-xs text-gray-500 mt-2">
+                          <strong>MOP:</strong> Manera de Pago (01 = Al día, 02 = 1-29 días vencido, 03 = 30-59 días vencido, etc.)
+                        </p>
+                      </div>
+
+                      {/* Consultas Recientes */}
+                      <div className="mb-6">
+                        <h2 className="text-sm font-bold text-gray-800 bg-gray-200 px-3 py-2 mb-3">CONSULTAS RECIENTES (ÚLTIMOS 24 MESES)</h2>
+                        <div className="text-xs">
+                          <p className="mb-2"><span className="font-semibold">Total de consultas:</span> 8</p>
+                          <div className="border border-gray-300">
+                            <div className="bg-gray-100 border-b border-gray-300 px-2 py-1 flex">
+                              <span className="w-1/3 font-semibold">Fecha</span>
+                              <span className="w-1/3 font-semibold">Otorgante</span>
+                              <span className="w-1/3 font-semibold">Tipo</span>
+                            </div>
+                            <div className="px-2 py-1 border-b border-gray-200 flex">
+                              <span className="w-1/3">30/01/2026</span>
+                              <span className="w-1/3">BANCO AZTECA</span>
+                              <span className="w-1/3">Tarjeta de Crédito</span>
+                            </div>
+                            <div className="px-2 py-1 border-b border-gray-200 flex">
+                              <span className="w-1/3">15/12/2025</span>
+                              <span className="w-1/3">HSBC</span>
+                              <span className="w-1/3">Crédito Personal</span>
+                            </div>
+                            <div className="px-2 py-1 flex">
+                              <span className="w-1/3">08/10/2025</span>
+                              <span className="w-1/3">COPPEL</span>
+                              <span className="w-1/3">Crédito de Nómina</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Footer */}
+                      <div className="border-t-2 border-gray-800 pt-4 mt-8">
+                        <p className="text-xs text-gray-500 text-center">
+                          Este reporte es confidencial y fue generado exclusivamente para {nombreCompleto}<br />
+                          Buró de Crédito - Sociedad de Información Crediticia, S.A. de C.V.<br />
+                          Fecha de generación: {new Date().toLocaleString('es-MX')}
+                        </p>
+                      </div>
+                    </>
+                  );
+                })()}
               </div>
             </div>
 

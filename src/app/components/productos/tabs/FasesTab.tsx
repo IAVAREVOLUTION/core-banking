@@ -75,7 +75,9 @@ export const FasesTab = forwardRef<{ getData: () => Fase[] }, FasesTabProps>(
 
     const confirmDelete = () => {
       if (deleteTargetId !== null) {
-        setData(data.filter(item => item.id !== deleteTargetId));
+        const remaining = data.filter(item => item.id !== deleteTargetId);
+        const renumbered = remaining.map((item, idx) => ({ ...item, seq: String(idx + 1) }));
+        setData(renumbered);
         setSelectedRow(null);
         setDeleteTargetId(null);
         setShowDeleteModal(false);

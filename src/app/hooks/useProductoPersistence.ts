@@ -41,6 +41,29 @@ export function useProductoPersistence<T extends Record<string, any> | any[]>(
 
   const [data, setData] = useState<T>(loadInitialData);
 
+  // ── FIX: Resetear estado cuando cambia el storageKey ──
+  // Evita que datos de un producto editado se filtren en un producto nuevo
+  // cuando el componente se reutiliza (mismo lugar en el tree de React).
+  useEffect(() => {
+    const saved = sessionStorage.getItem(storageKey);
+    if (saved) {
+      try {
+        const persistedData = JSON.parse(saved);
+        if (Array.isArray(initialData)) {
+          setData(Array.isArray(persistedData) ? persistedData : initialData);
+        } else {
+          setData({ ...initialData, ...persistedData });
+        }
+      } catch {
+        setData(initialData);
+      }
+    } else {
+      // No hay datos persistidos para esta key → usar initialData limpio
+      setData(initialData);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storageKey]);
+
   // Guardar en sessionStorage cuando data cambie
   useEffect(() => {
     try {
@@ -127,6 +150,13 @@ export function useProductoTabs(storageKey: string, defaultTab: string = 'defaul
   };
 
   const [activeTab, setActiveTab] = useState<string>(loadInitialTab);
+
+  // ── FIX: Resetear tab activo cuando cambia el storageKey ──
+  useEffect(() => {
+    const saved = sessionStorage.getItem(`${storageKey}_active_tab`);
+    setActiveTab(saved || defaultTab);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storageKey]);
 
   useEffect(() => {
     sessionStorage.setItem(`${storageKey}_active_tab`, activeTab);

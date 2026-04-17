@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<title>Solicitud de Línea de Crédito</title>
+
+<style>
+  body {
+    font-family: "Helvetica Neue", Arial, sans-serif;
+    margin: 0;
+    color: #1a1a1a;
+    font-size: 12px;
+  }
+
+  .page {
+    width: 210mm;
+    min-height: 297mm;
+    padding: 28mm 25mm 20mm 25mm;
+    box-sizing: border-box;
+
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+  }
+
+  .header {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    align-items: center;
+    margin-bottom: 18px;
+  }
+
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .logo {
+    height: 40px;
+  }
+
+  .brand-name {
+    font-weight: 700;
+    font-size: 14px;
+  }
+
+  .doc-meta {
+    text-align: right;
+    font-size: 10px;
+  }
+
+  .title {
+    text-align: center;
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: 1.2px;
+    margin: 12px 0 20px 0;
+  }
+
+  .section {
+    margin-bottom: 12px;
+  }
+
+  .section-title {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    border-bottom: 1px solid #000;
+    margin-bottom: 6px;
+  }
+
+  .grid-2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  td {
+    padding: 3px 2px;
+  }
+
+  .label {
+    font-size: 10px;
+    color: #555;
+    width: 48%;
+  }
+
+  .value {
+    border-bottom: 1px solid #aaa;
+    font-weight: 500;
+  }
+
+  .declaration {
+    font-size: 10px;
+    line-height: 1.4;
+    text-align: justify;
+  }
+
+  .signature-block {
+    margin-top: 30px;
+    display: flex;
+    justify-content: space-between;
+  }
+
+  .signature {
+    width: 45%;
+    text-align: center;
+  }
+
+  .line {
+    margin-top: 45px;
+    border-top: 1px solid #000;
+    padding-top: 5px;
+    font-size: 10px;
+  }
+
+  .footer {
+    font-size: 9px;
+    color: #666;
+  }
+
+  .footer-line {
+    height: 1px;
+    background: #ccc;
+    margin-bottom: 5px;
+  }
+
+  .footer-content {
+    display: flex;
+    justify-content: space-between;
+  }
+</style>
+</head>
+
+<body>
+<div class="page">
+
+<div>
+
+  <!-- HEADER -->
+  <div class="header">
+    <div class="brand">
+      <img class="logo" src="/src/assets/7b6cb23c00b7817818c638af3eae0a416e1e9f57.png"/>
+      <div>
+        <div class="brand-name">eFinanciaN@t</div>
+        <small>{{empresa_razon_social}}</small>
+      </div>
+    </div>
+
+    <div class="doc-meta">
+      <div><strong>Folio:</strong> {{folio}}</div>
+      <div><strong>Fecha:</strong> {{fecha}}</div>
+      <div><strong>Sucursal:</strong> {{sucursal}}</div>
+      <div><strong>Ejecutivo:</strong> {{ejecutivo}}</div>
+    </div>
+  </div>
+
+  <div class="title">SOLICITUD DE LÍNEA DE CRÉDITO</div>
+
+  <!-- DATOS -->
+  <div class="section">
+    <div class="section-title">Datos del Solicitante</div>
+    <div class="grid-2">
+      <table>
+        <tr><td class="label">Nombre</td><td class="value">{{nombre}}</td></tr>
+        <tr><td class="label">RFC</td><td class="value">{{rfc}}</td></tr>
+        <tr><td class="label">CURP</td><td class="value">{{curp}}</td></tr>
+        <tr><td class="label">Nacimiento</td><td class="value">{{fecha_nacimiento}}</td></tr>
+      </table>
+      <table>
+        <tr><td class="label">Teléfono</td><td class="value">{{telefono}}</td></tr>
+        <tr><td class="label">Correo</td><td class="value">{{email}}</td></tr>
+        <tr><td class="label">Domicilio</td><td class="value">{{domicilio}}</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <!-- FINANCIERA -->
+  <div class="section">
+    <div class="section-title">Información Financiera</div>
+    <div class="grid-2">
+      <table>
+        <tr><td class="label">Empresa</td><td class="value">{{empresa}}</td></tr>
+        <tr><td class="label">Ingreso mensual</td><td class="value">$ {{ingreso}}</td></tr>
+        <tr><td class="label">Otros ingresos</td><td class="value">$ {{otros_ingresos}}</td></tr>
+      </table>
+      <table>
+        <tr><td class="label">Antigüedad</td><td class="value">{{antiguedad}}</td></tr>
+        <tr><td class="label">Gastos</td><td class="value">$ {{gastos}}</td></tr>
+        <tr><td class="label">Capacidad de pago</td><td class="value">$ {{capacidad_pago}}</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <!-- LINEA -->
+  <div class="section">
+    <div class="section-title">Condiciones de la Línea</div>
+    <div class="grid-2">
+      <table>
+        <tr><td class="label">Límite solicitado</td><td class="value">$ {{limite}}</td></tr>
+        <tr><td class="label">Destino</td><td class="value">{{destino}}</td></tr>
+        <tr><td class="label">Plazo</td><td class="value">{{plazo}}</td></tr>
+      </table>
+      <table>
+        <tr><td class="label">Tasa</td><td class="value">{{tasa}} %</td></tr>
+        <tr><td class="label">CAT</td><td class="value">{{cat}} %</td></tr>
+        <tr><td class="label">Frecuencia</td><td class="value">{{frecuencia}}</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <!-- REFERENCIAS -->
+  <div class="section">
+    <div class="section-title">Referencias</div>
+    <table>
+      <tr><td class="label">Nombre</td><td class="value">{{ref_nombre}}</td></tr>
+      <tr><td class="label">Teléfono</td><td class="value">{{ref_tel}}</td></tr>
+      <tr><td class="label">Relación</td><td class="value">{{ref_relacion}}</td></tr>
+    </table>
+  </div>
+
+  <!-- DECLARACIÓN -->
+  <div class="section">
+    <div class="section-title">Declaración</div>
+    <div class="declaration">
+      Declaro que la información proporcionada es verídica y autorizo su validación.
+      La presente solicitud no constituye aprobación de crédito y queda sujeta a evaluación.
+    </div>
+  </div>
+
+  <!-- FIRMAS -->
+  <div class="signature-block">
+    <div class="signature">
+      <div class="line">{{nombre}}</div>
+      Solicitante
+    </div>
+
+    <div class="signature">
+      <div class="line">{{ejecutivo}}</div>
+      Ejecutivo
+    </div>
+  </div>
+
+</div>
+
+<!-- FOOTER -->
+<div class="footer">
+  <div class="footer-line"></div>
+  <div class="footer-content">
+    <span>{{empresa_nombre}}</span>
+    <span>Documento confidencial</span>
+  </div>
+</div>
+
+</div>
+</body>
+</html>

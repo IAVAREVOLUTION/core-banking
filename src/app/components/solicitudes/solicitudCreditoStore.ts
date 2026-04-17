@@ -57,6 +57,20 @@ export interface TerminosCondiciones {
   montoGarantia: string;
   seguroFinanciado: boolean;
   montoSeguro: string;
+  // Captación — Rendimientos (tabla de tasas por plazo)
+  rendimientos?: RendimientoRow[];
+  // Captación — perfil del inversionista
+  perfilInversionista?: string;   // Conservador | Moderado | Agresivo
+  riesgoInversionista?: string;   // Bajo | Medio | Alto
+  horizonteInversion?: string;    // Corto plazo | Mediano plazo | Largo plazo
+  experienciaInversion?: string;  // Ninguna | Básica | Intermedia | Avanzada
+}
+
+export interface RendimientoRow {
+  plazo: string;
+  tasaAnual: string;
+  montoMinimo: string;
+  tasaMensual: string;
 }
 
 // Simulación row
@@ -576,7 +590,7 @@ export const EMPTY_FORM: SolicitudFormData = {
   area: 'INTEGRACIÓN',
   promptIAFase: '',
   estatusSolicitud: 'Pendiente',
-  sucursal: '',
+  sucursal: 'CDMX',
   montoSolicitado: '',
   montoAutorizado: '',
   fechaInicio: '',
@@ -597,6 +611,11 @@ export const EMPTY_TERMINOS: TerminosCondiciones = {
   montoGarantia: '',
   seguroFinanciado: false,
   montoSeguro: '',
+  rendimientos: [],
+  perfilInversionista: '',
+  riesgoInversionista: '',
+  horizonteInversion: '',
+  experienciaInversion: '',
 };
 
 // ---- Mock de requisitos del producto ----
@@ -813,8 +832,44 @@ export const SOLICITUDES_LISTA: SolicitudListItem[] = [
 ];
 
 // ---- Amortization generator ----
-const IVA_RATE = 0.16;
+// Fuente única de verdad: generarTablaAmortizacionCredito (cotizacionCreditoTypes.ts)
+// generarSimulacion es un wrapper que adapta parámetros y formato de salida.
+import { generarTablaAmortizacionCredito } from '../cotizaciones/cotizacionCreditoTypes';
 
+/**
+ * Convierte una fecha DD/MM/YYYY → YYYY-MM-DD para que la función canónica
+ * de cotización la acepte (espera ISO o YYYY-MM-DD).
+ */
+function ddmmyyyyToISO(fecha: string): string {
+  if (!fecha) return '';
+  // Si ya es ISO YYYY-MM-DD
+  if (/^\d{4}-\d{2}-\d{2}/.test(fecha)) return fecha.split('T')[0];
+  const parts = fecha.split('/');
+  if (parts.length === 3 && parts[0].length === 2) {
+    return `${parts[2]}-${parts[1]}-${parts[0]}`;
+  }
+  return fecha;
+}
+
+/**
+ * Convierte una fecha YYYY-MM-DD → DD/MM/YYYY para la UI de Simulación.
+ */
+function isoToDDMMYYYY(iso: string): string {
+  if (!iso) return '';
+  const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return `${m[3]}/${m[2]}/${m[1]}`;
+  return iso;
+}
+
+/**
+ * Genera la tabla de amortización para la Simulación.
+ * Delega completamente a generarTablaAmortizacionCredito (cotizacionCreditoTypes.ts)
+ * para garantizar consistencia de fórmulas con Cotización.
+ *
+ * Parámetros:
+ *   frecuencia — valor de CAT_FRECUENCIA (Mensual, Quincenal…); se convierte a
+ *                label de FRECUENCIAS_PAGO antes de pasarlo a la función canónica.
+ */
 export function generarSimulacion(
   monto: number,
   tasaAnual: number,
@@ -825,115 +880,35 @@ export function generarSimulacion(
   seguroPorPeriodo: number = 0
 ): SimulacionRow[] {
   if (monto <= 0 || tasaAnual <= 0 || plazo <= 0) return [];
-  const diasPeriodo = CAT_FRECUENCIA.find(f => f.value === frecuencia)?.dias || 30;
-  const r = (tasaAnual / 100 / 360) * diasPeriodo;
-  const rows: SimulacionRow[] = [];
-  let saldo = monto;
 
-  // Parse first payment date
-  let currentDate: Date;
-  if (fechaPrimerPago) {
-    const [dd, mm, yyyy] = fechaPrimerPago.split('/');
-    currentDate = new Date(parseInt(yyyy), parseInt(mm) - 1, parseInt(dd));
-  } else {
-    currentDate = new Date();
-    currentDate.setDate(currentDate.getDate() + diasPeriodo);
-  }
+  // CAT_FRECUENCIA usa .value (ej. 'Mensual'); generarTablaAmortizacionCredito
+  // usa FRECUENCIAS_PAGO con .label — que coincide con .value en este catálogo.
+  const periodoLabel = frecuencia; // valores son idénticos en ambos catálogos
 
-  const fmtDate = (d: Date) => {
-    const dd = String(d.getDate()).padStart(2, '0');
-    const mm = String(d.getMonth() + 1).padStart(2, '0');
-    return `${dd}/${mm}/${d.getFullYear()}`;
-  };
+  // La función canónica espera YYYY-MM-DD o ISO
+  const fechaISO = ddmmyyyyToISO(fechaPrimerPago);
+  if (!fechaISO) return [];
 
-  const tipo = tipoCalculo.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  const rows = generarTablaAmortizacionCredito(
+    monto,
+    tasaAnual,
+    plazo,
+    periodoLabel,
+    fechaISO,
+    tipoCalculo,
+    seguroPorPeriodo,
+  );
 
-  if (tipo === 'frances' || tipo === 'french') {
-    // Sistema Francés: cuota fija (capital + interés + IVA)
-    const factor = Math.pow(1 + r, plazo);
-    const pmt = monto * (r * factor) / (factor - 1);
-    for (let i = 1; i <= plazo; i++) {
-      const interes = saldo * r;
-      const iva = interes * IVA_RATE;
-      const capital = pmt - interes - iva;
-      rows.push({
-        noPago: i,
-        fechaPago: fmtDate(currentDate),
-        saldoInsoluto: Math.max(0, saldo),
-        pagoCapital: Math.max(0, capital),
-        pagoInteres: interes,
-        ivaInteres: iva,
-        pagoPeriodo: pmt,
-        pagoSeguro: seguroPorPeriodo,
-        pagoTotal: pmt + seguroPorPeriodo,
-      });
-      saldo -= capital;
-      currentDate.setDate(currentDate.getDate() + diasPeriodo);
-    }
-  } else if (tipo === 'aleman' || tipo === 'german') {
-    // Sistema Alemán: capital fijo, interés decreciente
-    const capitalFijo = monto / plazo;
-    for (let i = 1; i <= plazo; i++) {
-      const interes = saldo * r;
-      const iva = interes * IVA_RATE;
-      const pagoPeriodo = capitalFijo + interes + iva;
-      rows.push({
-        noPago: i,
-        fechaPago: fmtDate(currentDate),
-        saldoInsoluto: Math.max(0, saldo),
-        pagoCapital: capitalFijo,
-        pagoInteres: interes,
-        ivaInteres: iva,
-        pagoPeriodo,
-        pagoSeguro: seguroPorPeriodo,
-        pagoTotal: pagoPeriodo + seguroPorPeriodo,
-      });
-      saldo -= capitalFijo;
-      currentDate.setDate(currentDate.getDate() + diasPeriodo);
-    }
-  } else if (tipo === 'americano' || tipo === 'american') {
-    // Sistema Americano: solo interés, capital al final
-    for (let i = 1; i <= plazo; i++) {
-      const interes = saldo * r;
-      const iva = interes * IVA_RATE;
-      const capital = i === plazo ? monto : 0;
-      const pagoPeriodo = capital + interes + iva;
-      rows.push({
-        noPago: i,
-        fechaPago: fmtDate(currentDate),
-        saldoInsoluto: Math.max(0, saldo),
-        pagoCapital: capital,
-        pagoInteres: interes,
-        ivaInteres: iva,
-        pagoPeriodo,
-        pagoSeguro: seguroPorPeriodo,
-        pagoTotal: pagoPeriodo + seguroPorPeriodo,
-      });
-      if (i === plazo) saldo = 0;
-      currentDate.setDate(currentDate.getDate() + diasPeriodo);
-    }
-  } else {
-    // Simple / cualquier otro: capital fijo + interés simple sobre monto original
-    const capitalFijo = monto / plazo;
-    const interesFijo = monto * r;
-    for (let i = 1; i <= plazo; i++) {
-      const iva = interesFijo * IVA_RATE;
-      const pagoPeriodo = capitalFijo + interesFijo + iva;
-      rows.push({
-        noPago: i,
-        fechaPago: fmtDate(currentDate),
-        saldoInsoluto: Math.max(0, saldo),
-        pagoCapital: capitalFijo,
-        pagoInteres: interesFijo,
-        ivaInteres: iva,
-        pagoPeriodo,
-        pagoSeguro: seguroPorPeriodo,
-        pagoTotal: pagoPeriodo + seguroPorPeriodo,
-      });
-      saldo -= capitalFijo;
-      currentDate.setDate(currentDate.getDate() + diasPeriodo);
-    }
-  }
-
-  return rows;
+  // Adaptar: convertir fechaPago ISO → DD/MM/YYYY y quitar campo moneda
+  return rows.map(r => ({
+    noPago:        r.noPago,
+    fechaPago:     isoToDDMMYYYY(r.fechaPago),
+    saldoInsoluto: r.saldoInsoluto,
+    pagoCapital:   r.pagoCapital,
+    pagoInteres:   r.pagoInteres,
+    ivaInteres:    r.ivaInteres,
+    pagoPeriodo:   r.pagoPeriodo,
+    pagoSeguro:    r.pagoSeguro,
+    pagoTotal:     r.pagoTotal,
+  }));
 }

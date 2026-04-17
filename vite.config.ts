@@ -14,6 +14,8 @@ export default defineConfig({
     alias: {
       // Alias @ to the src directory
       '@': path.resolve(__dirname, './src'),
+      // Alias for auto-generated Supabase info (absolute path /utils/supabase/info)
+      '/utils/supabase/info': path.resolve(__dirname, './utils/supabase/info.tsx'),
     },
   },
 })

@@ -62,6 +62,7 @@ export function SolicitudActivacionDetailTab({
               className="border-b border-gray-400"
               style={{ backgroundColor: 'var(--theme-table-header, #F3F4F6)' }}
             >
+              <th className="px-3 py-2 text-left  font-medium text-xs text-gray-800 border-r border-gray-300">TIPO PRODUCTO</th>
               <th className="px-3 py-2 text-left  font-medium text-xs text-gray-800 border-r border-gray-300">CLAVE PRODUCTO</th>
               <th className="px-3 py-2 text-right font-medium text-xs text-gray-800 border-r border-gray-300 w-28">CANTIDAD</th>
               <th className="px-3 py-2 text-right font-medium text-xs text-gray-800 border-r border-gray-300">MONTO</th>
@@ -73,6 +74,11 @@ export function SolicitudActivacionDetailTab({
           </thead>
           <tbody className="bg-white">
             <tr className="border-b border-gray-200">
+              {/* Tipo Producto — fijo */}
+              <td className="px-3 py-2 border-r border-gray-200 font-medium text-gray-800">
+                CAPITAL
+              </td>
+
               {/* Clave Producto — read-only */}
               <td className="px-3 py-2 border-r border-gray-200 font-medium text-gray-800">
                 {claveProducto || <span className="text-gray-400 italic">Sin clave</span>}
@@ -125,7 +131,7 @@ export function SolicitudActivacionDetailTab({
 
           <tfoot>
             <tr className="border-t-2 border-gray-400 bg-gray-50">
-              <td colSpan={5} className="px-3 py-2 text-right text-xs font-semibold text-gray-800">
+              <td colSpan={6} className="px-3 py-2 text-right text-xs font-semibold text-gray-800">
                 TOTAL GENERAL:
               </td>
               <td className="px-3 py-2 text-right text-xs font-bold text-gray-900">

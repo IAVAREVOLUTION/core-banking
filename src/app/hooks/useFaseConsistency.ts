@@ -53,8 +53,23 @@ export function useFaseConsistency({
   timelineSeq,
   subtabFaseId,
 }: FaseConsistencyInput): FaseConsistencyResult {
-  const faseActualReal =
+  // Intento 1: buscar por faseId exacto
+  let faseActualReal =
     fases.find((f) => String(f.faseId) === String(faseActualId)) ?? null;
+
+  // Intento 2: si no encontró por faseId, buscar por descripción de fase (header)
+  if (!faseActualReal && headerDescripcionFase) {
+    const headerNorm = headerDescripcionFase.toLowerCase().trim();
+    faseActualReal = fases.find((f) => {
+      const faseNorm = f.fase.toLowerCase().trim();
+      return faseNorm === headerNorm || faseNorm.includes(headerNorm) || headerNorm.includes(faseNorm);
+    }) ?? null;
+  }
+
+  // Intento 3: si aún no encontró, usar la primera fase (seq más bajo)
+  if (!faseActualReal && fases.length > 0) {
+    faseActualReal = [...fases].sort((a, b) => a.seq - b.seq)[0];
+  }
 
   const seqActual = faseActualReal?.seq ?? 0;
 

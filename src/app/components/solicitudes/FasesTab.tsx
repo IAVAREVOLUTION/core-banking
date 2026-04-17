@@ -27,7 +27,11 @@ export function FasesTab({ productoId, productoSeleccionado, fasesDelProducto }:
     
     // Buscar en rawData del producto
     const rd = productoSeleccionado?.rawData;
-    const raw = rd?.fases ?? rd?.fasesRegistros ?? rd?.fase ?? rd?.phases;
+    // Captación guarda fases en fasesRegistros; fases puede ser {} (objeto vacío) — usar Array.isArray para no bloquear el fallback
+    const raw = (Array.isArray(rd?.fases) && rd.fases.length > 0 ? rd.fases : null)
+      ?? (Array.isArray(rd?.fasesRegistros) && rd.fasesRegistros.length > 0 ? rd.fasesRegistros : null)
+      ?? (Array.isArray(rd?.fase) ? rd.fase : null)
+      ?? (Array.isArray(rd?.phases) ? rd.phases : null);
     
     if (Array.isArray(raw) && raw.length > 0) {
       return raw.map((f: any, idx: number) => ({

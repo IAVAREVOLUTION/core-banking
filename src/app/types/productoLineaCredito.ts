@@ -25,11 +25,13 @@ export interface JerarquiaProductoLineaCredito {
 
 export interface ComiteCreditoLineaCredito {
   id: number;
-  comiteInterno: string;
-  desdeMonto: number | string;
-  hastaMonto: number | string;
-  activo: boolean;
-  renovaciones: number | string;
+  fechaHora: string;
+  usuario: string;
+  puesto?: string;
+  area: string;
+  descripcion: string;
+  observaciones: string;
+  estatus: string;
 }
 
 export interface PeriodicidadLineaCredito {
@@ -69,19 +71,6 @@ export interface ExentoIvaLineaCredito {
   tipoPersona: string;
   exentoIva: boolean;
   comentarios: string;
-}
-
-export interface CheckListLineaCredito {
-  id: number;
-  tipoPersona: string;
-  tipoDocumento: string;
-  requerido: boolean;
-  permanente: boolean;
-  descripcion: string;
-  requeridoPor: string;
-  esquemaFirma: string;
-  proceso: string;
-  fases: string;
 }
 
 export interface ProductoLineaCredito {
@@ -141,7 +130,6 @@ export interface ProductoLineaCredito {
   matrizTasaFija?: MatrizTasaFijaLineaCredito[];
   ivaPorcentaje?: IvaPorcentajeLineaCredito[];
   exentoIva?: ExentoIvaLineaCredito[];
-  checkList?: CheckListLineaCredito[];
   condicionesDisposicion?: any[];
   parametrosCalculo?: any[];
   // Subtabs adicionales (forwardRef tabs)

@@ -387,19 +387,28 @@ export function validarCotizacionCredito(c: CotizacionCredito): { valid: boolean
   if (!c.producto_id) errors.push('Debe seleccionar un Producto.');
 
   // §9 — Plazo
-  if (d.plazo <= 0) errors.push('Plazo debe ser mayor a 0.');
-  if (d.plazoMinimo > 0 && d.plazo < d.plazoMinimo) errors.push(`Plazo (${d.plazo}) debe ser ≥ Plazo Mínimo (${d.plazoMinimo}).`);
-  if (d.plazoMaximo > 0 && d.plazo > d.plazoMaximo) errors.push(`Plazo (${d.plazo}) debe ser ≤ Plazo Máximo (${d.plazoMaximo}).`);
+  const _plazo    = parseFloat(String(d.plazo).replace(/[^0-9.-]/g, '')) || 0;
+  const _plazoMin = parseFloat(String(d.plazoMinimo).replace(/[^0-9.-]/g, '')) || 0;
+  const _plazoMax = parseFloat(String(d.plazoMaximo).replace(/[^0-9.-]/g, '')) || 0;
+  if (_plazo <= 0) errors.push('Plazo debe ser mayor a 0.');
+  if (_plazoMin > 0 && _plazo < _plazoMin) errors.push(`Plazo (${_plazo}) debe ser ≥ Plazo Mínimo (${_plazoMin}).`);
+  if (_plazoMax > 0 && _plazo > _plazoMax) errors.push(`Plazo (${_plazo}) debe ser ≤ Plazo Máximo (${_plazoMax}).`);
 
   // §9 — Monto
-  if (d.montoSolicitado <= 0) errors.push('Monto Solicitado debe ser mayor a 0.');
-  if (d.montoMinimo > 0 && d.montoSolicitado < d.montoMinimo) errors.push(`Monto (${d.montoSolicitado}) debe ser ≥ Monto Mínimo (${d.montoMinimo}).`);
-  if (d.montoMaximo > 0 && d.montoSolicitado > d.montoMaximo) errors.push(`Monto (${d.montoSolicitado}) debe ser ≤ Monto Máximo (${d.montoMaximo}).`);
+  const _monto    = parseFloat(String(d.montoSolicitado).replace(/[^0-9.-]/g, '')) || 0;
+  const _montoMin = parseFloat(String(d.montoMinimo).replace(/[^0-9.-]/g, '')) || 0;
+  const _montoMax = parseFloat(String(d.montoMaximo).replace(/[^0-9.-]/g, '')) || 0;
+  if (_monto <= 0) errors.push('Monto Solicitado debe ser mayor a 0.');
+  if (_montoMin > 0 && _monto < _montoMin) errors.push(`Monto (${_monto}) debe ser ≥ Monto Mínimo (${_montoMin}).`);
+  if (_montoMax > 0 && _monto > _montoMax) errors.push(`Monto (${_monto}) debe ser ≤ Monto Máximo (${_montoMax}).`);
 
   // §9 — Tasa
-  if (d.tasaCotizada <= 0) errors.push('Tasa Cotizada debe ser mayor a 0%.');
-  if (d.tasaMinima > 0 && d.tasaCotizada < d.tasaMinima) errors.push(`Tasa (${d.tasaCotizada}%) debe ser ≥ Tasa Mínima (${d.tasaMinima}%).`);
-  if (d.tasaMaxima > 0 && d.tasaCotizada > d.tasaMaxima) errors.push(`Tasa (${d.tasaCotizada}%) debe ser ≤ Tasa Máxima (${d.tasaMaxima}%).`);
+  const _tMin = parseFloat(String(d.tasaMinima).replace(/[^0-9.-]/g, '')) || 0;
+  const _tMax = parseFloat(String(d.tasaMaxima).replace(/[^0-9.-]/g, '')) || 0;
+  const _tCot = parseFloat(String(d.tasaCotizada).replace(/[^0-9.-]/g, '')) || 0;
+  if (_tCot <= 0) errors.push('Tasa Cotizada debe ser mayor a 0%.');
+  if (_tMin > 0 && _tCot < _tMin) errors.push(`Tasa (${_tCot}%) debe ser ≥ Tasa Mínima (${_tMin}%).`);
+  if (_tMax > 0 && _tCot > _tMax) errors.push(`Tasa (${_tCot}%) debe ser ≤ Tasa Máxima (${_tMax}%).`);
 
   if (!d.fechaPrimerPago) errors.push('Debe indicar Fecha de Primer Pago.');
 

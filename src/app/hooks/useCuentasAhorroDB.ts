@@ -393,11 +393,10 @@ export function useCuentasAhorroDB() {
 
       if (!error && Array.isArray(data)) {
         const mapped = (data as JCuentaAhorroRow[]).map(mapRow);
-        const merged = mergeWithLocalEntries(mapped);
-        console.log(`${LOG} RPC OK — ${mapped.length} de BD + ${merged.length - mapped.length} locales = ${merged.length} total`);
-        setCuentas(merged);
-        saveLocal(merged);
-        saveFullRows(data as JCuentaAhorroRow[]); // persistir filas completas
+        console.log(`${LOG} RPC OK — ${mapped.length} registros de BD`);
+        setCuentas(mapped);
+        saveLocal(mapped);
+        saveFullRows(data as JCuentaAhorroRow[]);
         setBackendStatus('connected');
         setLoading(false);
         return;
@@ -421,11 +420,10 @@ export function useCuentasAhorroDB() {
         const json = await res.json();
         const rows = Array.isArray(json) ? json : json.data || [];
         const mapped = (rows as JCuentaAhorroRow[]).map(mapRow);
-        const merged = mergeWithLocalEntries(mapped);
-        console.log(`${LOG} Edge Function OK — ${mapped.length} de BD + ${merged.length - mapped.length} locales = ${merged.length} total`);
-        setCuentas(merged);
-        saveLocal(merged);
-        saveFullRows(rows as JCuentaAhorroRow[]); // persistir filas completas desde Edge Function
+        console.log(`${LOG} Edge Function OK — ${mapped.length} registros de BD`);
+        setCuentas(mapped);
+        saveLocal(mapped);
+        saveFullRows(rows as JCuentaAhorroRow[]);
         setBackendStatus('connected');
         setLoading(false);
         return;

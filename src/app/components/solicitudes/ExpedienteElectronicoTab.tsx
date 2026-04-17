@@ -174,6 +174,167 @@ async function refreshSignedUrl(storagePath: string): Promise<string | null> {
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// Componente PreviewModal — regenera URL automáticamente si expiró
+// ═══════════════════════════════════════════════════════════════════
+interface PreviewModalProps {
+  doc: DocumentoCargado;
+  fileDataUrl?: string;
+  onClose: () => void;
+  onUrlRefreshed: (newUrl: string) => void;
+}
+
+function PreviewModal({ doc, fileDataUrl, onClose, onUrlRefreshed }: PreviewModalProps) {
+  const [currentUrl, setCurrentUrl] = useState(fileDataUrl || doc.url || '');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(false);
+
+  const isImage = currentUrl?.startsWith('data:image/') || doc.mime?.startsWith('image/');
+  const isPdf = currentUrl?.startsWith('data:application/pdf') || doc.mime === 'application/pdf';
+
+  // Regenerar URL al abrir si hay storagePath
+  useEffect(() => {
+    const refresh = async () => {
+      if (!doc.storagePath || currentUrl?.startsWith('data:')) return;
+      
+      // Intentar acceder a la URL actual
+      try {
+        const testRes = await fetch(currentUrl, { method: 'HEAD' });
+        if (testRes.ok) return; // URL válida, no regenerar
+        console.log(`[PreviewModal] URL expirada (HTTP ${testRes.status}), regenerando...`);
+      } catch (err) {
+        console.log('[PreviewModal] URL no accesible, regenerando...');
+      }
+
+      // Regenerar
+      setLoading(true);
+      const newUrl = await refreshSignedUrl(doc.storagePath!);
+      if (newUrl) {
+        setCurrentUrl(newUrl);
+        onUrlRefreshed(newUrl);
+        console.log('[PreviewModal] URL regenerada OK');
+      } else {
+        setError(true);
+        toast.error('No se pudo regenerar la URL del archivo');
+      }
+      setLoading(false);
+    };
+    refresh();
+  }, []);
+
+  const handleRefresh = async () => {
+    if (!doc.storagePath) return;
+    setLoading(true);
+    setError(false);
+    const newUrl = await refreshSignedUrl(doc.storagePath);
+    if (newUrl) {
+      setCurrentUrl(newUrl);
+      onUrlRefreshed(newUrl);
+      toast.success('URL regenerada');
+    } else {
+      setError(true);
+      toast.error('No se pudo regenerar la URL');
+    }
+    setLoading(false);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden border border-gray-200/50 flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100 bg-gradient-to-r from-slate-50 to-white">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-lg bg-blue-50 flex items-center justify-center border border-blue-100">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#4A6FA5" strokeWidth="1.5">
+                <path d="M4 1h6l4 4v8a2 2 0 01-2 2H4a2 2 0 01-2-2V3a2 2 0 012-2z" />
+                <path d="M10 1v4h4" />
+              </svg>
+            </div>
+            <div>
+              <h5 className="text-sm font-semibold text-gray-800">{doc.archivo}</h5>
+              <div className="flex items-center gap-1.5 mt-0.5">
+                <span className="text-[10px] text-gray-400">{doc.tipoDocumento}</span>
+                <span className="w-1 h-1 rounded-full bg-gray-300" />
+                <span className="text-[10px] text-gray-400">{doc.tipoArchivo}</span>
+                {doc.tamanoKB && <>
+                  <span className="w-1 h-1 rounded-full bg-gray-300" />
+                  <span className="text-[10px] text-gray-400">{doc.tamanoKB} KB</span>
+                </>}
+              </div>
+            </div>
+          </div>
+          <button onClick={onClose} className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <path d="M4 4l8 8M12 4l-8 8" />
+            </svg>
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-auto bg-gray-50/50 flex items-center justify-center min-h-[400px]">
+          {loading ? (
+            <div className="text-center py-10">
+              <svg className="animate-spin h-8 w-8 text-[#4A6FA5] mx-auto mb-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="12" cy="12" r="10" strokeOpacity="0.25" />
+                <path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round" />
+              </svg>
+              <p className="text-sm text-gray-500">Regenerando acceso al archivo...</p>
+            </div>
+          ) : error ? (
+            <div className="text-center py-10">
+              <svg className="mx-auto mb-3" width="48" height="48" viewBox="0 0 48 48" fill="none" stroke="#EF4444" strokeWidth="1.5">
+                <circle cx="24" cy="24" r="20" />
+                <path d="M16 16l16 16M32 16L16 32" strokeLinecap="round" />
+              </svg>
+              <p className="text-xs text-gray-500 mb-3">No se pudo acceder al archivo</p>
+              <button onClick={handleRefresh} className="text-xs text-blue-600 hover:underline">
+                Reintentar
+              </button>
+            </div>
+          ) : currentUrl ? (
+            isImage ? (
+              <img src={currentUrl} alt={doc.archivo} className="max-w-full max-h-[70vh] object-contain rounded-lg shadow-sm m-4" />
+            ) : isPdf ? (
+              <iframe src={currentUrl} className="w-full h-[70vh] m-4 rounded-lg border border-gray-200" title={doc.archivo} />
+            ) : (
+              <div className="text-center py-10">
+                <svg className="mx-auto mb-3" width="48" height="48" viewBox="0 0 48 48" fill="none" stroke="#9CA3AF" strokeWidth="1.5">
+                  <path d="M12 6h16l8 8v24a4 4 0 01-4 4H12a4 4 0 01-4-4V10a4 4 0 014-4z" />
+                  <path d="M28 6v8h8" />
+                </svg>
+                <p className="text-xs text-gray-500 mb-2">Vista previa no disponible para {doc.tipoArchivo}</p>
+                <a href={currentUrl} download={doc.archivo} className="text-xs text-blue-600 hover:underline">Descargar archivo</a>
+              </div>
+            )
+          ) : doc.storagePath ? (
+            <div className="text-center py-10">
+              <p className="text-xs text-gray-500 mb-3">El archivo no está disponible</p>
+              <button onClick={handleRefresh} className="text-xs text-blue-600 hover:underline">Regenerar acceso</button>
+            </div>
+          ) : (
+            <div className="text-center py-10">
+              <p className="text-xs text-gray-500">El archivo fue cargado en una sesión anterior y no está disponible.</p>
+            </div>
+          )}
+        </div>
+
+        <div className="px-5 py-3 border-t border-gray-100 bg-gray-50/50 flex justify-end gap-2">
+          {currentUrl && !error && (
+            <a href={currentUrl} download={doc.archivo}
+              className="px-4 py-2 bg-white border border-gray-200 text-gray-600 rounded-lg text-xs font-medium hover:bg-gray-50 transition-colors shadow-sm flex items-center gap-1.5">
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                <path d="M6 2v7M3 7l3 3 3-3M2 11h8" />
+              </svg>
+              Descargar
+            </a>
+          )}
+          <button onClick={onClose} className="px-5 py-2 bg-[#4A6FA5] text-white rounded-lg text-xs font-medium hover:bg-[#3A5A8A] transition-colors shadow-sm">
+            Cerrar
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // Utility: Eliminar archivo de Storage
 // ═══════════════════════════════════════════════════════════════════
 async function deleteFileFromStorage(storagePath: string): Promise<boolean> {
@@ -325,11 +486,13 @@ interface Props {
   faseIdActual: number;
   productoId?: string;
   nombreSolicitante?: string;
+  curpCliente?: string;
+  rfcCliente?: string;
   fasePromptIA?: string;
   onEnviarSolicitud?: () => void;
 }
 
-export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, productoId, nombreSolicitante, fasePromptIA, onEnviarSolicitud }: Props) {
+export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, productoId, nombreSolicitante, curpCliente, rfcCliente, fasePromptIA, onEnviarSolicitud }: Props) {
   // ── State: requisitos del producto (desde DB) ──
   const [requisitosDB, setRequisitosDB] = useState<RequisitoProducto[]>([]);
   const [loadingReqs, setLoadingReqs] = useState(false);
@@ -633,6 +796,35 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
   // ── Usar requisitos del producto (todos, no solo la fase actual) ──
   const requisitos = requisitosDB;
 
+  // ── Helper: normalizar tipo de documento para comparación robusta ──
+  const normTipo = (s: string) => (s || '').trim().toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+  /**
+   * Busca si existe un documento cargado para un requisito dado.
+   * Matching case-insensitive + NFD-normalizado para tolerar diferencias
+   * de formato entre la plataforma web y banca móvil.
+   */
+  const findDocForReq = useCallback((req: RequisitoProducto): DocumentoCargado | undefined => {
+    const reqNorm = normTipo(req.tipoDocumento);
+    return documentos.find(d => normTipo(d.tipoDocumento) === reqNorm);
+  }, [documentos]);
+
+  /**
+   * Un requisito se considera "cubierto" (para progreso y canAdvance) cuando:
+   *   - Existe un documento con el tipo coincidente
+   *   - Tiene archivo/url (no es un stub vacío)
+   *   - No está Rechazado
+   * Documentos en estado 'Pendiente' o 'En Revisión' SÍ cuentan como cubiertos —
+   * la validación IA es un proceso aparte que no bloquea el avance de fase.
+   */
+  const docCubre = useCallback((req: RequisitoProducto): boolean => {
+    const doc = findDocForReq(req);
+    if (!doc) return false;
+    if (doc.estatus === 'Rechazado') return false;
+    return !!(doc.url || (doc as any).storagePath || doc.archivo);
+  }, [findDocForReq]);
+
   // Requisitos obligatorios de la fase actual (para barra de progreso y canAdvance)
   const requisitosFaseActual = useMemo(
     () => requisitos.filter(r => r.faseId <= faseIdActual),
@@ -645,18 +837,15 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
   );
 
   const docsValidadosFase = useMemo(
-    () => obligatoriosFaseActual.filter(req =>
-      documentos.some(d => d.tipoDocumento === req.tipoDocumento && d.estatus === 'Validado')
-    ),
-    [obligatoriosFaseActual, documentos]
+    () => obligatoriosFaseActual.filter(req => docCubre(req)),
+    [obligatoriosFaseActual, docCubre]
   );
 
   const porcentajeCompletado = obligatoriosFaseActual.length > 0
     ? Math.round((docsValidadosFase.length / obligatoriosFaseActual.length) * 100)
     : 0;
 
-  const canAdvance = obligatoriosFaseActual
-    .every(req => documentos.some(d => d.tipoDocumento === req.tipoDocumento && d.estatus === 'Validado'));
+  const canAdvance = obligatoriosFaseActual.every(req => docCubre(req));
 
   // ── Documentos filtrados por usuario actual y solicitud ──
   // TODO: cuando se implemente auth, filtrar por usuario real de sesión
@@ -881,8 +1070,18 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
       //
       // NOTA: El prompt de la fase (fasePromptIA) NO se usa aquí.
       // El prompt de la fase se usa ÚNICAMENTE al cambiar de fase ("Enviar Fase").
-      const promptAEnviar = reqInfo?.promptIA || `Verificar que el documento sea un "${doc.tipoDocumento}" legítimo y legible.`;
+      let promptAEnviar = reqInfo?.promptIA || `Verificar que el documento sea un "${doc.tipoDocumento}" legítimo y legible.`;
       const promptFuente = reqInfo?.promptIA ? 'DOCUMENTO (catálogo)' : 'FALLBACK';
+      // Enriquecer el prompt con datos del cliente para documentos de identidad
+      const tipoDocNorm = (doc.tipoDocumento || '').toLowerCase();
+      const esINE = tipoDocNorm.includes('ine') || tipoDocNorm.includes('ife') || tipoDocNorm.includes('credencial') || tipoDocNorm.includes('elector');
+      const esCSF = tipoDocNorm.includes('situaci') || tipoDocNorm.includes('fiscal') || tipoDocNorm.includes('rfc') || tipoDocNorm.includes('sat');
+      if (esINE && curpCliente) {
+        promptAEnviar += `\n\nDATOS DEL CLIENTE REGISTRADO:\n- CURP del cliente: ${curpCliente}\nVerifica que el CURP visible en el documento coincida EXACTAMENTE con el CURP registrado del cliente. Si no coincide, el documento debe ser RECHAZADO.`;
+      }
+      if (esCSF && rfcCliente) {
+        promptAEnviar += `\n\nDATOS DEL CLIENTE REGISTRADO:\n- RFC del cliente: ${rfcCliente}\nVerifica que el RFC visible en el documento coincida EXACTAMENTE con el RFC registrado del cliente. Si no coincide, el documento debe ser RECHAZADO.`;
+      }
       console.log(`${LOG} [IA] Enviando a /validar-documento-ia`);
       console.log(`${LOG} [IA]   - storagePath: ${doc.storagePath || '(n/a)'}`);
       console.log(`${LOG} [IA]   - tipoDocumento: ${doc.tipoDocumento}`);
@@ -894,6 +1093,8 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
         promptIA: promptAEnviar,
         tipoDocumento: doc.tipoDocumento,
         nombreSolicitante: nombreSolicitante || '(no proporcionado)',
+        curpCliente: curpCliente || '',
+        rfcCliente: rfcCliente || '',
       };
       if (imageBase64) {
         payload.imageBase64 = imageBase64;
@@ -1128,7 +1329,7 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
               </thead>
               <tbody>
                 {requisitos.map((req, idx) => {
-                  const docCargado = documentosFiltrados.find(d => d.tipoDocumento === req.tipoDocumento);
+                  const docCargado = findDocForReq(req);
                   const esCumplido = docCargado?.estatus === 'Validado';
                   const esFaseActual = req.faseId <= faseIdActual;
                   const esFaseFutura = req.faseId > faseIdActual;
@@ -1476,6 +1677,95 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
           saveToSession(solicitudId, 'documentos', updated);
         }}
       />
+
+      {/* ═══ Modal Preview Documento ═══ */}
+      {previewDocId !== null && (() => {
+        const doc = documentosFiltrados.find(d => d.id === previewDocId);
+        if (!doc) return null;
+        return (
+          <PreviewModal 
+            doc={doc} 
+            fileDataUrl={fileDataUrls[previewDocId]}
+            onClose={() => setPreviewDocId(null)}
+            onUrlRefreshed={(newUrl) => {
+              setDocumentos(prev => prev.map(d => d.id === doc.id ? { ...d, url: newUrl } : d));
+            }}
+          />
+        );
+      })()}
+
+      {/* ═══ Modal Resultado IA ═══ */}
+      {iaResultModal && (() => {
+        const r = iaResultModal.result;
+        const esValido = r.valido === true;
+        const confianza = typeof r.confianza === 'number' ? Math.round(r.confianza * 100) : null;
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setIaResultModal(null)}>
+            <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full max-h-[80vh] overflow-hidden border border-gray-200/50" onClick={e => e.stopPropagation()}>
+              <div className={`flex items-center justify-between px-5 py-4 border-b ${esValido ? 'bg-emerald-50 border-emerald-100' : 'bg-red-50 border-red-100'}`}>
+                <div className="flex items-center gap-3">
+                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${esValido ? 'bg-emerald-100' : 'bg-red-100'}`}>
+                    {esValido ? (
+                      <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="#059669" strokeWidth="2.5"><path d="M4 10l4 4 8-8" /></svg>
+                    ) : (
+                      <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="#DC2626" strokeWidth="2.5"><path d="M5 5l10 10M15 5l-10 10" /></svg>
+                    )}
+                  </div>
+                  <div>
+                    <h5 className={`text-sm font-bold ${esValido ? 'text-emerald-800' : 'text-red-800'}`}>
+                      {esValido ? 'Documento VALIDADO' : 'Documento RECHAZADO'}
+                    </h5>
+                    {confianza !== null && (
+                      <div className="flex items-center gap-2 mt-1">
+                        <div className="w-16 h-1.5 rounded-full bg-gray-200 overflow-hidden">
+                          <div className={`h-full rounded-full ${confianza >= 80 ? 'bg-emerald-500' : confianza >= 50 ? 'bg-amber-500' : 'bg-red-500'}`} style={{ width: `${confianza}%` }} />
+                        </div>
+                        <span className={`text-[10px] font-bold ${confianza >= 80 ? 'text-emerald-600' : confianza >= 50 ? 'text-amber-600' : 'text-red-600'}`}>{confianza}%</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <button onClick={() => setIaResultModal(null)} className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-white/60 transition-colors">
+                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 3l8 8M11 3l-8 8" /></svg>
+                </button>
+              </div>
+              <div className="p-5 overflow-auto max-h-[60vh] space-y-4">
+                {Array.isArray(r.motivos) && r.motivos.length > 0 && (
+                  <div>
+                    <h6 className="text-[11px] font-bold text-gray-600 uppercase mb-2">Motivos</h6>
+                    <div className="space-y-2">
+                      {r.motivos.map((m: string, i: number) => (
+                        <div key={i} className={`flex items-start gap-2.5 p-2.5 rounded-lg ${esValido ? 'bg-emerald-50/60' : 'bg-red-50/60'}`}>
+                          <span className={`mt-0.5 shrink-0 w-5 h-5 flex items-center justify-center rounded-md text-[10px] font-bold ${esValido ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>{i + 1}</span>
+                          <span className="text-xs text-gray-700 leading-relaxed">{m}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {r.extraido && Object.keys(r.extraido).length > 0 && (
+                  <div>
+                    <h6 className="text-[11px] font-bold text-gray-600 uppercase mb-2">Datos extraídos</h6>
+                    <div className="bg-blue-50/60 border border-blue-100 rounded-xl p-3.5 space-y-1.5">
+                      {Object.entries(r.extraido).filter(([, v]) => v && v !== '...' && v !== 'N/A').map(([key, val]) => (
+                        <div key={key} className="flex items-baseline justify-between py-1.5 border-b border-blue-100/60 last:border-0">
+                          <span className="text-[11px] text-blue-600 font-medium">{key.replace(/_/g, ' ')}</span>
+                          <span className="text-xs text-gray-800 font-medium ml-4">{String(val)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+              <div className="px-5 py-3.5 border-t border-gray-100 bg-gray-50/50 flex justify-end">
+                <button onClick={() => setIaResultModal(null)} className="px-5 py-2 bg-white border border-gray-200 text-gray-600 rounded-lg text-xs font-medium hover:bg-gray-50 shadow-sm transition-colors">
+                  Cerrar
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

@@ -582,7 +582,9 @@ export function CotizacionCreditoForm({ mode, lineaProducto, cotizacion, onSave,
   // Validaciones en tiempo real — spec §9
   const plazoErr = data.plazoMinimo > 0 && data.plazo > 0 && (data.plazo < data.plazoMinimo || data.plazo > data.plazoMaximo);
   const montoErr = data.montoMinimo > 0 && data.montoSolicitado > 0 && (data.montoSolicitado < data.montoMinimo || data.montoSolicitado > data.montoMaximo);
-  const tasaErr = data.tasaMinima > 0 && data.tasaCotizada > 0 && (data.tasaCotizada < data.tasaMinima || data.tasaCotizada > data.tasaMaxima);
+  const _tasaMin = parseFloat(String(data.tasaMinima).replace(/[^0-9.-]/g, '')) || 0;
+  const _tasaMax = parseFloat(String(data.tasaMaxima).replace(/[^0-9.-]/g, '')) || 0;
+  const tasaErr = _tasaMin > 0 && data.tasaCotizada > 0 && (data.tasaCotizada < _tasaMin || (_tasaMax > 0 && data.tasaCotizada > _tasaMax));
 
   const formatDateCalendar = (dateStr: string) => {
     if (!dateStr) return '—';

@@ -229,6 +229,7 @@ export function ProductoForm({
   const prelacionRef = useRef<{ getData: () => any[] }>(null);
   const fasesRef = useRef<{ getData: () => any[] }>(null);
   const expedientesRef = useRef<{ getData: () => any[] }>(null);
+  const [isSaving, setIsSaving] = useState(false);
   const garantiasRef = useRef<{ getData: () => any[] }>(null);
   const impuestosRef = useRef<{ getData: () => any[] }>(null);
   const comisionesRef = useRef<{ getData: () => any[] }>(null);
@@ -259,7 +260,7 @@ export function ProductoForm({
     }
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!isView) {
       // Validar campos requeridos según la especificación
       const requiredFields = [
@@ -383,14 +384,19 @@ export function ProductoForm({
         plantillas: plantillasRef.current?.getData() || [],
       };
 
-      // Sincronizar con J_PRODUCTOS (fire-and-forget, no bloquea guardado local)
+      // Sincronizar con J_PRODUCTOS (await para garantizar que la BD esté actualizada antes del refetch)
       const existingDbUuid = product?.dbUuid || null;
-      syncToJProducts({
-        tipo: isSeguros ? 'Seguro' : 'Credito',
-        datos: jCreditoData,
-        label: isSeguros ? 'Producto Seguros' : 'Producto Crédito',
-        existingId: existingDbUuid,
-      });
+      setIsSaving(true);
+      try {
+        await syncToJProducts({
+          tipo: isSeguros ? 'Seguro' : 'Credito',
+          datos: jCreditoData,
+          label: isSeguros ? 'Producto Seguros' : 'Producto Crédito',
+          existingId: existingDbUuid,
+        });
+      } finally {
+        setIsSaving(false);
+      }
 
       onSave(productToSave as Product);
       toast.success('Producto guardado exitosamente');
@@ -662,11 +668,15 @@ export function ProductoForm({
       <div className="px-4 py-2.5 bg-white border-b border-gray-300">
         <div className="flex items-center gap-2">
           {!isView && (
-            <button 
+            <button
               onClick={handleSubmit}
-              className="px-5 py-1.5 bg-[#0099CC] text-white rounded text-sm hover:bg-[#0088BB] font-medium"
+              disabled={isSaving}
+              className="px-5 py-1.5 bg-[#0099CC] text-white rounded text-sm hover:bg-[#0088BB] font-medium disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-1.5"
             >
-              Guardar
+              {isSaving && (
+                <svg className="animate-spin" width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="7" cy="7" r="5" strokeDasharray="20" strokeDashoffset="10" /></svg>
+              )}
+              {isSaving ? 'Guardando...' : 'Guardar'}
             </button>
           )}
           <button 

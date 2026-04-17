@@ -133,6 +133,8 @@ function mapRowToProduct(row: ProductoCaptacionRow, index: number): Product {
     porcentajeIncremento: d.porcentajeIncremento || (dg?.porcentajeIncremento) || '',
     tasaMinima: d.tasaMinima || (dg?.tasaMinima) || '',
     tasaMaxima: d.tasaMaxima || (dg?.tasaMaxima) || '',
+    plazoCompletarMinimo: d.plazoCompletarMinimo ?? (dg?.plazoCompletarMinimo) ?? undefined,
+    periodoCompletarMinimo: d.periodoCompletarMinimo || (dg?.periodoCompletarMinimo) || '',
 
     // ── Tab objetos anidados ──
     checkListCaptaciones: cl || undefined,

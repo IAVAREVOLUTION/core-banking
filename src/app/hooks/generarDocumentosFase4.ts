@@ -650,24 +650,32 @@ export function generarSolicitudPDF(datos: DatosSolicitud): string {
   const tasa   = t.tasa  || t.tasaAnual  ? `${t.tasa  || t.tasaAnual}%` : 'Sin definir';
   const moneda = t.moneda || 'MXN';
   const fecha  = new Date().toLocaleDateString('es-MX');
-
-  return buildPDFDataUrl('SOLICITUD DE CREDITO', [
-    ['No. Solicitud',   datos.noSol],
+  const rows: Array<[string, string]> = [
+    ['No. Solicitud',   datos.noSol || 'N/A'],
     ['Fecha',           fecha],
     ['',                ''],
     ['DATOS DEL SOLICITANTE', ''],
-    ['Cliente',         datos.cliente],
+    ['Cliente',         datos.cliente || 'N/A'],
+    ['RFC',             datos.rfc || 'N/A'],
+    ['CURP',            datos.curp || 'N/A'],
+    ['Fecha Nac.',      datos.fechaNacimiento || 'N/A'],
+    ['Domicilio',       datos.domicilio || 'N/A'],
+    ['Teléfono',        datos.telefono || 'N/A'],
+    ['Email',           datos.email || 'N/A'],
     ['',                ''],
     ['DATOS DEL PRODUCTO', ''],
-    ['Linea de Producto', datos.lineaProducto],
-    ['Tipo de Producto', datos.tipoProducto],
-    ['Producto',         datos.productoNombre || datos.tipoProducto],
+    ['Línea de Producto', datos.lineaProducto || 'N/A'],
+    ['Tipo de Producto', datos.tipoProducto || 'N/A'],
+    ['Producto',        datos.productoNombre || datos.tipoProducto || 'N/A'],
     ['',                ''],
     ['CONDICIONES DEL CREDITO', ''],
     ['Monto Solicitado', `${moneda} ${monto}`],
     ['Plazo',           plazo],
     ['Tasa Anual',      tasa],
     ['Moneda',          moneda],
+    ['Finalidad',       datos.finalidad || 'N/A'],
+    ['',                ''],
+    ['SUCURSAL',        datos.sucursal || 'N/A'],
     ['',                ''],
     ['DECLARACION DEL SOLICITANTE', ''],
     ['El suscrito manifiesta que los datos proporcionados', ''],
@@ -675,7 +683,8 @@ export function generarSolicitudPDF(datos: DatosSolicitud): string {
     ['verificar la informacion en los registros correspondientes.', ''],
     ['',                ''],
     ['Fecha de solicitud:', fecha],
-  ]);
+  ];
+  return buildPDFDataUrl('SOLICITUD DE CREDITO', rows);
 }
 
 /**
@@ -813,56 +822,144 @@ export async function autoCrearDocumentosFase2(opts: AutoCrearOpts): Promise<Aut
     const t = datos.terminos ?? {};
     const fechaStr = new Date().toLocaleDateString('es-MX');
 
-    // Valores calculados
-    const monto = t.montoSolicitado || t.monto || '';
-    // {{plazo}} — la plantilla puede tener " meses" hardcodeado después, así que solo el número
-    const plazoRaw = String(t.plazo || t.plazoMeses || '');
-
     // Función central de sustitución — opera sobre texto plano decodificado
-    const sustituir = (html: string): string => html
-      // ── Fecha y folio ──
-      .replace(/\{\{fecha\}\}/g, fechaStr)
-      .replace(/\{\{folio\}\}/g, datos.noSol || '')
-      // ── Datos del cliente ──
-      .replace(/\{\{cliente_nombre\}\}/g, datos.cliente)
-      .replace(/\{\{cliente_rfc\}\}/g, datos.rfc || 'N/A')
-      .replace(/\{\{cliente_curp\}\}/g, datos.curp || 'N/A')
-      .replace(/\{\{fecha_nacimiento\}\}/g, datos.fechaNacimiento || 'N/A')
-      .replace(/\{\{telefono\}\}/g, datos.telefono || 'N/A')
-      .replace(/\{\{email\}\}/g, datos.email || 'N/A')
-      // Domicilio: la plantilla usa {{domicilio}} y también {{cliente_domicilio}}
-      .replace(/\{\{domicilio\}\}/g, datos.domicilio || 'N/A')
-      .replace(/\{\{cliente_domicilio\}\}/g, datos.domicilio || 'N/A')
-      // ── Producto y condiciones ──
-      .replace(/\{\{producto\}\}/g, datos.productoNombre || datos.tipoProducto)
-      // Monto: la plantilla usa {{monto}} y también {{monto_solicitado}}
-      .replace(/\{\{monto\}\}/g, monto)
-      .replace(/\{\{monto_solicitado\}\}/g, monto)
-      // Plazo: solo el número (la plantilla ya tiene " meses" hardcodeado)
-      .replace(/\{\{plazo\}\}/g, plazoRaw)
-      .replace(/\{\{tasa\}\}/g, String(t.tasa || t.tasaAnual || t.tasaMinInteres || 'N/A'))
-      .replace(/\{\{cat\}\}/g, String(t.cat || 'N/A'))
-      .replace(/\{\{finalidad\}\}/g, datos.finalidad || 'N/A')
-      // ── Sucursal y ejecutivo ──
-      .replace(/\{\{sucursal\}\}/g, datos.sucursal || 'N/A')
-      .replace(/\{\{ejecutivo\}\}/g, 'N/A')
-      // ── Empresa (institución) ──
-      .replace(/\{\{empresa_nombre\}\}/g, 'N/A')
-      .replace(/\{\{empresa_razon_social\}\}/g, 'N/A')
-      .replace(/\{\{direccion_empresa\}\}/g, 'N/A')
-      // ── Datos laborales del cliente ──
-      .replace(/\{\{empresa\}\}/g, 'N/A')
-      .replace(/\{\{puesto\}\}/g, 'N/A')
-      .replace(/\{\{ingreso\}\}/g, 'N/A')
-      .replace(/\{\{antiguedad\}\}/g, 'N/A');
+    const sustituir = (html: string): string => {
+      // Valores calculados
+      const monto = t.montoSolicitado || t.monto || '';
+      const plazoRaw = String(t.plazo || t.plazoMeses || '');
+      const tasaValor = String(t.tasa || t.tasaAnual || t.tasaMinInteres || '');
+      const catValor = String(t.cat || '');
+      const garantiaValor = String(t.montoGarantia || '');
+      const seguroValor = String(t.montoSeguro || '');
+      const freqValor = String(t.frecuencia || '');
+      const tipoTasaValor = String(t.tipoTasa || '');
+      const tipoCalcValor = String(t.tipoCalculo || '');
+      const monedaValor = t.moneda || 'MXN';
+      const fechaSolicitudValor = datos.terminos?.fechaSolicitud || fechaStr;
+      const fechaPrimerPagoValor = String(t.fechaPrimerPago || 'N/A');
+
+      const result = html
+        // ── Fecha y folio ──
+        .replace(/\{\{fecha\}\}/g, fechaStr)
+        .replace(/\{\{folio\}\}/g, datos.noSol || '')
+        .replace(/\{\{noSol\}\}/g, datos.noSol || '')
+        .replace(/\{\{no_solicitud\}\}/g, datos.noSol || '')
+        .replace(/\{\{numero_solicitud\}\}/g, datos.noSol || '')
+        // ── Fechas del crédito ──
+        .replace(/\{\{fecha_solicitud\}\}/g, fechaSolicitudValor)
+        .replace(/\{\{fecha_primer_pago\}\}/g, fechaPrimerPagoValor)
+        .replace(/\{\{fecha_inicio\}\}/g, String(t.fechaInicio || fechaStr))
+        .replace(/\{\{fecha_fin\}\}/g, String(t.fechaFin || 'N/A'))
+        // ── Datos del cliente (nombre completo) ──
+        .replace(/\{\{cliente_nombre\}\}/g, datos.cliente)
+        .replace(/\{\{nombre_cliente\}\}/g, datos.cliente)
+        .replace(/\{\{nombre\}\}/g, datos.cliente)
+        .replace(/\{\{solicitante\}\}/g, datos.cliente)
+        .replace(/\{\{nombre_completo\}\}/g, datos.cliente)
+        // ── Identificación ──
+        .replace(/\{\{cliente_rfc\}\}/g, datos.rfc || 'N/A')
+        .replace(/\{\{rfc\}\}/g, datos.rfc || 'N/A')
+        .replace(/\{\{cliente_curp\}\}/g, datos.curp || 'N/A')
+        .replace(/\{\{curp\}\}/g, datos.curp || 'N/A')
+        .replace(/\{\{fecha_nacimiento\}\}/g, datos.fechaNacimiento || 'N/A')
+        .replace(/\{\{fecha_nac\}\}/g, datos.fechaNacimiento || 'N/A')
+        // ── Contacto ──
+        .replace(/\{\{telefono\}\}/g, datos.telefono || 'N/A')
+        .replace(/\{\{telefono_cliente\}\}/g, datos.telefono || 'N/A')
+        .replace(/\{\{email\}\}/g, datos.email || 'N/A')
+        .replace(/\{\{correo\}\}/g, datos.email || 'N/A')
+        .replace(/\{\{correo_electronico\}\}/g, datos.email || 'N/A')
+        // ── Domicilio ──
+        .replace(/\{\{domicilio\}\}/g, datos.domicilio || 'N/A')
+        .replace(/\{\{cliente_domicilio\}\}/g, datos.domicilio || 'N/A')
+        .replace(/\{\{direccion\}\}/g, datos.domicilio || 'N/A')
+        .replace(/\{\{direccion_cliente\}\}/g, datos.domicilio || 'N/A')
+        // ── Producto ──
+        .replace(/\{\{producto\}\}/g, datos.productoNombre || datos.tipoProducto)
+        .replace(/\{\{nombre_producto\}\}/g, datos.productoNombre || datos.tipoProducto)
+        .replace(/\{\{lineaProducto\}\}/g, datos.lineaProducto || 'N/A')
+        .replace(/\{\{linea_producto\}\}/g, datos.lineaProducto || 'N/A')
+        .replace(/\{\{tipoProducto\}\}/g, datos.tipoProducto || 'N/A')
+        .replace(/\{\{tipo_producto\}\}/g, datos.tipoProducto || 'N/A')
+        // ── Montos ──
+        .replace(/\{\{monto\}\}/g, monto)
+        .replace(/\{\{monto_solicitado\}\}/g, monto)
+        .replace(/\{\{monto_autorizado\}\}/g, String(t.montoAutorizado || monto))
+        .replace(/\{\{monto_garantia\}\}/g, garantiaValor || 'N/A')
+        .replace(/\{\{monto_seguro\}\}/g, seguroValor || 'N/A')
+        .replace(/\{\{cat\}\}/g, catValor || 'N/A')
+        // ── Plazo ──
+        .replace(/\{\{plazo\}\}/g, plazoRaw)
+        .replace(/\{\{plazo_meses\}\}/g, plazoRaw)
+        .replace(/\{\{plazoMeses\}\}/g, plazoRaw)
+        // ── Tasas ──
+        .replace(/\{\{tasa\}\}/g, tasaValor || 'N/A')
+        .replace(/\{\{tasa_anual\}\}/g, tasaValor || 'N/A')
+        .replace(/\{\{tasaAnual\}\}/g, tasaValor || 'N/A')
+        .replace(/\{\{tasa_min_interes\}\}/g, tasaValor || 'N/A')
+        .replace(/\{\{tasaMinInteres\}\}/g, String(t.tasaMinInteres || tasaValor || 'N/A'))
+        .replace(/\{\{tipo_tasa\}\}/g, tipoTasaValor || 'N/A')
+        .replace(/\{\{tipo_calculo\}\}/g, tipoCalcValor || 'N/A')
+        .replace(/\{\{frecuencia\}\}/g, freqValor || 'N/A')
+        .replace(/\{\{moneda\}\}/g, monedaValor)
+        // ── Finalidad y descripción ──
+        .replace(/\{\{finalidad\}\}/g, datos.finalidad || 'N/A')
+        .replace(/\{\{descripcion\}\}/g, datos.finalidad || 'N/A')
+        // ── Sucursal y ejecutivo ──
+        .replace(/\{\{sucursal\}\}/g, datos.sucursal || 'N/A')
+        .replace(/\{\{ejecutivo\}\}/g, 'N/A')
+        // ── Perfil de inversión (Captación) ──
+        .replace(/\{\{perfil\}\}/g, String(t.perfilInversionista || (t as any).perfil || 'N/A'))
+        .replace(/\{\{riesgo\}\}/g, String(t.riesgoInversionista || (t as any).riesgo || 'N/A'))
+        .replace(/\{\{horizonte\}\}/g, String(t.horizonteInversion || (t as any).horizonte || 'N/A'))
+        .replace(/\{\{experiencia\}\}/g, String(t.experienciaInversion || (t as any).experiencia || 'N/A'))
+        .replace(/\{\{rendimiento\}\}/g, String(t.tasa || (t as any).rendimiento || 'N/A'))
+        // ── Empresa (institución) ──
+        .replace(/\{\{empresa_nombre\}\}/g, 'N/A')
+        .replace(/\{\{empresa_razon_social\}\}/g, 'N/A')
+        .replace(/\{\{direccion_empresa\}\}/g, 'N/A')
+        // ── Datos laborales del cliente ──
+        .replace(/\{\{empresa\}\}/g, 'N/A')
+        .replace(/\{\{puesto\}\}/g, 'N/A')
+        .replace(/\{\{ingreso\}\}/g, 'N/A')
+        .replace(/\{\{antiguedad\}\}/g, 'N/A')
+        // ── Placeholder genérico de cierre (elimina cualquier {{...}} que quede) ──
+        .replace(/\{\{[^}]+\}\}/g, '');
+
+      return result;
+    };
 
     const raw = plantillaSolicitud.archivoData;
     // archivoData se guarda con FileReader.readAsDataURL → siempre base64.
     // Decodificar → sustituir placeholders → renderizar HTML a PDF con html2canvas + jsPDF.
     const b64Match = raw.match(/^data:([^;]+);base64,(.+)$/s);
-    const htmlSource = b64Match
-      ? sustituir(new TextDecoder('utf-8').decode(Uint8Array.from(atob(b64Match[2]), c => c.charCodeAt(0))))
-      : sustituir(raw);
+    const decodedHtml = b64Match
+      ? new TextDecoder('utf-8').decode(Uint8Array.from(atob(b64Match[2]), c => c.charCodeAt(0)))
+      : raw;
+    console.log('[DIAG generarDocumentosFase2] decodedHtml length:', decodedHtml.length);
+    console.log('[DIAG generarDocumentosFase2] decodedHtml sample (first 500 chars):', decodedHtml.slice(0, 500));
+    console.log('[DIAG generarDocumentosFase2] datos para sustituir:', JSON.stringify({
+      cliente: datos.cliente,
+      rfc: datos.rfc,
+      curp: datos.curp,
+      domicilio: datos.domicilio,
+      noSol: datos.noSol,
+      productoNombre: datos.productoNombre,
+      terminos_monto: t.montoSolicitado || t.monto,
+      terminos_plazo: t.plazo || t.plazoMeses,
+      terminos_tasa: t.tasa || t.tasaAnual,
+    }));
+    // Mostrar qué placeholders quedan sin reemplazar
+    const placeholdersEnHtml = decodedHtml.match(/\{\{[^}]+\}\}/g) || [];
+    console.log('[DIAG generarDocumentosFase2] placeholders en plantilla:', placeholdersEnHtml);
+    const htmlSource = sustituir(decodedHtml);
+    const placeholdersRestantes = htmlSource.match(/\{\{[^}]+\}\}/g) || [];
+    if (placeholdersRestantes.length > 0) {
+      console.warn('[DIAG generarDocumentosFase2] placeholders NO reemplazados:', placeholdersRestantes);
+    } else {
+      console.log('[DIAG generarDocumentosFase2] todos los placeholders fueron reemplazados OK');
+    }
+    console.log('[DIAG generarDocumentosFase2] htmlSource sample (first 300 chars):', htmlSource.slice(0, 300));
 
     try {
       fileData = await htmlToPdfBlobUrl(htmlSource);
@@ -875,6 +972,14 @@ export async function autoCrearDocumentosFase2(opts: AutoCrearOpts): Promise<Aut
   } else {
     fileData = generarSolicitudPDF(datos);
     console.log('[generarDocumentosFase2] Sin plantilla — generando PDF con datos del formulario');
+    console.log('[DIAG generarSolicitudPDF] datos usados:', JSON.stringify({
+      cliente: datos.cliente,
+      noSol: datos.noSol,
+      productoNombre: datos.productoNombre,
+      monto: (datos.terminos as any)?.montoSolicitado || (datos.terminos as any)?.monto,
+      plazo: (datos.terminos as any)?.plazo || (datos.terminos as any)?.plazoMeses,
+      tasa: (datos.terminos as any)?.tasa || (datos.terminos as any)?.tasaAnual,
+    }));
   }
 
   // NO registrar en expediente ni subir a Supabase — solo generar y descargar

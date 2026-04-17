@@ -14,8 +14,11 @@
  *       [Default tab: repeat of both sections]
  *       [Detail tab: SolicitudActivacionDetailTab (unchanged)]
  */
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { toast } from 'sonner';
+import { projectId, publicAnonKey } from '/utils/supabase/info';
+import { createClient } from '@supabase/supabase-js';
+import { avanzarFaseSolicitudDB } from '../../hooks/useSolicitudesDB';
 import {
   type SolicitudActivacionFormData,
   EMPTY_FORM,
@@ -28,6 +31,8 @@ import {
   formatCurrency,
   parseCurrency,
 } from './solicitudActivacionStore';
+
+const supabase = createClient(`https://${projectId}.supabase.co`, publicAnonKey);
 import { SolicitudActivacionDetailTab } from './SolicitudActivacionDetailTab';
 import { descargarDetallePDF } from './solicitudActivacionPDF';
 
@@ -40,6 +45,8 @@ interface SolicitudActivacionFormProps {
   initialData?: Partial<SolicitudActivacionFormData>;
   onCancel: () => void;
   onSave?: (data: SolicitudActivacionFormData, dbId?: string) => void;
+  /** Llamado cuando el usuario presiona "Enviar Solicitud" — cambia estatus a Enviada y guarda */
+  onEnviar?: (data: SolicitudActivacionFormData, dbId?: string) => void;
 }
 
 const TABS = [
@@ -120,7 +127,10 @@ function SectionTitle({ label }: { label: string }) {
 
 const CAT_ESTATUS = [
   { value: 'Pendiente', label: 'Pendiente' },
+  { value: 'Enviada',   label: 'Enviada'   },
+  { value: 'Pagado',    label: 'Pagado'    },
   { value: 'Activo',    label: 'Activo'    },
+  { value: 'Rechazada', label: 'Rechazada' },
 ];
 
 interface FieldGridProps {
@@ -138,10 +148,12 @@ function DatosGeneralesGrid({ formData, onChange, errors, isRO, canEditEstatus }
 
   const estatusBadgeClass =
     formData.estatus === 'Activada'    ? 'text-green-700 bg-green-50 border-green-200'     :
-    formData.estatus === 'Rechazada'   ? 'text-red-700 bg-red-50 border-red-200'           :
-    formData.estatus === 'En Revisión' ? 'text-blue-700 bg-blue-50 border-blue-200'        :
-    formData.estatus === 'Aprobada'    ? 'text-purple-700 bg-purple-50 border-purple-200'  :
     formData.estatus === 'Activo'      ? 'text-green-700 bg-green-50 border-green-200'     :
+    formData.estatus === 'Pagado'      ? 'text-green-700 bg-green-50 border-green-200'     :
+    formData.estatus === 'Enviada'     ? 'text-blue-700 bg-blue-50 border-blue-200'        :
+    formData.estatus === 'Aprobada'    ? 'text-purple-700 bg-purple-50 border-purple-200'  :
+    formData.estatus === 'En Revisión' ? 'text-blue-700 bg-blue-50 border-blue-200'        :
+    formData.estatus === 'Rechazada'   ? 'text-red-700 bg-red-50 border-red-200'           :
     'text-amber-700 bg-amber-50 border-amber-200';
 
   return (
@@ -234,18 +246,22 @@ export function SolicitudActivacionForm({
   initialData,
   onCancel,
   onSave,
+  onEnviar,
 }: SolicitudActivacionFormProps) {
   const storageId = mode === 'nuevo' ? 'new' : (solicitudId ?? 'new');
   const isRO      = mode === 'ver';
 
   // ── Form state ───────────────────────────────────────────────────
   const getInitial = useCallback((): SolicitudActivacionFormData => {
-    // 1. initialData tiene prioridad sobre sessionStorage (evita race condition)
+    // 1. nuevo: initialData tiene prioridad (evita race condition)
     if (initialData && mode === 'nuevo') {
       return { ...EMPTY_FORM, fechaSolicitud: getFechaSolicitudNow(), estatus: 'Pendiente', ...initialData };
     }
+    // 2. Sesión (aplica a todos los modos)
     const session = loadFromSession<SolicitudActivacionFormData>(storageId, 'form');
     if (session) return { ...EMPTY_FORM, ...session };
+    // 3. initialData fallback para editar/ver cuando la sesión no está disponible
+    if (initialData) return { ...EMPTY_FORM, ...initialData };
     if (mode === 'nuevo') return { ...EMPTY_FORM, fechaSolicitud: getFechaSolicitudNow(), estatus: 'Pendiente' };
     return { ...EMPTY_FORM };
   }, [mode, solicitudId, storageId, initialData]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -253,6 +269,8 @@ export function SolicitudActivacionForm({
   const [formData,  setFormData]  = useState<SolicitudActivacionFormData>(getInitial);
   const [errors,    setErrors]    = useState<Record<string, string>>({});
   const [activeTab, setActiveTab] = useState<string>('default');
+  // Estatus con que se abrió el formulario — si ya era Pagado no mostrar botón Activar
+  const estatusAlAbrir = useRef<string>(getInitial().estatus);
 
   useEffect(() => {
     setFormData(getInitial());
@@ -299,6 +317,84 @@ export function SolicitudActivacionForm({
     onSave?.(formData, typeof solicitudId === 'string' ? solicitudId : undefined);
   };
 
+  /** Enviar = guardar con estatus "Enviada". Registra fecha de envío en data. */
+  const handleEnviarSolicitud = () => {
+    if (!validate()) { toast.error('Faltan campos requeridos'); return; }
+    if (formData.estatus === 'Enviada') {
+      toast.info('La solicitud ya fue enviada anteriormente.'); return;
+    }
+    const dataEnviada: SolicitudActivacionFormData = {
+      ...formData,
+      estatus: 'Enviada',
+    };
+    clearSession(storageId);
+    const dbId = typeof solicitudId === 'string' ? solicitudId : undefined;
+    if (onEnviar) {
+      onEnviar(dataEnviada, dbId);
+    } else {
+      onSave?.(dataEnviada, dbId);
+    }
+  };
+
+  /**
+   * Activar — aparece cuando estatus = 'Pagado'.
+   * Cambia estatus a 'Pagado', guarda y avanza la fase en BD.
+   */
+  const handleActivar = async () => {
+    if (!validate()) { toast.error('Faltan campos requeridos'); return; }
+
+    // Validación por Línea de Producto: Crédito/Captación requieren estatus='Pagado'
+    const lineaNorm = (formData.lineaProducto || '')
+      .toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const esLineaCredLocal = lineaNorm.includes('linea');
+    if (!esLineaCredLocal && formData.estatus !== 'Pagado') {
+      toast.error('Debe estar en estatus Pagado para activar', {
+        description: `Estatus actual: ${formData.estatus || 'Pendiente'}`,
+      });
+      return;
+    }
+
+    // Guardar primero en la tabla de activación
+    const dataActivar: SolicitudActivacionFormData = {
+      ...formData,
+      estatus: 'Aprobado',
+      _fromActivar: true,
+    };
+    clearSession(storageId);
+    const dbId = typeof solicitudId === 'string' ? solicitudId : undefined;
+    
+    // Si hay callback externo (desde SolicitudCreditoForm), usarlo
+    if (onEnviar) {
+      onEnviar(dataActivar, dbId);
+      return;
+    }
+    if (onSave) {
+      onSave?.(dataActivar, dbId);
+      return;
+    }
+    
+    // SIN callback externo: guardar directamente y avanzar fase
+    try {
+      const solId = formData.solicitud_id || formData.originacionSolicitudId;
+      if (solId) {
+        await supabase.from('EFINANCIANET_DB.J_CUENTAS_CORP_CLIENTES').update({
+          estatus: 'Aprobado',
+          faseId: '3_completada',
+          descripcionFase: 'Completada',
+        }).eq('id', solId);
+        toast.success('¡Solicitud completada!', { description: 'Fase finalizada — Estatus: Aprobado' });
+      }
+    } catch (err) {
+      console.error('Error advancing phase:', err);
+    }
+  };
+
+  const esPagado      = formData.estatus === 'Pagado';
+  const esLineaCredito = (formData.lineaProducto || '')
+    .toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').includes('linea');
+  const puedeActivar  = esPagado || esLineaCredito;
+  const yaEnviada  = formData.estatus === 'Enviada' || formData.estatus === 'Activo';
+
   const montoNum = parseCurrency(formData.montoTransaccion);
 
   // ── Render ───────────────────────────────────────────────────────
@@ -338,6 +434,35 @@ export function SolicitudActivacionForm({
             >
               Guardar
             </button>
+          )}
+          {/* Enviar — visible cuando Pendiente o En Revisión (no Pagado ni Enviada, no Línea de Crédito) */}
+          {!isRO && !esPagado && !yaEnviada && !esLineaCredito && (
+            <button
+              onClick={handleEnviarSolicitud}
+              className="px-5 py-1.5 bg-[#2E5C91] text-white rounded text-xs hover:bg-[#1E4A75] flex items-center gap-1.5"
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" strokeLinejoin="round" strokeLinecap="round"/>
+              </svg>
+              Enviar Solicitud de Activación
+            </button>
+          )}
+          {/* Activar — solo cuando el estatus acaba de cambiar a Pagado (no si ya llegó así) */}
+          {!isRO && puedeActivar && (
+            <button
+              onClick={handleActivar}
+              className="px-5 py-1.5 bg-green-600 text-white rounded text-xs hover:bg-green-700 flex items-center gap-1.5 font-medium"
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <path d="M5 12l5 5L20 7" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+              Activar
+            </button>
+          )}
+          {yaEnviada && (
+            <span className="px-3 py-1 bg-blue-50 border border-blue-200 text-blue-700 rounded text-xs">
+              ✓ Solicitud {formData.estatus}
+            </span>
           )}
           <button
             onClick={onCancel}

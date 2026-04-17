@@ -17,6 +17,12 @@ export interface SolicitudActivacionFormData {
   type: string;                    // → J_SOLICITUDES_ACTIVACION.type
   fechaSolicitud: string;          // DD/MM/YYYY HH:MM:SS — read-only display
   fechaCompromiso: string;         // DD/MM/YYYY → J_SOLICITUDES_ACTIVACION.fecha_compromiso
+  /** Periodicidad del producto — usada para derivar fechaCompromiso */
+  periodicidad?: string;
+  /** Línea del producto referenciado: "Crédito" | "Captación" | "Línea de Crédito" */
+  lineaProducto?: string;
+  /** Marca interna: true cuando el guardado proviene del botón "Activar" (Pagado → Enviada) */
+  _fromActivar?: boolean;
   estatus: string;                 // fijo 'Pendiente' — read-only
 
   // ── JOIN-sourced read-only display fields ────────────────────────
@@ -57,6 +63,8 @@ export interface SolicitudActivacionListItem {
   _dbId?: string;
   _fromDB?: boolean;
   _raw?: Record<string, unknown>;
+  /** Marca interna: true cuando el guardado proviene del botón "Activar" (Pagado → Enviada) */
+  _fromActivar?: boolean;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -85,6 +93,7 @@ export const EMPTY_FORM: SolicitudActivacionFormData = {
   type: '',
   fechaSolicitud: '',
   fechaCompromiso: '',
+  periodicidad: '',
   estatus: 'Pendiente',
   // JOIN read-only
   numeroDocumento: '',
@@ -164,4 +173,44 @@ export function formatCurrency(value: number | undefined | null): string {
 export function parseCurrency(value: string): number {
   const n = parseFloat(String(value).replace(/[^0-9.-]/g, ''));
   return isNaN(n) ? 0 : n;
+}
+
+/**
+ * Calcula la fecha del primer pago sumando un período a la fecha de inicio.
+ * Reglas: mensual=+1 mes, quincenal=+15 días, catorcenal=+14 días,
+ *         semanal=+7 días, trimestral=+3 meses, semestral=+6 meses, anual=+1 año.
+ *
+ * @param fechaInicio  — DD/MM/YYYY o YYYY-MM-DD
+ * @param frecuencia   — valor de CAT_FRECUENCIA (Mensual, Quincenal, Semanal, etc.)
+ * @returns DD/MM/YYYY o '' si la fecha no es parseable
+ */
+export function calcularFechaPrimerPago(fechaInicio: string, frecuencia: string): string {
+  if (!fechaInicio) return '';
+
+  // Parsear DD/MM/YYYY o YYYY-MM-DD
+  let d: Date | null = null;
+  const slash = fechaInicio.split('/');
+  if (slash.length === 3 && slash[0].length === 2) {
+    d = new Date(parseInt(slash[2]), parseInt(slash[1]) - 1, parseInt(slash[0]));
+  } else {
+    const iso = fechaInicio.split('-');
+    if (iso.length === 3 && iso[0].length === 4) {
+      d = new Date(parseInt(iso[0]), parseInt(iso[1]) - 1, parseInt(iso[2]));
+    }
+  }
+  if (!d || isNaN(d.getTime())) return '';
+
+  const f = (frecuencia || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+  if      (f.includes('semana'))   d.setDate(d.getDate() + 7);
+  else if (f.includes('catorce'))  d.setDate(d.getDate() + 14);
+  else if (f.includes('quincen'))  d.setDate(d.getDate() + 15);
+  else if (f.includes('trimest'))  d.setMonth(d.getMonth() + 3);
+  else if (f.includes('semest'))   d.setMonth(d.getMonth() + 6);
+  else if (f.includes('anual'))    d.setFullYear(d.getFullYear() + 1);
+  else /* mensual o default */     d.setMonth(d.getMonth() + 1);
+
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  return `${dd}/${mm}/${d.getFullYear()}`;
 }
