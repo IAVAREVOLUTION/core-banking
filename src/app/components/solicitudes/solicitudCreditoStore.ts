@@ -281,6 +281,18 @@ export function loadFromSavedStore<T>(solId: SolId, subtab: string): T | null {
   return data ? structuredClone(data) as T : null;
 }
 
+/** Elimina todos los datos de un ID del saved store (in-memory + sessionStorage) */
+export function deleteSavedStore(solId: SolId): void {
+  delete SAVED_DATA[String(solId)];
+  const prefix = `sol_credito_${solId}_`;
+  const keys: string[] = [];
+  for (let i = 0; i < sessionStorage.length; i++) {
+    const k = sessionStorage.key(i);
+    if (k?.startsWith(prefix)) keys.push(k);
+  }
+  keys.forEach(k => sessionStorage.removeItem(k));
+}
+
 /** Migra TODOS los datos de un ID a otro en el saved store */
 export function migrateSavedStore(fromId: SolId, toId: SolId): void {
   const fromKey = String(fromId);
@@ -431,6 +443,7 @@ export const CAT_ESTATUS_SOLICITUD = [
   { value: 'En proceso', label: 'En proceso' },
   { value: 'En Análisis', label: 'En Análisis' },
   { value: 'Aprobado', label: 'Aprobado' },
+  { value: 'Autorizada', label: 'Autorizada' },
   { value: 'Rechazado', label: 'Rechazado' },
   { value: 'Cancelado', label: 'Cancelado' },
 ];

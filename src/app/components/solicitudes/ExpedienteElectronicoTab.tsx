@@ -1471,8 +1471,8 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
           </div>
         )}
 
-        {/* Boton Enviar Solicitud */}
-        {!isRO && requisitos.length > 0 && (
+        {/* Boton Enviar Solicitud — solo visible cuando el llamador lo habilita (originación) */}
+        {!isRO && requisitos.length > 0 && !!onEnviarSolicitud && (
           <div className="mt-3 flex items-center gap-3">
             <button
               disabled={!canAdvance}

@@ -130,6 +130,7 @@ const CAT_ESTATUS = [
   { value: 'Enviada',   label: 'Enviada'   },
   { value: 'Pagado',    label: 'Pagado'    },
   { value: 'Activo',    label: 'Activo'    },
+  { value: 'Activada',  label: 'Activada'  },
   { value: 'Rechazada', label: 'Rechazada' },
 ];
 
@@ -357,7 +358,7 @@ export function SolicitudActivacionForm({
     // Guardar primero en la tabla de activación
     const dataActivar: SolicitudActivacionFormData = {
       ...formData,
-      estatus: 'Aprobado',
+      estatus: 'Pagado',
       _fromActivar: true,
     };
     clearSession(storageId);

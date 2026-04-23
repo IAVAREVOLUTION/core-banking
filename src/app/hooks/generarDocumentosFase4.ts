@@ -495,9 +495,26 @@ export async function autoCrearDocumentosFase4(opts: AutoCrearOpts): Promise<Aut
   const pdfGenerados: string[] = [];
   let subidosASupabase = false;
 
+  // Helper: genera fileData desde plantilla (archivoData) o fallback a PDF genérico
+  const generarFileData = async (
+    plantilla: typeof plantillaContrato,
+    fallback: () => string,
+  ): Promise<string> => {
+    if (plantilla.archivoData) {
+      const decodedHtml = decodificarArchivoData(plantilla.archivoData);
+      const htmlSource = sustituirPlaceholders(decodedHtml, datos);
+      try {
+        return await htmlToPdfBlobUrl(htmlSource);
+      } catch (e) {
+        console.warn('[generarDocumentosFase4] Error renderizando plantilla a PDF, usando fallback:', e);
+      }
+    }
+    return fallback();
+  };
+
   // ── PASO 4: Generar y subir CONTRATO_BASE ──
   if (!existe(CLAVE_CONTRATO_BASE)) {
-    const fileData = generarContratoPDF(datos);
+    const fileData = await generarFileData(plantillaContrato, () => generarContratoPDF(datos));
     let uploadInfo: UploadResult | null = null;
 
     if (supabase && pid) {
@@ -533,7 +550,7 @@ export async function autoCrearDocumentosFase4(opts: AutoCrearOpts): Promise<Aut
 
   // ── PASO 5: Generar y subir PAGARE_BASE ──
   if (!existe(CLAVE_PAGARE_BASE)) {
-    const fileData = generarPagePDF(datos);
+    const fileData = await generarFileData(plantillaPagare, () => generarPagePDF(datos));
     let uploadInfo: UploadResult | null = null;
 
     if (supabase && pid) {
@@ -695,46 +712,258 @@ export function generarSolicitudPDF(datos: DatosSolicitud): string {
  * Requiere al menos 1 plantilla activa tipo "solicitud".
  */
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Sustitución de placeholders {{...}} en HTML de plantilla
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Reemplaza todos los placeholders {{campo}} con los datos de la solicitud. */
+export function sustituirPlaceholders(html: string, datos: DatosSolicitud): string {
+  const t = datos.terminos ?? {};
+  const fechaStr = new Date().toLocaleDateString('es-MX');
+  const monto = t.montoSolicitado || t.monto || '';
+  const plazoRaw = String(t.plazo || t.plazoMeses || '');
+  const tasaValor = String(t.tasa || t.tasaAnual || t.tasaMinInteres || '');
+  const catValor = String(t.cat || '');
+  const garantiaValor = String(t.montoGarantia || '');
+  const seguroValor = String(t.montoSeguro || '');
+  const freqValor = String(t.frecuencia || '');
+  const tipoTasaValor = String(t.tipoTasa || '');
+  const tipoCalcValor = String(t.tipoCalculo || '');
+  const monedaValor = t.moneda || 'MXN';
+  const fechaSolicitudValor = t.fechaSolicitud || fechaStr;
+  const fechaPrimerPagoValor = String(t.fechaPrimerPago || 'N/A');
+
+  const nombreCliente   = datos.cliente    || '';
+  const rfcCliente      = datos.rfc        || 'N/A';
+  const curpCliente     = datos.curp       || 'N/A';
+  const domicilioCliente = datos.domicilio || 'N/A';
+  const fechaNacCliente = datos.fechaNacimiento || 'N/A';
+
+  // Fecha en formato largo (ej. "22 de abril de 2026")
+  const meses = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+  const hoy = new Date();
+  const fechaLarga = `${hoy.getDate()} de ${meses[hoy.getMonth()]} de ${hoy.getFullYear()}`;
+
+  // Fecha de vencimiento (plazo en meses desde hoy)
+  const mesesPlazo = parseInt(plazoRaw) || 0;
+  const fechaVenc = (() => {
+    if (!mesesPlazo) return 'N/A';
+    const d = new Date();
+    d.setMonth(d.getMonth() + mesesPlazo);
+    return d.toLocaleDateString('es-MX');
+  })();
+
+  // Pago periódico (pagoMensual, primerPago, pagoPeriodico, etc.)
+  const pagoPeriodico = String(
+    t.pagoMensual || t.primerPago || t.pagoPeriodico || t.pago || ''
+  ) || 'N/A';
+
+  return html
+    // ── Fechas ──
+    .replace(/\{\{fecha\}\}/g, fechaStr)
+    .replace(/\{\{fecha_emision\}\}/g, fechaStr)
+    .replace(/\{\{fechaFirmaLarga\}\}/g, fechaLarga)
+    .replace(/\{\{fecha_firma_larga\}\}/g, fechaLarga)
+    .replace(/\{\{fecha_vencimiento\}\}/g, fechaVenc)
+    .replace(/\{\{fecha_solicitud\}\}/g, fechaSolicitudValor)
+    .replace(/\{\{fecha_primer_pago\}\}/g, fechaPrimerPagoValor)
+    .replace(/\{\{fecha_inicio\}\}/g, String(t.fechaInicio || fechaStr))
+    .replace(/\{\{fecha_fin\}\}/g, String(t.fechaFin || 'N/A'))
+    .replace(/\{\{fecha_nacimiento\}\}/g, fechaNacCliente)
+    .replace(/\{\{fecha_nac\}\}/g, fechaNacCliente)
+    // ── No. Solicitud / Folio ──
+    .replace(/\{\{folio\}\}/g, datos.noSol || '')
+    .replace(/\{\{noSol\}\}/g, datos.noSol || '')
+    .replace(/\{\{no_solicitud\}\}/g, datos.noSol || '')
+    .replace(/\{\{numero_solicitud\}\}/g, datos.noSol || '')
+    .replace(/\{\{numeroSolicitud\}\}/g, datos.noSol || '')
+    // ── Nombre del cliente ── (cubrir todas las variantes de los templates)
+    .replace(/\{\{clienteNombre\}\}/g, nombreCliente)
+    .replace(/\{\{clienteNombreCompleto\}\}/g, nombreCliente)
+    .replace(/\{\{cliente_nombre\}\}/g, nombreCliente)
+    .replace(/\{\{nombre_cliente\}\}/g, nombreCliente)
+    .replace(/\{\{nombre\}\}/g, nombreCliente)
+    .replace(/\{\{nombre_completo\}\}/g, nombreCliente)
+    .replace(/\{\{solicitante\}\}/g, nombreCliente)
+    .replace(/\{\{deudor_nombre\}\}/g, nombreCliente)
+    // ── RFC ──
+    .replace(/\{\{clienteRFC\}\}/g, rfcCliente)
+    .replace(/\{\{cliente_rfc\}\}/g, rfcCliente)
+    .replace(/\{\{deudor_rfc\}\}/g, rfcCliente)
+    .replace(/\{\{rfc\}\}/g, rfcCliente)
+    // ── CURP ──
+    .replace(/\{\{clienteCURP\}\}/g, curpCliente)
+    .replace(/\{\{cliente_curp\}\}/g, curpCliente)
+    .replace(/\{\{curp\}\}/g, curpCliente)
+    // ── Domicilio ──
+    .replace(/\{\{clienteDomicilio\}\}/g, domicilioCliente)
+    .replace(/\{\{cliente_domicilio\}\}/g, domicilioCliente)
+    .replace(/\{\{deudor_domicilio\}\}/g, domicilioCliente)
+    .replace(/\{\{domicilio\}\}/g, domicilioCliente)
+    .replace(/\{\{direccion\}\}/g, domicilioCliente)
+    .replace(/\{\{direccion_cliente\}\}/g, domicilioCliente)
+    // ── Datos adicionales del cliente ──
+    .replace(/\{\{clienteFechaNacimientoConstitucion\}\}/g, fechaNacCliente)
+    .replace(/\{\{clienteTipoPersonaDescripcion\}\}/g, 'N/A')
+    .replace(/\{\{telefono\}\}/g, datos.telefono || 'N/A')
+    .replace(/\{\{telefono_cliente\}\}/g, datos.telefono || 'N/A')
+    .replace(/\{\{email\}\}/g, datos.email || 'N/A')
+    .replace(/\{\{correo\}\}/g, datos.email || 'N/A')
+    .replace(/\{\{correo_electronico\}\}/g, datos.email || 'N/A')
+    // ── Producto ──
+    .replace(/\{\{productoNombre\}\}/g, datos.productoNombre || datos.tipoProducto || 'N/A')
+    .replace(/\{\{producto\}\}/g, datos.productoNombre || datos.tipoProducto || 'N/A')
+    .replace(/\{\{nombre_producto\}\}/g, datos.productoNombre || datos.tipoProducto || 'N/A')
+    .replace(/\{\{lineaProducto\}\}/g, datos.lineaProducto || 'N/A')
+    .replace(/\{\{linea_producto\}\}/g, datos.lineaProducto || 'N/A')
+    .replace(/\{\{tipoProducto\}\}/g, datos.tipoProducto || 'N/A')
+    .replace(/\{\{tipo_producto\}\}/g, datos.tipoProducto || 'N/A')
+    // ── Montos ──
+    .replace(/\{\{monto\}\}/g, monto)
+    .replace(/\{\{monto_solicitado\}\}/g, monto)
+    .replace(/\{\{monto_autorizado\}\}/g, String(t.montoAutorizado || monto))
+    .replace(/\{\{montoCredito\}\}/g, monto)
+    .replace(/\{\{limite\}\}/g, monto)
+    .replace(/\{\{limite_numero\}\}/g, monto)
+    .replace(/\{\{limite_letra\}\}/g, monto)
+    .replace(/\{\{monto_numero\}\}/g, monto)
+    .replace(/\{\{monto_letra\}\}/g, monto)
+    .replace(/\{\{monto_garantia\}\}/g, garantiaValor || 'N/A')
+    .replace(/\{\{monto_seguro\}\}/g, seguroValor || 'N/A')
+    .replace(/\{\{montoPago\}\}/g, pagoPeriodico)
+    .replace(/\{\{monto_pago\}\}/g, pagoPeriodico)
+    // ── Plazo ──
+    .replace(/\{\{plazo\}\}/g, plazoRaw)
+    .replace(/\{\{plazo_meses\}\}/g, plazoRaw)
+    .replace(/\{\{plazoMeses\}\}/g, plazoRaw)
+    .replace(/\{\{plazoDescripcion\}\}/g, plazoRaw ? `${plazoRaw} meses` : 'N/A')
+    .replace(/\{\{plazo_descripcion\}\}/g, plazoRaw ? `${plazoRaw} meses` : 'N/A')
+    .replace(/\{\{numeroPagos\}\}/g, plazoRaw || 'N/A')
+    .replace(/\{\{numero_pagos\}\}/g, plazoRaw || 'N/A')
+    // ── Tasas ──
+    .replace(/\{\{tasa\}\}/g, tasaValor || 'N/A')
+    .replace(/\{\{tasa_anual\}\}/g, tasaValor || 'N/A')
+    .replace(/\{\{tasaAnual\}\}/g, tasaValor || 'N/A')
+    .replace(/\{\{tasaInteres\}\}/g, tasaValor || 'N/A')
+    .replace(/\{\{tasa_interes\}\}/g, tasaValor || 'N/A')
+    .replace(/\{\{tasa_min_interes\}\}/g, tasaValor || 'N/A')
+    .replace(/\{\{tasaMinInteres\}\}/g, String(t.tasaMinInteres || tasaValor || 'N/A'))
+    .replace(/\{\{tasa_moratoria\}\}/g, String(t.tasaMoratoria || t.tasaMora || 'N/A'))
+    .replace(/\{\{tipo_tasa\}\}/g, tipoTasaValor || 'N/A')
+    .replace(/\{\{tipo_calculo\}\}/g, tipoCalcValor || 'N/A')
+    .replace(/\{\{cat\}\}/g, catValor || 'N/A')
+    // ── Otros financieros ──
+    .replace(/\{\{frecuencia\}\}/g, freqValor || 'N/A')
+    .replace(/\{\{moneda\}\}/g, monedaValor)
+    // ── Localización ──
+    .replace(/\{\{ciudad\}\}/g, 'N/A')
+    .replace(/\{\{ciudadFirma\}\}/g, 'N/A')
+    .replace(/\{\{ciudad_firma\}\}/g, 'N/A')
+    .replace(/\{\{jurisdiccion\}\}/g, 'N/A')
+    .replace(/\{\{lugar_pago\}\}/g, 'N/A')
+    // ── Institución / Empresa ──
+    .replace(/\{\{institucionNombre\}\}/g, 'N/A')
+    .replace(/\{\{institucion_nombre\}\}/g, 'N/A')
+    .replace(/\{\{acreedor_nombre\}\}/g, 'N/A')
+    .replace(/\{\{aval_nombre\}\}/g, 'N/A')
+    .replace(/\{\{empresa_nombre\}\}/g, 'N/A')
+    .replace(/\{\{empresa_razon_social\}\}/g, 'N/A')
+    .replace(/\{\{direccion_empresa\}\}/g, 'N/A')
+    .replace(/\{\{empresa\}\}/g, 'N/A')
+    // ── Solicitud / Operación ──
+    .replace(/\{\{finalidad\}\}/g, datos.finalidad || 'N/A')
+    .replace(/\{\{descripcion\}\}/g, datos.finalidad || 'N/A')
+    .replace(/\{\{sucursal\}\}/g, datos.sucursal || 'N/A')
+    .replace(/\{\{ejecutivo\}\}/g, 'N/A')
+    .replace(/\{\{puesto\}\}/g, 'N/A')
+    .replace(/\{\{ingreso\}\}/g, 'N/A')
+    .replace(/\{\{antiguedad\}\}/g, 'N/A')
+    // ── Inversión / Captación ──
+    .replace(/\{\{perfil\}\}/g, String(t.perfilInversionista || (t as any).perfil || 'N/A'))
+    .replace(/\{\{riesgo\}\}/g, String(t.riesgoInversionista || (t as any).riesgo || 'N/A'))
+    .replace(/\{\{horizonte\}\}/g, String(t.horizonteInversion || (t as any).horizonte || 'N/A'))
+    .replace(/\{\{experiencia\}\}/g, String(t.experienciaInversion || (t as any).experiencia || 'N/A'))
+    .replace(/\{\{rendimiento\}\}/g, String(t.tasa || (t as any).rendimiento || 'N/A'))
+    // ── Catch-all: cualquier {{placeholder}} no reconocido → vacío ──
+    .replace(/\{\{[^}]+\}\}/g, '');
+}
+
+/** Decodifica archivoData (base64 data URL o texto plano) a string HTML. */
+export function decodificarArchivoData(raw: string): string {
+  const b64Match = raw.match(/^data:([^;]+);base64,(.+)$/s);
+  return b64Match
+    ? new TextDecoder('utf-8').decode(Uint8Array.from(atob(b64Match[2]), c => c.charCodeAt(0)))
+    : raw;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HTML → PDF
+// ─────────────────────────────────────────────────────────────────────────────
+
 /**
  * Renderiza HTML a PDF usando html2canvas + jsPDF y devuelve un Blob URL.
- * El contenedor se inserta en el DOM con opacidad 0 para que los estilos se apliquen,
- * luego se elimina al terminar.
+ *
+ * El contenedor se posiciona en la esquina superior-izquierda del viewport
+ * (left:0;top:0) detrás del contenido (z-index:-1) para que html2canvas pueda
+ * capturarlo correctamente — si se usa left:-9999px, getBoundingClientRect()
+ * devuelve x=-9999 y html2canvas renderiza fuera del canvas produciendo un PDF
+ * en blanco. Los estilos se inyectan dentro del contenedor para que se eliminen
+ * junto con él sin afectar de forma persistente el CSS de la aplicación.
  */
-async function htmlToPdfBlobUrl(html: string): Promise<string> {
-  // Crear iframe oculto para aislar estilos del HTML de la plantilla
-  const iframe = document.createElement('iframe');
-  iframe.style.cssText = 'position:fixed;left:0;top:0;width:794px;height:1123px;opacity:0;pointer-events:none;border:none;z-index:-1;';
-  document.body.appendChild(iframe);
+export async function htmlToPdfBlobUrl(html: string): Promise<string> {
+  // ── 1. Extraer <style> y contenido del <body> ─────────────────────────────
+  const styleBlocks: string[] = [];
+  const styleRegex = /<style[^>]*>([\s\S]*?)<\/style>/gi;
+  let sm: RegExpExecArray | null;
+  while ((sm = styleRegex.exec(html)) !== null) styleBlocks.push(sm[1]);
+
+  const bodyMatch = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+  const bodyContent = bodyMatch ? bodyMatch[1] : html;
+
+  // ── 2. Contenedor en viewport (left:0;top:0) detrás del contenido ─────────
+  // CRÍTICO: left:-9999px hace que getBoundingClientRect().left = -9999 y
+  // html2canvas renderiza fuera del canvas → PDF en blanco.
+  const container = document.createElement('div');
+  // width:794px ≈ 210mm a 96 DPI; overflow:visible para que el contenido no se corte
+  container.style.cssText = 'position:fixed;left:0;top:0;width:794px;background:#fff;z-index:-1;pointer-events:none;overflow:visible;';
+
+  // Estilos dentro del contenedor → se eliminan con él al hacer removeChild
+  const styleTag = styleBlocks.length
+    ? `<style>${styleBlocks.join('\n')}</style>`
+    : '';
+  container.innerHTML = styleTag + bodyContent;
+  document.body.appendChild(container);
+
+  // Esperar fonts e imágenes
+  await new Promise(r => setTimeout(r, 700));
 
   try {
-    const iframeDoc = iframe.contentDocument!;
-    iframeDoc.open();
-    iframeDoc.write(html);
-    iframeDoc.close();
+    // Capturar la primera .page si existe; sino el contenedor completo
+    const pageEl = (container.querySelector('.page') as HTMLElement)
+      || (container.querySelector('[class*="page"]') as HTMLElement)
+      || container;
 
-    // Esperar a que carguen estilos e imágenes
-    await new Promise<void>(resolve => {
-      if (iframeDoc.readyState === 'complete') { resolve(); return; }
-      iframe.onload = () => resolve();
-      setTimeout(resolve, 800);
-    });
-    await new Promise(r => setTimeout(r, 300)); // pequeño delay para layout
-
-    const pageEl = iframeDoc.querySelector('.page') as HTMLElement || iframeDoc.body;
+    // Forzar que la altura mínima se compute (para que flex space-between funcione)
+    const computedH = window.getComputedStyle(pageEl).minHeight;
+    const minHPx = computedH && computedH !== 'none' ? parseFloat(computedH) : 0;
+    const elW = 794;
+    const elH = Math.max(pageEl.scrollHeight, pageEl.offsetHeight, minHPx, 100);
 
     const canvas = await html2canvas(pageEl, {
       scale: 2,
       useCORS: true,
+      allowTaint: true,
       logging: false,
       backgroundColor: '#ffffff',
-      width: pageEl.scrollWidth,
-      height: pageEl.scrollHeight,
+      width: elW,
+      height: elH,
       windowWidth: 794,
+      windowHeight: elH,
     });
 
-    const imgData = canvas.toDataURL('image/jpeg', 0.95);
-    const PAGE_W = 210;  // mm A4
-    const PAGE_H = 297;  // mm A4
+    const imgData = canvas.toDataURL('image/jpeg', 0.92);
+    const PAGE_W = 210;
+    const PAGE_H = 297;
     const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
 
     const imgW = PAGE_W;
@@ -752,10 +981,9 @@ async function htmlToPdfBlobUrl(html: string): Promise<string> {
       yLeft -= PAGE_H;
     }
 
-    const pdfBlob = pdf.output('blob');
-    return `blob:application/pdf::${URL.createObjectURL(pdfBlob)}`;
+    return URL.createObjectURL(pdf.output('blob'));
   } finally {
-    document.body.removeChild(iframe);
+    try { document.body.removeChild(container); } catch (_) {}
   }
 }
 
@@ -819,167 +1047,18 @@ export async function autoCrearDocumentosFase2(opts: AutoCrearOpts): Promise<Aut
   let fileData: string;
 
   if (plantillaSolicitud?.archivoData) {
-    const t = datos.terminos ?? {};
-    const fechaStr = new Date().toLocaleDateString('es-MX');
-
-    // Función central de sustitución — opera sobre texto plano decodificado
-    const sustituir = (html: string): string => {
-      // Valores calculados
-      const monto = t.montoSolicitado || t.monto || '';
-      const plazoRaw = String(t.plazo || t.plazoMeses || '');
-      const tasaValor = String(t.tasa || t.tasaAnual || t.tasaMinInteres || '');
-      const catValor = String(t.cat || '');
-      const garantiaValor = String(t.montoGarantia || '');
-      const seguroValor = String(t.montoSeguro || '');
-      const freqValor = String(t.frecuencia || '');
-      const tipoTasaValor = String(t.tipoTasa || '');
-      const tipoCalcValor = String(t.tipoCalculo || '');
-      const monedaValor = t.moneda || 'MXN';
-      const fechaSolicitudValor = datos.terminos?.fechaSolicitud || fechaStr;
-      const fechaPrimerPagoValor = String(t.fechaPrimerPago || 'N/A');
-
-      const result = html
-        // ── Fecha y folio ──
-        .replace(/\{\{fecha\}\}/g, fechaStr)
-        .replace(/\{\{folio\}\}/g, datos.noSol || '')
-        .replace(/\{\{noSol\}\}/g, datos.noSol || '')
-        .replace(/\{\{no_solicitud\}\}/g, datos.noSol || '')
-        .replace(/\{\{numero_solicitud\}\}/g, datos.noSol || '')
-        // ── Fechas del crédito ──
-        .replace(/\{\{fecha_solicitud\}\}/g, fechaSolicitudValor)
-        .replace(/\{\{fecha_primer_pago\}\}/g, fechaPrimerPagoValor)
-        .replace(/\{\{fecha_inicio\}\}/g, String(t.fechaInicio || fechaStr))
-        .replace(/\{\{fecha_fin\}\}/g, String(t.fechaFin || 'N/A'))
-        // ── Datos del cliente (nombre completo) ──
-        .replace(/\{\{cliente_nombre\}\}/g, datos.cliente)
-        .replace(/\{\{nombre_cliente\}\}/g, datos.cliente)
-        .replace(/\{\{nombre\}\}/g, datos.cliente)
-        .replace(/\{\{solicitante\}\}/g, datos.cliente)
-        .replace(/\{\{nombre_completo\}\}/g, datos.cliente)
-        // ── Identificación ──
-        .replace(/\{\{cliente_rfc\}\}/g, datos.rfc || 'N/A')
-        .replace(/\{\{rfc\}\}/g, datos.rfc || 'N/A')
-        .replace(/\{\{cliente_curp\}\}/g, datos.curp || 'N/A')
-        .replace(/\{\{curp\}\}/g, datos.curp || 'N/A')
-        .replace(/\{\{fecha_nacimiento\}\}/g, datos.fechaNacimiento || 'N/A')
-        .replace(/\{\{fecha_nac\}\}/g, datos.fechaNacimiento || 'N/A')
-        // ── Contacto ──
-        .replace(/\{\{telefono\}\}/g, datos.telefono || 'N/A')
-        .replace(/\{\{telefono_cliente\}\}/g, datos.telefono || 'N/A')
-        .replace(/\{\{email\}\}/g, datos.email || 'N/A')
-        .replace(/\{\{correo\}\}/g, datos.email || 'N/A')
-        .replace(/\{\{correo_electronico\}\}/g, datos.email || 'N/A')
-        // ── Domicilio ──
-        .replace(/\{\{domicilio\}\}/g, datos.domicilio || 'N/A')
-        .replace(/\{\{cliente_domicilio\}\}/g, datos.domicilio || 'N/A')
-        .replace(/\{\{direccion\}\}/g, datos.domicilio || 'N/A')
-        .replace(/\{\{direccion_cliente\}\}/g, datos.domicilio || 'N/A')
-        // ── Producto ──
-        .replace(/\{\{producto\}\}/g, datos.productoNombre || datos.tipoProducto)
-        .replace(/\{\{nombre_producto\}\}/g, datos.productoNombre || datos.tipoProducto)
-        .replace(/\{\{lineaProducto\}\}/g, datos.lineaProducto || 'N/A')
-        .replace(/\{\{linea_producto\}\}/g, datos.lineaProducto || 'N/A')
-        .replace(/\{\{tipoProducto\}\}/g, datos.tipoProducto || 'N/A')
-        .replace(/\{\{tipo_producto\}\}/g, datos.tipoProducto || 'N/A')
-        // ── Montos ──
-        .replace(/\{\{monto\}\}/g, monto)
-        .replace(/\{\{monto_solicitado\}\}/g, monto)
-        .replace(/\{\{monto_autorizado\}\}/g, String(t.montoAutorizado || monto))
-        .replace(/\{\{monto_garantia\}\}/g, garantiaValor || 'N/A')
-        .replace(/\{\{monto_seguro\}\}/g, seguroValor || 'N/A')
-        .replace(/\{\{cat\}\}/g, catValor || 'N/A')
-        // ── Plazo ──
-        .replace(/\{\{plazo\}\}/g, plazoRaw)
-        .replace(/\{\{plazo_meses\}\}/g, plazoRaw)
-        .replace(/\{\{plazoMeses\}\}/g, plazoRaw)
-        // ── Tasas ──
-        .replace(/\{\{tasa\}\}/g, tasaValor || 'N/A')
-        .replace(/\{\{tasa_anual\}\}/g, tasaValor || 'N/A')
-        .replace(/\{\{tasaAnual\}\}/g, tasaValor || 'N/A')
-        .replace(/\{\{tasa_min_interes\}\}/g, tasaValor || 'N/A')
-        .replace(/\{\{tasaMinInteres\}\}/g, String(t.tasaMinInteres || tasaValor || 'N/A'))
-        .replace(/\{\{tipo_tasa\}\}/g, tipoTasaValor || 'N/A')
-        .replace(/\{\{tipo_calculo\}\}/g, tipoCalcValor || 'N/A')
-        .replace(/\{\{frecuencia\}\}/g, freqValor || 'N/A')
-        .replace(/\{\{moneda\}\}/g, monedaValor)
-        // ── Finalidad y descripción ──
-        .replace(/\{\{finalidad\}\}/g, datos.finalidad || 'N/A')
-        .replace(/\{\{descripcion\}\}/g, datos.finalidad || 'N/A')
-        // ── Sucursal y ejecutivo ──
-        .replace(/\{\{sucursal\}\}/g, datos.sucursal || 'N/A')
-        .replace(/\{\{ejecutivo\}\}/g, 'N/A')
-        // ── Perfil de inversión (Captación) ──
-        .replace(/\{\{perfil\}\}/g, String(t.perfilInversionista || (t as any).perfil || 'N/A'))
-        .replace(/\{\{riesgo\}\}/g, String(t.riesgoInversionista || (t as any).riesgo || 'N/A'))
-        .replace(/\{\{horizonte\}\}/g, String(t.horizonteInversion || (t as any).horizonte || 'N/A'))
-        .replace(/\{\{experiencia\}\}/g, String(t.experienciaInversion || (t as any).experiencia || 'N/A'))
-        .replace(/\{\{rendimiento\}\}/g, String(t.tasa || (t as any).rendimiento || 'N/A'))
-        // ── Empresa (institución) ──
-        .replace(/\{\{empresa_nombre\}\}/g, 'N/A')
-        .replace(/\{\{empresa_razon_social\}\}/g, 'N/A')
-        .replace(/\{\{direccion_empresa\}\}/g, 'N/A')
-        // ── Datos laborales del cliente ──
-        .replace(/\{\{empresa\}\}/g, 'N/A')
-        .replace(/\{\{puesto\}\}/g, 'N/A')
-        .replace(/\{\{ingreso\}\}/g, 'N/A')
-        .replace(/\{\{antiguedad\}\}/g, 'N/A')
-        // ── Placeholder genérico de cierre (elimina cualquier {{...}} que quede) ──
-        .replace(/\{\{[^}]+\}\}/g, '');
-
-      return result;
-    };
-
-    const raw = plantillaSolicitud.archivoData;
-    // archivoData se guarda con FileReader.readAsDataURL → siempre base64.
-    // Decodificar → sustituir placeholders → renderizar HTML a PDF con html2canvas + jsPDF.
-    const b64Match = raw.match(/^data:([^;]+);base64,(.+)$/s);
-    const decodedHtml = b64Match
-      ? new TextDecoder('utf-8').decode(Uint8Array.from(atob(b64Match[2]), c => c.charCodeAt(0)))
-      : raw;
-    console.log('[DIAG generarDocumentosFase2] decodedHtml length:', decodedHtml.length);
-    console.log('[DIAG generarDocumentosFase2] decodedHtml sample (first 500 chars):', decodedHtml.slice(0, 500));
-    console.log('[DIAG generarDocumentosFase2] datos para sustituir:', JSON.stringify({
-      cliente: datos.cliente,
-      rfc: datos.rfc,
-      curp: datos.curp,
-      domicilio: datos.domicilio,
-      noSol: datos.noSol,
-      productoNombre: datos.productoNombre,
-      terminos_monto: t.montoSolicitado || t.monto,
-      terminos_plazo: t.plazo || t.plazoMeses,
-      terminos_tasa: t.tasa || t.tasaAnual,
-    }));
-    // Mostrar qué placeholders quedan sin reemplazar
-    const placeholdersEnHtml = decodedHtml.match(/\{\{[^}]+\}\}/g) || [];
-    console.log('[DIAG generarDocumentosFase2] placeholders en plantilla:', placeholdersEnHtml);
-    const htmlSource = sustituir(decodedHtml);
-    const placeholdersRestantes = htmlSource.match(/\{\{[^}]+\}\}/g) || [];
-    if (placeholdersRestantes.length > 0) {
-      console.warn('[DIAG generarDocumentosFase2] placeholders NO reemplazados:', placeholdersRestantes);
-    } else {
-      console.log('[DIAG generarDocumentosFase2] todos los placeholders fueron reemplazados OK');
-    }
-    console.log('[DIAG generarDocumentosFase2] htmlSource sample (first 300 chars):', htmlSource.slice(0, 300));
-
+    const decodedHtml = decodificarArchivoData(plantillaSolicitud.archivoData);
+    const htmlSource = sustituirPlaceholders(decodedHtml, datos);
     try {
       fileData = await htmlToPdfBlobUrl(htmlSource);
     } catch (e) {
       console.warn('[generarDocumentosFase2] Error renderizando plantilla a PDF:', e);
       fileData = generarSolicitudPDF(datos);
     }
-
-    console.log(`[generarDocumentosFase2] Usando plantilla: "${plantillaSolicitud.nombre}" v${plantillaSolicitud.version} con datos reemplazados`);
+    console.log(`[generarDocumentosFase2] Usando plantilla: "${plantillaSolicitud.nombre}" v${plantillaSolicitud.version}`);
   } else {
     fileData = generarSolicitudPDF(datos);
-    console.log('[generarDocumentosFase2] Sin plantilla — generando PDF con datos del formulario');
-    console.log('[DIAG generarSolicitudPDF] datos usados:', JSON.stringify({
-      cliente: datos.cliente,
-      noSol: datos.noSol,
-      productoNombre: datos.productoNombre,
-      monto: (datos.terminos as any)?.montoSolicitado || (datos.terminos as any)?.monto,
-      plazo: (datos.terminos as any)?.plazo || (datos.terminos as any)?.plazoMeses,
-      tasa: (datos.terminos as any)?.tasa || (datos.terminos as any)?.tasaAnual,
-    }));
+    console.log('[generarDocumentosFase2] Sin plantilla — PDF genérico con datos del formulario');
   }
 
   // NO registrar en expediente ni subir a Supabase — solo generar y descargar

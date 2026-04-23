@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<title>Pagaré de Línea de Crédito</title>
+
+<style>
+  body {
+    font-family: "Helvetica Neue", Arial, sans-serif;
+    margin: 0;
+    color: #1a1a1a;
+    font-size: 12px;
+  }
+
+  .page {
+    width: 210mm;
+    min-height: 297mm;
+    padding: 30mm 25mm 20mm 25mm;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+  }
+
+  /* HEADER */
+  .header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+  }
+
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .logo {
+    height: 40px;
+  }
+
+  .brand-name {
+    font-weight: 700;
+    font-size: 14px;
+  }
+
+  .brand small {
+    font-size: 10px;
+    color: #666;
+  }
+
+  .doc-meta {
+    text-align: right;
+    font-size: 11px;
+  }
+
+  /* TITLE */
+  .title {
+    text-align: center;
+    font-size: 18px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    margin: 10px 0 25px 0;
+  }
+
+  /* CONTENT */
+  .content {
+    text-align: justify;
+    line-height: 1.6;
+  }
+
+  .section {
+    margin-bottom: 14px;
+  }
+
+  .highlight {
+    font-weight: 600;
+  }
+
+  .amount {
+    text-align: center;
+    font-size: 14px;
+    font-weight: 700;
+    margin: 20px 0;
+  }
+
+  /* SIGNATURE */
+  .signature-block {
+    margin-top: 60px;
+    display: flex;
+    justify-content: space-between;
+  }
+
+  .signature {
+    width: 45%;
+    text-align: center;
+  }
+
+  .line {
+    margin-top: 60px;
+    border-top: 1px solid #000;
+    padding-top: 6px;
+    font-size: 11px;
+  }
+
+  /* FOOTER */
+  .footer {
+    font-size: 9px;
+    color: #666;
+  }
+
+  .footer-line {
+    width: 100%;
+    height: 1px;
+    background: #ccc;
+    margin-bottom: 6px;
+  }
+
+  .footer-content {
+    display: flex;
+    justify-content: space-between;
+  }
+
+</style>
+</head>
+
+<body>
+<div class="page">
+
+  <div>
+
+    <!-- HEADER -->
+    <div class="header">
+      <div class="brand">
+        <img class="logo" src="/src/assets/7b6cb23c00b7817818c638af3eae0a416e1e9f57.png"/>
+        <div>
+          <div class="brand-name">{{institucionNombre}}</div>
+          <small>{{empresa_razon_social}}</small>
+        </div>
+      </div>
+
+      <div class="doc-meta">
+        <div><strong>Lugar:</strong> {{ciudad}}</div>
+        <div><strong>Fecha:</strong> {{fecha_emision}}</div>
+      </div>
+    </div>
+
+    <!-- TITLE -->
+    <div class="title">PAGARÉ DE LÍNEA DE CRÉDITO</div>
+
+    <!-- CONTENT -->
+    <div class="content">
+
+      <div class="section">
+        Por medio del presente título de crédito, yo 
+        <span class="highlight">{{deudor_nombre}}</span>, con RFC 
+        <span class="highlight">{{deudor_rfc}}</span>, con domicilio en 
+        <span class="highlight">{{deudor_domicilio}}</span>, me obligo de manera 
+        <span class="highlight">incondicional</span> a pagar a la orden de 
+        <span class="highlight">{{acreedor_nombre}}</span>, las cantidades que resulten a mi cargo
+        derivadas del uso de la línea de crédito que me ha sido otorgada.
+      </div>
+
+      <div class="section">
+        El importe máximo garantizado mediante el presente pagaré será hasta por la cantidad de:
+      </div>
+
+      <div class="amount">
+        {{limite_letra}} <br/>
+        ({{limite_numero}} {{moneda}})
+      </div>
+
+      <div class="section">
+        Este pagaré tiene carácter <span class="highlight">revolvente</span>, por lo que ampara todas las disposiciones,
+        cargos, intereses, comisiones y demás obligaciones derivadas del contrato de línea de crédito celebrado
+        entre las partes.
+      </div>
+
+      <div class="section">
+        El pago de las cantidades adeudadas deberá realizarse conforme a los estados de cuenta emitidos por 
+        <span class="highlight">{{acreedor_nombre}}</span>, siendo exigible el saldo total en caso de incumplimiento.
+      </div>
+
+      <div class="section">
+        El presente documento causará intereses ordinarios a una tasa de 
+        <span class="highlight">{{tasa_interes}}% anual</span>, calculados sobre saldos insolutos,
+        así como intereses moratorios a una tasa de 
+        <span class="highlight">{{tasa_moratoria}}% anual</span> en caso de mora.
+      </div>
+
+      <div class="section">
+        El suscriptor renuncia expresamente a los beneficios de orden, excusión y división,
+        obligándose solidariamente junto con su aval en caso de existir.
+      </div>
+
+      <div class="section">
+        Para la interpretación y cumplimiento del presente pagaré, las partes se someten a la jurisdicción
+        de los tribunales competentes de 
+        <span class="highlight">{{jurisdiccion}}</span>.
+      </div>
+
+      <div class="section">
+        Este pagaré es de carácter mercantil y se rige por la Ley General de Títulos y Operaciones de Crédito.
+      </div>
+
+    </div>
+
+    <!-- SIGNATURES -->
+    <div class="signature-block">
+      <div class="signature">
+        <div class="line">{{deudor_nombre}}</div>
+        SUSCRIPTOR (DEUDOR)
+      </div>
+
+      <div class="signature">
+        <div class="line">{{aval_nombre}}</div>
+        AVAL
+      </div>
+    </div>
+
+  </div>
+
+  <!-- FOOTER -->
+  <div class="footer">
+    <div class="footer-line"></div>
+    <div class="footer-content">
+      <span>{{institucionNombre}}</span>
+      <span>Documento confidencial · Título de crédito</span>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

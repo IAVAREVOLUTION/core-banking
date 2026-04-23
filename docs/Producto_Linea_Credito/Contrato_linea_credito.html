@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<title>Contrato de Línea de Crédito</title>
+
+<style>
+  body {
+    font-family: "Helvetica Neue", Arial, sans-serif;
+    margin: 0;
+    color: #1a1a1a;
+    font-size: 12px;
+  }
+
+  .page {
+    width: 210mm;
+    min-height: 297mm;
+    padding: 28mm 25mm 18mm 25mm;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+  }
+
+  /* HEADER */
+  .header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 18px;
+  }
+
+  .brand-name {
+    font-weight: 700;
+    font-size: 14px;
+  }
+
+  .brand small {
+    font-size: 10px;
+    color: #666;
+    display: block;
+  }
+
+  .doc-meta {
+    text-align: right;
+    font-size: 11px;
+    line-height: 1.5;
+  }
+
+  /* TITLE */
+  .title {
+    text-align: center;
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    margin: 6px 0 16px 0;
+    border-top: 2px solid #1a1a1a;
+    border-bottom: 2px solid #1a1a1a;
+    padding: 6px 0;
+  }
+
+  .section {
+    margin-bottom: 12px;
+  }
+
+  .section-title {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    border-bottom: 1px solid #000;
+    margin-bottom: 6px;
+    padding-bottom: 2px;
+  }
+
+  .text {
+    text-align: justify;
+    line-height: 1.55;
+  }
+
+  .highlight { font-weight: 600; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 6px 0;
+  }
+
+  td { padding: 3px 2px; }
+
+  .label {
+    width: 32%;
+    font-size: 10px;
+    color: #555;
+  }
+
+  .value {
+    border-bottom: 1px solid #bbb;
+    font-weight: 500;
+    padding-bottom: 1px;
+  }
+
+  .label2 {
+    width: 20%;
+    font-size: 10px;
+    color: #555;
+    padding-left: 10px;
+  }
+
+  .clause {
+    margin-bottom: 8px;
+    text-align: justify;
+    line-height: 1.5;
+  }
+
+  .clause strong {
+    display: inline;
+  }
+
+  .signature-block {
+    margin-top: 40px;
+    display: flex;
+    justify-content: space-between;
+  }
+
+  .signature {
+    width: 44%;
+    text-align: center;
+  }
+
+  .sig-line {
+    margin-top: 55px;
+    border-top: 1px solid #000;
+    padding-top: 5px;
+    font-size: 10px;
+  }
+
+  .sig-sub {
+    font-size: 9px;
+    color: #444;
+    margin-top: 2px;
+  }
+
+  .footer {
+    font-size: 9px;
+    color: #666;
+  }
+
+  .footer-line {
+    width: 100%;
+    height: 1px;
+    background: #ccc;
+    margin-bottom: 5px;
+  }
+
+  .footer-content {
+    display: flex;
+    justify-content: space-between;
+  }
+</style>
+</head>
+
+<body>
+<div class="page">
+
+  <div>
+
+    <!-- HEADER -->
+    <div class="header">
+      <div class="brand">
+        <div class="brand-name">{{institucionNombre}}</div>
+        <small>{{empresa_razon_social}}</small>
+      </div>
+      <div class="doc-meta">
+        <div><strong>Contrato No.:</strong> {{folio}}</div>
+        <div><strong>Fecha:</strong> {{fecha}}</div>
+        <div><strong>Producto:</strong> {{productoNombre}}</div>
+      </div>
+    </div>
+
+    <!-- TITLE -->
+    <div class="title">CONTRATO DE LÍNEA DE CRÉDITO</div>
+
+    <!-- INTRO -->
+    <div class="section text">
+      En México, a <span class="highlight">{{fechaFirmaLarga}}</span>, comparecen
+      <span class="highlight">{{institucionNombre}}</span>
+      (en adelante <span class="highlight">"EL ACREDITANTE"</span>) y
+      <span class="highlight">{{nombre}}</span>
+      (en adelante <span class="highlight">"EL ACREDITADO"</span>), quienes celebran el
+      presente contrato conforme a las siguientes declaraciones y cláusulas.
+    </div>
+
+    <!-- DATOS DEL ACREDITADO -->
+    <div class="section">
+      <div class="section-title">Datos del Acreditado</div>
+      <table>
+        <tr>
+          <td class="label">Nombre completo</td>
+          <td class="value" colspan="3">{{nombre}}</td>
+        </tr>
+        <tr>
+          <td class="label">RFC</td>
+          <td class="value">{{rfc}}</td>
+          <td class="label2">CURP</td>
+          <td class="value">{{curp}}</td>
+        </tr>
+        <tr>
+          <td class="label">Fecha de nacimiento</td>
+          <td class="value">{{fecha_nacimiento}}</td>
+          <td class="label2">Teléfono</td>
+          <td class="value">{{telefono}}</td>
+        </tr>
+        <tr>
+          <td class="label">Domicilio</td>
+          <td class="value" colspan="3">{{domicilio}}</td>
+        </tr>
+      </table>
+    </div>
+
+    <!-- CONDICIONES -->
+    <div class="section">
+      <div class="section-title">Condiciones de la Línea</div>
+      <table>
+        <tr>
+          <td class="label">Límite de crédito</td>
+          <td class="value">$ {{limite}} {{moneda}}</td>
+          <td class="label2">Plazo</td>
+          <td class="value">{{plazoDescripcion}}</td>
+        </tr>
+        <tr>
+          <td class="label">Tasa de interés anual</td>
+          <td class="value">{{tasa}} %</td>
+          <td class="label2">CAT</td>
+          <td class="value">{{cat}} %</td>
+        </tr>
+        <tr>
+          <td class="label">Frecuencia de pago</td>
+          <td class="value">{{frecuencia}}</td>
+          <td class="label2">Primer pago</td>
+          <td class="value">{{fecha_primer_pago}}</td>
+        </tr>
+      </table>
+    </div>
+
+    <!-- CLAUSULAS -->
+    <div class="section">
+      <div class="section-title">Cláusulas</div>
+
+      <div class="clause">
+        <strong>PRIMERA. Objeto. </strong>
+        El Acreditante otorga al Acreditado una línea de crédito revolvente por
+        <strong>$ {{limite}} {{moneda}}</strong>, conforme a la Ley General de Títulos y
+        Operaciones de Crédito.
+      </div>
+
+      <div class="clause">
+        <strong>SEGUNDA. Disposición y Revolvencia. </strong>
+        El Acreditado podrá disponer parcial o totalmente del crédito durante su vigencia.
+        Los pagos efectuados restituirán automáticamente el monto disponible hasta el límite
+        autorizado.
+      </div>
+
+      <div class="clause">
+        <strong>TERCERA. Intereses y Pagos. </strong>
+        Sobre los saldos insolutos se causarán intereses ordinarios a la tasa anual de
+        <strong>{{tasa}}%</strong>. El Acreditado realizará pagos <strong>{{frecuencia}}</strong>
+        conforme al estado de cuenta, cubriendo al menos el pago mínimo en la fecha indicada.
+      </div>
+
+      <div class="clause">
+        <strong>CUARTA. Incumplimiento. </strong>
+        El incumplimiento de cualquier obligación hará exigible de manera inmediata la totalidad
+        del saldo insoluto, intereses ordinarios y moratorios.
+      </div>
+
+      <div class="clause">
+        <strong>QUINTA. Terminación y Jurisdicción. </strong>
+        Cualquiera de las partes podrá dar por terminado el presente contrato con aviso previo.
+        Para su interpretación y cumplimiento, las partes se someten a los tribunales competentes
+        de los Estados Unidos Mexicanos.
+      </div>
+    </div>
+
+    <!-- FIRMAS -->
+    <div class="signature-block">
+      <div class="signature">
+        <div class="sig-line">{{nombre}}</div>
+        <div class="sig-sub">EL ACREDITADO</div>
+        <div class="sig-sub">RFC: {{rfc}}</div>
+      </div>
+      <div class="signature">
+        <div class="sig-line">{{institucionNombre}}</div>
+        <div class="sig-sub">EL ACREDITANTE</div>
+        <div class="sig-sub">Representante autorizado</div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- FOOTER -->
+  <div class="footer">
+    <div class="footer-line"></div>
+    <div class="footer-content">
+      <span>{{institucionNombre}} · Contrato No. {{folio}}</span>
+      <span>Documento confidencial · Uso legal</span>
+      <span>{{fecha}}</span>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

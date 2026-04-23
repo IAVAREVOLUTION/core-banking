@@ -191,7 +191,7 @@ function mapRowToListItem(row: SolicitudDBRow): SolicitudListItem {
     montoAutorizado: parseMoney(row.monto_aut),
     sucursal,
     faseDescripcion: hdr.descripcion_fase || d.descripcionFase || getFaseDescripcion(row.fases) || '',
-    estatusSolicitud: row.estatus_sol || hdr.estatus || d.estatusSolicitud || 'Pendiente',
+    estatusSolicitud: row.estatus_sol || d.estatusSolicitud || 'Pendiente',
     // Extra fields for form reconstruction
     _dbId: row.id,
     _clienteId: row.cliente_id,
@@ -361,9 +361,14 @@ function formToDBPayload(form: SolicitudFormData, allSubtabs?: Record<string, an
         pago_capital: r.pagoCapital, pago_interes: r.pagoInteres, iva_interes: r.ivaInteres,
         pago_periodo: r.pagoPeriodo, pago_seguro: r.pagoSeguro, pago_total: r.pagoTotal,
       })),
-      calendario_aportaciones: Array.isArray((form as any)._calendarioAportaciones)
-        ? (form as any)._calendarioAportaciones
-        : (origSol.simulacion?.calendario_aportaciones || []),
+      calendario_aportaciones: (() => {
+        // Prioridad: calendario generado/editado en la tab (session) > prop de cotización > original en BD
+        const fromSession = allSubtabs?.simulacion_cal;
+        if (Array.isArray(fromSession) && fromSession.length > 0) return fromSession;
+        if (Array.isArray((form as any)._calendarioAportaciones) && (form as any)._calendarioAportaciones.length > 0)
+          return (form as any)._calendarioAportaciones;
+        return origSol.simulacion?.calendario_aportaciones || [];
+      })(),
     },
     expediente_electronico: {
       documentos: documentos.map((doc: any) => ({
@@ -661,23 +666,39 @@ async function updateSolicitud(id: string, payload: Partial<ReturnType<typeof fo
 // ══════════════════════════════════════════════════════════════════
 // DELETE
 // ═══════════════════════════════════════════════════════════════════
-async function deleteSolicitudDB(id: string): Promise<{ ok: boolean; error?: string }> {
+async function deleteSolicitudDB(id: string): Promise<{ ok: boolean; error?: string; activaciones_vinculadas?: number }> {
   if (!DB_AVAILABLE) return { ok: false, error: 'DB no disponible' };
 
-  try {
-    const { error } = await supabase.rpc('delete_solicitud_credito', { p_id: id });
-    if (!error) return { ok: true };
-    console.warn('[SolicDB] DELETE RPC FALLÓ:', error.message);
-  } catch { /* */ }
-
+  // Intento 1: Edge Function (verifica activaciones vinculadas antes de DELETE)
   try {
     const res = await fetch(`${API_BASE}/solicitudes-credito/${id}`, {
       method: 'DELETE',
       headers: { 'Authorization': `Bearer ${publicAnonKey}` },
     });
+    const json = await res.json().catch(() => ({}));
     if (res.ok) return { ok: true };
-    const json = await res.json();
-    return { ok: false, error: json.error };
+    // HTTP 409 = bloqueado por activaciones vinculadas
+    if (res.status === 409) {
+      console.warn('[SolicDB] DELETE bloqueado por FK:', json.error);
+      return { ok: false, error: json.error, activaciones_vinculadas: json.activaciones_vinculadas };
+    }
+    console.warn('[SolicDB] DELETE Edge FALLÓ:', json.error || `HTTP ${res.status}`);
+  } catch (err: any) {
+    console.warn('[SolicDB] DELETE Edge EXCEPCIÓN:', err?.message);
+  }
+
+  // Intento 2: RPC (también tiene guard contra activaciones vinculadas)
+  try {
+    const { error } = await supabase.rpc('delete_solicitud_credito', { p_id: id });
+    if (!error) return { ok: true };
+    const msg = error.message || '';
+    // Detectar FK violation o el mensaje del guard del RPC
+    if (msg.includes('activación') || msg.includes('foreign key') || msg.includes('violates')) {
+      console.warn('[SolicDB] DELETE RPC bloqueado por FK/guard:', msg);
+      return { ok: false, error: msg };
+    }
+    console.warn('[SolicDB] DELETE RPC FALLÓ:', msg);
+    return { ok: false, error: msg };
   } catch (err: any) {
     return { ok: false, error: err?.message || String(err) };
   }
@@ -992,10 +1013,15 @@ export async function crearCuentaPorCobrarDB(
  *   EstatusCuenta    = "Activa"
  *   EstatusPago      = "Pagado"
  *   EstatusCartera   = "Activa"
+ * 
+ * Validaciones por Línea de Producto:
+ * - Crédito/Captación: requiere que datos.estatus='Pagado' para activar
+ * - Línea de Crédito: permite activación sin validación de estatus
  */
 export async function activarCuentaDB(
   id: string,
   datos: Record<string, any>,
+  lineaProducto?: string,
 ): Promise<{ ok: boolean; error?: string }> {
   if (!DB_AVAILABLE) return { ok: false, error: 'DB no disponible' };
   if (!UUID_RE.test(id)) return { ok: false, error: 'ID inválido (no UUID)' };
@@ -1005,20 +1031,28 @@ export async function activarCuentaDB(
     const res = await fetch(`${API_BASE}/solicitudes-credito/${id}/activarCuenta`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${publicAnonKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify(datos),
+      body: JSON.stringify({ ...datos, lineaProducto }),
     });
-    if (res.ok) {
-      console.log('[SolicDB] activarCuenta POST OK');
+    const json = await res.json().catch(() => ({}));
+    if (res.ok && json.ok !== false) {
+      console.log('[SolicDB] activarCuenta POST OK', json.data);
       return { ok: true };
     }
+    // HTTP 2xx pero el handler reportó divergencia o fallo lógico
+    if (json.ok === false) {
+      console.warn('[SolicDB] activarCuenta POST — BD reportó error:', json.error);
+      return { ok: false, error: json.error || 'Error en BD al activar cuenta' };
+    }
+    console.warn('[SolicDB] activarCuenta POST HTTP', res.status, json);
+    // fallthrough a fallback si HTTP error
   } catch {
     // fallthrough a fallback
   }
 
-  // Fallback: actualizar estatus vía Edge Function PUT
+  // Fallback 1: actualizar estatus vía Edge Function PUT
   try {
     const payload: Record<string, any> = {
-      estatus_sol: 'Autorizada',
+      estatus_sol: 'Aprobado',
       estatus_cuen: 'Activa',
       estatus_disp: 'Pagado',
       estatus_cart: 'Activa',
@@ -1033,8 +1067,74 @@ export async function activarCuentaDB(
       console.log('[SolicDB] activarCuenta fallback PUT OK');
       return { ok: true };
     }
+    console.warn('[SolicDB] activarCuenta PUT falló, intentando Supabase directo…');
+  } catch {
+    console.warn('[SolicDB] activarCuenta PUT excepción, intentando Supabase directo…');
+  }
+
+  // Fallback 2: Supabase directo con schema EFINANCIANET_DB
+  try {
+    const campos: Record<string, any> = {
+      estatus_sol:  'Aprobado',
+      estatus_cuen: 'Activa',
+      estatus_disp: 'Pagado',
+      estatus_cart: 'Activa',
+      ...datos,
+    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error } = await (supabase as any).schema('EFINANCIANET_DB')
+      .from('J_CUENTAS_CORP_CLIENTES')
+      .update(campos)
+      .eq('id', id);
+    if (!error) {
+      console.log('[SolicDB] activarCuenta Supabase directo OK');
+      return { ok: true };
+    }
+    return { ok: false, error: error.message };
+  } catch (err: any) {
+    return { ok: false, error: err?.message || String(err) };
+  }
+}
+
+/**
+ * Actualiza únicamente el estatus de una solicitud (estatus_sol).
+ */
+export async function actualizarEstatusSolicitudDB(
+  id: string,
+  nuevoEstatus: string,
+): Promise<{ ok: boolean; error?: string }> {
+  if (!DB_AVAILABLE) return { ok: false, error: 'DB no disponible' };
+  if (!UUID_RE.test(id)) return { ok: false, error: 'ID inválido (no UUID)' };
+
+  // Intento 1: Edge Function PUT
+  try {
+    const res = await fetch(`${API_BASE}/solicitudes-credito/${id}`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${publicAnonKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ estatus_sol: nuevoEstatus }),
+    });
+    if (res.ok) {
+      console.log('[SolicDB] actualizarEstatus Edge OK —', nuevoEstatus);
+      return { ok: true };
+    }
     const json = await res.json().catch(() => ({}));
-    return { ok: false, error: json.error || `HTTP ${res.status}` };
+    console.warn('[SolicDB] actualizarEstatus Edge FALLÓ:', json.error || `HTTP ${res.status}`);
+  } catch (err: any) {
+    console.warn('[SolicDB] actualizarEstatus Edge EXCEPCIÓN:', err?.message);
+  }
+
+  // Intento 2: Supabase directo
+  try {
+    const { error } = await supabase
+      .from('J_CUENTAS_CORP_CLIENTES')
+      .update({ estatus_sol: nuevoEstatus })
+      .eq('id', id);
+    if (!error) {
+      console.log('[SolicDB] actualizarEstatus Supabase directo OK —', nuevoEstatus);
+      return { ok: true };
+    }
+    console.warn('[SolicDB] actualizarEstatus Supabase directo FALLÓ:', error.message);
+    return { ok: false, error: error.message };
   } catch (err: any) {
     return { ok: false, error: err?.message || String(err) };
   }
@@ -1170,7 +1270,7 @@ export function useSolicitudesDB(active: boolean) {
   }, [fetchSolicitudes]);
 
   // ── DELETE ──
-  const deleteSolicitud = useCallback(async (id: string): Promise<{ ok: boolean; error?: string }> => {
+  const deleteSolicitud = useCallback(async (id: string): Promise<{ ok: boolean; error?: string; activaciones_vinculadas?: number }> => {
     if (DB_AVAILABLE) {
       const result = await deleteSolicitudDB(id);
       if (!result.ok) {

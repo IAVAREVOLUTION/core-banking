@@ -48,25 +48,11 @@ interface Props {
   onBack: () => void;
   /** Callback para crear Solicitud desde esta Cotización — spec solicitudes-financieras §1 */
   onCrearSolicitud?: (c: CotizacionCaptacion) => void;
+  /** true solo cuando la cotización fue confirmada en BD (ID existe en J_COTIZACIONES) */
+  existeEnBD?: boolean;
 }
 
-// ── Fallback mock clientes (se usa si useClientesDB retorna vacío) ──
-const MOCK_CLIENTES_FALLBACK = [
-  { id: 'CL-001', idCliente: 'CLI-10001', nombre: 'María', apellidoPaterno: 'García', apellidoMaterno: 'López' },
-  { id: 'CL-002', idCliente: 'CLI-10002', nombre: 'Roberto', apellidoPaterno: 'Hernández', apellidoMaterno: 'Martínez' },
-  { id: 'CL-003', idCliente: 'CLI-10003', nombre: 'Constructora del Valle', apellidoPaterno: 'SA de CV', apellidoMaterno: '' },
-  { id: 'CL-004', idCliente: 'CLI-10004', nombre: 'Laura', apellidoPaterno: 'Sánchez', apellidoMaterno: 'Ramírez' },
-  { id: 'CL-005', idCliente: 'CLI-10005', nombre: 'Fernando', apellidoPaterno: 'Torres', apellidoMaterno: 'Ávila' },
-];
 
-// ── Fallback mock productos (se usa si useProductosCaptacionDB retorna vacío) ──
-const MOCK_PRODUCTOS_FALLBACK: ProductoPickerItem[] = [
-  { id: 'P-001', claveProducto: 'PCAP-001', nombreProducto: 'Ahorro Voluntario', tipoProducto: 'Ahorro', montoMinimo: 5000, periodoCumplirMontoMinimo: 'Mensual', plazoCumplirMontoMinimo: 12, tasaMinInteres: 4.5, matrizTasaFija: [] },
-  { id: 'P-002', claveProducto: 'PCAP-002', nombreProducto: 'Aportación Navideña', tipoProducto: 'Aportación', montoMinimo: 10000, periodoCumplirMontoMinimo: 'Quincenal', plazoCumplirMontoMinimo: 24, tasaMinInteres: 5.2, matrizTasaFija: [] },
-  { id: 'P-003', claveProducto: 'PCAP-003', nombreProducto: 'Ahorro Infantil', tipoProducto: 'Ahorro', montoMinimo: 1000, periodoCumplirMontoMinimo: 'Semanal', plazoCumplirMontoMinimo: 52, tasaMinInteres: 3.8, matrizTasaFija: [] },
-  { id: 'P-004', claveProducto: 'PCAP-004', nombreProducto: 'Aportación Escolar', tipoProducto: 'Aportación', montoMinimo: 25000, periodoCumplirMontoMinimo: 'Catorcenal', plazoCumplirMontoMinimo: 16, tasaMinInteres: 6.0, matrizTasaFija: [] },
-  { id: 'P-005', claveProducto: 'PCAP-005', nombreProducto: 'Ahorro a Plazo Fijo', tipoProducto: 'Ahorro', montoMinimo: 50000, periodoCumplirMontoMinimo: 'Mensual', plazoCumplirMontoMinimo: 6, tasaMinInteres: 8.5, matrizTasaFija: [] },
-];
 
 /** Normaliza un ClienteDB a la interfaz interna del picker */
 interface ClientePickerItem {
@@ -117,7 +103,7 @@ const formatDateCalendar = (dateStr: string) => {
   return `${d.getDate().toString().padStart(2, '0')}-${months[d.getMonth()]}-${d.getFullYear()}`;
 };
 
-export function CotizacionCaptacionForm({ mode, cotizacion, onSave, onBack, onCrearSolicitud }: Props) {
+export function CotizacionCaptacionForm({ mode, cotizacion, onSave, onBack, onCrearSolicitud, existeEnBD }: Props) {
   const isView = mode === 'view';
   const isCreate = mode === 'create';
 
@@ -139,7 +125,7 @@ export function CotizacionCaptacionForm({ mode, cotizacion, onSave, onBack, onCr
         institucionGobierno: c._rawData?.institucionGobierno || '',
       }));
     }
-    return MOCK_CLIENTES_FALLBACK;
+    return [];
   }, [clientesDB]);
 
   // ── Normalizar productos de useProductosCaptacionDB → ProductoPickerItem ──
@@ -164,7 +150,7 @@ export function CotizacionCaptacionForm({ mode, cotizacion, onSave, onBack, onCr
           periodosRegistros: Array.isArray((p as any).periodosRegistros) ? (p as any).periodosRegistros : [],
         }));
     }
-    return MOCK_PRODUCTOS_FALLBACK;
+    return [];
   }, [productosDB]);
 
   // ── State ──
@@ -172,6 +158,8 @@ export function CotizacionCaptacionForm({ mode, cotizacion, onSave, onBack, onCr
   const [showClienteModal, setShowClienteModal] = useState(false);
   const [clienteSearch, setClienteSearch] = useState('');
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
+  // true en cuanto el usuario guarda por primera vez en esta sesión de formulario
+  const [savedLocally, setSavedLocally] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const datePickerRef = useRef<HTMLDivElement>(null);
 
@@ -346,6 +334,7 @@ export function CotizacionCaptacionForm({ mode, cotizacion, onSave, onBack, onCr
     }
     setValidationErrors([]);
     onSave(form);
+    setSavedLocally(true);
   };
 
   // ── Field classes ──
@@ -508,8 +497,8 @@ export function CotizacionCaptacionForm({ mode, cotizacion, onSave, onBack, onCr
                 {isCreate ? 'Crear Cotización' : 'Guardar Cambios'}
               </button>
             )}
-            {/* Botón "Crear Solicitud" — spec solicitudes-financieras §1, R1 */}
-            {onCrearSolicitud && cotizacion && (
+            {/* Botón "Crear Solicitud" — visible cuando mode cambia a edit/view (post-guardado) o savedLocally */}
+            {onCrearSolicitud && (!isCreate || savedLocally) && (
               <button
                 onClick={() => {
                   console.log('[CaptacionForm] Crear Solicitud clicked, form:', form, 'cotizacion prop:', cotizacion);

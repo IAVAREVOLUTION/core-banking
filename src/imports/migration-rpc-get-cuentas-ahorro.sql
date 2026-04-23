@@ -94,10 +94,10 @@ AS $$
     c.producto_id,
     c.producto_eje,
     c.cliente_id,
-    c.saldo_actual,
-    c.monto_sol,
-    c.monto_aut,
-    c.monto_disp,
+    TRIM(REPLACE(REPLACE(REPLACE(c.saldo_actual::TEXT, '$', ''), ',', ''), ' ', ''))::NUMERIC AS saldo_actual,
+    TRIM(REPLACE(REPLACE(REPLACE(c.monto_sol::TEXT,    '$', ''), ',', ''), ' ', ''))::NUMERIC AS monto_sol,
+    TRIM(REPLACE(REPLACE(REPLACE(c.monto_aut::TEXT,    '$', ''), ',', ''), ' ', ''))::NUMERIC AS monto_aut,
+    TRIM(REPLACE(REPLACE(REPLACE(c.monto_disp::TEXT,   '$', ''), ',', ''), ' ', ''))::NUMERIC AS monto_disp,
     c.estatus_disp,
     c.estatus_sol,
     c.estatus_cart,
@@ -122,12 +122,10 @@ AS $$
       c.cliente_id::TEXT
     ) AS cliente_nombre,
     -- Resolver nombre del producto desde J_PRODUCTOS
-    -- Intenta: data->>'nombre'
-    -- Fallback: descripcion del producto
-    -- Fallback final: c.producto_id::TEXT
+    -- Captación: data->>'nombreProducto', Crédito: data->>'nombre'
     COALESCE(
+      p.data->>'nombreProducto',
       p.data->>'nombre',
-      p.descripcion,
       c.producto_id::TEXT
     ) AS producto_nombre
   FROM "EFINANCIANET_DB"."J_CUENTAS_CORP_CLIENTES" c
@@ -135,8 +133,11 @@ AS $$
     ON cl.id = c.cliente_id
   LEFT JOIN "EFINANCIANET_DB"."J_PRODUCTOS" p
     ON p.id = c.producto_id
-  WHERE (c.linea_produc = 'CAPTACION' AND c.tipo_produc = 'Ahorro')
-     OR c.cta_eje_chec = TRUE
+  WHERE (
+    LOWER(REPLACE(REPLACE(c.linea_produc, 'á','a'), 'ó','o')) = 'captacion'
+    AND LOWER(REPLACE(c.tipo_produc, 'ó','o')) IN ('ahorro', 'aportacion')
+  )
+  OR c.cta_eje_chec = TRUE
   ORDER BY c.fecha_sol DESC NULLS LAST;
 $$;
 

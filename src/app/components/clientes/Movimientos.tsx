@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import { useClienteSubtabList } from '@/app/hooks/useClientePersistence';
+import { registrarMovimientoCuentaEje } from '@/app/hooks/useCuentasAhorroDB';
 
 interface MovimientosProps {
   onBack: () => void;
@@ -197,6 +198,30 @@ export function Movimientos({ onBack, mode, clienteId, saldoCuentaEje, onSaldoCh
 
     setShowModal(false);
     toast.success('Movimiento agregado exitosamente');
+
+    // Persistir en J_CUENTAS_CORP_CLIENTES (fire-and-forget con feedback)
+    if (clienteId) {
+      registrarMovimientoCuentaEje(
+        String(clienteId),
+        {
+          id: nuevoMovimiento.id,
+          fechaHora: nuevoMovimiento.fechaHora,
+          tipo: nuevoMovimiento.tipoMovimiento,
+          concepto: nuevoMovimiento.concepto,
+          referencia: nuevoMovimiento.referencia,
+          monto: parseMoney(nuevoMovimiento.montoMovimiento),
+          saldoInicial: parseMoney(nuevoMovimiento.saldoInicial),
+          saldoFinal,
+        },
+        saldoFinal,
+      ).then(result => {
+        if (!result.ok) {
+          toast.warning('Movimiento guardado localmente. No se pudo sincronizar con la base de datos.', {
+            description: result.error,
+          });
+        }
+      });
+    }
   };
 
   const handleCancelar = () => {

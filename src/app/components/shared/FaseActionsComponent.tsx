@@ -10,8 +10,9 @@
  * Botones por nombre de fase (fuente de verdad exclusiva — sin fallback por seq):
  *  seq 1                          → Imprimir Solicitud + Enviar
  *  nombre contiene "formaliz"     → Enviar + Formalizar Contrato + Regresar
- *  nombre contiene "activac"      → Solicitud de Activación + Regresar
- *  nombre contiene "activar cuen" → Activar Cuenta + Regresar
+ *  nombre contiene "activac"             → Solicitud de Activación + Regresar
+ *  nombre contiene "activac"+"financiera" → Enviar (ejecuta promptIA) + Regresar
+ *  nombre contiene "activar cuen"         → Activar Cuenta + Regresar
  *  resto                          → Enviar + Regresar
  */
 import type { SolicitudFormData } from '../solicitudes/solicitudCreditoStore';
@@ -101,9 +102,16 @@ export function FaseActionsComponent({
   const puedeSolicitudActivacion =
     faseContiene('solicitud') && faseContiene('activac') && !faseContiene('activar cuenta', 'activar_cuenta');
 
-  // Fase de activación pura (sin "solicitud") — solo muestra botón "Ver Solicitud de Activación"
+  // "Activación Cuenta Financiera" — fase IA de Línea de Crédito que ejecuta promptIA sin modal de activación
+  const esCuentaFinanciera =
+    faseContiene('activac') && faseContiene('cuenta') && faseContiene('financiera');
+
+  // Fase de activación pura (sin "solicitud" ni "cuenta financiera") — muestra botón "Ver Solicitud de Activación"
   const puedeVerActivacion =
-    !puedeSolicitudActivacion && faseContiene('activac') && !faseContiene('activar cuenta', 'activar_cuenta');
+    !puedeSolicitudActivacion &&
+    !esCuentaFinanciera &&
+    faseContiene('activac') &&
+    !faseContiene('activar cuenta', 'activar_cuenta');
 
   // "Activar Cuenta" — nombre contiene "activar cuenta"
   const puedeActivarCuenta = faseContiene('activar cuenta', 'activar_cuenta');
@@ -114,9 +122,13 @@ export function FaseActionsComponent({
   // "Imprimir Solicitud" — solo fase 1 (primera fase del producto)
   const puedeGenerarSolicitud = seqActual === 1;
 
-  // "Enviar de Fase" — fases que no son Solicitud/Ver Activación, Activar Cuenta ni la última
+  // "Activación Cuenta Financiera" ya finalizada cuando estatus = Autorizada/Aprobado
+  const cuentaFinancieraYaFinalizada =
+    esCuentaFinanciera && (estatus === 'Autorizada' || estatus === 'Aprobado');
+
+  // "Enviar de Fase" — incluye "Activación Cuenta Financiera" solo si aún no está finalizada
   const puedeEnviar =
-    !!faseSiguiente &&
+    (!!faseSiguiente || (esCuentaFinanciera && !cuentaFinancieraYaFinalizada)) &&
     !puedeSolicitudActivacion &&
     !puedeVerActivacion &&
     !puedeActivarCuenta;
@@ -126,6 +138,22 @@ export function FaseActionsComponent({
 
   // ── Modo Solicitudes: Enviar + Imprimir Solicitud + Formalizar + Activación + Activar ─────
   if (modo === 'solicitudes') {
+    // Activación Cuenta Financiera ya completada → panel de flujo finalizado
+    if (cuentaFinancieraYaFinalizada) {
+      return (
+        <div className="bg-green-50 border border-green-300 rounded px-4 py-3 mb-4 flex items-center gap-2">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10B981" strokeWidth="2">
+            <path d="M22 11.08V12a10 10 0 11-5.93-9.14" />
+            <polyline points="22 4 12 14.01 9 11.01" />
+          </svg>
+          <span className="text-sm text-green-800">
+            Flujo finalizado — <strong>{faseActualReal?.fase || formData.descripcionFase || '—'}</strong>
+            {estatus && <span className="ml-2 px-1.5 py-0.5 bg-green-200 text-green-900 rounded text-xs">{estatus}</span>}
+          </span>
+        </div>
+      );
+    }
+
     const tieneAccion = puedeEnviar || puedeGenerarSolicitud || puedeFormalizar || puedeSolicitudActivacion || puedeVerActivacion || puedeActivarCuenta;
     if (!tieneAccion) {
       return (
@@ -225,27 +253,27 @@ export function FaseActionsComponent({
                   {enviandoFase ? 'Generando...' : 'Generar Documentos'}
                 </button>
               )}
-              {/* ── Fases 1-5: Enviar de Fase ── */}
-              {puedeEnviar && (
-                <button
-                  onClick={onEnviarFase}
-                  disabled={enviandoFase || !isConsistent}
-                  title={!isConsistent ? 'Corrija la desincronización antes de avanzar' : ''}
-                  className="px-4 py-1.5 bg-[#10B981] text-white rounded text-xs hover:bg-[#059669] flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M5 12h14M12 5l7 7-7 7" />
-                  </svg>
-                  {enviandoFase ? 'Enviando...' : 'Enviar de Fase'}
-                </button>
-              )}
             </div>
           </div>
-          {faseSiguiente && !puedeSolicitudActivacion && !puedeActivarCuenta && (
-            <div className="mt-1 text-[10px] text-gray-500">
-              Siguiente: <span className="font-medium text-gray-700">{faseSiguiente.fase}</span>
-            </div>
-          )}
+        </div>
+      </>
+    );
+  }
+
+  // ── Modo Originación: Activación Cuenta Financiera ya completada → panel verde ──
+  if (cuentaFinancieraYaFinalizada) {
+    return (
+      <>
+        {inconsistencyBanner}
+        <div className="bg-green-50 border border-green-300 rounded px-4 py-3 mb-4 flex items-center gap-2">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10B981" strokeWidth="2">
+            <path d="M22 11.08V12a10 10 0 11-5.93-9.14" />
+            <polyline points="22 4 12 14.01 9 11.01" />
+          </svg>
+          <span className="text-sm text-green-800">
+            Flujo finalizado — <strong>{faseActualReal?.fase || formData.descripcionFase || '—'}</strong>
+            {estatus && <span className="ml-2 px-1.5 py-0.5 bg-green-200 text-green-900 rounded text-xs">{estatus}</span>}
+          </span>
         </div>
       </>
     );
@@ -293,7 +321,7 @@ export function FaseActionsComponent({
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <path d="M5 12h14M12 5l7 7-7 7" />
                 </svg>
-                {enviandoFase ? 'Procesando...' : 'Enviar de Fase'}
+                {enviandoFase ? 'Procesando...' : esCuentaFinanciera ? 'Activar cuenta y finalizar' : 'Enviar de Fase'}
               </button>
             )}
 
@@ -403,8 +431,11 @@ export function FaseActionsComponent({
           {faseSiguiente && seqActual <= 5 && (
             <span>Siguiente →: <span className="text-gray-600">{faseSiguiente.fase}</span></span>
           )}
-          {seqActual === 6 && (
+          {seqActual === 6 && !esCuentaFinanciera && (
             <span className="text-blue-600 font-medium">Abra el módulo de Solicitud de Activación para crear o editar la solicitud</span>
+          )}
+          {esCuentaFinanciera && !cuentaFinancieraYaFinalizada && (
+            <span className="text-blue-600 font-medium">Presione "Activar cuenta y finalizar" para autorizar y cerrar el flujo</span>
           )}
           {seqActual === 7 && canActivarCuenta !== false && (
             <span className="text-green-600 font-medium">Última fase — Activación de cuenta</span>

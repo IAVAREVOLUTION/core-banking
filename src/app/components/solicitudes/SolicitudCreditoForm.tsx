@@ -33,7 +33,7 @@ import { FasesSolicitudTab } from './tabs/FasesSolicitudTab';
 import { SeleccionarClienteModal } from './SeleccionarClienteModal';
 import { PartesRelacionadasTab } from './tabs/PartesRelacionadasTab';
 import { useProductosCatalogoDB, type ProductoCatalogo } from '../../hooks/useProductosCatalogoDB';
-import { fetchNextNoSol, updateFaseSolicitudDB, avanzarFaseSolicitudDB, regresarFaseSolicitudDB, formalizarContratoSolicitudDB, activarCuentaDB } from '../../hooks/useSolicitudesDB';
+import { fetchNextNoSol, updateFaseSolicitudDB, avanzarFaseSolicitudDB, regresarFaseSolicitudDB, formalizarContratoSolicitudDB, activarCuentaDB, actualizarEstatusSolicitudDB } from '../../hooks/useSolicitudesDB';
 import {
   validarDocumentosFase, validarDocumentosPorFase, validarNotaReciente, validarFormalizarContrato,
   validarContratosYPagares, validarFase4Envio, validarFase6, leerRequisitosProducto,
@@ -45,6 +45,7 @@ import { calcularFechaPrimerPago } from '../solicitudes-activacion/solicitudActi
 import {
   generarContratoPDF, generarPagePDF, generarSolicitudPDF,
   autoCrearDocumentosFase2, CLAVE_SOLICITUD_BASE,
+  htmlToPdfBlobUrl, sustituirPlaceholders, decodificarArchivoData,
   type DatosSolicitud,
 } from '../../hooks/generarDocumentosFase4';
 import { SolicitudActivacionModal } from '../originacion/SolicitudActivacionModal';
@@ -167,6 +168,17 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [activeSection, setActiveSection] = useState<string>('fases');
+
+  // Limpiar datos de simulación de solicitudes previas que quedaron en sessionStorage bajo 'new'
+  useEffect(() => {
+    if (mode !== 'nuevo') return;
+    const hasCotizSimulacion = !!(cotizacionData as any)?._terminosCondiciones?._simulacion?.length ||
+      !!(cotizacionData as any)?._calendarioAportaciones?.length;
+    if (!hasCotizSimulacion) {
+      saveToSession('new', 'simulacion', []);
+      saveToSession('new', 'simulacion_cal', null);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Guard: si la sección activa no existe en el set actual, volver a 'fases' ──
   useEffect(() => {
@@ -433,9 +445,9 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
       (linea.includes('créd') || linea.includes('cred'));
     // Línea de Crédito: no requiere validación de pago
     if (isLineaCredito) return true;
-    // Crédito / Captación: requiere Solicitud de Activación con estatus "Enviada" o "Pagado"
+    // Crédito / Captación: requiere Solicitud de Activación con estatus "Enviada", "Pagado" o "Autorizada"
     const est = (activacionForThisSol?.estatus || '').toLowerCase().trim();
-    return est === 'enviada' || est === 'pagado';
+    return est === 'enviada' || est === 'pagado' || est === 'autorizada';
   }, [activacionForThisSol, formData.lineaProducto]);
 
   // (Auto-generación de documentos en Fase 4 eliminada — los PDFs se generan
@@ -458,37 +470,101 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
       const rawData = productoSeleccionado?.rawData as Record<string, any> | undefined;
       const requisitosProducto = getRequisitosFromRawData(rawData);
 
-      // ── 3. Validar documentos obligatorios de la fase actual (Sección B) ──
-      // Solo valida documentos cuya FaseConfigurada == FaseActual
-      const faseNombre = faseActualReal?.fase || `Fase ${seqActual}`;
-      console.log(`[handleEnviarFase] tipoPersona="${formData.tipoPersona}"`);
-      console.log(`[handleEnviarFase] requisitos:`, requisitosProducto.map(r => `"${r.tipoDocumento}" → faseId=${r.faseId} oblig=${r.obligatorio} persona=${(r as any).tipoPersona || (r as any).persona || 'N/A'}`));
-      const valFase = validarDocumentosPorFase(
-        seqActual, faseNombre, requisitosProducto, documentos, formData.tipoPersona,
-      );
-      if (!valFase.valido) {
-        // Solo faltantes (sin archivo o rechazados) bloquean el avance
-        const desc = valFase.faltantes.slice(0, 3).join(', ') + (valFase.faltantes.length > 3 ? ` (+${valFase.faltantes.length - 3} más)` : '');
-        toast.error('No se puede avanzar de fase', {
-          description: `Documentos faltantes: ${desc}`,
+      // ── Detectar fase especial "Activación Cuenta Financiera" (Línea de Crédito) ──
+      // Esta fase ejecuta exclusivamente su prompt IA sin validar documentos ni avanzar fase.
+      const faseNombre = faseActualReal?.fase || formData.descripcionFase || `Fase ${seqActual}`;
+      // Detección: Línea de Crédito en su última fase O fase con "activac" en nombre
+      const lp = (formData.lineaProducto || '').toLowerCase();
+      const esLineaCredito = lp.includes('nea') && lp.includes('cr'); // 'nea' en lí**nea**, 'cr' en **cr**édito
+      const esUltimaFase = !fasesDelProducto.find(f => f.seq === seqActual + 1);
+      const fn = faseNombre.toLowerCase();
+      const esActivacionCuentaFinanciera = (esLineaCredito && esUltimaFase) || (esLineaCredito && fn.includes('activac'));
+      console.log(`[ACF-v2] lp="${lp}" esLineaCredito=${esLineaCredito} esUltimaFase=${esUltimaFase} fn="${fn}" esActivacion=${esActivacionCuentaFinanciera}`);
+
+      // ── Activación Cuenta Financiera: manejo completo aquí, sin IA ──────
+      if (esActivacionCuentaFinanciera) {
+        const toastActiv = toast.loading('Autorizando solicitud...', { description: faseNombre });
+        const UUID_R = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        // Priorizar formData.id (UUID real de BD) sobre storageId (puede ser número)
+        const dbIdAct = UUID_R.test(String(formData.id || ''))
+          ? String(formData.id)
+          : UUID_R.test(String(storageId))
+            ? String(storageId)
+            : '';
+        console.log(`[ACF] dbIdAct=${dbIdAct} formData.id=${formData.id} storageId=${storageId}`);
+        const API_ACT = `https://${projectId}.supabase.co/functions/v1/make-server-7e2d13d9`;
+        const sigFaseAct = fasesDelProducto.find(f => f.seq === seqActual + 1);
+        let activadoEnBD = false;
+
+        // Intento 1: endpoint transaccional /activar-cuenta-financiera
+        try {
+          const res = await fetch(`${API_ACT}/activar-cuenta-financiera`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${publicAnonKey}` },
+            body: JSON.stringify({
+              solicitud_id:  UUID_R.test(dbIdAct) ? dbIdAct : null,
+              usuario_id:    (formData as any)._userId || '',
+              fase_actual:   faseNombre,
+              fase_siguiente: sigFaseAct?.fase || null,
+            }),
+          });
+          if (res.ok) {
+            const data = await res.json();
+            activadoEnBD = data.valido !== false;
+            console.log('[ActCuentaFin] Backend OK:', data);
+          } else {
+            console.warn('[ActCuentaFin] Backend HTTP', res.status, '— usando fallback frontend');
+          }
+        } catch (e: any) {
+          console.warn('[ActCuentaFin] Backend excepción:', e.message, '— usando fallback frontend');
+        }
+
+        // Intento 2 (fallback): actualizar estatus directo desde frontend
+        if (!activadoEnBD && UUID_R.test(dbIdAct)) {
+          await actualizarEstatusSolicitudDB(dbIdAct, 'Autorizada').catch(e =>
+            console.warn('[ActCuentaFin] Fallback también falló:', e)
+          );
+        }
+
+        toast.dismiss(toastActiv);
+        setFormData(prev => ({ ...prev, estatusSolicitud: 'Autorizada' }));
+        toast.success('Solicitud autorizada — flujo finalizado', {
+          description: sigFaseAct ? `Siguiente: ${sigFaseAct.fase}` : faseNombre,
           duration: 8000,
         });
-        console.log(`[Fase ${seqActual}] Validación por fase:`, valFase);
         return;
       }
-      // Advertencia no bloqueante: docs cargados pero pendientes de validación IA
-      if (valFase.pendientesValidacion.length > 0) {
-        toast.warning('Documentos pendientes de validación IA', {
-          description: valFase.pendientesValidacion.slice(0, 3).join(', '),
-          duration: 5000,
-        });
+
+      // ── 3. Validar documentos obligatorios de la fase actual (Sección B) ──
+      if (!esActivacionCuentaFinanciera) {
+        console.log(`[handleEnviarFase] tipoPersona="${formData.tipoPersona}"`);
+        console.log(`[handleEnviarFase] requisitos:`, requisitosProducto.map(r => `"${r.tipoDocumento}" → faseId=${r.faseId} oblig=${r.obligatorio} persona=${(r as any).tipoPersona || (r as any).persona || 'N/A'}`));
+        const valFase = validarDocumentosPorFase(
+          seqActual, faseNombre, requisitosProducto, documentos, formData.tipoPersona,
+        );
+        if (!valFase.valido) {
+          // Solo faltantes (sin archivo o rechazados) bloquean el avance
+          const desc = valFase.faltantes.slice(0, 3).join(', ') + (valFase.faltantes.length > 3 ? ` (+${valFase.faltantes.length - 3} más)` : '');
+          toast.error('No se puede avanzar de fase', {
+            description: `Documentos faltantes: ${desc}`,
+            duration: 8000,
+          });
+          console.log(`[Fase ${seqActual}] Validación por fase:`, valFase);
+          return;
+        }
+        // Advertencia no bloqueante: docs cargados pero pendientes de validación IA
+        if (valFase.pendientesValidacion.length > 0) {
+          toast.warning('Documentos pendientes de validación IA', {
+            description: valFase.pendientesValidacion.slice(0, 3).join(', '),
+            duration: 5000,
+          });
+        }
+        console.log(`[Fase ${seqActual}] ✅ Documentos validados:`, valFase.documentosValidados.join(', '));
       }
-      console.log(`[Fase ${seqActual}] ✅ Documentos validados:`, valFase.documentosValidados.join(', '));
 
       // ── 3a. Validación IA con el prompt de la fase ──
-      // Envía los datos extraídos de los documentos al Edge Function con el prompt de la fase.
-      // El prompt de la fase define QUÉ validar a nivel de fase completa.
-      const fasePromptIA = faseActualReal?.promptIA;
+      // Usa faseActualReal.promptIA; si no resuelve (faseActualReal nulo), usa formData.promptIAFase.
+      const fasePromptIA = faseActualReal?.promptIA || (formData as any).promptIAFase || '';
       if (fasePromptIA) {
         const toastIA = toast.loading(`Validando fase con IA: "${faseNombre}"...`, {
           description: 'Enviando datos de documentos al validador IA...',
@@ -564,59 +640,61 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
               ).join('\n')
             : '  Sin requisitos configurados para esta fase.';
 
-          const promptConContexto =
-            (fasePromptIA || '') + '\n\n' +
-            'INSTRUCCIÓN IMPORTANTE: Algunos documentos provienen de banca móvil y pueden tener nombres ' +
-            'abreviados o en formato snake_case (ej: "ine", "identificacion_oficial", "comprobante_domicilio"). ' +
-            'Debes hacer matching SEMÁNTICO: si el nombre del documento cargado corresponde al tipo requerido ' +
-            '(aunque el texto sea diferente), considera que SÍ está cubierto. Documentos sin fase asignada ' +
-            '(faseId=0 o vacío) también deben considerarse presentes para la validación.\n\n' +
-            '=== DATOS DEL CLIENTE ===\n' +
-            `Nombre: ${nombreCliente}\n` +
-            `Tipo persona: ${formData.tipoPersona || 'No especificado'}\n` +
-            `No. Solicitud: ${formData.noSol || 'No asignado'}\n\n` +
-            '=== DATOS DEL CRÉDITO ===\n' +
-            `Línea de producto: ${formData.lineaProducto || 'No especificada'}\n` +
-            `Tipo de producto: ${formData.tipoProducto || 'No especificado'}\n` +
-            `Producto: ${productoSeleccionado?.nombreProducto || formData.tipoProducto || 'No especificado'}\n` +
-            `Monto solicitado: ${terminos.montoSolicitado || terminos.monto || 'No especificado'}\n` +
-            `Plazo: ${terminos.plazo || terminos.plazoMeses || 'No especificado'}\n` +
-            `Moneda: ${terminos.moneda || 'MXN'}\n\n` +
-            `=== FASE ACTUAL: ${faseNombre} (Fase ${seqActual}) ===\n\n` +
-            '=== DOCUMENTOS OBLIGATORIOS PARA ESTA FASE ===\n' +
-            reqResumen + '\n\n' +
-            '=== DOCUMENTOS CARGADOS EN EL EXPEDIENTE (incluyendo banca móvil) ===\n' +
-            (resumenDocs || 'Sin documentos registrados.') + '\n\n' +
-            `Total documentos: ${docsDeFase.length} | Validados por IA: ${docsDeFase.filter(d => d.validadoIA).length} | Pendientes validación: ${docsDeFase.filter(d => !d.validadoIA).length}\n\n` +
-            'Responde ÚNICAMENTE en JSON válido con esta estructura exacta:\n' +
-            '{ "valido": true|false, "motivos": ["motivo1", "motivo2"], "confianza": 0.0 }';
+          // ── Payload e instrucción de respuesta según tipo de fase ────────────
+          let promptConContexto: string;
+          let payloadFaseIA: Record<string, any>;
 
-          const payloadFaseIA = {
-            faseActual: faseNombre,
-            faseNumero: seqActual,
-            botonPresionado: 'enviarFase',
-            promptIA: promptConContexto,
-            // Datos del cliente
-            nombreSolicitante: nombreCliente,
-            tipoPersona: formData.tipoPersona,
-            noSol: formData.noSol || '',
-            // Datos del producto / crédito
-            lineaProducto: formData.lineaProducto || '',
-            tipoProducto: formData.tipoProducto || '',
-            productoNombre: productoSeleccionado?.nombreProducto || formData.tipoProducto || '',
-            monto: terminos.montoSolicitado || terminos.monto || '',
-            plazo: terminos.plazo || terminos.plazoMeses || '',
-            moneda: terminos.moneda || 'MXN',
-            // Expediente
-            documentos: contextoDocs,
-            resumenDocumentos: resumenDocs || 'Sin documentos registrados.',
-            requisitosObligatorios: requisitosDeEstaFase,
-            // Conteo de documentos
-            totalDocumentosCargados: docsCargados,
-            documentosValidadosIA: docsValidados,
-            documentosRechazadosIA: docsRechazados,
-            documentosPendientesValidacion: docsPendientes,
-          };
+          {
+            promptConContexto =
+              (fasePromptIA || '') + '\n\n' +
+              'INSTRUCCIÓN IMPORTANTE: Algunos documentos provienen de banca móvil y pueden tener nombres ' +
+              'abreviados o en formato snake_case (ej: "ine", "identificacion_oficial", "comprobante_domicilio"). ' +
+              'Debes hacer matching SEMÁNTICO: si el nombre del documento cargado corresponde al tipo requerido ' +
+              '(aunque el texto sea diferente), considera que SÍ está cubierto. Documentos sin fase asignada ' +
+              '(faseId=0 o vacío) también deben considerarse presentes para la validación.\n\n' +
+              '=== DATOS DEL CLIENTE ===\n' +
+              `Nombre: ${nombreCliente}\n` +
+              `Tipo persona: ${formData.tipoPersona || 'No especificado'}\n` +
+              `No. Solicitud: ${formData.noSol || 'No asignado'}\n\n` +
+              '=== DATOS DEL CRÉDITO ===\n' +
+              `Línea de producto: ${formData.lineaProducto || 'No especificada'}\n` +
+              `Tipo de producto: ${formData.tipoProducto || 'No especificado'}\n` +
+              `Producto: ${productoSeleccionado?.nombreProducto || formData.tipoProducto || 'No especificado'}\n` +
+              `Monto solicitado: ${terminos.montoSolicitado || terminos.monto || 'No especificado'}\n` +
+              `Plazo: ${terminos.plazo || terminos.plazoMeses || 'No especificado'}\n` +
+              `Moneda: ${terminos.moneda || 'MXN'}\n\n` +
+              `=== FASE ACTUAL: ${faseNombre} (Fase ${seqActual}) ===\n\n` +
+              '=== DOCUMENTOS OBLIGATORIOS PARA ESTA FASE ===\n' +
+              reqResumen + '\n\n' +
+              '=== DOCUMENTOS CARGADOS EN EL EXPEDIENTE (incluyendo banca móvil) ===\n' +
+              (resumenDocs || 'Sin documentos registrados.') + '\n\n' +
+              `Total documentos: ${docsDeFase.length} | Validados por IA: ${docsDeFase.filter(d => d.validadoIA).length} | Pendientes validación: ${docsDeFase.filter(d => !d.validadoIA).length}\n\n` +
+              'Responde ÚNICAMENTE en JSON válido con esta estructura exacta:\n' +
+              '{ "valido": true|false, "motivos": ["motivo1", "motivo2"], "confianza": 0.0 }';
+
+            payloadFaseIA = {
+              faseActual: faseNombre,
+              faseNumero: seqActual,
+              botonPresionado: 'enviarFase',
+              promptIA: promptConContexto,
+              nombreSolicitante: nombreCliente,
+              tipoPersona: formData.tipoPersona,
+              noSol: formData.noSol || '',
+              lineaProducto: formData.lineaProducto || '',
+              tipoProducto: formData.tipoProducto || '',
+              productoNombre: productoSeleccionado?.nombreProducto || formData.tipoProducto || '',
+              monto: terminos.montoSolicitado || terminos.monto || '',
+              plazo: terminos.plazo || terminos.plazoMeses || '',
+              moneda: terminos.moneda || 'MXN',
+              documentos: contextoDocs,
+              resumenDocumentos: resumenDocs || 'Sin documentos registrados.',
+              requisitosObligatorios: requisitosDeEstaFase,
+              totalDocumentosCargados: docsCargados,
+              documentosValidadosIA: docsValidados,
+              documentosRechazadosIA: docsRechazados,
+              documentosPendientesValidacion: docsPendientes,
+            };
+          }
 
           // Registrar intento en debug
           setIaFaseDebug({
@@ -630,7 +708,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
           });
           setShowIAFaseDebug(true);
 
-          console.log(`[Fase ${seqActual}] Enviando validacion IA → /validar-documento-ia | docs: ${contextoDocs.length} | prompt: "${fasePromptIA?.substring(0, 80)}..."`);
+          console.log(`[Fase ${seqActual}] Enviando → /validar-documento-ia`);
 
           const resFaseIA = await fetch(`${API_BASE_FASE}/validar-documento-ia`, {
             method: 'POST',
@@ -650,11 +728,12 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
 
             if (resultadoFaseIA.valido === false) {
               toast.error(`IA: Fase "${faseNombre}" no cumple criterios`, {
-                description: (resultadoFaseIA.motivos || []).slice(0, 3).join(' · '),
+                description: (resultadoFaseIA.motivos || resultadoFaseIA.faltantes || []).slice(0, 3).join(' · '),
                 duration: 10000,
               });
               return;
             }
+
 
             toast.success(`IA: Fase "${faseNombre}" validada`, {
               description: resultadoFaseIA.motivos?.length > 0
@@ -724,7 +803,12 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
       // ── 4. Buscar faseSiguiente por numero_consecutivo ──
       const sigFase = fasesDelProducto.find(f => f.seq === seqActual + 1);
       if (!sigFase) {
-        toast.info('Esta es la última fase del flujo', { description: faseActualReal?.fase || formData.descripcionFase });
+        // Para "Activación Cuenta Financiera" el prompt ya corrió arriba; solo notificar completado.
+        if (esActivacionCuentaFinanciera) {
+          toast.success('Proceso completado', { description: faseNombre });
+        } else {
+          toast.info('Esta es la última fase del flujo', { description: faseActualReal?.fase || formData.descripcionFase });
+        }
         return;
       }
 
@@ -818,6 +902,70 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
     }
   }, [enviandoFase, formData, fasesDelProducto, storageId]);
 
+  /** Obtiene datos completos del cliente desde BD para rellenar plantillas. */
+  const obtenerDatosCliente = useCallback(async (): Promise<Record<string, string> & { nombreDB?: string }> => {
+    const fd = formData as any;
+    let extra: Record<string, string> & { nombreDB?: string } = {
+      rfc:             fd._rfc             || '',
+      curp:            fd._curp            || '',
+      domicilio:       fd._domicilio       || '',
+      telefono:        fd._telefono        || '',
+      email:           fd._email           || '',
+      fechaNacimiento: fd._fechaNacimiento || '',
+      nombreDB:        '',
+    };
+    const clienteUUID = fd._clienteId || '';
+    console.log('[obtenerDatosCliente] clienteUUID:', clienteUUID, '| rfc:', extra.rfc, '| curp:', extra.curp, '| domicilio:', extra.domicilio);
+    if (clienteUUID) {
+      try {
+        const _API   = `https://${projectId}.supabase.co/functions/v1/make-server-7e2d13d9`;
+        const _heads = { 'Authorization': `Bearer ${publicAnonKey}` };
+        let rowC: any = null;
+        for (const ep of ['/clientes-lista-todos', '/clientes-prospectos']) {
+          try {
+            const res = await fetch(`${_API}${ep}`, { headers: _heads });
+            if (res.ok) {
+              const allRows: any[] = (await res.json()).data || [];
+              rowC = allRows.find((r: any) => r.id === clienteUUID || r.data?.authUserId === clienteUUID);
+              if (rowC) break;
+            }
+          } catch (_) { /* intentar siguiente endpoint */ }
+        }
+        console.log('[obtenerDatosCliente] rowC encontrado:', !!rowC, rowC ? { id: rowC.id, dataKeys: Object.keys(rowC.data || {}).slice(0, 10) } : null);
+        if (rowC) {
+          const d   = rowC.data || {};
+          const g   = (k: string) => String(d[k] || d.default?.[k] || '');
+          const dirs: any[] = Array.isArray(d.direcciones) ? d.direcciones : [];
+          const dir0 = dirs.find((x: any) => x.principal) || dirs[0] || {};
+          const domParts = [
+            dir0.calle || d.calle || d.direccion || '',
+            dir0.numeroExterior || '',
+            dir0.colonia || d.colonia || '',
+            dir0.municipio || d.municipio || '',
+            dir0.estado || dir0.entidadFederativa || d.entidadFederativa || '',
+            dir0.codigoPostal ? `C.P. ${dir0.codigoPostal}` : '',
+          ].filter(Boolean);
+          // Nombre completo desde el registro del cliente
+          const nombreDB = [g('nombre'), g('apellidoPaterno'), g('apellidoMaterno')]
+            .filter(Boolean).join(' ') || g('razonSocial') || g('nombreCompleto') || '';
+          extra = {
+            rfc:             g('rfc')             || extra.rfc,
+            curp:            g('curp')            || extra.curp,
+            domicilio:       domParts.join(', ')  || d.domicilio || d.direccion || extra.domicilio,
+            telefono:        g('telefono') || g('telefonoDomicilio') || g('celular') || g('telefonoCelular') || extra.telefono,
+            email:           g('correoElectronico') || g('email') || g('correo') || extra.email,
+            fechaNacimiento: g('fechaNacimiento') || g('fechaNac') || extra.fechaNacimiento,
+            nombreDB,
+          };
+          console.log('[obtenerDatosCliente] resultado:', { rfc: extra.rfc, curp: extra.curp, domicilio: extra.domicilio?.slice(0, 40), nombreDB });
+        }
+      } catch (err) {
+        console.warn('[obtenerDatosCliente] fetch falló:', err);
+      }
+    }
+    return extra;
+  }, [formData, projectId, publicAnonKey]);
+
   /** Formalizar Contrato — Fase 4. Valida docs previos, términos, garantías y comités. */
     /**
      * Generar Solicitud — Fase 1.
@@ -896,70 +1044,14 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
         const cliente = [formData.nombrePersona, formData.apellidoPaternoPersona, formData.apellidoMaternoPersona]
           .filter(Boolean).join(' ').trim() || 'Cliente';
 
-        // ── Enriquecer datos del cliente desde DB si hay _clienteId y faltan campos ──
-        // Esto aplica cuando la solicitud viene de Cotización (el modal de cliente no fue usado)
-        let clienteExtra: Record<string, string> = {
-          rfc: (formData as any)._rfc || '',
-          curp: (formData as any)._curp || '',
-          domicilio: (formData as any)._domicilio || '',
-          telefono: (formData as any)._telefono || '',
-          email: (formData as any)._email || '',
-          fechaNacimiento: (formData as any)._fechaNacimiento || '',
-        };
-
-        const clienteUUID = (formData as any)._clienteId || '';
-        const faltanDatos = !clienteExtra.rfc || !clienteExtra.curp || !clienteExtra.telefono;
-        if (clienteUUID && faltanDatos) {
-          try {
-            const _API = `https://${projectId}.supabase.co/functions/v1/make-server-7e2d13d9`;
-            const _heads = { 'Authorization': `Bearer ${publicAnonKey}` };
-            // Intentar ambos endpoints — el primero que responda OK gana
-            let rows: any[] = [];
-            for (const ep of ['/clientes-lista-todos', '/clientes-prospectos']) {
-              const res = await fetch(`${_API}${ep}`, { headers: _heads });
-              if (res.ok) {
-                const json = await res.json();
-                rows = json.data || [];
-                if (rows.length > 0) break;
-              }
-            }
-            // Buscar por UUID (row.id) o por authUserId dentro del data
-            const rowC = rows.find((r: any) =>
-              r.id === clienteUUID ||
-              r.data?.authUserId === clienteUUID
-            );
-            if (rowC) {
-              const d = rowC.data || {};
-              const g = (k: string) => d[k] || d.default?.[k] || '';
-              const dirs: any[] = Array.isArray(d.direcciones) ? d.direcciones : [];
-              // Preferir la dirección principal; si no hay, usar la primera
-              const dir0 = dirs.find((x: any) => x.principal) || dirs[0] || {};
-              const domParts = [
-                dir0.calle || d.calle || d.direccion || '',
-                dir0.numeroExterior || '',
-                dir0.colonia || d.colonia || '',
-                dir0.municipio || d.municipio || '',
-                dir0.estado || dir0.entidadFederativa || d.entidadFederativa || '',
-                dir0.codigoPostal ? `C.P. ${dir0.codigoPostal}` : '',
-              ].filter(Boolean);
-              clienteExtra = {
-                rfc: g('rfc') || clienteExtra.rfc,
-                curp: g('curp') || clienteExtra.curp,
-                domicilio: domParts.length > 0 ? domParts.join(', ') : (d.domicilio || d.direccion || clienteExtra.domicilio),
-                telefono: g('telefono') || g('telefonoDomicilio') || g('celular') || g('telefonoCelular') || clienteExtra.telefono,
-                email: g('correoElectronico') || g('email') || g('correo') || clienteExtra.email,
-                fechaNacimiento: g('fechaNacimiento') || g('fechaNac') || clienteExtra.fechaNacimiento,
-              };
-            }
-          } catch (_) { /* si falla el fetch, continúa con los datos que ya hay */ }
-        }
+        const clienteExtra = await obtenerDatosCliente();
 
         const datosSolicitud: DatosSolicitud = {
           noSol: formData.noSol,
           cliente,
           lineaProducto: formData.lineaProducto,
           tipoProducto: formData.tipoProducto,
-          productoNombre: productoSeleccionado?.nombreProducto || formData.tipoProducto || '',
+          productoNombre: productoSeleccionado?.nombreProducto || formData.nombreProducto || formData.tipoProducto || '',
           terminos,
           ...clienteExtra,
           sucursal: formData.sucursal || '',
@@ -1054,7 +1146,13 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
       const rawData = productoSeleccionado?.rawData as Record<string, any> | undefined;
       const requisitosProducto = getRequisitosFromRawData(rawData);
       const { requiereGarantia, requiereComite } = leerRequisitosProducto(rawData);
-      const plantillasProducto = rawData?.plantillas || [];
+      const plantillasProducto =
+        (Array.isArray(productoSeleccionado?.plantillas) && productoSeleccionado!.plantillas!.length > 0
+          ? productoSeleccionado!.plantillas
+          : null) ??
+        (Array.isArray(rawData?.plantillas) && rawData!.plantillas.length > 0
+          ? rawData!.plantillas
+          : []);
 
       // Fases 1-3 previas
       const faseActualReal = fasesDelProducto.find(f => String(f.faseId) === String(formData.faseId));
@@ -1101,20 +1199,39 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
       saveToSavedStore(storageId, 'contrato', datosContrato);
       saveToSession(storageId, 'contrato', datosContrato);
 
-      // ── Generar PDFs ──
+      // ── Generar PDFs — enriquecer datos del cliente desde BD ──
+      const clienteExtra = await obtenerDatosCliente();
+      // Si formData no tiene nombre (solicitud cargada de BD sin header), usar el del cliente
+      const clienteFinal = cliente || clienteExtra.nombreDB || '';
       const datosSolicitud: DatosSolicitud = {
-        noSol: formData.noSol,
-        cliente,
-        lineaProducto: formData.lineaProducto,
-        tipoProducto: formData.tipoProducto,
-        productoNombre: productoSeleccionado?.nombreProducto || formData.tipoProducto || '',
+        noSol:          formData.noSol,
+        cliente:        clienteFinal,
+        lineaProducto:  formData.lineaProducto,
+        tipoProducto:   formData.tipoProducto,
+        productoNombre: productoSeleccionado?.nombreProducto || formData.nombreProducto || formData.tipoProducto || '',
         terminos,
+        ...clienteExtra,
+        sucursal:  formData.sucursal    || '',
+        finalidad: formData.descripcion || '',
       };
+      console.log('[Contrato] datosSolicitud para plantilla:', {
+        noSol: datosSolicitud.noSol,
+        cliente: datosSolicitud.cliente,
+        rfc: datosSolicitud.rfc,
+        curp: datosSolicitud.curp,
+        domicilio: datosSolicitud.domicilio?.slice(0, 40),
+        productoNombre: datosSolicitud.productoNombre,
+        fechaNacimiento: datosSolicitud.fechaNacimiento,
+      });
 
-      const contratoPDF = generarContratoPDF(datosSolicitud);
-      const pagarePDF   = generarPagePDF(datosSolicitud);
+      // Usar plantilla configurada en el producto si tiene archivoData; fallback a PDF genérico
+      const plantillaContrato = plantillasProducto.find(
+        (p: any) => p.tipoPlantilla === 'contrato' && p.estatus === 'Activo'
+      );
+      const plantillaPagare = plantillasProducto.find(
+        (p: any) => p.tipoPlantilla === 'pagare' && p.estatus === 'Activo'
+      );
 
-      // ── Convertir base64 a blob URL (window.open no acepta data: URLs en Chrome) ──
       const toObjectURL = (dataUrl: string): string => {
         const [header, b64] = dataUrl.split(',');
         const mime = header.match(/:(.*?);/)?.[1] ?? 'application/pdf';
@@ -1124,8 +1241,20 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
         return URL.createObjectURL(new Blob([buf], { type: mime }));
       };
 
-      const contratoUrl = toObjectURL(contratoPDF);
-      const pagareUrl   = toObjectURL(pagarePDF);
+      const generarUrlDesdeRef = async (plantilla: any, fallbackFn: () => string): Promise<string> => {
+        if (plantilla?.archivoData) {
+          try {
+            const html = sustituirPlaceholders(decodificarArchivoData(plantilla.archivoData), datosSolicitud);
+            return await htmlToPdfBlobUrl(html);
+          } catch (e) {
+            console.warn('[Contrato] Error convirtiendo plantilla a PDF, usando fallback:', e);
+          }
+        }
+        return toObjectURL(fallbackFn());
+      };
+
+      const contratoUrl = await generarUrlDesdeRef(plantillaContrato, () => generarContratoPDF(datosSolicitud));
+      const pagareUrl   = await generarUrlDesdeRef(plantillaPagare,   () => generarPagePDF(datosSolicitud));
 
       // ── Abrir en pestañas nuevas ──
       const tabContrato = window.open(contratoUrl, '_blank');
@@ -1136,7 +1265,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
         });
       }
 
-      // ── Descarga automática ──
+      // ── Descarga ──
       const descargar = (url: string, nombre: string) => {
         const a = document.createElement('a');
         a.href = url;
@@ -1245,7 +1374,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
     //  3. Activar           (estatus='Pagado', _fromActivar=true)    → avanzar/finalizar, 'Aprobado'
     //
     const estatusNorm = (savedItem.estatus || '').toLowerCase().trim();
-    const esPagado    = estatusNorm === 'pagado' || estatusNorm === 'aprobado';
+    const esPagado    = estatusNorm === 'pagado' || estatusNorm === 'aprobado' || estatusNorm === 'activada';
     const fromActivar = !!savedItem._fromActivar;
 
     console.log('[PROMPT_IA] handleActivacionSaved - estatus:', savedItem.estatus, '| esPagado:', esPagado, '| fromActivar:', fromActivar);
@@ -1276,6 +1405,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
         const nuevaDescripcionFase = esFasesFinal ? 'Completada' : (sigFase2?.fase || formData.descripcionFase);
         const nuevaArea            = sigFase2?.area  ?? (esFasesFinal ? formData.area : inferirAreaFase(sigFase2?.fase || ''));
         // En fase final siempre 'Aprobado' (independientemente de si es activar o enviar)
+        // Para activaciones, usar 'Aprobado' como estatus final del flujo
         const estatusFinal         = esFasesFinal ? 'Aprobado' : nuevoEstatusLocal;
 
         console.log('[PROMPT_IA] avanzarFase calc:', { esFasesFinal, nuevaFaseId, nuevaDescripcionFase, estatusFinal });
@@ -1339,9 +1469,9 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
     // ────────────────────────────────────────────────────────────────────────
 
     if (esPagado && fromActivar) {
-      // ── "Activar" → finalizar fase actual, estatusSolicitud: 'Aprobado' ──
+      // ── "Activar" → finalizar fase actual, estatusSolicitud: 'Autorizada' ──
       console.log('[PROMPT_IA] accion=activar_solicitud | faseAntes=', faseDebugBefore);
-      await avanzarFase('Aprobado', 'activar_solicitud');
+      await avanzarFase('Autorizada', 'activar_solicitud');
 
       // Actualizar J_CUENTAS_CORP_CLIENTES con los 4 estatus de activación
       const UUID_RE_ACT = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -1349,12 +1479,15 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
       if (storageId !== 'new' && UUID_RE_ACT.test(actDbId)) {
         try {
           const actResult = await activarCuentaDB(actDbId, {
-            estatus_sol:  'Autorizada',
+            estatus_sol:  'Aprobado',
             estatus_cuen: 'Activa',
             estatus_disp: 'Pagado',
             estatus_cart: 'Activa',
-          });
-          if (!actResult.ok) {
+          }, formData.lineaProducto);
+          if (actResult.ok) {
+            // Sincronizar estatusSolicitud en UI con el valor persistido en BD
+            setFormData(prev => ({ ...prev, estatusSolicitud: 'Aprobado', faseId: '7', descripcionFase: 'Completada' }));
+          } else {
             console.warn('[PROMPT_IA] activarCuentaDB (modal path) falló:', actResult.error);
           }
         } catch (err) {
@@ -1408,24 +1541,24 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
       const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
       const datosActivacion = {
-        estatusSolicitud: 'Autorizada',
+        estatusSolicitud: 'Aprobado',
         estatusCuenta:    'Activa',
         estatusPago:      'Pagado',
         estatusCartera:   'Activa',
         fechaActivacion:  new Date().toISOString().split('T')[0],
       };
 
-      // Actualizar estado local
-      setFormData(prev => ({ ...prev, estatusSolicitud: 'Autorizada' }));
+      // Actualizar estado local - usar 'Aprobado' como estatus final al activar cuenta
+      setFormData(prev => ({ ...prev, estatusSolicitud: 'Aprobado', faseId: '7', descripcionFase: 'Completada' }));
 
       if (dbId && UUID_REGEX.test(dbId)) {
-        const res = await activarCuentaDB(dbId, datosActivacion);
+        const res = await activarCuentaDB(dbId, datosActivacion, formData.lineaProducto);
         if (res.ok) {
           toast.success('¡Cuenta activada exitosamente!', {
-            description: `Solicitud ${formData.noSol} — EstatusSolicitud: Autorizada | EstatusCuenta: Activa`,
+            description: `Solicitud ${formData.noSol} — EstatusSolicitud: Aprobado | EstatusCuenta: Activa`,
           });
         } else {
-          toast.warning('Cuenta activada localmente (sin conexión BD)', { description: res.error });
+          toast.warning(res.error || 'Cuenta activada localmente (sin conexión BD)', { description: res.error });
         }
       } else {
         toast.success('Cuenta activada (modo local)', { description: formData.noSol });
@@ -1554,7 +1687,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
 
     // ── Recopilar datos de TODAS las subtabs ANTES de commitAndClearSession ──
     const allSubtabs: Record<string, any> = {};
-    const subtabKeys = ['terminos', 'simulacion', 'documentos', 'garantias', 'comisiones', 'autorizaciones', 'notas', 'partesRelacionadas', '_originalData'];
+    const subtabKeys = ['terminos', 'simulacion', 'simulacion_cal', 'documentos', 'garantias', 'comisiones', 'autorizaciones', 'notas', 'partesRelacionadas', '_originalData'];
     for (const key of subtabKeys) {
       // _originalData puede haber sido limpiado de session por commitAndClearSession en el save anterior;
       // usar savedStore como fallback para no perder los datos de banca móvil al hacer deep merge
@@ -1565,6 +1698,11 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
     console.log('[SolicForm] handleSave → formData fields:',
       Object.entries(d).filter(([, v]) => v).map(([k, v]) => `${k}=${String(v).substring(0, 30)}`).join(' | '));
     console.log('[SolicForm] handleSave → subtabs collected:', Object.keys(allSubtabs).join(', ') || '(none)');
+    if (allSubtabs.simulacion_cal) {
+      console.log('[SolicForm] handleSave → simulacion_cal count:', Array.isArray(allSubtabs.simulacion_cal) ? allSubtabs.simulacion_cal.length : 'NOT-ARRAY');
+    } else {
+      console.log('[SolicForm] handleSave → SIN simulacion_cal en subtabs (puede ser normal para Crédito)');
+    }
     if (allSubtabs.comisiones) {
       console.log('[SolicForm] handleSave → comisiones count:', Array.isArray(allSubtabs.comisiones) ? allSubtabs.comisiones.length : 'NOT-ARRAY', '| data:', JSON.stringify(allSubtabs.comisiones).substring(0, 300));
     } else {
@@ -2263,7 +2401,14 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
                     mode={mode}
                     productoId={formData.productoId}
                     faseIdActual={formData.faseId}
-                    faseActualSeq={fasesDelProducto.find(f => String(f.faseId) === String(formData.faseId))?.seq}
+                    faseActualSeq={(() => {
+                      const seq = fasesDelProducto.find(f => String(f.faseId) === String(formData.faseId))?.seq;
+                      const flujoFin = ['Aprobado', 'Autorizada', 'Activo', 'Activa'].includes(formData.estatusSolicitud || '');
+                      const maxSeq = fasesDelProducto.length > 0 ? Math.max(...fasesDelProducto.map(f => f.seq)) : 0;
+                      // Si el flujo está finalizado en la última fase, seq+1 hace que isPast sea true para ella
+                      return (flujoFin && seq === maxSeq) ? (seq || 0) + 1 : seq;
+                    })()}
+                    estatusSolicitud={formData.estatusSolicitud}
                   />
                 )}
                 {sec.id === 'partesRelacionadas' && (
@@ -2297,6 +2442,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
                     tipoProducto={formData.tipoProducto}
                     calendarioAportaciones={formData._calendarioAportaciones}
                     montoAutorizado={typeof formData.montoAutorizado === 'number' ? formData.montoAutorizado : parseFloat(String(formData.montoAutorizado || '0').replace(/[^0-9.-]/g, ''))}
+                    onFechaFinChange={v => set('fechaFin', v)}
                   />
                 )}
                 {sec.id === 'expediente' && (
@@ -2310,7 +2456,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
                     curpCliente={formData._curp || ''}
                     rfcCliente={formData._rfc || ''}
                     fasePromptIA={fasePromptIA}
-                    onEnviarSolicitud={handleEnviarSolicitud}
+                    onEnviarSolicitud={modo === 'originacion' ? handleEnviarSolicitud : undefined}
                   />
                 )}
                 {sec.id === 'garantias' && (

@@ -16,7 +16,7 @@
  *     principal a la vez (la anterior se desmarca).
  *   - En modo ver, se muestra el indicador pero no se puede cambiar.
  */
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useCuentasAhorroDB } from '@/app/hooks/useCuentasAhorroDB';
 import type { CuentaAhorroListItem } from '@/app/hooks/useCuentasAhorroDB';
 import { getCuentaAhorroById } from '@/app/hooks/useCuentasAhorroDB';
@@ -33,44 +33,38 @@ const LOG = '[CuentaAhorro-Cliente]';
 export function CuentaAhorro({ onBack, mode, clienteId, onCuentaEjeChange }: CuentaAhorroProps) {
   const isView = mode === 'ver';
   const isNuevo = mode === 'nuevo';
-  const { cuentas: allCuentas, loading: hookLoading, backendStatus, updateCuenta } = useCuentasAhorroDB();
+  const { cuentas: allCuentas, loading, backendStatus, updateCuenta } = useCuentasAhorroDB();
 
-  const [cuentasCliente, setCuentasCliente] = useState<CuentaAhorroListItem[]>([]);
-  const [loading, setLoading] = useState(true);
   const [selectedCuentas, setSelectedCuentas] = useState<string[]>([]);
-  const [changingPrincipal, setChangingPrincipal] = useState<string | null>(null); // id de la cuenta en proceso
+  const [changingPrincipal, setChangingPrincipal] = useState<string | null>(null);
 
   const onCuentaEjeChangeRef = useRef(onCuentaEjeChange);
   useEffect(() => {
     onCuentaEjeChangeRef.current = onCuentaEjeChange;
   }, [onCuentaEjeChange]);
 
+  const cid = String(clienteId || '');
+
+  const norm = (s: string) =>
+    (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+
   // ═══════════════════════════════════════════════════════════════════
   // FILTRAR CUENTAS POR CLIENTE_ID
   // ═══════════════════════════════════════════════════════════════════
-  useEffect(() => {
-    if (hookLoading) return;
-
-    const cid = String(clienteId || '');
-    if (!cid) {
-      console.log(`${LOG} No clienteId — sin cuentas`);
-      setCuentasCliente([]);
-      setLoading(false);
-      return;
+  const cuentasCliente = useMemo(() => {
+    if (!cid) return [];
+    const result: CuentaAhorroListItem[] = [];
+    for (const c of allCuentas) {
+      if (c.clienteId !== cid) continue;
+      const estatus = norm(c.estatusCart);
+      const tipo = norm(c.tipoProduc);
+      const pass = (estatus === 'activa') && (tipo === 'aportacion' || tipo === 'ahorro');
+      console.log(`${LOG} cuenta ${c.id.slice(0,8)} clienteId=${c.clienteId.slice(0,8)} cid=${cid.slice(0,8)} estatus="${c.estatusCart}"→"${estatus}" tipo="${c.tipoProduc}"→"${tipo}" pass=${pass}`);
+      if (pass) result.push(c);
     }
-
-    // Filtrar del listado general por clienteId
-    const filtered = allCuentas.filter(c => c.clienteId === cid);
-    console.log(`${LOG} clienteId=${cid} — ${filtered.length} cuentas de ${allCuentas.length} totales`);
-    // Avoid unnecessary state updates: compare by IDs to prevent infinite loops
-    setCuentasCliente(prev => {
-      if (prev.length === filtered.length && prev.every((c, i) => c.id === filtered[i]?.id)) {
-        return prev; // Same data — keep reference stable
-      }
-      return filtered;
-    });
-    setLoading(false);
-  }, [allCuentas, hookLoading, clienteId]);
+    console.log(`${LOG} cuentasCliente: total=${allCuentas.length} del cliente=${result.length}`);
+    return result;
+  }, [allCuentas, cid]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Notificar cambios de cuenta eje
   useEffect(() => {
@@ -123,14 +117,7 @@ export function CuentaAhorro({ onBack, mode, clienteId, onCuentaEjeChange }: Cue
         });
       }
 
-      // 3) Actualizar estado local inmediatamente para UX fluida
-      setCuentasCliente(prev =>
-        prev.map(c => ({
-          ...c,
-          ctaEjeChec: c.id === cuentaId,
-        }))
-      );
-
+      // allCuentas se actualizará vía fetchAll() llamado dentro de updateCuenta
       console.log(`${LOG} Cuenta principal cambiada exitosamente a ${cuentaId}`);
     } catch (err) {
       console.error(`${LOG} Error cambiando cuenta principal:`, err);
@@ -325,7 +312,7 @@ export function CuentaAhorro({ onBack, mode, clienteId, onCuentaEjeChange }: Cue
                         {cuenta.productoNombre || '—'}
                       </td>
                       <td className="px-3 py-2 text-xs text-gray-700 text-right border-r border-gray-300">
-                        {formatMoney(cuenta.saldoActual)}
+                        {formatMoney(cuenta.montoAut)}
                       </td>
                       <td className="px-3 py-2 text-center border-r border-gray-300">
                         {estatusBadge(cuenta.estatusCuen)}

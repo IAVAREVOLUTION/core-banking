@@ -29,278 +29,9 @@ import { CotizacionCreditoForm } from './CotizacionCreditoForm';
 import type { CotizacionCredito } from './cotizacionCreditoTypes';
 import { generarNoCotizaCredito, crearCotizacionCreditoVacia } from './cotizacionCreditoTypes';
 
-// ════════════════════════════════════════════════════════════════
-// MOCK DATA — Cotizaciones Crédito (demo mientras no hay DB)
-// ════════════════════════════════════════════════════════════════
-const MOCK_COTIZACIONES_CREDITO: CotizacionCredito[] = [
-  {
-    id: 'cre-001', no_cotiza: 'CRE-A1B2C3D4E5F6G7H8I9J0K1',
-    descripcion: 'Crédito Personal empleado SEP', producto_id: 'PC-001', cliente_id: 'CL-001',
-    fecha_cotiza: '2026-02-24T09:30:00', estatus_cotiza: 'Pendiente', linea_cotizacion: 'Crédito',
-    data: {
-      lineaProducto: 'Crédito', usuario: 'Juan Pérez',
-      cliente: { claveCliente: 'CLI-10001', nombreCompleto: 'María García López' },
-      institucionGobierno: 'Secretaría de Educación Pública (SEP)',
-      producto: { claveProducto: 'PCRE-001', nombreProducto: 'Crédito Personal', tipoProducto: 'Crédito Individual', lineaProducto: 'Crédito' },
-      moneda: 'MXN', periodo: 'Mensual',
-      plazoMinimo: 6, plazoMaximo: 48, plazo: 36,
-      montoMinimo: 5000, montoMaximo: 500000, montoSolicitado: 150000,
-      tasaMinima: 12, tasaMaxima: 24, tasaCotizada: 18,
-      tipoGarantia: 'Fiduciaria', subtipoGarantia: 'Obligado Solidario', aforo: 1.0, montoGarantia: 150000,
-      tipoCalculoAmortizacion: 'Francés',
-      seguroFinanciado: false, seguroNombre: '', montoSeguro: 0, tasaSeguro: 0, totalSeguro: 0,
-      fechaPrimerPago: '2026-03-24',
-      interesAPagar: 45275, pagoPeriodo: 5424, pagoSeguroPeriodo: 0, pagoTotal: 5424,
-      pagoMensual: 5424, interesTotal: 45275, montoTotal: 195275, cat: 0,
-      tipoTasa: 'Fija', frecuenciaPago: 'Mensual',
-      tablaAmortizacion: [],
-    },
-  },
-  {
-    id: 'cre-002', no_cotiza: 'CRE-L2M3N4O5P6Q7R8S9T0U1V2',
-    descripcion: 'Crédito Hipotecario vivienda', producto_id: 'PC-002', cliente_id: 'CL-002',
-    fecha_cotiza: '2026-02-20T14:00:00', estatus_cotiza: 'Aprobada', linea_cotizacion: 'Crédito',
-    data: {
-      lineaProducto: 'Crédito', usuario: 'Ana López',
-      cliente: { claveCliente: 'CLI-10002', nombreCompleto: 'Roberto Hernández Martínez' },
-      institucionGobierno: 'Instituto de Seguridad y Servicios Sociales (ISSSTE)',
-      producto: { claveProducto: 'PCRE-002', nombreProducto: 'Crédito Hipotecario', tipoProducto: 'Crédito Hipotecario', lineaProducto: 'Crédito' },
-      moneda: 'MXN', periodo: 'Mensual',
-      plazoMinimo: 12, plazoMaximo: 360, plazo: 240,
-      montoMinimo: 100000, montoMaximo: 5000000, montoSolicitado: 1500000,
-      tasaMinima: 8, tasaMaxima: 16, tasaCotizada: 12,
-      tipoGarantia: 'Hipotecaria', subtipoGarantia: 'Inmueble Urbano', aforo: 1.5, montoGarantia: 2250000,
-      tipoCalculoAmortizacion: 'Francés',
-      seguroFinanciado: true, seguroNombre: 'Seguro de Vida Deudor', montoSeguro: 800, tasaSeguro: 0.0015, totalSeguro: 1088,
-      fechaPrimerPago: '2026-03-20',
-      interesAPagar: 2465222, pagoPeriodo: 16521, pagoSeguroPeriodo: 4.53, pagoTotal: 16526,
-      pagoMensual: 16521, interesTotal: 2465222, montoTotal: 3965222, cat: 0,
-      tipoTasa: 'Fija', frecuenciaPago: 'Mensual',
-      tablaAmortizacion: [],
-    },
-  },
-  {
-    id: 'cre-003', no_cotiza: 'CRE-W3X4Y5Z6A7B8C9D0E1F2G3',
-    descripcion: 'Crédito Automotriz', producto_id: 'PC-003', cliente_id: 'CL-004',
-    fecha_cotiza: '2026-02-18T11:15:00', estatus_cotiza: 'Pendiente', linea_cotizacion: 'Crédito',
-    data: {
-      lineaProducto: 'Crédito', usuario: 'Carlos Mendoza',
-      cliente: { claveCliente: 'CLI-10004', nombreCompleto: 'Laura Sánchez Ramírez' },
-      institucionGobierno: 'Comisión Federal de Electricidad (CFE)',
-      producto: { claveProducto: 'PCRE-003', nombreProducto: 'Crédito Automotriz', tipoProducto: 'Crédito Consumo', lineaProducto: 'Crédito' },
-      moneda: 'MXN', periodo: 'Mensual',
-      plazoMinimo: 12, plazoMaximo: 60, plazo: 48,
-      montoMinimo: 50000, montoMaximo: 1000000, montoSolicitado: 350000,
-      tasaMinima: 10, tasaMaxima: 20, tasaCotizada: 15.5,
-      tipoGarantia: 'Prendaria', subtipoGarantia: 'Vehículo', aforo: 1.3, montoGarantia: 455000,
-      tipoCalculoAmortizacion: 'Francés',
-      seguroFinanciado: false, seguroNombre: '', montoSeguro: 0, tasaSeguro: 0, totalSeguro: 0,
-      fechaPrimerPago: '2026-03-18',
-      interesAPagar: 122085, pagoPeriodo: 9835, pagoSeguroPeriodo: 0, pagoTotal: 9835,
-      pagoMensual: 9835, interesTotal: 122085, montoTotal: 472085, cat: 0,
-      tipoTasa: 'Fija', frecuenciaPago: 'Mensual',
-      tablaAmortizacion: [],
-    },
-  },
-  {
-    id: 'cre-004', no_cotiza: 'CRE-H4I5J6K7L8M9N0O1P2Q3R4',
-    descripcion: 'Crédito Personal complementario', producto_id: 'PC-001', cliente_id: 'CL-007',
-    fecha_cotiza: '2026-02-26T16:00:00', estatus_cotiza: 'Aprobada', linea_cotizacion: 'Crédito',
-    data: {
-      lineaProducto: 'Crédito', usuario: 'Juan Pérez',
-      cliente: { claveCliente: 'CLI-10007', nombreCompleto: 'Patricia Ruiz Vega' },
-      institucionGobierno: 'Secretaría de Hacienda (SHCP)',
-      producto: { claveProducto: 'PCRE-001', nombreProducto: 'Crédito Personal', tipoProducto: 'Crédito Individual', lineaProducto: 'Crédito' },
-      moneda: 'MXN', periodo: 'Quincenal',
-      plazoMinimo: 6, plazoMaximo: 48, plazo: 24,
-      montoMinimo: 5000, montoMaximo: 500000, montoSolicitado: 80000,
-      tasaMinima: 12, tasaMaxima: 24, tasaCotizada: 18,
-      tipoGarantia: 'Fiduciaria', subtipoGarantia: 'Obligado Solidario', aforo: 1.0, montoGarantia: 80000,
-      tipoCalculoAmortizacion: 'Francés',
-      seguroFinanciado: false, seguroNombre: '', montoSeguro: 0, tasaSeguro: 0, totalSeguro: 0,
-      fechaPrimerPago: '2026-03-15',
-      interesAPagar: 15866, pagoPeriodo: 3994, pagoSeguroPeriodo: 0, pagoTotal: 3994,
-      pagoMensual: 3994, interesTotal: 15866, montoTotal: 95866, cat: 0,
-      tipoTasa: 'Fija', frecuenciaPago: 'Quincenal',
-      tablaAmortizacion: [],
-    },
-  },
-];
-
-// ════════════════════════════════════════════════════════════════
-// MOCK DATA — Cotizaciones Línea de Crédito
-// ════════════════════════════════════════════════════════════════
-const MOCK_COTIZACIONES_LC: CotizacionCredito[] = [
-  {
-    id: 'ldc-001', no_cotiza: 'LDC-S5T6U7V8W9X0Y1Z2A3B4C5',
-    descripcion: 'Línea Revolvente Empresarial', producto_id: 'PL-001', cliente_id: 'CL-008',
-    fecha_cotiza: '2026-02-22T10:00:00', estatus_cotiza: 'Pendiente', linea_cotizacion: 'Línea Crédito',
-    data: {
-      lineaProducto: 'Línea de Crédito', usuario: 'Ana López',
-      cliente: { claveCliente: 'CLI-10008', nombreCompleto: 'Grupo Industrial Norteño SA de CV' },
-      institucionGobierno: '',
-      producto: { claveProducto: 'PLDC-001', nombreProducto: 'Línea Revolvente Empresarial', tipoProducto: 'Línea Revolvente', lineaProducto: 'Línea de Crédito' },
-      moneda: 'MXN', periodo: 'Mensual',
-      plazoMinimo: 6, plazoMaximo: 24, plazo: 12,
-      montoMinimo: 100000, montoMaximo: 2000000, montoSolicitado: 500000,
-      tasaMinima: 10, tasaMaxima: 20, tasaCotizada: 16,
-      tipoGarantia: '', subtipoGarantia: '', aforo: 0, montoGarantia: 0,
-      tipoCalculoAmortizacion: 'Francés',
-      seguroFinanciado: false, seguroNombre: '', montoSeguro: 0, tasaSeguro: 0, totalSeguro: 0,
-      fechaPrimerPago: '2026-03-22',
-      interesAPagar: 44496, pagoPeriodo: 45374, pagoSeguroPeriodo: 0, pagoTotal: 45374,
-      pagoMensual: 45374, interesTotal: 44496, montoTotal: 544496, cat: 0,
-      tipoTasa: 'Variable', frecuenciaPago: 'Mensual',
-      tipoLinea: 'Revolvente',
-      montoLineaAutorizada: 500000, disposicionesPermitidas: 5, montoDisposicionMinima: 50000, vigenciaLinea: 24,
-      tablaAmortizacion: [],
-    },
-  },
-  {
-    id: 'ldc-002', no_cotiza: 'LDC-D6E7F8G9H0I1J2K3L4M5N6',
-    descripcion: 'Línea Simple PyME producción', producto_id: 'PL-002', cliente_id: 'CL-005',
-    fecha_cotiza: '2026-02-19T15:30:00', estatus_cotiza: 'Aprobada', linea_cotizacion: 'Línea Crédito',
-    data: {
-      lineaProducto: 'Línea de Crédito', usuario: 'Carlos Mendoza',
-      cliente: { claveCliente: 'CLI-10005', nombreCompleto: 'Fernando Torres Ávila' },
-      institucionGobierno: 'Secretaría de Gobernación (SEGOB)',
-      producto: { claveProducto: 'PLDC-002', nombreProducto: 'Línea Simple PyME', tipoProducto: 'Línea Simple', lineaProducto: 'Línea de Crédito' },
-      moneda: 'MXN', periodo: 'Mensual',
-      plazoMinimo: 6, plazoMaximo: 36, plazo: 18,
-      montoMinimo: 50000, montoMaximo: 1000000, montoSolicitado: 250000,
-      tasaMinima: 9, tasaMaxima: 18, tasaCotizada: 14,
-      tipoGarantia: '', subtipoGarantia: '', aforo: 0, montoGarantia: 0,
-      tipoCalculoAmortizacion: 'Alemán',
-      seguroFinanciado: false, seguroNombre: '', montoSeguro: 0, tasaSeguro: 0, totalSeguro: 0,
-      fechaPrimerPago: '2026-03-19',
-      interesAPagar: 46001, pagoPeriodo: 16455, pagoSeguroPeriodo: 0, pagoTotal: 16455,
-      pagoMensual: 16455, interesTotal: 46001, montoTotal: 296001, cat: 0,
-      tipoTasa: 'Fija', frecuenciaPago: 'Mensual',
-      tipoLinea: 'Fija',
-      montoLineaAutorizada: 300000, disposicionesPermitidas: 3, montoDisposicionMinima: 25000, vigenciaLinea: 36,
-      tablaAmortizacion: [],
-    },
-  },
-  {
-    id: 'ldc-003', no_cotiza: 'LDC-O7P8Q9R0S1T2U3V4W5X6Y7',
-    descripcion: 'Línea Revolvente para capital de trabajo', producto_id: 'PL-001', cliente_id: 'CL-001',
-    fecha_cotiza: '2026-02-27T08:45:00', estatus_cotiza: 'Pendiente', linea_cotizacion: 'Línea Crédito',
-    data: {
-      lineaProducto: 'Línea de Crédito', usuario: 'Juan Pérez',
-      cliente: { claveCliente: 'CLI-10001', nombreCompleto: 'María García López' },
-      institucionGobierno: 'Secretaría de Educación Pública (SEP)',
-      producto: { claveProducto: 'PLDC-001', nombreProducto: 'Línea Revolvente Empresarial', tipoProducto: 'Línea Revolvente', lineaProducto: 'Línea de Crédito' },
-      moneda: 'MXN', periodo: 'Mensual',
-      plazoMinimo: 3, plazoMaximo: 12, plazo: 6,
-      montoMinimo: 50000, montoMaximo: 500000, montoSolicitado: 200000,
-      tasaMinima: 10, tasaMaxima: 20, tasaCotizada: 16,
-      tipoGarantia: '', subtipoGarantia: '', aforo: 0, montoGarantia: 0,
-      tipoCalculoAmortizacion: 'Francés',
-      seguroFinanciado: false, seguroNombre: '', montoSeguro: 0, tasaSeguro: 0, totalSeguro: 0,
-      fechaPrimerPago: '2026-03-27',
-      interesAPagar: 9315, pagoPeriodo: 34885, pagoSeguroPeriodo: 0, pagoTotal: 34885,
-      pagoMensual: 34885, interesTotal: 9315, montoTotal: 209315, cat: 0,
-      tipoTasa: 'Variable', frecuenciaPago: 'Mensual',
-      tipoLinea: 'Revolvente',
-      montoLineaAutorizada: 200000, disposicionesPermitidas: 2, montoDisposicionMinima: 100000, vigenciaLinea: 12,
-      tablaAmortizacion: [],
-    },
-  },
-];
-
 type SubCategoria = 'captacion' | 'credito' | 'linea-credito';
 type ViewMode = 'dashboard' | 'list' | 'form';
 type FormMode = 'create' | 'edit' | 'view';
-
-// ════════════════════════════════════════════════════════════════
-// MOCK DATA — Cotizaciones Captación
-// ════════════════════════════════════════════════════════════════
-const MOCK_COTIZACIONES_CAPTACION: CotizacionCaptacion[] = [
-  {
-    id: 'a1b2c3d4', no_cotiza: 'COT-LX7Z8A9B1C2D3E4F5G6H',
-    descripcion: 'Cotización Ahorro Voluntario', producto_id: 'P-001', cliente_id: 'CL-001',
-    fecha_cotiza: '2026-02-20T10:30:00', estatus_cotiza: 'Pendiente', linea_cotizacion: 'Captación',
-    data: {
-      lineaProducto: 'Captación', usuario: 'Juan Pérez',
-      cliente: { claveCliente: 'CLI-10001', nombreCompleto: 'María García López' },
-      institucionGobierno: 'Secretaría de Educación Pública (SEP)',
-      producto: { claveProducto: 'PCAP-001', nombreProducto: 'Ahorro Voluntario', tipoProducto: 'Ahorro', montoMinimo: 5000, periodoCumplirMontoMinimo: 'Mensual', plazoCumplirMontoMinimo: 12 },
-      montoCotizado: 50000, tasaMinInteres: 4.5, frecuenciaCapitalizacion: 'Mensual',
-      interesGeneradoPeriodo: 187.50, periodoCumplirMontoMinimo: 'Mensual', plazoCumplirMontoMinimo: 16, fechaPrimeraAportacion: '2026-03-14',
-      calendarioAportaciones: [],
-    },
-  },
-  {
-    id: 'e5f6g7h8', no_cotiza: 'COT-MN8P9Q0R1S2T3U4V5W6',
-    descripcion: 'Cotización Aportación Navideña', producto_id: 'P-002', cliente_id: 'CL-002',
-    fecha_cotiza: '2026-02-18T14:15:00', estatus_cotiza: 'Aprobada', linea_cotizacion: 'Captación',
-    data: {
-      lineaProducto: 'Captación', usuario: 'Ana López',
-      cliente: { claveCliente: 'CLI-10002', nombreCompleto: 'Roberto Hernández Martínez' },
-      institucionGobierno: 'Instituto de Seguridad y Servicios Sociales (ISSSTE)',
-      producto: { claveProducto: 'PCAP-002', nombreProducto: 'Aportación Navideña', tipoProducto: 'Aportación', montoMinimo: 10000, periodoCumplirMontoMinimo: 'Quincenal', plazoCumplirMontoMinimo: 24 },
-      montoCotizado: 25000, tasaMinInteres: 5.2, frecuenciaCapitalizacion: 'Quincenal',
-      interesGeneradoPeriodo: 54.17, periodoCumplirMontoMinimo: 'Quincenal', plazoCumplirMontoMinimo: 24, fechaPrimeraAportacion: '2026-03-01',
-      calendarioAportaciones: [],
-    },
-  },
-  {
-    id: 'i9j0k1l2', no_cotiza: 'COT-XY6Z7A8B9C0D1E2F3G4',
-    descripcion: 'Cotización Ahorro Infantil', producto_id: 'P-003', cliente_id: 'CL-004',
-    fecha_cotiza: '2026-02-15T09:00:00', estatus_cotiza: 'Pendiente', linea_cotizacion: 'Captación',
-    data: {
-      lineaProducto: 'Captación', usuario: 'Carlos Mendoza',
-      cliente: { claveCliente: 'CLI-10004', nombreCompleto: 'Laura Sánchez Ramírez' },
-      institucionGobierno: 'Comisión Federal de Electricidad (CFE)',
-      producto: { claveProducto: 'PCAP-003', nombreProducto: 'Ahorro Infantil', tipoProducto: 'Ahorro', montoMinimo: 1000, periodoCumplirMontoMinimo: 'Semanal', plazoCumplirMontoMinimo: 52 },
-      montoCotizado: 15000, tasaMinInteres: 3.8, frecuenciaCapitalizacion: 'Semanal',
-      interesGeneradoPeriodo: 11.08, periodoCumplirMontoMinimo: 'Semanal', plazoCumplirMontoMinimo: 52, fechaPrimeraAportacion: '2026-03-07',
-      calendarioAportaciones: [],
-    },
-  },
-  {
-    id: 'm3n4o5p6', no_cotiza: 'COT-HI5J6K7L8M9N0O1P2Q3',
-    descripcion: 'Cotización Aportación Escolar', producto_id: 'P-004', cliente_id: 'CL-005',
-    fecha_cotiza: '2026-02-12T16:45:00', estatus_cotiza: 'Pendiente', linea_cotizacion: 'Captación',
-    data: {
-      lineaProducto: 'Captación', usuario: 'Juan Pérez',
-      cliente: { claveCliente: 'CLI-10005', nombreCompleto: 'Fernando Torres Ávila' },
-      institucionGobierno: 'Secretaría de Gobernación (SEGOB)',
-      producto: { claveProducto: 'PCAP-004', nombreProducto: 'Aportación Escolar', tipoProducto: 'Aportación', montoMinimo: 25000, periodoCumplirMontoMinimo: 'Catorcenal', plazoCumplirMontoMinimo: 16 },
-      montoCotizado: 40000, tasaMinInteres: 6.0, frecuenciaCapitalizacion: 'Catorcenal',
-      interesGeneradoPeriodo: 93.33, periodoCumplirMontoMinimo: 'Catorcenal', plazoCumplirMontoMinimo: 16, fechaPrimeraAportacion: '2026-03-10',
-      calendarioAportaciones: [],
-    },
-  },
-  {
-    id: 'q7r8s9t0', no_cotiza: 'COT-RS4T5U6V7W8X9Y0Z1A2',
-    descripcion: 'Cotización Ahorro a Plazo Fijo', producto_id: 'P-005', cliente_id: 'CL-007',
-    fecha_cotiza: '2026-02-25T11:20:00', estatus_cotiza: 'Aprobada', linea_cotizacion: 'Captación',
-    data: {
-      lineaProducto: 'Captación', usuario: 'Ana López',
-      cliente: { claveCliente: 'CLI-10007', nombreCompleto: 'Patricia Ruiz Vega' },
-      institucionGobierno: 'Secretaría de Hacienda (SHCP)',
-      producto: { claveProducto: 'PCAP-005', nombreProducto: 'Ahorro a Plazo Fijo', tipoProducto: 'Ahorro', montoMinimo: 50000, periodoCumplirMontoMinimo: 'Mensual', plazoCumplirMontoMinimo: 6 },
-      montoCotizado: 100000, tasaMinInteres: 8.5, frecuenciaCapitalizacion: 'Mensual',
-      interesGeneradoPeriodo: 708.33, periodoCumplirMontoMinimo: 'Mensual', plazoCumplirMontoMinimo: 6, fechaPrimeraAportacion: '2026-03-01',
-      calendarioAportaciones: [],
-    },
-  },
-  {
-    id: 'u1v2w3x4', no_cotiza: 'COT-BC3D4E5F6G7H8I9J0K1',
-    descripcion: 'Cotización Ahorro Voluntario 2', producto_id: 'P-001', cliente_id: 'CL-008',
-    fecha_cotiza: '2026-02-27T08:00:00', estatus_cotiza: 'Pendiente', linea_cotizacion: 'Captación',
-    data: {
-      lineaProducto: 'Captación', usuario: 'Carlos Mendoza',
-      cliente: { claveCliente: 'CLI-10008', nombreCompleto: 'Grupo Industrial Norteño SA de CV' },
-      institucionGobierno: 'Comisión Federal de Electricidad (CFE)',
-      producto: { claveProducto: 'PCAP-001', nombreProducto: 'Ahorro Voluntario', tipoProducto: 'Ahorro', montoMinimo: 5000, periodoCumplirMontoMinimo: 'Mensual', plazoCumplirMontoMinimo: 12 },
-      montoCotizado: 200000, tasaMinInteres: 4.5, frecuenciaCapitalizacion: 'Mensual',
-      interesGeneradoPeriodo: 750.00, periodoCumplirMontoMinimo: 'Mensual', plazoCumplirMontoMinimo: 12, fechaPrimeraAportacion: '2026-04-01',
-      calendarioAportaciones: [],
-    },
-  },
-];
 
 const PIE_COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#6B7280'];
 const formatMoney = (v: number) => `$${v.toLocaleString('es-MX', { minimumFractionDigits: 2 })}`;
@@ -477,6 +208,10 @@ export function CotizacionesModule({ deepLinkCotizacionId, deepLinkLinea, onDeep
   });
   const [selectedCredito, setSelectedCredito] = useState<CotizacionCredito | undefined>();
 
+  // ── IDs de cotizaciones guardadas en BD en esta sesión (evita race condition con cotizacionesDB) ──
+  const [capSavedId, setCapSavedId] = useState<string | null>(null);
+  const [creSavedId, setCreSavedId] = useState<string | null>(null);
+
   // ── Ref para deep-link (debe declararse ANTES del hook que lo usa) ──
   const deepLinkProcessedRef = useRef(false);
   const isDeepLinkActive = !!deepLinkCotizacionId && !deepLinkProcessedRef.current;
@@ -552,16 +287,6 @@ export function CotizacionesModule({ deepLinkCotizacionId, deepLinkLinea, onDeep
       const foundInLC = cotizacionesLC.find(c => c.id === targetId);
       if (foundInLC) return { found: true, type: 'cre', data: foundInLC };
 
-      // 4) Buscar en mock data
-      const foundInMockCap = MOCK_COTIZACIONES_CAPTACION.find(c => c.id === targetId);
-      if (foundInMockCap) return { found: true, type: 'cap', data: foundInMockCap };
-
-      const foundInMockCre = MOCK_COTIZACIONES_CREDITO.find(c => c.id === targetId);
-      if (foundInMockCre) return { found: true, type: 'cre', data: foundInMockCre };
-
-      const foundInMockLC = MOCK_COTIZACIONES_LC.find(c => c.id === targetId);
-      if (foundInMockLC) return { found: true, type: 'cre', data: foundInMockLC };
-
       return { found: false };
     };
 
@@ -616,7 +341,7 @@ export function CotizacionesModule({ deepLinkCotizacionId, deepLinkLinea, onDeep
   const cotizacionesCapDB = cotizacionesDB.filter(
     c => c.data?.lineaProducto === 'Captación'
   );
-  const cotizacionesCap = cotizacionesCapDB.length > 0 ? cotizacionesCapDB : MOCK_COTIZACIONES_CAPTACION;
+  const cotizacionesCap = cotizacionesCapDB;
 
   // ── Crédito: filtrar de BD + merge con sessionStorage local ──
   const cotizacionesCreDB: CotizacionCredito[] = cotizacionesDB
@@ -660,7 +385,7 @@ export function CotizacionesModule({ deepLinkCotizacionId, deepLinkLinea, onDeep
   const cotizacionesLCDisplay = mergeDBAndLocal(cotizacionesLCDB, cotizacionesLC);
 
   // ── Captación handlers ──
-  const handleNew = () => { setSelectedCap(undefined); setFormMode('create'); setView('form'); };
+  const handleNew = () => { setSelectedCap(undefined); setCapSavedId(null); setFormMode('create'); setView('form'); };
   const handleView = (c: CotizacionCaptacion) => { setSelectedCap(c); setFormMode('view'); setView('form'); };
   const handleEdit = (c: CotizacionCaptacion) => { setSelectedCap(c); setFormMode('edit'); setView('form'); };
 
@@ -735,15 +460,27 @@ export function CotizacionesModule({ deepLinkCotizacionId, deepLinkLinea, onDeep
   };
 
   const handleSave = async (c: CotizacionCaptacion) => {
-    const result = await saveCotizacion(c);
-    toast.success('Cotización guardada', {
-      description: `Folio: ${c.no_cotiza}`,
-    });
-    setView('list');
+    try {
+      const result = await saveCotizacion(c);
+      if (result.ok) {
+        const savedId = result.id ?? c.id;
+        const savedRecord: CotizacionCaptacion = { ...c, id: savedId };
+        setSelectedCap(savedRecord);
+        setCapSavedId(savedId);
+        setFormMode('edit');
+        toast.success('Cotización guardada', { description: `Folio: ${c.no_cotiza}` });
+        setTimeout(() => refetch(), 500);
+      } else {
+        toast.error('Error al guardar la cotización', { description: result.error || 'No se pudo guardar en la base de datos' });
+      }
+    } catch (err: any) {
+      toast.error('Error inesperado al guardar', { description: err?.message || String(err) });
+    }
+    // No redirigir al listado; el usuario permanece en el formulario
   };
 
   // ── Crédito / Línea de Crédito handlers ──
-  const handleNewCredito = () => { setSelectedCredito(undefined); setFormMode('create'); setView('form'); };
+  const handleNewCredito = () => { setSelectedCredito(undefined); setCreSavedId(null); setFormMode('create'); setView('form'); };
   const handleViewCredito = (c: CotizacionCredito) => { setSelectedCredito(c); setFormMode('view'); setView('form'); };
   const handleEditCredito = (c: CotizacionCredito) => { setSelectedCredito(c); setFormMode('edit'); setView('form'); };
 
@@ -840,34 +577,47 @@ export function CotizacionesModule({ deepLinkCotizacionId, deepLinkLinea, onDeep
     const setter = isCredito ? setCotizacionesCredito : setCotizacionesLC;
 
     // ── Persistir en BD vía RPC (misma tabla J_COTIZACIONES) ──
-    // El hook saveCotizacion acepta CotizacionCaptacion pero la estructura
-    // raíz (id, no_cotiza, descripcion, etc.) es idéntica; data va como JSONB.
     const dbResult = await saveCotizacion(c as any);
+    const savedId = dbResult.id ?? c.id;
+
     if (dbResult.ok) {
-      console.log('[CotizModule] Cotización Crédito/LC guardada en BD OK');
+      console.log('[CotizModule] Cotización Crédito/LC guardada en BD OK, id:', savedId);
     } else {
       console.warn('[CotizModule] Cotización Crédito/LC falló en BD, guardando localmente:', dbResult.error);
     }
 
-    // ── También guardar en sessionStorage como cache local ──
+    // ── Actualizar sessionStorage con el ID definitivo ──
+    const savedRecord: CotizacionCredito = { ...c, id: savedId };
     setter(prev => {
-      const localId = c.id || `local-${Date.now()}`;
-      const saved = { ...c, id: localId };
-      const idx = prev.findIndex(x => x.id === saved.id || x.no_cotiza === c.no_cotiza);
+      const idx = prev.findIndex(x => x.id === c.id || x.no_cotiza === c.no_cotiza);
       let next: CotizacionCredito[];
-      if (idx >= 0) { next = [...prev]; next[idx] = saved; } else { next = [...prev, saved]; }
+      if (idx >= 0) { next = [...prev]; next[idx] = savedRecord; } else { next = [...prev, savedRecord]; }
       try { sessionStorage.setItem(ssKey, JSON.stringify(next)); } catch {}
       return next;
     });
 
+    // Actualizar el registro seleccionado con el ID definitivo y permanecer en el formulario
+    setSelectedCredito(savedRecord);
+    setCreSavedId(savedId);
+    setFormMode('edit');
     toast.success('Cotización guardada', { description: `Folio: ${c.no_cotiza}` });
-    setView('list');
 
-    // Refetch para sincronizar la lista con BD
+    // Refetch para sincronizar con BD
     if (dbResult.ok) {
       setTimeout(() => refetch(), 500);
     }
+    // No redirigir al listado; el usuario permanece en el formulario
   };
+
+  // ── Verificar si la cotización seleccionada existe en BD ──
+  // capSavedId/creSavedId se establece sincrónicamente en el mismo ciclo de render que el save,
+  // evitando la race condition entre setCotizaciones (hook) y setSelectedCap (módulo).
+  const cotizacionCapEnBD =
+    (selectedCap != null && selectedCap.id === capSavedId) ||
+    (selectedCap ? cotizacionesDB.some(c => c.id === selectedCap.id) : false);
+  const cotizacionCreEnBD =
+    (selectedCredito != null && selectedCredito.id === creSavedId) ||
+    (selectedCredito ? cotizacionesDB.some(c => c.id === selectedCredito.id) : false);
 
   // ── Cambiar subcategoría resetea la vista ──
   const handleSubCategoriaChange = (sc: SubCategoria) => {
@@ -929,7 +679,7 @@ export function CotizacionesModule({ deepLinkCotizacionId, deepLinkLinea, onDeep
               onCrearSolicitud={handleCrearSolicitudCaptacion}
             />
           ) : (
-            <CotizacionCaptacionForm mode={formMode} cotizacion={selectedCap} onSave={handleSave} onBack={() => setView('list')} onCrearSolicitud={handleCrearSolicitudCaptacion} />
+            <CotizacionCaptacionForm mode={formMode} cotizacion={selectedCap} onSave={handleSave} onBack={() => setView('list')} onCrearSolicitud={handleCrearSolicitudCaptacion} existeEnBD={cotizacionCapEnBD} />
           )}
         </>
       ) : subCategoria === 'credito' ? (
@@ -953,6 +703,7 @@ export function CotizacionesModule({ deepLinkCotizacionId, deepLinkLinea, onDeep
               onSave={handleSaveCredito}
               onBack={() => setView('list')}
               onCrearSolicitud={handleCrearSolicitudCredito}
+              existeEnBD={cotizacionCreEnBD}
             />
           )}
         </>
@@ -977,6 +728,7 @@ export function CotizacionesModule({ deepLinkCotizacionId, deepLinkLinea, onDeep
               onSave={handleSaveCredito}
               onBack={() => setView('list')}
               onCrearSolicitud={handleCrearSolicitudCredito}
+              existeEnBD={cotizacionCreEnBD}
             />
           )}
         </>

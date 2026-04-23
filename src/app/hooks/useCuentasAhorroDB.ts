@@ -110,6 +110,7 @@ export interface CuentaAhorroListItem {
   fechaSol: string;
   fechaAutori: string;
   saldoActual: number;
+  montoAut: number;
   estatusCuen: string;
   estatusCart: string;
   estatusSol: string;
@@ -199,6 +200,7 @@ function mapRow(row: JCuentaAhorroRow): CuentaAhorroListItem {
     fechaSol: row.fecha_sol || '',
     fechaAutori: row.fecha_autori || '',
     saldoActual: parseMoney(row.saldo_actual) ?? 0,
+    montoAut: parseMoney(row.monto_aut) ?? 0,
     estatusCuen: row.estatus_cuen || '—',
     estatusCart: row.estatus_cart || '—',
     estatusSol: row.estatus_sol || '—',
@@ -277,6 +279,36 @@ function mergeWithLocalEntries(dbItems: CuentaAhorroListItem[]): CuentaAhorroLis
 
 /** Evento custom para forzar refetch desde otros hooks/componentes */
 export const CUENTA_AHORRO_REFETCH_EVENT = 'cuentaAhorroRefetch';
+
+// ═══════════════════════════════════════════════════════════════════
+// REGISTRAR MOVIMIENTO en Cuenta Eje — función standalone
+// ═══════════════════════════════════════════════════════════════════
+export async function registrarMovimientoCuentaEje(
+  clienteId: string,
+  movimiento: Record<string, unknown>,
+  saldoNuevo: number,
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const res = await fetch(`${API_BASE}/cuentas-ahorro/movimiento`, {
+      method: 'PATCH',
+      headers: {
+        'Authorization': `Bearer ${publicAnonKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ cliente_id: clienteId, movimiento, saldo_nuevo: saldoNuevo }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      console.warn(`${LOG} registrarMovimientoCuentaEje ERROR HTTP ${res.status}:`, err?.error);
+      return { ok: false, error: err?.error || `HTTP ${res.status}` };
+    }
+    console.log(`${LOG} registrarMovimientoCuentaEje OK — clienteId=${clienteId} saldo=${saldoNuevo}`);
+    return { ok: true };
+  } catch (e: any) {
+    console.warn(`${LOG} registrarMovimientoCuentaEje EXCEPCIÓN:`, e?.message || e);
+    return { ok: false, error: e?.message || String(e) };
+  }
+}
 
 // ═══════════════════════════════════════════════════════════════════
 // GET BY ID — función standalone (no hook) para evitar cambios de hook order

@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<title>Solicitud de Aportación</title>
+
+<style>
+  body {
+    font-family: "Helvetica Neue", Arial, sans-serif;
+    margin: 0;
+    color: #1a1a1a;
+    font-size: 12px;
+  }
+
+  .page {
+    width: 210mm;
+    min-height: 297mm;
+    padding: 28mm 24mm 20mm 24mm;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+  }
+
+  /* HEADER */
+  .header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 18px;
+  }
+
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .logo {
+    height: 40px;
+  }
+
+  .brand-text {
+    line-height: 1.2;
+  }
+
+  .brand-name {
+    font-weight: 700;
+    font-size: 14px;
+  }
+
+  .brand small {
+    font-size: 10px;
+    color: #666;
+  }
+
+  .doc-meta {
+    text-align: right;
+    font-size: 10.5px;
+    line-height: 1.4;
+  }
+
+  /* TITLE */
+  .title {
+    text-align: center;
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: 1.2px;
+    margin: 10px 0 22px 0;
+  }
+
+  /* SECTIONS */
+  .section {
+    margin-bottom: 14px;
+  }
+
+  .section-title {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    border-bottom: 1px solid #000;
+    margin-bottom: 6px;
+    padding-bottom: 2px;
+  }
+
+  /* GRID */
+  .grid-2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+
+  /* TABLE */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  td {
+    padding: 4px 2px;
+  }
+
+  .label {
+    font-size: 10px;
+    color: #555;
+    width: 45%;
+  }
+
+  .value {
+    border-bottom: 1px solid #999;
+    font-weight: 500;
+  }
+
+  /* DECLARATION */
+  .declaration {
+    font-size: 10px;
+    line-height: 1.5;
+    text-align: justify;
+  }
+
+  /* SIGNATURE */
+  .signature-block {
+    margin-top: 35px;
+    display: flex;
+    justify-content: space-between;
+  }
+
+  .signature {
+    width: 45%;
+    text-align: center;
+  }
+
+  .line {
+    margin-top: 45px;
+    border-top: 1px solid #000;
+    padding-top: 4px;
+    font-size: 10px;
+  }
+
+  /* FOOTER */
+  .footer {
+    font-size: 9px;
+    color: #666;
+    margin-top: 15px;
+  }
+
+  .footer-line {
+    width: 100%;
+    height: 1px;
+    background: #ccc;
+    margin-bottom: 5px;
+  }
+
+  .footer-content {
+    display: flex;
+    justify-content: space-between;
+  }
+
+</style>
+</head>
+
+<body>
+<div class="page">
+
+  <!-- CONTENIDO -->
+  <div>
+
+    <!-- HEADER -->
+    <div class="header">
+      <div class="brand">
+        <img class="logo" src="/src/assets/7b6cb23c00b7817818c638af3eae0a416e1e9f57.png" />
+        <div class="brand-text">
+          <div class="brand-name">{{empresa_nombre}}</div>
+          <small>{{empresa_razon_social}}</small>
+        </div>
+      </div>
+
+      <div class="doc-meta">
+        <div><strong>Folio:</strong> {{folio}}</div>
+        <div><strong>Fecha:</strong> {{fecha}}</div>
+        <div><strong>Sucursal:</strong> {{sucursal}}</div>
+        <div><strong>Ejecutivo:</strong> {{ejecutivo}}</div>
+      </div>
+    </div>
+
+    <!-- TITLE -->
+    <div class="title">SOLICITUD DE APORTACIÓN</div>
+
+    <!-- DATOS DEL SOCIO / CLIENTE -->
+    <div class="section">
+      <div class="section-title">Datos del Solicitante</div>
+
+      <div class="grid-2">
+        <table>
+          <tr><td class="label">Nombre</td><td class="value">{{nombre}}</td></tr>
+          <tr><td class="label">RFC</td><td class="value">{{rfc}}</td></tr>
+          <tr><td class="label">CURP</td><td class="value">{{curp}}</td></tr>
+          <tr><td class="label">Fecha de nacimiento</td><td class="value">{{fecha_nacimiento}}</td></tr>
+        </table>
+
+        <table>
+          <tr><td class="label">Teléfono</td><td class="value">{{telefono}}</td></tr>
+          <tr><td class="label">Correo</td><td class="value">{{email}}</td></tr>
+          <tr><td class="label">Domicilio</td><td class="value">{{domicilio}}</td></tr>
+        </table>
+      </div>
+    </div>
+
+    <!-- DATOS DE LA APORTACIÓN -->
+    <div class="section">
+      <div class="section-title">Datos de la Aportación</div>
+
+      <div class="grid-2">
+        <table>
+          <tr><td class="label">Tipo de aportación</td><td class="value">{{tipo_aportacion}}</td></tr>
+          <tr><td class="label">Monto</td><td class="value">$ {{monto}}</td></tr>
+          <tr><td class="label">Periodicidad</td><td class="value">{{periodicidad}}</td></tr>
+        </table>
+
+        <table>
+          <tr><td class="label">Fecha de inicio</td><td class="value">{{fecha_inicio}}</td></tr>
+          <tr><td class="label">Forma de pago</td><td class="value">{{forma_pago}}</td></tr>
+          <tr><td class="label">Cuenta destino</td><td class="value">{{cuenta_destino}}</td></tr>
+        </table>
+      </div>
+    </div>
+
+    <!-- ORIGEN DE RECURSOS -->
+    <div class="section">
+      <div class="section-title">Origen de los Recursos</div>
+
+      <table>
+        <tr><td class="label">Actividad económica</td><td class="value">{{actividad}}</td></tr>
+        <tr><td class="label">Fuente de ingresos</td><td class="value">{{fuente_ingresos}}</td></tr>
+      </table>
+    </div>
+
+    <!-- DECLARACIÓN -->
+    <div class="section">
+      <div class="section-title">Declaración del Solicitante</div>
+
+      <div class="declaration">
+        El solicitante declara que los recursos aportados son de procedencia lícita,
+        conforme a la legislación aplicable en materia de prevención de lavado de dinero.
+        Asimismo, autoriza a {{empresa_nombre}} a validar la información proporcionada.
+        La presente solicitud está sujeta a validación y aceptación por parte de la institución.
+      </div>
+    </div>
+
+    <!-- FIRMAS -->
+    <div class="signature-block">
+      <div class="signature">
+        <div class="line">{{nombre}}</div>
+        Solicitante
+      </div>
+
+      <div class="signature">
+        <div class="line">{{ejecutivo}}</div>
+        Ejecutivo Responsable
+      </div>
+    </div>
+
+  </div>
+
+  <!-- FOOTER -->
+  <div class="footer">
+    <div class="footer-line"></div>
+    <div class="footer-content">
+      <span>{{empresa_nombre}} · {{direccion_empresa}}</span>
+      <span>Documento confidencial</span>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

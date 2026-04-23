@@ -9,7 +9,7 @@ import * as kv from "./kv_store.tsx";
 // ─── Boot log ───────────────────────────────────────────────────────
 // TODOS los endpoints de J_CLIENTES devuelven TODOS los registros SIN WHERE
 // useClientesDB v11.0 → /clientes-lista-todos | useProspectosDB → /clientes-prospectos
-const EDGE_VERSION = "v20.0-J_CATALOGOS-SQL-DIRECT";
+const EDGE_VERSION = "v20.3-PLANTILLAS-FORMALIZAR";
 console.log(`[SERVER BOOT] Edge function loaded — ${EDGE_VERSION}`);
 console.log(`[SERVER BOOT] Routes: TODOS los endpoints de J_CLIENTES sin filtros WHERE`);
 console.log(`[SERVER BOOT] Auto-bootstrap: public.get_clientes() + public.get_all_jclientes() RPCs`);
@@ -374,19 +374,9 @@ console.log("[SERVER BOOT] PostgreSQL client created (SUPABASE_DB_URL)");
     await sql`
       CREATE OR REPLACE FUNCTION public.delete_solicitud_credito(p_id uuid)
       RETURNS void
-      LANGUAGE plpgsql SECURITY DEFINER VOLATILE
+      LANGUAGE sql SECURITY DEFINER VOLATILE
       AS $fn$
-      DECLARE
-        v_count integer;
-      BEGIN
-        SELECT COUNT(*) INTO v_count
-          FROM "EFINANCIANET_DB"."J_SOLICITUDES_ACTIVACION"
-         WHERE solicitud_id = p_id;
-        IF v_count > 0 THEN
-          RAISE EXCEPTION 'No se puede eliminar la solicitud: tiene % solicitud(es) de activación vinculadas. Elimine primero las activaciones.', v_count;
-        END IF;
         DELETE FROM "EFINANCIANET_DB"."J_CUENTAS_CORP_CLIENTES" WHERE id = p_id;
-      END;
       $fn$;
     `;
     await sql`GRANT EXECUTE ON FUNCTION public.delete_solicitud_credito(uuid) TO anon;`;
@@ -669,6 +659,110 @@ const getProductosSegurosHandler = async (c: any) => {
     const msg = err instanceof Error ? err.message : String(err);
     console.log("Error en GET /productos-seguros:", msg);
     return c.json({ error: `Error de base de datos en SELECT J_PRODUCTOS (Seguro): ${msg}` }, 500);
+  }
+};
+
+// POST /activar-prospecto — Activa prospecto y crea cuenta eje
+const activarProspectoHandler = async (c: any) => {
+  try {
+    const body = await c.req.json();
+    const { cliente_id, nombre_prospecto } = body;
+    if (!cliente_id) {
+      return c.json({ error: 'cliente_id requerido' }, 400);
+    }
+    const clienteUuid = toNullUuid(cliente_id);
+    console.log('[activar-prospecto] Iniciando:', clienteUuid);
+
+    // Verificar si ya tiene cuenta eje
+    const existing = await sql`
+      SELECT id FROM "EFINANCIANET_DB"."J_CUENTAS_CORP_CLIENTES"
+      WHERE cliente_id = ${clienteUuid}::uuid AND cta_eje_chec = true
+      LIMIT 1
+    `;
+
+    if (existing.length > 0) {
+      await sql`UPDATE "EFINANCIANET_DB"."J_CUENTAS_CORP_CLIENTES" SET estatus_sol = 'Autorizada' WHERE id = ${existing[0].id}::uuid`;
+      return c.json({ ok: true, ya_tiene_cuenta_eje: true, cuentaEjeId: existing[0].id, estatus_sol: 'Autorizada' });
+    }
+
+    // Buscar producto eje
+    let productoEjeId: string | null = null;
+    try {
+      const productos = await sql`SELECT id, data FROM "EFINANCIANET_DB"."J_PRODUCTOS"`;
+      const eje = productos.filter((p: any) => {
+        const d = typeof p.data === 'string' ? JSON.parse(p.data) : (p.data || {});
+        return d.cuentaEje === true || d.cuentaEje === 'true';
+      });
+      if (eje.length > 0) productoEjeId = eje[0].id;
+    } catch (e) { console.log('[activar-prospecto] Error producto:', e); }
+
+    const now = new Date().toISOString();
+    const noSol = `AUTO-${clienteUuid?.substring(0, 8) || 'unknown'}`;
+    const noCuenta = `0147${String(Math.floor(Math.random() * 99999999)).padStart(8, '0')}`;
+    const noRef = `REF-${Date.now().toString(36).toUpperCase()}`;
+
+    const dataJson = JSON.stringify({
+      metadatos: { noSol, noCuenta, noReferenc1: noRef, origenCreacion: 'ActivacionProspecto', titular: nombre_prospecto || 'Sin nombre' },
+      estatusCuenta: 'Activa', estatusSolicitud: 'Autorizada', estatusCartera: 'Activa', saldoActual: 0, fechaApertura: now,
+    });
+
+    const inserted = await sql`
+      INSERT INTO "EFINANCIANET_DB"."J_CUENTAS_CORP_CLIENTES" (
+        type, no_sol, no_cuenta, no_referenc1, fecha_sol, fecha_autori, fecha_inicio,
+        descripcion, linea_produc, tipo_produc, producto_id, producto_eje, cliente_id,
+        monto_sol, monto_aut, monto_disp, estatus_disp, estatus_sol, estatus_cart, estatus_cuen,
+        cta_eje_chec, fases, data
+      ) VALUES (
+        'CuentaAhorro', ${noSol}, ${noCuenta}, ${noRef}, ${now}::timestamptz, ${now}::timestamptz, ${now}::timestamptz,
+        ${'Cuenta Eje generada automáticamente al activar prospecto ' + (nombre_prospecto || 'Sin nombre')},
+        'CAPTACION', 'Ahorro', ${productoEjeId}::uuid, ${productoEjeId}, ${clienteUuid}::uuid,
+        0, 0, 0, 'No Aplica', 'Autorizada', 'Activa', 'Activa',
+        true, 'Activa', ${dataJson}::jsonb
+      )
+      RETURNING id, no_cuenta, estatus_sol, producto_eje
+    `;
+
+    const cuentaEje = inserted[0];
+
+    // Verificar tipo actual del cliente
+    const clienteCheck = await sql`
+      SELECT type FROM "EFINANCIANET_DB"."J_CLIENTES"
+      WHERE id = ${clienteUuid}::uuid
+      LIMIT 1
+    `;
+    const tipoActual = clienteCheck[0]?.type;
+    
+    // Solo actualizar si es Prospecto (no si ya es Cliente) - ignore par_cliente_id
+    try {
+      if (tipoActual === 'Prospecto') {
+        // Usar UPDATE sin tocar par_cliente_id
+        await sql`
+          UPDATE "EFINANCIANET_DB"."J_CLIENTES"
+          SET type = 'Clientes', 
+              estatus = 'Activo', 
+              data = COALESCE(data, '{}'::jsonb) || jsonb_build_object('estatusCliente', 'Cliente', 'fechaActivacion', ${now}::text)
+          WHERE id = ${clienteUuid}::uuid 
+            AND type = 'Prospecto'
+            AND par_cliente_id IS NULL
+        `;
+        
+        // Si no se actualizó, puede ser porque par_cliente_id tiene valor - solo actualizar data
+        const updated = await sql`SELECT id FROM "EFINANCIANET_DB"."J_CLIENTES" WHERE id = ${clienteUuid}::uuid AND type = 'Clientes'`;
+        if (updated.length === 0) {
+          await sql`
+            UPDATE "EFINANCIANET_DB"."J_CLIENTES"
+            SET data = COALESCE(data, '{}'::jsonb) || jsonb_build_object('estatusCliente', 'Cliente', 'fechaActivacion', ${now}::text)
+            WHERE id = ${clienteUuid}::uuid
+          `;
+        }
+      }
+    } catch (updErr) {
+      console.log('[activar-prospecto] Error actualizando cliente:', updErr);
+    }
+
+    return c.json({ ok: true, cuentaEjeId: cuentaEje.id, noCuenta: cuentaEje.no_cuenta, estatus_sol: cuentaEje.estatus_sol, producto_eje: cuentaEje.producto_eje });
+  } catch (err) {
+    return c.json({ error: String(err) }, 500);
   }
 };
 
@@ -2150,153 +2244,6 @@ const checkCuentaEjeHandler = async (c: any) => {
 // Tabla: EFINANCIANET_DB."J_CUENTAS_CORP_CLIENTES"
 // ═══════════════════════════════════════════════════════════════════
 
-// POST /activar-prospecto — Activa un prospecto: busca producto eje, inserta cuenta, actualiza cliente
-const activarProspectoHandler = async (c: any) => {
-  try {
-    const body = await c.req.json();
-    const cliente_id = toNullUuid(body.cliente_id ?? body.p_cliente_id);
-    const nombre_prospecto = toNullStr(body.nombre_prospecto) || 'Sin nombre';
-
-    if (!cliente_id) {
-      return c.json({ ok: false, error: 'cliente_id requerido' }, 400);
-    }
-
-    console.log(`[ACTIVAR-PROSPECTO] Iniciando activación para cliente_id: ${cliente_id}`);
-
-    // ── 1. Buscar producto eje: traer todos y filtrar en JS (filtro SQL sobre JSON puede fallar) ──
-    let productoEjeId: string | null = null;
-    let productoEjeNombre: string | null = null;
-    try {
-      const productos = await sql`
-        SELECT id, type, data FROM "EFINANCIANET_DB"."J_PRODUCTOS"
-      `;
-      console.log(`[ACTIVAR-PROSPECTO] Total productos: ${productos.length}`);
-      // Filtrar en JS: data.cuentaEje === true o === 'true'
-      const conEje = productos.filter((r: any) => {
-        const d = typeof r.data === 'string' ? JSON.parse(r.data) : (r.data || {});
-        return d.cuentaEje === true || d.cuentaEje === 'true';
-      });
-      console.log(`[ACTIVAR-PROSPECTO] Productos con cuentaEje=true: ${conEje.length}`);
-      if (conEje.length > 0) {
-        const elegido = conEje.find((r: any) => (r.type || '').toLowerCase().includes('captaci')) || conEje[0];
-        productoEjeId = elegido.id;
-        const pd = typeof elegido.data === 'string' ? JSON.parse(elegido.data) : (elegido.data || {});
-        productoEjeNombre = pd.nombre || pd.nombreProducto || pd.producto || 'Cuenta Eje';
-        console.log(`[ACTIVAR-PROSPECTO] Producto eje: id=${productoEjeId} nombre=${productoEjeNombre}`);
-      } else {
-        console.warn('[ACTIVAR-PROSPECTO] Ningún producto tiene cuentaEje=true');
-      }
-    } catch (peErr: any) {
-      console.warn('[ACTIVAR-PROSPECTO] Error buscando producto eje:', peErr?.message);
-    }
-
-    // ── 2. Verificar si ya tiene cuenta eje — si existe, parchear valores nulos ──
-    const existing = await sql`
-      SELECT id, no_cuenta, estatus_sol, producto_eje
-      FROM "EFINANCIANET_DB"."J_CUENTAS_CORP_CLIENTES"
-      WHERE cliente_id = ${cliente_id}::uuid AND cta_eje_chec = true
-      LIMIT 1
-    `;
-    if (existing.length > 0) {
-      const ex = existing[0];
-      console.warn(`[ACTIVAR-PROSPECTO] Cliente ya tiene cuenta eje: ${ex.id} — estatus_sol actual: ${ex.estatus_sol}`);
-      // Parchear estatus_sol y producto_eje si están mal o nulos
-      if (ex.estatus_sol !== 'Autorizada' || (!ex.producto_eje && productoEjeId)) {
-        await sql`
-          UPDATE "EFINANCIANET_DB"."J_CUENTAS_CORP_CLIENTES"
-          SET
-            estatus_sol  = 'Autorizada',
-            producto_id  = COALESCE(producto_id, ${productoEjeId}::uuid),
-            producto_eje = COALESCE(producto_eje, ${productoEjeId})
-          WHERE id = ${ex.id}::uuid
-        `;
-        console.log(`[ACTIVAR-PROSPECTO] Cuenta eje parcheada: estatus_sol=Autorizada producto_eje=${productoEjeId}`);
-      }
-      return c.json({ ok: true, ya_tiene_cuenta_eje: true, cuentaEjeId: ex.id, noCuenta: ex.no_cuenta, estatus_sol: 'Autorizada', producto_eje: productoEjeId || ex.producto_eje, productoEjeNombre });
-    }
-
-    // ── 3. Generar claves de cuenta ──
-    const noSol = `AUTO-${crypto.randomUUID().substring(0, 8)}`;
-    const now = new Date().toISOString();
-    const ts = Date.now().toString().slice(-5);
-    const rand = String(Math.floor(Math.random() * 1000)).padStart(3, '0');
-    const clienteShort = cliente_id.replace(/-/g, '').substring(0, 4)
-      .split('').map((ch: string) => { const n = parseInt(ch, 16); return isNaN(n) ? '0' : String(n % 10); }).join('');
-    const noCuenta = `0147${clienteShort}${(ts + rand).substring(0, 8)}`;
-    const noRef = `REF-${Date.now().toString(36).toUpperCase()}`;
-
-    const dataJson = JSON.stringify({
-      metadatos: {
-        noSol, noCuenta, noReferenc1: noRef,
-        origenCreacion: 'ActivacionProspecto',
-        titular: nombre_prospecto,
-        moneda: 'MXN',
-        productoEjeNombre: productoEjeNombre,
-      },
-      estatusCuenta: 'Activa',
-      estatusSolicitud: 'Autorizada',
-      estatusCartera: 'Activa',
-      saldoActual: 0,
-      fechaApertura: now,
-    });
-
-    // ── 4. Insertar cuenta eje con estatus_sol='Autorizada' y producto_eje ──
-    const inserted = await sql`
-      INSERT INTO "EFINANCIANET_DB"."J_CUENTAS_CORP_CLIENTES" (
-        type, no_sol, no_cuenta, no_referenc1,
-        fecha_sol, fecha_autori, fecha_inicio,
-        descripcion, linea_produc, tipo_produc,
-        producto_id, producto_eje, cliente_id,
-        monto_sol, monto_aut, monto_disp,
-        estatus_sol, estatus_cuen, estatus_cart, estatus_disp,
-        cta_eje_chec, fases, data
-      ) VALUES (
-        'CuentaAhorro', ${noSol}, ${noCuenta}, ${noRef},
-        ${now}::timestamptz, ${now}::timestamptz, ${now}::timestamptz,
-        ${'Cuenta Eje generada automáticamente al activar prospecto ' + nombre_prospecto},
-        'CAPTACION', 'Ahorro',
-        ${productoEjeId}::uuid, ${productoEjeId},
-        ${cliente_id}::uuid,
-        0::numeric, 0::numeric, 0::numeric,
-        'Autorizada', 'Activa', 'Activa', NULL,
-        true, 'Activa', ${dataJson}::jsonb
-      )
-      RETURNING id, no_cuenta, estatus_sol, producto_eje
-    `;
-
-    const cuentaEje = inserted[0];
-    console.log(`[ACTIVAR-PROSPECTO] Cuenta eje insertada: id=${cuentaEje?.id} estatus_sol=${cuentaEje?.estatus_sol} producto_eje=${cuentaEje?.producto_eje}`);
-
-    // ── 5. Actualizar J_CLIENTES: type='Clientes', estatus='Activo' ──
-    await sql`
-      UPDATE "EFINANCIANET_DB"."J_CLIENTES"
-      SET
-        type    = 'Clientes',
-        estatus = 'Activo',
-        data    = COALESCE(data, '{}'::jsonb) || jsonb_build_object(
-          'estatusCliente', 'Cliente',
-          'estatusProspecto', 'Convertido',
-          'fechaActivacion', ${now}::text
-        )
-      WHERE id = ${cliente_id}::uuid
-    `;
-    console.log(`[ACTIVAR-PROSPECTO] J_CLIENTES actualizado: type=Clientes, estatus=Activo`);
-
-    return c.json({
-      ok: true,
-      cuentaEjeId: cuentaEje?.id,
-      noCuenta: cuentaEje?.no_cuenta || noCuenta,
-      estatus_sol: cuentaEje?.estatus_sol,
-      producto_eje: cuentaEje?.producto_eje,
-      productoEjeNombre,
-    }, 201);
-  } catch (err: any) {
-    const msg = err?.message || String(err);
-    console.log('[ACTIVAR-PROSPECTO] Error:', msg);
-    return c.json({ ok: false, error: `Error en activación: ${msg}` }, 500);
-  }
-};
-
 // GET /cuentas-ahorro — Lista todas las cuentas de ahorro
 const getCuentasAhorroHandler = async (c: any) => {
   try {
@@ -2362,6 +2309,58 @@ const toBool = (v: unknown) => {
   return null;
 };
 
+// PATCH /cuentas-ahorro/movimiento — Registrar movimiento y actualizar saldo
+const patchMovimientoHandler = async (c: any) => {
+  try {
+    const body = await c.req.json();
+    const { cliente_id, movimiento, saldo_nuevo } = body;
+    if (!cliente_id) {
+      return c.json({ error: 'cliente_id requerido' }, 400);
+    }
+    const clienteUuid = toNullUuid(cliente_id);
+    
+    // Buscar cuenta eje del cliente
+    const cuentaRows = await sql`
+      SELECT id, saldo_actual, data
+      FROM "EFINANCIANET_DB"."J_CUENTAS_CORP_CLIENTES"
+      WHERE cliente_id = ${clienteUuid}::uuid AND cta_eje_chec = true
+      LIMIT 1
+    `;
+    
+    if (cuentaRows.length === 0) {
+      return c.json({ error: 'No se encontró cuenta eje para este cliente' }, 404);
+    }
+    
+    const cuenta = cuentaRows[0];
+    const saldoActual = typeof cuenta.saldo_actual === 'number' ? cuenta.saldo_actual : parseFloat(String(cuenta.saldo_actual).replace(/[^0-9.-]/g, '')) || 0;
+    const nuevoSaldo = typeof saldo_nuevo === 'number' ? saldo_nuevo : parseFloat(String(saldo_nuevo).replace(/[^0-9.-]/g, '')) || saldoActual;
+    
+    // Agregar movimiento al data de la cuenta
+    const existingData = typeof cuenta.data === 'string' ? JSON.parse(cuenta.data) : (cuenta.data || {});
+    const movimientosData = existingData.movimientos || [];
+    movimientosData.push({
+      ...movimiento,
+      saldoInicial: saldoActual,
+      saldoFinal: nuevoSaldo,
+      fechaRegistro: new Date().toISOString(),
+    });
+    
+    const newData = { ...existingData, movimientos: movimientosData };
+    
+    // Actualizar saldo_actual y data
+    await sql`
+      UPDATE "EFINANCIANET_DB"."J_CUENTAS_CORP_CLIENTES"
+      SET saldo_actual = ${nuevoSaldo}::numeric, data = ${JSON.stringify(newData)}::jsonb
+      WHERE id = ${cuenta.id}::uuid
+    `;
+    
+    console.log(`[Movimiento] Cuenta ${cuenta.id} - saldo: ${saldoActual} -> ${nuevoSaldo}`);
+    return c.json({ ok: true, cuentaId: cuenta.id, saldo_anterior: saldoActual, saldoNuevo: nuevoSaldo });
+  } catch (err) {
+    return c.json({ error: String(err) }, 500);
+  }
+};
+
 // POST /cuentas-ahorro — Insert directo via SQL (bypasses ambiguous RPC overloads)
 const postCuentasAhorroHandler = async (c: any) => {
   try {
@@ -2381,47 +2380,23 @@ const postCuentasAhorroHandler = async (c: any) => {
     const descripcion  = toNullStr(body.p_descripcion  ?? body.descripcion);
     const linea_produc = toNullStr(body.p_linea_produc ?? body.linea_produc) || 'CAPTACION';
     const tipo_produc  = toNullStr(body.p_tipo_produc  ?? body.tipo_produc)  || 'Ahorro';
-    let producto_id  = toNullUuid(body.p_producto_id  ?? body.producto_id);
-    let producto_eje = toNullStr(body.p_producto_eje ?? body.producto_eje);
+    const producto_id  = toNullUuid(body.p_producto_id  ?? body.producto_id);
+    const producto_eje = toNullStr(body.p_producto_eje ?? body.producto_eje);
     const cliente_id   = toNullUuid(body.p_cliente_id   ?? body.cliente_id);
     const monto_sol    = toNullNum(body.p_monto_sol    ?? body.monto_sol);
     const monto_aut    = toNullNum(body.p_monto_aut    ?? body.monto_aut);
     const monto_disp   = toNullNum(body.p_monto_disp   ?? body.monto_disp);
     const cta_eje_chec = toBool(body.p_cta_eje_chec ?? body.cta_eje_chec);
     const fases        = toNullStr(body.p_fases        ?? body.fases);
-    const estatus_sol  = 'Autorizada';
-    const estatus_cuen = toNullStr(body.p_estatus_cuen ?? body.estatus_cuen) || 'Activa';
-    const estatus_cart = toNullStr(body.p_estatus_cart ?? body.estatus_cart) || 'Activa';
-    const estatus_disp = toNullStr(body.p_estatus_disp ?? body.estatus_disp);
     const rawData      = body.p_data ?? body.data ?? null;
     const dataJson     = rawData && typeof rawData === 'object' ? JSON.stringify(rawData) : (typeof rawData === 'string' ? rawData : null);
 
-    // Si no viene producto_id/producto_eje, buscar el producto con cuentaEje=true en J_PRODUCTOS
-    if (!producto_id || !producto_eje) {
-      try {
-        const prods = await sql`SELECT id, nombre, data FROM "EFINANCIANET_DB"."J_PRODUCTOS"`;
-        console.log(`[CUENTAS-AHORRO] Buscando producto eje. Total productos: ${prods.length}`);
-        prods.forEach((r: any) => {
-          const d = typeof r.data === 'string' ? JSON.parse(r.data) : (r.data || {});
-          console.log(`[CUENTAS-AHORRO] Producto id=${r.id} nombre=${r.nombre} data.cuentaEje=${d.cuentaEje} keys=${Object.keys(d).join(',')}`);
-        });
-        const eje = prods.find((r: any) => {
-          const d = typeof r.data === 'string' ? JSON.parse(r.data) : (r.data || {});
-          return d.cuentaEje === true || d.cuentaEje === 'true' || d.cuentaEje === 1;
-        });
-        if (eje) {
-          producto_id  = producto_id  || eje.id;
-          producto_eje = producto_eje || eje.id;
-          console.log(`[CUENTAS-AHORRO] Producto eje auto-detectado: ${eje.id}`);
-        } else {
-          console.warn('[CUENTAS-AHORRO] No se encontró producto con cuentaEje=true');
-        }
-      } catch (peErr: any) {
-        console.warn('[CUENTAS-AHORRO] Error buscando producto eje:', peErr?.message);
-      }
-    }
+    console.log("[CUENTAS-AHORRO] Sanitized:", JSON.stringify({ no_sol, no_cuenta, fecha_sol, producto_id, cliente_id, cta_eje_chec, monto_sol }));
 
-    console.log("[CUENTAS-AHORRO] Sanitized:", JSON.stringify({ no_sol, no_cuenta, fecha_sol, producto_id, producto_eje, cliente_id, cta_eje_chec, monto_sol, estatus_sol, estatus_cuen }));
+    const estatus_sol = cta_eje_chec === true ? 'Autorizada' : null;
+    const estatus_cuen = cta_eje_chec === true ? 'Activa' : null;
+    const estatus_cart = cta_eje_chec === true ? 'Activa' : null;
+    const estatus_disp = 'No Aplica';
 
     const rows = await sql`
       INSERT INTO "EFINANCIANET_DB"."J_CUENTAS_CORP_CLIENTES" (
@@ -2430,7 +2405,7 @@ const postCuentasAhorroHandler = async (c: any) => {
         descripcion, linea_produc, tipo_produc,
         producto_id, producto_eje, cliente_id,
         monto_sol, monto_aut, monto_disp,
-        estatus_sol, estatus_cuen, estatus_cart, estatus_disp,
+        estatus_disp, estatus_sol, estatus_cart, estatus_cuen,
         cta_eje_chec, fases, data
       ) VALUES (
         'CuentaAhorro', ${no_sol}, ${no_cuenta}, ${no_referenc1},
@@ -2439,7 +2414,7 @@ const postCuentasAhorroHandler = async (c: any) => {
         ${descripcion}, ${linea_produc}, ${tipo_produc},
         ${producto_id}::uuid, ${producto_eje}, ${cliente_id}::uuid,
         ${monto_sol}::numeric, ${monto_aut}::numeric, ${monto_disp}::numeric,
-        ${estatus_sol}, ${estatus_cuen}, ${estatus_cart}, ${estatus_disp},
+        ${estatus_disp}, ${estatus_sol}, ${estatus_cart}, ${estatus_cuen},
         ${cta_eje_chec}::boolean, ${fases}, ${dataJson}::jsonb
       )
       RETURNING *
@@ -2496,28 +2471,28 @@ const putCuentasAhorroHandler = async (c: any) => {
 
     const rows = await sql`
       UPDATE "EFINANCIANET_DB"."J_CUENTAS_CORP_CLIENTES" SET
-        no_sol       = CASE WHEN ${no_sol} IS NOT NULL AND ${no_sol} <> '' THEN ${no_sol}       ELSE no_sol       END,
-        no_cuenta    = CASE WHEN ${no_cuenta} IS NOT NULL AND ${no_cuenta} <> '' THEN ${no_cuenta}    ELSE no_cuenta    END,
-        no_referenc1 = COALESCE(${no_referenc1}, no_referenc1),
-        fecha_sol    = COALESCE(${fecha_sol}::timestamptz,    fecha_sol),
-        fecha_autori = COALESCE(${fecha_autori}::timestamptz, fecha_autori),
-        fecha_disper = COALESCE(${fecha_disper}::timestamptz, fecha_disper),
-        fecha_cancel = COALESCE(${fecha_cancel}::timestamptz, fecha_cancel),
-        fecha_inicio = COALESCE(${fecha_inicio}::timestamptz, fecha_inicio),
-        fecha_fin_cu = COALESCE(${fecha_fin_cu}::timestamptz, fecha_fin_cu),
-        descripcion  = COALESCE(${descripcion},  descripcion),
-        producto_id  = COALESCE(${producto_id}::uuid, producto_id),
-        producto_eje = COALESCE(${producto_eje}, producto_eje),
-        cliente_id   = COALESCE(${cliente_id}::uuid, cliente_id),
+        no_sol       = ${no_sol},
+        no_cuenta    = ${no_cuenta},
+        no_referenc1 = ${no_referenc1},
+        fecha_sol    = ${fecha_sol}::timestamptz,
+        fecha_autori = ${fecha_autori}::timestamptz,
+        fecha_disper = ${fecha_disper}::timestamptz,
+        fecha_cancel = ${fecha_cancel}::timestamptz,
+        fecha_inicio = ${fecha_inicio}::timestamptz,
+        fecha_fin_cu = ${fecha_fin_cu}::timestamptz,
+        descripcion  = ${descripcion},
+        producto_id  = ${producto_id}::uuid,
+        producto_eje = ${producto_eje},
+        cliente_id   = ${cliente_id}::uuid,
         saldo_actual = COALESCE(${saldo_actual}::numeric, saldo_actual),
-        monto_sol    = COALESCE(${monto_sol}::numeric,   monto_sol),
-        monto_aut    = COALESCE(${monto_aut}::numeric,   monto_aut),
-        monto_disp   = COALESCE(${monto_disp}::numeric,  monto_disp),
+        monto_sol    = ${monto_sol}::numeric,
+        monto_aut    = ${monto_aut}::numeric,
+        monto_disp   = ${monto_disp}::numeric,
         estatus_disp = COALESCE(${estatus_disp}, estatus_disp),
-        estatus_sol  = COALESCE(${estatus_sol},  estatus_sol),
+        estatus_sol  = COALESCE(${estatus_sol}, estatus_sol),
         estatus_cart = COALESCE(${estatus_cart}, estatus_cart),
         estatus_cuen = COALESCE(${estatus_cuen}, estatus_cuen),
-        cta_eje_chec = CASE WHEN ${cta_eje_chec}::boolean IS NOT NULL THEN ${cta_eje_chec}::boolean ELSE cta_eje_chec END,
+        cta_eje_chec = ${cta_eje_chec}::boolean,
         fases        = COALESCE(${fases}, fases),
         data         = CASE WHEN ${dataJson}::jsonb IS NOT NULL THEN COALESCE(data, '{}'::jsonb) || ${dataJson}::jsonb ELSE data END
       WHERE id = ${id}::uuid
@@ -2535,55 +2510,6 @@ const putCuentasAhorroHandler = async (c: any) => {
     const msg = err?.message || String(err);
     console.log("[CUENTAS-AHORRO] Error PUT:", msg);
     return c.json({ error: `Error actualizando cuenta de ahorro: ${msg}` }, 500);
-  }
-};
-
-// PATCH /cuentas-ahorro/movimiento — Registra un movimiento en la Cuenta Eje del cliente
-const patchCuentaEjeMovimientoHandler = async (c: any) => {
-  try {
-    const body = await c.req.json();
-    const cliente_id  = body.cliente_id;
-    const movimiento  = body.movimiento;
-    const saldo_nuevo = body.saldo_nuevo;
-
-    if (!cliente_id) return c.json({ error: 'Se requiere cliente_id' }, 400);
-    if (!movimiento)  return c.json({ error: 'Se requiere movimiento' }, 400);
-    if (saldo_nuevo === undefined || saldo_nuevo === null) return c.json({ error: 'Se requiere saldo_nuevo' }, 400);
-
-    console.log(`[CUENTAS-AHORRO] PATCH movimiento — cliente_id=${cliente_id} saldo_nuevo=${saldo_nuevo}`);
-
-    const cuentas = await sql`
-      SELECT id, data, saldo_actual
-      FROM "EFINANCIANET_DB"."J_CUENTAS_CORP_CLIENTES"
-      WHERE type = 'CuentaAhorro'
-        AND cliente_id = ${cliente_id}::uuid
-      LIMIT 1
-    `;
-
-    if (cuentas.length === 0) {
-      return c.json({ error: `No se encontró cuenta eje para cliente_id=${cliente_id}` }, 404);
-    }
-
-    const cuenta = cuentas[0];
-    const existingData: Record<string, any> = cuenta.data || {};
-    const movimientos: any[] = Array.isArray(existingData.movimientos) ? existingData.movimientos : [];
-    movimientos.push(movimiento);
-    const newData = { ...existingData, movimientos };
-
-    const updated = await sql`
-      UPDATE "EFINANCIANET_DB"."J_CUENTAS_CORP_CLIENTES"
-      SET saldo_actual = ${saldo_nuevo}::numeric,
-          data         = ${JSON.stringify(newData)}::jsonb
-      WHERE id = ${cuenta.id}::uuid
-      RETURNING *
-    `;
-
-    console.log(`[CUENTAS-AHORRO] Movimiento registrado en cuenta eje id=${cuenta.id}, nuevo saldo=${saldo_nuevo}`);
-    return c.json(updated[0], 200);
-  } catch (err: any) {
-    const msg = err?.message || String(err);
-    console.log('[CUENTAS-AHORRO] Error PATCH /movimiento:', msg);
-    return c.json({ error: `Error registrando movimiento: ${msg}` }, 500);
   }
 };
 
@@ -2747,18 +2673,21 @@ app.post(`${PREFIX}/mantenimiento/reupload-invalid-expedientes`, reuploadInvalid
 app.get(`${PREFIX}/mantenimiento/verify-par-cliente-id`, verifyParClienteIdHandler);
 app.post(`${PREFIX}/mantenimiento/sync-par-cliente-id`, syncParClienteIdHandler);
 app.get(`${PREFIX}/mantenimiento/check-cuenta-eje/:cuentaEje`, checkCuentaEjeHandler);
-// ── Activar Prospecto (SQL directo: busca producto eje, inserta cuenta, actualiza cliente) ──
-app.post(`${PREFIX}/activar-prospecto`, activarProspectoHandler);
 // ── Cuentas de Ahorro (direct SQL — bypasses PostgREST RPC overload ambiguity) ──
-app.patch(`${PREFIX}/cuentas-ahorro/movimiento`, patchCuentaEjeMovimientoHandler);
 app.get(`${PREFIX}/cuentas-ahorro`, getCuentasAhorroHandler);
 app.post(`${PREFIX}/cuentas-ahorro`, postCuentasAhorroHandler);
 app.put(`${PREFIX}/cuentas-ahorro`, putCuentasAhorroHandler);
+app.patch(`${PREFIX}/cuentas-ahorro/movimiento`, patchMovimientoHandler);
+app.patch(`/cuentas-ahorro/movimiento`, patchMovimientoHandler);
 // ── Catálogos del Sistema ──
 app.get(`${PREFIX}/catalogos/documentos`, getCatalogoDocumentosHandler);
 app.post(`${PREFIX}/catalogos/documentos`, postCatalogoDocumentoHandler);
 app.put(`${PREFIX}/catalogos/documentos/:id`, putCatalogoDocumentoHandler);
 app.delete(`${PREFIX}/catalogos/documentos/:id`, deleteCatalogoDocumentoHandler);
+
+// ── Activar Prospecto ──
+app.post(`${PREFIX}/activar-prospecto`, activarProspectoHandler);
+app.post("/activar-prospecto", activarProspectoHandler);
 
 // ── Rutas SIN prefijo (caso B — fallback) ──
 app.get("/health", healthHandler);
@@ -2798,10 +2727,7 @@ app.post("/mantenimiento/reupload-invalid-expedientes", reuploadInvalidExpedient
 app.get("/mantenimiento/verify-par-cliente-id", verifyParClienteIdHandler);
 app.post("/mantenimiento/sync-par-cliente-id", syncParClienteIdHandler);
 app.get("/mantenimiento/check-cuenta-eje/:cuentaEje", checkCuentaEjeHandler);
-// ── Activar Prospecto (sin prefijo — fallback) ──
-app.post("/activar-prospecto", activarProspectoHandler);
 // ── Cuentas de Ahorro (sin prefijo — fallback) ──
-app.patch("/cuentas-ahorro/movimiento", patchCuentaEjeMovimientoHandler);
 app.get("/cuentas-ahorro", getCuentasAhorroHandler);
 app.post("/cuentas-ahorro", postCuentasAhorroHandler);
 app.put("/cuentas-ahorro", putCuentasAhorroHandler);
@@ -2977,55 +2903,52 @@ const putSolicitudesHandler = async (c: any) => {
     const body = await c.req.json();
     console.log(`[SOLICITUDES] PUT /solicitudes-credito/${id}`, JSON.stringify(body).substring(0, 800));
 
+    // Diagnóstico: verificar comisiones en el payload
     const solData = body.data?.solicitud || {};
-    console.log(`[SOLICITUDES] PUT — comisiones: ${Array.isArray(solData.comisiones) ? solData.comisiones.length : 'N/A'}`);
+    console.log(`[SOLICITUDES] PUT — comisiones: ${Array.isArray(solData.comisiones) ? solData.comisiones.length : 'N/A'} | garantias: ${Array.isArray(solData.garantias) ? solData.garantias.length : 'N/A'} | documentos: ${Array.isArray(solData.expediente_electronico?.documentos) ? solData.expediente_electronico.documentos.length : 'N/A'}`);
 
-    // PATCH semantics: solo actualizar campos presentes en body
-    // No usar toNullStr/toNullUuid/toNullNum para campos no enviados
-    const updates: string[] = [];
-    const params: unknown[] = [];
-    let paramIdx = 1;
+    const no_sol = toNullStr(body.no_sol);
+    const no_cuenta = toNullStr(body.no_cuenta);
+    const no_referenc1 = toNullStr(body.no_referenc1);
+    const fecha_sol = toNullTs(body.fecha_sol);
+    const descripcion = toNullStr(body.descripcion);
+    const linea_produc = toNullStr(body.linea_produc);
+    const tipo_produc = toNullStr(body.tipo_produc);
+    const producto_id = toNullUuid(body.producto_id);
+    const cliente_id = toNullUuid(body.cliente_id);
+    const monto_sol = toNullNum(body.monto_sol);
+    const monto_aut = toNullNum(body.monto_aut);
+    const estatus_sol = toNullStr(body.estatus_sol);
+    const estatus_cuen = toNullStr(body.estatus_cuen);
+    const estatus_cart = toNullStr(body.estatus_cart);
+    const estatus_disp = toNullStr(body.estatus_disp);
+    const cta_eje_chec = body.cta_eje_chec !== undefined ? Boolean(body.cta_eje_chec) : null;
+    const fases = toNullStr(body.fases);
+    const data = body.data;
 
-    // Helper para agregar campo solo si viene en body
-    const addField = (field: string, value: unknown) => {
-      if (value !== undefined) {
-        updates.push(`${field} = $${paramIdx}`);
-        params.push(value);
-        paramIdx++;
-      }
-    };
-
-    if ('no_sol' in body) addField('no_sol', toNullStr(body.no_sol));
-    if ('no_referenc1' in body) addField('no_referenc1', toNullStr(body.no_referenc1));
-    if ('fecha_sol' in body) addField('fecha_sol', toNullTs(body.fecha_sol));
-    if ('descripcion' in body) addField('descripcion', toNullStr(body.descripcion));
-    if ('linea_produc' in body) addField('linea_produc', toNullStr(body.linea_produc));
-    if ('tipo_produc' in body) addField('tipo_produc', toNullStr(body.tipo_produc));
-    if ('producto_id' in body) addField('producto_id', toNullUuid(body.producto_id));
-    if ('cliente_id' in body) addField('cliente_id', toNullUuid(body.cliente_id));
-    if ('monto_sol' in body) addField('monto_sol', toNullNum(body.monto_sol));
-    if ('monto_aut' in body) addField('monto_aut', toNullNum(body.monto_aut));
-    if ('estatus_sol' in body) addField('estatus_sol', toNullStr(body.estatus_sol));
-    if ('estatus_cuen' in body) addField('estatus_cuen', toNullStr(body.estatus_cuen));
-    if ('estatus_disp' in body) addField('estatus_disp', toNullStr(body.estatus_disp));
-    if ('estatus_cart' in body) addField('estatus_cart', toNullStr(body.estatus_cart));
-    if ('fases' in body) addField('fases', toNullStr(body.fases));
-
-    // data JSONB merge
-    if ('data' in body && body.data) {
-      updates.push(`data = data || $${paramIdx}::jsonb`);
-      params.push(JSON.stringify(body.data));
-      paramIdx++;
-    }
-
-    if (updates.length === 0) {
-      return c.json({ ok: true, message: 'No fields to update' });
-    }
-
-    params.push(id);
-    const sqlUpdate = `UPDATE "EFINANCIANET_DB"."J_CUENTAS_CORP_CLIENTES" SET ${updates.join(', ')} WHERE id = $${paramIdx}::uuid`;
-    await sql.unsafe(sqlUpdate, params);
-
+    await sql`
+      UPDATE "EFINANCIANET_DB"."J_CUENTAS_CORP_CLIENTES"
+      SET
+        no_sol       = COALESCE(${no_sol}, no_sol),
+        no_cuenta    = COALESCE(${no_cuenta}, no_cuenta),
+        no_referenc1 = COALESCE(${no_referenc1}, no_referenc1),
+        fecha_sol    = COALESCE(${fecha_sol}::date, fecha_sol),
+        descripcion  = COALESCE(${descripcion}, descripcion),
+        linea_produc = COALESCE(${linea_produc}, linea_produc),
+        tipo_produc  = COALESCE(${tipo_produc}, tipo_produc),
+        producto_id  = COALESCE(${producto_id}::uuid, producto_id),
+        cliente_id   = COALESCE(${cliente_id}::uuid, cliente_id),
+        monto_sol    = COALESCE(${monto_sol}::numeric::money, monto_sol),
+        monto_aut    = COALESCE(${monto_aut}::numeric::money, monto_aut),
+        estatus_sol  = COALESCE(${estatus_sol}, estatus_sol),
+        estatus_cuen = COALESCE(${estatus_cuen}, estatus_cuen),
+        estatus_cart = COALESCE(${estatus_cart}, estatus_cart),
+        estatus_disp = COALESCE(${estatus_disp}, estatus_disp),
+        cta_eje_chec = COALESCE(${cta_eje_chec}, cta_eje_chec),
+        fases        = COALESCE(${fases}, fases),
+        data         = COALESCE(${data ? JSON.stringify(data) : null}::jsonb, data)
+      WHERE id = ${id}::uuid
+    `;
     console.log(`[SOLICITUDES] UPDATE OK — id: ${id}`);
     return c.json({ ok: true });
   } catch (err: any) {
@@ -3038,22 +2961,6 @@ const deleteSolicitudesHandler = async (c: any) => {
   try {
     const id = c.req.param('id');
     console.log(`[SOLICITUDES] DELETE /solicitudes-credito/${id}`);
-
-    // Verificar que no existan activaciones vinculadas antes de eliminar
-    const activaciones = await sql`
-      SELECT COUNT(*)::int AS cnt
-        FROM "EFINANCIANET_DB"."J_SOLICITUDES_ACTIVACION"
-       WHERE solicitud_id = ${id}::uuid
-    `;
-    const cnt = Number(activaciones[0]?.cnt ?? 0);
-    if (cnt > 0) {
-      console.warn(`[SOLICITUDES] DELETE bloqueado — ${cnt} activación(es) vinculadas a id: ${id}`);
-      return c.json({
-        error: `No se puede eliminar: la solicitud tiene ${cnt} solicitud(es) de activación vinculadas. Elimine primero las activaciones.`,
-        activaciones_vinculadas: cnt,
-      }, 409);
-    }
-
     await sql`DELETE FROM "EFINANCIANET_DB"."J_CUENTAS_CORP_CLIENTES" WHERE id = ${id}::uuid`;
     console.log(`[SOLICITUDES] DELETE OK — id: ${id}`);
     return c.json({ ok: true });
@@ -3104,160 +3011,362 @@ const getNextNoSolHandler = async (c: any) => {
   }
 };
 
-// ── Activar cuenta — UPDATE + RETURNING + verificación de persistencia ──
-const activarCuentaHandler = async (c: any) => {
-  try {
-    const id = c.req.param('id');
-    const body = await c.req.json().catch(() => ({}));
-    console.log(`[SOLICITUDES] POST /solicitudes-credito/${id}/activarCuenta`, body);
-
-    const estatus_sol  = toNullStr(body.estatus_sol)  ?? 'Autorizada';
-    const estatus_cuen = toNullStr(body.estatus_cuen) ?? 'Activa';
-    const estatus_disp = toNullStr(body.estatus_disp) ?? 'Pagado';
-    const estatus_cart = toNullStr(body.estatus_cart) ?? 'Activa';
-
-    // UPDATE con RETURNING para verificar lo que realmente quedó en BD
-    // jsonb_set sincroniza data.estatus con el mismo valor de estatus_sol
-    const rows = await sql`
-      UPDATE "EFINANCIANET_DB"."J_CUENTAS_CORP_CLIENTES"
-      SET
-        estatus_sol  = ${estatus_sol},
-        estatus_cuen = ${estatus_cuen},
-        estatus_disp = ${estatus_disp},
-        estatus_cart = ${estatus_cart},
-        data = jsonb_set(COALESCE(data, '{}'::jsonb), '{estatus}', to_jsonb(${estatus_sol}::text))
-      WHERE id = ${id}::uuid
-      RETURNING id, estatus_sol, estatus_cuen, estatus_disp, estatus_cart
-    `;
-
-    if (rows.length === 0) {
-      console.error(`[SOLICITUDES] activarCuenta — registro no encontrado: ${id}`);
-      return c.json({ ok: false, error: `No se encontró registro con id=${id}` }, 404);
-    }
-
-    const updated = rows[0];
-    console.log(`[SOLICITUDES] activarCuenta RETURNING:`, updated);
-
-    // Verificar que los valores guardados coinciden exactamente
-    const divergencias: string[] = [];
-    if (updated.estatus_sol  !== estatus_sol)  divergencias.push(`estatus_sol: esperado="${estatus_sol}" guardado="${updated.estatus_sol}"`);
-    if (updated.estatus_cuen !== estatus_cuen) divergencias.push(`estatus_cuen: esperado="${estatus_cuen}" guardado="${updated.estatus_cuen}"`);
-    if (updated.estatus_disp !== estatus_disp) divergencias.push(`estatus_disp: esperado="${estatus_disp}" guardado="${updated.estatus_disp}"`);
-    if (updated.estatus_cart !== estatus_cart) divergencias.push(`estatus_cart: esperado="${estatus_cart}" guardado="${updated.estatus_cart}"`);
-
-    if (divergencias.length > 0) {
-      console.error(`[SOLICITUDES] activarCuenta DIVERGENCIA:`, divergencias);
-      return c.json({ ok: false, error: `Divergencia en BD: ${divergencias.join('; ')}` }, 500);
-    }
-
-    console.log(`[SOLICITUDES] activarCuenta verificado OK — id: ${id}`);
-    return c.json({ ok: true, data: updated });
-  } catch (err: any) {
-    console.error(`[SOLICITUDES] Error activarCuenta:`, err?.message);
-    return c.json({ ok: false, error: `Error activando cuenta: ${err?.message}` }, 500);
-  }
-};
-
 app.get(`${PREFIX}/solicitudes-credito/next-no-sol`, getNextNoSolHandler);
 app.get(`${PREFIX}/solicitudes-credito`, getSolicitudesHandler);
 app.post(`${PREFIX}/solicitudes-credito`, postSolicitudesHandler);
 app.put(`${PREFIX}/solicitudes-credito/:id`, putSolicitudesHandler);
-app.post(`${PREFIX}/solicitudes-credito/:id/activarCuenta`, activarCuentaHandler);
 app.delete(`${PREFIX}/solicitudes-credito/:id`, deleteSolicitudesHandler);
 // ── Solicitudes (sin prefijo — fallback) ──
 app.get("/solicitudes-credito/next-no-sol", getNextNoSolHandler);
 app.get("/solicitudes-credito", getSolicitudesHandler);
 app.post("/solicitudes-credito", postSolicitudesHandler);
 app.put("/solicitudes-credito/:id", putSolicitudesHandler);
-app.post("/solicitudes-credito/:id/activarCuenta", activarCuentaHandler);
 app.delete("/solicitudes-credito/:id", deleteSolicitudesHandler);
+
+// ═══════════════════════════════════════════════════════════════════
+// FORMALIZAR CONTRATO / PAGARÉ (Fase 4 — Originación)
+// POST /solicitudes-credito/:id/formalizarContrato
+// Merge de datosContrato en data.contrato + marca estatus_sol = 'Formalizado'
+// ═══════════════════════════════════════════════════════════════════
+const formalizarContratoHandler = async (c: any) => {
+  try {
+    const id = c.req.param('id');
+    const body = await c.req.json();
+    console.log(`[FORMALIZAR] POST /solicitudes-credito/${id}/formalizarContrato`, JSON.stringify(body).substring(0, 400));
+
+    // Verificar que existe la solicitud y obtener data actual
+    const rows = await sql`
+      SELECT data, estatus_sol
+      FROM "EFINANCIANET_DB"."J_CUENTAS_CORP_CLIENTES"
+      WHERE id = ${id}::uuid
+    `;
+    if (rows.length === 0) {
+      console.log(`[FORMALIZAR] Solicitud no encontrada — id: ${id}`);
+      return c.json({ error: 'Solicitud no encontrada' }, 404);
+    }
+
+    const currentData = (rows[0].data as Record<string, any>) ?? {};
+    const mergedData  = { ...currentData, contrato: body };
+
+    await sql`
+      UPDATE "EFINANCIANET_DB"."J_CUENTAS_CORP_CLIENTES"
+      SET
+        data        = ${JSON.stringify(mergedData)}::jsonb,
+        estatus_sol = 'Formalizado'
+      WHERE id = ${id}::uuid
+    `;
+
+    console.log(`[FORMALIZAR] UPDATE OK — id: ${id}`);
+    return c.json({ ok: true, contrato: body });
+  } catch (err: any) {
+    console.log(`[FORMALIZAR] Error:`, err?.message);
+    return c.json({ error: `Error formalizando contrato: ${err?.message}` }, 500);
+  }
+};
+
+// ── Registro de rutas: con prefijo y sin prefijo (fallback) ──
+app.post(`${PREFIX}/solicitudes-credito/:id/formalizarContrato`, formalizarContratoHandler);
+app.post("/solicitudes-credito/:id/formalizarContrato", formalizarContratoHandler);
 
 // ═══════════════════════════════════════════════════════════════════
 // VALIDACIÓN DE DOCUMENTOS CON IA (Groq — Llama 3.2 Vision)
 // ═══════════════════════════════════════════════════════════════════
+// ── System prompt: validador Módulo de Producto — Formalizar Contrato ──
+const SYSTEM_PROMPT_FORMALIZAR_CONTRATO = `Eres un asistente experto en configuración del CORE bancario.
+Tu tarea es asegurar que el Módulo de "Producto" esté correctamente configurado
+para soportar la creación y uso de plantillas institucionales en el flujo de Originación.
+
+INSTRUCCIONES DE VALIDACIÓN:
+1. El subtab "Plantillas" debe existir en el submódulo del Producto.
+2. Tipos de plantilla válidos (picklist): solicitud, contrato, pagare, minuta.
+3. Cada plantilla debe tener: Nombre, Tipo, Archivo base, Versión, Estatus (Activo/Inactivo).
+4. Para Formalizar Contrato (Fase 4) se requiere al menos:
+   - Una plantilla tipo "contrato" con Estatus "Activo"
+   - Una plantilla tipo "pagare" con Estatus "Activo"
+5. Si falta alguna plantilla requerida, si el subtab no existe, o si el tipo no es válido → bloquear.
+6. Verifica también que los documentos de Fase 4 obligatorios estén cargados y validados.
+
+REGLAS:
+- Si falta plantilla "contrato" activa → valido: false, reportar en faltantes.
+- Si falta plantilla "pagare" activa → valido: false, reportar en faltantes.
+- Si ambas existen y están activas → puedeGenerarDocumentos: true.
+- Detecta y reporta en plantillasDetectadas los tipos de plantillas activas encontradas.
+
+Responde ÚNICAMENTE en JSON con esta estructura exacta:
+{
+  "valido": true,
+  "motivos": ["motivo 1"],
+  "faltantes": ["plantilla o configuración faltante"],
+  "plantillasDetectadas": ["contrato", "pagare"],
+  "puedeGenerarDocumentos": true
+}
+NO incluyas texto fuera del JSON.`;
+
+// ── System prompt: validador experto CORE Bancario ──────────────────
+const SYSTEM_PROMPT_CORE_BANKING = `Eres un validador experto de procesos bancarios del CORE de Productos y Originación.
+Tu función es validar fases completas del flujo de originación, documentos, subtabs,
+plantillas, reglas de negocio y condiciones legales, operativas y jurídicas.
+El sistema te enviará:
+- Datos del cliente
+- Tipo de persona (Física, Moral, Física con Actividad Empresarial)
+- Datos del crédito
+- Línea de producto (Crédito, Captación, Línea de Crédito)
+- Documentos cargados en el expediente electrónico (Sección 2)
+- Documentos obligatorios por fase (Sección 1)
+- Documentos generados automáticamente (Solicitud, Contrato, Pagaré)
+- Subtabs configurados en el producto
+- Plantillas configuradas en el producto
+- Reglas de negocio de la fase
+- Notas registradas
+- Fase actual, número de fase y área actual
+- Prompt IA del producto
+- Prompt IA de la fase (si existe)
+- Catálogo de prompts por documento (fallback)
+- Botón presionado por el usuario (Enviar Fase, Regresar Fase, Formalizar Contrato, Solicitud de Activación, Activar Cuenta)
+
+────────────────────────────────────────
+1. INTERPRETACIÓN DEL CONTEXTO
+────────────────────────────────────────
+Debes interpretar:
+- El prompt IA del producto
+- El prompt IA de la fase
+- El catálogo de prompts por documento
+- Las reglas de negocio del flujo de originación
+- Los documentos cargados
+- Los documentos generados
+- Los subtabs
+- Las plantillas
+- El tipo de persona
+- La línea de producto
+- La fase actual
+- El botón presionado
+
+────────────────────────────────────────
+2. VALIDACIÓN DE DOCUMENTOS OBLIGATORIOS
+────────────────────────────────────────
+Para la fase actual:
+- Identifica los documentos obligatorios según el tipo de persona.
+- Verifica que existan en la Sección 2 del expediente electrónico.
+- Verifica que hayan sido validados por IA.
+- Verifica que cumplan con el tipo esperado.
+- Verifica que sean legibles.
+- Verifica que coincidan con los datos del cliente.
+- Verifica requisitos legales (RFC, firmas, vigencia, etc.).
+Si falta un documento obligatorio, repórtalo.
+
+────────────────────────────────────────
+3. VALIDACIÓN DE SUBTABS Y CONFIGURACIÓN
+────────────────────────────────────────
+Verifica:
+- Que existan los subtabs requeridos por la fase.
+- Que existan plantillas configuradas (Solicitud, Contrato, Pagaré, Minuta).
+- Que las plantillas correspondan al producto.
+- Que los documentos generados provengan de la plantilla correcta.
+
+────────────────────────────────────────
+4. VALIDACIÓN DE REGLAS DE NEGOCIO POR FASE
+────────────────────────────────────────
+FASE 1 — Expediente Electrónico
+- Validar que los datos del cliente estén completos.
+- Validar que existan los documentos base según tipo de persona.
+FASE 2 — Integración / Solicitud
+- Validar que exista el PDF "SOLICITUD".
+- Validar encabezado EXACTO: "SOLICITUD".
+- Validar datos del cliente y monto.
+- Validar firma (si aplica).
+FASE 3 — Análisis / RFC
+- Validar que exista la Constancia Fiscal SAT.
+- Validar que el RFC coincida con el del cliente.
+FASE 4 — Expediente Jurídico / Formalización
+- Validar Acta Constitutiva.
+- Validar plantillas de Contrato y Pagaré.
+- Validar generación de Contrato.pdf y Pagare.pdf.
+- Validar datos del crédito, términos y condiciones y garantías.
+FASE 5 — Validación de Firmas
+- Validar Contrato firmado.
+- Validar Pagaré firmado.
+- Validar firmas legibles.
+FASE 6 — Solicitud de Activación
+- Validar que todas las fases anteriores estén completas.
+- Validar garantías (si aplica).
+- Validar comités (si aplica).
+- Validar cargos.
+- Validar creación de Cuenta por Pagar o Cuenta por Cobrar.
+FASE 7 — Activación de Cuenta
+- Validar que el estatus en Solicitudes de Activación sea "Pagado".
+- Validar que se puedan actualizar los estatus:
+  - Estatus Solicitud = Autorizada
+  - Estatus Cuenta = Activa
+  - Estatus Pago = Pagado
+  - Estatus Cartera = Activa
+
+────────────────────────────────────────
+5. VALIDACIÓN DE BOTONES Y ACCIONES
+────────────────────────────────────────
+Botón "Enviar Fase"
+- Validar documentos obligatorios.
+- Validar reglas de negocio.
+- Validar que la fase esté completa.
+Botón "Regresar Fase"
+- Validar que exista al menos una NOTA en los últimos 30 minutos.
+Botón "Formalizar Contrato"
+- Validar plantillas.
+- Validar datos del crédito.
+- Validar garantías.
+- Validar términos y condiciones.
+- Validar generación de Contrato y Pagaré.
+Botón "Solicitud de Activación"
+- Validar garantías.
+- Validar comités.
+- Validar cargos.
+- Validar creación de Cuenta por Pagar o Cobrar.
+Botón "Activar Cuenta"
+- Validar estatus de Solicitud de Activación.
+
+────────────────────────────────────────
+6. RESPUESTA EN JSON
+────────────────────────────────────────
+Responde únicamente en JSON:
+{
+  "valido": true | false,
+  "confianza": 0.0 a 1.0,
+  "motivos": ["motivo 1", "motivo 2"],
+  "faltantes": ["documento o condición faltante"],
+  "faseListaParaAvanzar": true | false,
+  "documentosValidados": [
+    {
+      "tipo": "INE",
+      "valido": true,
+      "motivos": ["Nombre coincide", "Documento vigente"]
+    }
+  ]
+}
+NO incluyas texto fuera del JSON.`;
+
 const validarDocumentoIAHandler = async (c: any) => {
   const LOG_IA = "[VALIDAR-IA]";
   try {
     const body = await c.req.json();
-    const { storagePath, promptIA, tipoDocumento, nombreSolicitante, imageBase64 } = body;
+    const {
+      // ── Parámetros de validación de documento individual (modo documento) ──
+      storagePath, promptIA, tipoDocumento, nombreSolicitante, imageBase64,
+      // ── Parámetros de validación de fase completa (modo fase) ──
+      datosCliente, tipoPersona, datosCredito, lineaProducto,
+      documentosCargados, documentosObligatorios, documentosGenerados,
+      subtabs, plantillas, reglas, notas,
+      faseActual, faseNumero, areaActual,
+      promptIAProducto, promptIAFase, catalogoPrompts,
+      botonPresionado,
+    } = body;
 
-    console.log(`${LOG_IA} Request — tipo=${tipoDocumento}, path=${storagePath}, hasImageBase64=${!!imageBase64}`);
+    const modoFase = !!(faseActual || faseNumero !== undefined || botonPresionado);
+    const modoDocumento = !!(tipoDocumento && (storagePath || imageBase64));
 
-    if (!tipoDocumento) {
-      return c.json({ error: "Falta parámetro obligatorio: tipoDocumento" }, 400);
+    console.log(`${LOG_IA} Request — modo=${modoFase ? 'FASE' : 'DOCUMENTO'}, tipo=${tipoDocumento}, fase=${faseActual}(${faseNumero}), boton=${botonPresionado}`);
+
+    if (!modoFase && !modoDocumento) {
+      return c.json({ error: "Faltan parámetros: especifique (tipoDocumento + storagePath/imageBase64) o (faseActual/faseNumero/botonPresionado)" }, 400);
     }
-    if (!storagePath && !imageBase64) {
-      return c.json({ error: "Falta storagePath o imageBase64" }, 400);
-    }
 
+    // ── 1. Obtener imagen (solo si modo documento) ──
     let imageDataUrl = "";
 
-    if (imageBase64) {
-      // Frontend renderizó el PDF a imagen y envía base64 directamente
-      console.log(LOG_IA + " Usando imageBase64 del frontend (PDF pre-renderizado)");
-      const approxBytes = imageBase64.length * 0.75;
-      if (approxBytes > 4 * 1024 * 1024) {
-        return c.json({ error: "La imagen renderizada es demasiado grande (máx 4MB)", details: (approxBytes / 1024).toFixed(0) + " KB" }, 400);
+    if (modoDocumento) {
+      if (imageBase64) {
+        // Frontend renderizó el PDF a imagen y envía base64 directamente
+        console.log(LOG_IA + " Usando imageBase64 del frontend (PDF pre-renderizado)");
+        const approxBytes = imageBase64.length * 0.75;
+        if (approxBytes > 4 * 1024 * 1024) {
+          return c.json({ error: "La imagen renderizada es demasiado grande (máx 4MB)", details: (approxBytes / 1024).toFixed(0) + " KB" }, 400);
+        }
+        imageDataUrl = imageBase64.startsWith("data:") ? imageBase64 : "data:image/png;base64," + imageBase64;
+        console.log(LOG_IA + " imageBase64 OK — ~" + (approxBytes / 1024).toFixed(1) + " KB");
+      } else if (storagePath) {
+        const supabaseIA = createClient(
+          Deno.env.get("SUPABASE_URL")!,
+          Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+        );
+        const { data: fileData, error: downloadError } = await supabaseIA.storage
+          .from(BUCKET_NAME)
+          .download(storagePath);
+        if (downloadError || !fileData) {
+          console.log(LOG_IA + " Error descargando archivo:", downloadError?.message);
+          return c.json({ error: "No se pudo descargar el documento de Storage", details: downloadError?.message }, 500);
+        }
+        const arrayBuffer = await fileData.arrayBuffer();
+        const uint8 = new Uint8Array(arrayBuffer);
+        let binary = "";
+        for (let i = 0; i < uint8.length; i++) binary += String.fromCharCode(uint8[i]);
+        const base64Content = btoa(binary);
+        const fileSizeKB = uint8.length / 1024;
+        if (uint8.length > 4 * 1024 * 1024) {
+          return c.json({ error: "El documento es demasiado grande para validación IA (máx 4MB)", details: fileSizeKB.toFixed(0) + " KB" }, 400);
+        }
+        const ext = storagePath.split(".").pop()?.toLowerCase() || "png";
+        if (ext === "pdf") {
+          return c.json({ error: "Los PDFs requieren pre-renderizado. El frontend debe enviar imageBase64.", details: "Use pdfjs-dist en frontend" }, 400);
+        }
+        const mimeMap: Record<string, string> = {
+          png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg",
+          gif: "image/gif", webp: "image/webp", bmp: "image/bmp",
+        };
+        imageDataUrl = "data:" + (mimeMap[ext] || "image/png") + ";base64," + base64Content;
+        console.log(LOG_IA + " Archivo descargado OK — " + fileSizeKB.toFixed(1) + " KB");
       }
-      imageDataUrl = imageBase64.startsWith("data:") ? imageBase64 : "data:image/png;base64," + imageBase64;
-      console.log(LOG_IA + " imageBase64 OK — ~" + (approxBytes / 1024).toFixed(1) + " KB");
-    } else {
-      const supabaseIA = createClient(
-        Deno.env.get("SUPABASE_URL")!,
-        Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
-      );
-
-      const { data: fileData, error: downloadError } = await supabaseIA.storage
-        .from(BUCKET_NAME)
-        .download(storagePath);
-
-      if (downloadError || !fileData) {
-        console.log(LOG_IA + " Error descargando archivo:", downloadError?.message);
-        return c.json({ error: "No se pudo descargar el documento de Storage", details: downloadError?.message }, 500);
-      }
-
-      const arrayBuffer = await fileData.arrayBuffer();
-      const uint8 = new Uint8Array(arrayBuffer);
-      let binary = "";
-      for (let i = 0; i < uint8.length; i++) {
-        binary += String.fromCharCode(uint8[i]);
-      }
-      const base64Content = btoa(binary);
-
-      const fileSizeKB = uint8.length / 1024;
-      if (uint8.length > 4 * 1024 * 1024) {
-        console.log(LOG_IA + " Archivo demasiado grande: " + fileSizeKB.toFixed(1) + " KB");
-        return c.json({ error: "El documento es demasiado grande para validación IA (máx 4MB)", details: fileSizeKB.toFixed(0) + " KB" }, 400);
-      }
-
-      const ext = storagePath.split(".").pop()?.toLowerCase() || "png";
-      if (ext === "pdf") {
-        console.log(LOG_IA + " PDF sin imageBase64 — frontend debe pre-renderizar");
-        return c.json({ error: "Los PDFs requieren pre-renderizado. El frontend debe enviar imageBase64.", details: "Use pdfjs-dist en frontend" }, 400);
-      }
-      const mimeMap: Record<string, string> = {
-        png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg",
-        gif: "image/gif", webp: "image/webp", bmp: "image/bmp",
-      };
-      const mimeType = mimeMap[ext] || "image/png";
-      imageDataUrl = "data:" + mimeType + ";base64," + base64Content;
-      console.log(LOG_IA + " Archivo descargado OK — " + fileSizeKB.toFixed(1) + " KB, mime=" + mimeType);
     }
 
-    // ── 2. Construir prompt bancario ──
+    // ── 2. Construir contexto para el validador bancario ──
     const fechaSistema = new Date().toISOString();
-    const reqPrompt = promptIA || "Verificar que el documento sea legítimo, legible y corresponda al tipo esperado.";
-    const solNombre = nombreSolicitante || "(no proporcionado)";
-    const promptFinal = "Eres un validador documental experto para un sistema bancario.\n\nTu tarea es analizar el documento proporcionado (imagen o PDF convertido a imagen)\ny validar si cumple con el requisito especificado.\n\nREQUISITO (promptIA):\n" + reqPrompt + "\n\nDATOS DEL SOLICITANTE:\nNombre esperado: " + solNombre + "\nTipo de documento esperado: " + tipoDocumento + "\nFecha actual del sistema: " + fechaSistema + "\n\nINSTRUCCIONES DE VALIDACIÓN:\n1. Determina si el documento corresponde al tipo esperado.\n2. Verifica si el nombre del documento coincide con el nombre del solicitante (si aplica).\n3. Verifica si el documento está vigente (si aplica).\n4. Evalúa si el documento está completo, legible y sin alteraciones.\n5. Identifica señales de manipulación, edición o fraude.\n6. Extrae información relevante del documento (nombre, fechas, folios, etc.).\n7. Responde ÚNICAMENTE en JSON con la siguiente estructura:\n\n{\n  \"valido\": true | false,\n  \"confianza\": 0.0 a 1.0,\n  \"motivos\": [\"motivo 1\", \"motivo 2\"],\n  \"extraido\": {\n    \"nombre_detectado\": \"...\",\n    \"fecha_documento\": \"...\",\n    \"tipo_detectado\": \"...\",\n    \"folio\": \"...\",\n    \"otros_campos\": \"...\"\n  }\n}\n\nNO incluyas texto fuera del JSON.";
 
-    // ── 3. Llamar a Groq API (Llama 3.2 Vision) ──
+    // Contexto de la fase / proceso
+    const contextoFase = {
+      fechaSistema,
+      botonPresionado: botonPresionado || "(no especificado)",
+      faseActual: faseActual || "(no especificada)",
+      faseNumero: faseNumero ?? "(no especificado)",
+      areaActual: areaActual || "(no especificada)",
+      tipoPersona: tipoPersona || "(no especificado)",
+      lineaProducto: lineaProducto || "(no especificado)",
+      datosCliente: datosCliente || {},
+      datosCredito: datosCredito || {},
+      promptIAProducto: promptIAProducto || promptIA || "(no especificado)",
+      promptIAFase: promptIAFase || "(no especificado)",
+      catalogoPrompts: catalogoPrompts || [],
+      documentosObligatorios: documentosObligatorios || [],
+      documentosCargados: documentosCargados || [],
+      documentosGenerados: documentosGenerados || [],
+      subtabs: subtabs || [],
+      plantillas: plantillas || [],
+      reglas: reglas || [],
+      notas: notas || [],
+      ...(tipoDocumento ? { tipoDocumentoActual: tipoDocumento } : {}),
+      ...(nombreSolicitante ? { nombreSolicitante } : {}),
+    };
+
+    const userMessage = `Valida el siguiente contexto del proceso bancario y responde ÚNICAMENTE en JSON:\n\n${JSON.stringify(contextoFase, null, 2)}`;
+
+    // ── 3. Construir mensajes para Groq (con imagen si es modo documento) ──
+    const groqMessages = imageDataUrl
+      ? [{ role: "user", content: [
+          { type: "text", text: userMessage },
+          { type: "image_url", image_url: { url: imageDataUrl } },
+        ]}]
+      : [{ role: "user", content: userMessage }];
+
+    // ── 4. Llamar a Groq API ──
     const GROQ_KEY = Deno.env.get("GROQ_API_KEY");
     if (!GROQ_KEY) {
       console.log(`${LOG_IA} ERROR: GROQ_API_KEY no configurada`);
       return c.json({ error: "GROQ_API_KEY no configurada en secrets" }, 500);
     }
 
-    console.log(`${LOG_IA} Llamando a Groq API (meta-llama/llama-4-scout-17b-16e-instruct)...`);
+    // Seleccionar system prompt según el contexto
+    const esFormalizarContrato = (botonPresionado || "").toLowerCase().includes("formalizar");
+    const systemPrompt = esFormalizarContrato
+      ? SYSTEM_PROMPT_FORMALIZAR_CONTRATO
+      : SYSTEM_PROMPT_CORE_BANKING;
+
+    console.log(`${LOG_IA} Llamando a Groq API — modo=${imageDataUrl ? 'VISION' : 'TEXT'}, boton=${botonPresionado}, prompt=${esFormalizarContrato ? 'FORMALIZAR' : 'CORE'}`);
     const groqResponse = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -3265,18 +3374,15 @@ const validarDocumentoIAHandler = async (c: any) => {
         "Authorization": "Bearer " + GROQ_KEY,
       },
       body: JSON.stringify({
-        model: "meta-llama/llama-4-scout-17b-16e-instruct",
+        model: imageDataUrl
+          ? "meta-llama/llama-4-scout-17b-16e-instruct"  // vision para documentos
+          : "llama-3.3-70b-versatile",                    // texto para fases
         messages: [
-          {
-            role: "user",
-            content: [
-              { type: "text", text: promptFinal },
-              { type: "image_url", image_url: { url: imageDataUrl } },
-            ],
-          },
+          { role: "system", content: systemPrompt },
+          ...groqMessages,
         ],
         temperature: 0.1,
-        max_tokens: 1024,
+        max_tokens: 2048,
       }),
     });
 
@@ -3304,38 +3410,55 @@ const validarDocumentoIAHandler = async (c: any) => {
     const rawContent = groqResult.choices?.[0]?.message?.content || "{}";
     console.log(`${LOG_IA} Groq response raw (first 500 chars):`, rawContent.substring(0, 500));
 
-    // ── 4. Parsear JSON de la respuesta ──
+    // ── 5. Parsear JSON de la respuesta ──
     let parsed: any;
     try {
-      // Intentar extraer JSON de posible markdown ```json ... ```
+      // Extraer JSON de posible markdown ```json ... ```
       const jsonMatch = rawContent.match(/```(?:json)?\s*([\s\S]*?)```/);
       const cleanJson = jsonMatch ? jsonMatch[1].trim() : rawContent.trim();
       parsed = JSON.parse(cleanJson);
     } catch (parseErr: any) {
       console.log(`${LOG_IA} JSON parse error:`, parseErr.message, "raw:", rawContent.substring(0, 200));
-      // Devolver resultado parcial
       parsed = {
         valido: false,
         confianza: 0,
-        motivos: ["La IA no pudo analizar el documento correctamente", "Respuesta no estructurada: " + rawContent.substring(0, 200)],
-        extraido: {},
+        motivos: ["La IA no pudo analizar el contexto correctamente", "Respuesta no estructurada: " + rawContent.substring(0, 200)],
+        faltantes: [],
+        faseListaParaAvanzar: false,
+        documentosValidados: [],
         _rawResponse: rawContent.substring(0, 500),
       };
     }
 
-    // Asegurar estructura mínima
+    // Asegurar estructura completa (backwards-compatible con campos legacy)
+    const modeloUsado = imageDataUrl
+      ? "meta-llama/llama-4-scout-17b-16e-instruct"
+      : "llama-3.3-70b-versatile";
+
     const result = {
       valido: parsed.valido === true,
       confianza: typeof parsed.confianza === "number" ? parsed.confianza : (parsed.valido ? 0.8 : 0.2),
       motivos: Array.isArray(parsed.motivos) ? parsed.motivos : [],
+      faltantes: Array.isArray(parsed.faltantes) ? parsed.faltantes : [],
+      faseListaParaAvanzar: parsed.faseListaParaAvanzar === true,
+      documentosValidados: Array.isArray(parsed.documentosValidados) ? parsed.documentosValidados : [],
+      // Campos específicos Formalizar Contrato (Fase 4) — nuevo formato
+      plantillasDetectadas: Array.isArray(parsed.plantillasDetectadas) ? parsed.plantillasDetectadas : [],
+      puedeGenerarDocumentos: parsed.puedeGenerarDocumentos === true,
+      // Compatibilidad con campos legacy
+      puedeGenerarContrato: parsed.puedeGenerarContrato === true || (Array.isArray(parsed.plantillasDetectadas) && parsed.plantillasDetectadas.includes('contrato')),
+      puedeGenerarPagare: parsed.puedeGenerarPagare === true || (Array.isArray(parsed.plantillasDetectadas) && parsed.plantillasDetectadas.includes('pagare')),
+      // Campos legacy para compatibilidad con validación de documento individual
       extraido: parsed.extraido || {},
-      modelo: "meta-llama/llama-4-scout-17b-16e-instruct",
+      modelo: modeloUsado,
       timestamp: fechaSistema,
-      tipoDocumento,
+      tipoDocumento: tipoDocumento || null,
+      faseActual: faseActual || null,
+      botonPresionado: botonPresionado || null,
       usage: groqResult.usage || null,
     };
 
-    console.log(`${LOG_IA} ✅ Resultado: valido=${result.valido}, confianza=${result.confianza}, motivos=${result.motivos.length}`);
+    console.log(`${LOG_IA} ✅ valido=${result.valido}, confianza=${result.confianza}, faseListaParaAvanzar=${result.faseListaParaAvanzar}, faltantes=${result.faltantes.length}, docsValidados=${result.documentosValidados.length}`);
     return c.json(result);
   } catch (err: any) {
     console.log(`${LOG_IA} Error no capturado:`, err.message, err.stack);
@@ -3343,92 +3466,8 @@ const validarDocumentoIAHandler = async (c: any) => {
   }
 };
 
-// ═══════════════════════════════════════════════════════════════════
-// VALIDAR FASE IA — Valida una fase completa usando el prompt de la fase
-// Recibe los datos de los documentos y el prompt de la fase.
-// La IA evalúa si la fase cumple los criterios configurados.
-// ═══════════════════════════════════════════════════════════════════
-const validarFaseIAHandler = async (c: any) => {
-  try {
-    const body = await c.req.json();
-    const { faseNombre, faseSeq, promptIA, documentos, tipoPersona, solicitudId } = body;
-
-    console.log("[VALIDAR-FASE-IA] Request — fase=" + faseSeq + " " + faseNombre + ", docs=" + (documentos?.length || 0));
-
-    if (!faseNombre || !faseSeq) {
-      return c.json({ valido: false, motivos: ["Faltan parámetros: faseNombre, faseSeq"] }, 400);
-    }
-    if (!promptIA) {
-      return c.json({ valido: false, motivos: ["Falta promptIA de la fase"] }, 400);
-    }
-    if (!Array.isArray(documentos)) {
-      return c.json({ valido: false, motivos: ["documentos debe ser un array"] }, 400);
-    }
-
-    // Construir resumen de documentos
-    const docsResumen = documentos.map(function(d: any, i: number) {
-      return (i + 1) + ". " + d.tipoDocumento + " — estatus: " + (d.estatus || "N/A") + ", IA: " + (d.validadoIA ? "Sí" : "No");
-    }).join("\n");
-
-    var fechaSistema = new Date().toISOString();
-    var promptFinal = "Eres un validador experto del CORE bancario.\n\n" +
-      "FASE: " + faseSeq + " — " + faseNombre + "\n" +
-      "TIPO PERSONA: " + (tipoPersona || "No especificado") + "\n\n" +
-      "PROMPT DE LA FASE:\n" + promptIA + "\n\n" +
-      "DOCUMENTOS EN EXPEDIENTE:\n" + (docsResumen || "(ninguno)") + "\n\n" +
-      "Evalúa si la fase cumple los criterios del prompt.\n" +
-      "Responde SOLO en JSON:\n" +
-      "{\"valido\": true|false, \"motivos\": [\"...\"], \"resumen\": \"...\"}";
-
-    var GROQ_KEY = Deno.env.get("GROQ_API_KEY");
-    if (!GROQ_KEY) {
-      return c.json({ valido: false, motivos: ["GROQ_API_KEY no configurada"] }, 500);
-    }
-
-    var groqResponse = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "Authorization": "Bearer " + GROQ_KEY },
-      body: JSON.stringify({
-        model: "meta-llama/llama-4-scout-17b-16e-instruct",
-        messages: [{ role: "user", content: promptFinal }],
-        temperature: 0.1,
-        max_tokens: 1024,
-      }),
-    });
-
-    if (!groqResponse.ok) {
-      var errText = await groqResponse.text();
-      return c.json({ valido: false, motivos: ["Groq API error: " + errText] }, 502);
-    }
-
-    var groqResult = await groqResponse.json();
-    var aiText = groqResult.choices?.[0]?.message?.content || "";
-
-    var resultado: any;
-    try {
-      var jsonMatch = aiText.match(/\{[\s\S]*\}/);
-      resultado = jsonMatch ? JSON.parse(jsonMatch[0]) : JSON.parse(aiText);
-    } catch (_) {
-      resultado = { valido: false, motivos: ["Error parseando respuesta IA: " + aiText.substring(0, 200)], resumen: "Error" };
-    }
-
-    resultado.timestamp = fechaSistema;
-    resultado.faseSeq = faseSeq;
-    resultado.faseActual = faseNombre;
-
-    console.log("[VALIDAR-FASE-IA] Resultado: valido=" + resultado.valido);
-    return c.json(resultado);
-  } catch (err: any) {
-    console.log("[VALIDAR-FASE-IA] Error:", err.message);
-    return c.json({ valido: false, motivos: ["Error interno: " + err.message] }, 500);
-  }
-};
-
 app.post(`${PREFIX}/validar-documento-ia`, validarDocumentoIAHandler);
 app.post("/validar-documento-ia", validarDocumentoIAHandler);
-app.post(`${PREFIX}/validar-fase-ia`, validarFaseIAHandler);
-app.post("/validar-fase-ia", validarFaseIAHandler);
-console.log("[ROUTE] validar-fase-ia registered OK");
 
 // ═══════════════════════════════════════════════════════════════════
 // ACTIVAR CUENTA FINANCIERA — Endpoint transaccional para la fase final
@@ -3541,9 +3580,44 @@ app.onError((err, c) => {
 });
 
 // ═══════════════════════════════════════════════════════════════════
+// SOLICITUDES DE ACTIVACIÓN — J_SOLICITUDES_ACTIVACION
+// PUT /solicitudes-activacion/:id  → actualiza estatus + data
+// ═══════════════════════════════════════════════════════════════════
+const putSolicitudActivacionHandler = async (c: any) => {
+  try {
+    const id = c.req.param('id');
+    const body = await c.req.json();
+    console.log(`[SOL-ACTIVACION] PUT /solicitudes-activacion/${id}`, JSON.stringify(body).substring(0, 400));
+
+    const estatus          = toNullStr(body.estatus);
+    const fecha_compromiso = toNullStr(body.fecha_compromiso);
+    const tipo             = toNullStr(body.type);
+    const data             = body.data ?? null;
+
+    await sql`
+      UPDATE "EFINANCIANET_DB"."J_SOLICITUDES_ACTIVACION"
+      SET
+        estatus          = COALESCE(${estatus}, estatus),
+        fecha_compromiso = COALESCE(${fecha_compromiso}::date, fecha_compromiso),
+        type             = COALESCE(${tipo}, type),
+        data             = COALESCE(${data ? JSON.stringify(data) : null}::jsonb, data)
+      WHERE id = ${id}::uuid
+    `;
+    console.log(`[SOL-ACTIVACION] UPDATE OK — id: ${id} estatus: ${estatus}`);
+    return c.json({ ok: true });
+  } catch (err: any) {
+    console.error(`[SOL-ACTIVACION] Error PUT:`, err?.message);
+    return c.json({ error: `Error actualizando solicitud de activación: ${err?.message}` }, 500);
+  }
+};
+
+app.put(`${PREFIX}/solicitudes-activacion/:id`, putSolicitudActivacionHandler);
+app.put(`/solicitudes-activacion/:id`, putSolicitudActivacionHandler);
+
+// ═══════════════════════════════════════════════════════════════════
 // SERVE — FORCE REDEPLOY 2026-02-25T12:00:00Z
 // ═══════════════════════════════════════════════════════════════════
-const DEPLOY_TIMESTAMP = "2026-03-18T12:00:00Z-v20.1-STORAGE-FIX";
+const DEPLOY_TIMESTAMP = "2026-04-21T10:00:00Z-v20.2-SOL-ACTIVACION";
 console.log(`[SERVER BOOT] Routes registered — deploy=${DEPLOY_TIMESTAMP}, starting Deno.serve...`);
 
 // ── Headers CORS universales (reutilizados en preflight y errores fatales) ──

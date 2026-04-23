@@ -3,7 +3,7 @@ import { toast } from 'sonner';
 import { SolicitudCreditoForm } from './SolicitudCreditoForm';
 import {
   SolicitudListItem, SOLICITUDES_LISTA,
-  clearSession, migrateSavedStore, saveToSavedStore, saveToSession, formatCurrency as fmtCur,
+  clearSession, migrateSavedStore, deleteSavedStore, saveToSavedStore, saveToSession, formatCurrency as fmtCur,
   EMPTY_FORM, EMPTY_TERMINOS, consumeNoSol, getFechaSolicitudNow,
 } from './solicitudCreditoStore';
 import { createCreditoFromSolicitud } from '../creditos/creditoStore';
@@ -90,7 +90,7 @@ export function buildFormDataFromListItem(s: SolicitudListItem): Record<string, 
     descripcion: hdr.descripcion || d.descripcion || joinDescripcion || '',
     faseId: hdr.fase_id || d.faseId || joinFases || '1',
     descripcionFase: s.faseDescripcion || hdr.descripcion_fase || d.descripcionFase || '',
-    estatusSolicitud: s.estatusSolicitud || hdr.estatus || d.estatusSolicitud || 'Pendiente',
+    estatusSolicitud: s.estatusSolicitud || d.estatusSolicitud || 'Pendiente',
     sucursal: s.sucursal || hdr.sucursal || d.sucursal || joinSucursal || '',
     montoSolicitado: hdr.monto_solicitado
       || (typeof s.montoSolicitado === 'number' && s.montoSolicitado > 0 ? s.montoSolicitado.toFixed(2) : null)
@@ -148,12 +148,24 @@ export function preloadSubtabsFromDBData(storageId: number | string, d: Record<s
   }
   const sim = sol.simulacion || {};
   if (sim.resultado_simulacion?.length > 0) {
-    saveToSession(storageId, 'simulacion', sim.resultado_simulacion.map((r: any) => ({
+    const simRows = sim.resultado_simulacion.map((r: any) => ({
       noPago: r.no_pago, fechaPago: r.fecha_pago, saldoInsoluto: r.saldo_insoluto,
       pagoCapital: r.pago_capital, pagoInteres: r.pago_interes, ivaInteres: r.iva_interes,
       pagoPeriodo: r.pago_periodo, pagoSeguro: r.pago_seguro, pagoTotal: r.pago_total,
-    })));
+    }));
+    saveToSession(storageId, 'simulacion', simRows);
+    saveToSavedStore(storageId, 'simulacion', simRows);
+  } else {
+    // Reset saved store so stale amortization from a previous edit doesn't leak back
+    saveToSavedStore(storageId, 'simulacion', []);
   }
+  // Always overwrite SAVED_DATA for simulacion_cal so loadFromSavedStore never returns stale data
+  const calFromDB = sim.calendario_aportaciones?.length > 0 ? sim.calendario_aportaciones : null;
+  console.log('[preloadSubtabs] storageId:', storageId, '| sim keys:', Object.keys(sim),
+    '| calendario_aportaciones:', calFromDB ? `${calFromDB.length} rows` : 'null/vacío',
+    '| first row sample:', calFromDB?.[0]);
+  saveToSession(storageId, 'simulacion_cal', calFromDB);
+  saveToSavedStore(storageId, 'simulacion_cal', calFromDB);
   const exp = sol.expediente_electronico || {};
   // Claves de documentos auto-generados por el sistema que ya no deben aparecer
   // (fueron creados por una versión anterior del código y guardados en BD por error).
@@ -518,7 +530,7 @@ export function SolicitudCreditoList({
       descripcion: hdr.descripcion || d.descripcion || joinDescripcion || '',
       faseId: hdr.fase_id || d.faseId || joinFases || '1',
       descripcionFase: s.faseDescripcion || hdr.descripcion_fase || d.descripcionFase || '',
-      estatusSolicitud: s.estatusSolicitud || hdr.estatus || d.estatusSolicitud || 'Pendiente',
+estatusSolicitud: s.estatusSolicitud || d.estatusSolicitud || 'Pendiente',
       sucursal: s.sucursal || hdr.sucursal || d.sucursal || joinSucursal || '',
       montoSolicitado: hdr.monto_solicitado
         || (typeof s.montoSolicitado === 'number' && s.montoSolicitado > 0 ? s.montoSolicitado.toFixed(2) : null)
@@ -527,6 +539,12 @@ export function SolicitudCreditoList({
         || (typeof s.montoAutorizado === 'number' && s.montoAutorizado > 0 ? s.montoAutorizado.toFixed(2) : null)
         || d.montoAutorizado || '0.00',
       _clienteId: extra._clienteId || hdr.cliente_id || d._clienteId || '',
+      _calendarioAportaciones: (d.solicitud?.simulacion?.calendario_aportaciones || []).map((r: any) => ({
+        noAportacion: r.no_aportacion ?? r.noAportacion,
+        fecha: r.fecha,
+        monto: r.monto,
+        moneda: r.moneda || 'MXN',
+      })),
     };
   };
 
@@ -565,6 +583,16 @@ export function SolicitudCreditoList({
         pagoCapital: r.pago_capital, pagoInteres: r.pago_interes, ivaInteres: r.iva_interes,
         pagoPeriodo: r.pago_periodo, pagoSeguro: r.pago_seguro, pagoTotal: r.pago_total,
       })));
+    }
+    if (sim.calendario_aportaciones?.length > 0) {
+      saveToSession(storageId, 'simulacion_cal', sim.calendario_aportaciones.map((r: any) => ({
+        noAportacion: r.no_aportacion ?? r.noAportacion,
+        fecha: r.fecha,
+        monto: r.monto,
+        moneda: r.moneda || 'MXN',
+      })));
+    } else {
+      saveToSession(storageId, 'simulacion_cal', null);
     }
 
     // ── Expediente Electrónico ──
@@ -685,6 +713,8 @@ export function SolicitudCreditoList({
       const result = await saveSolicitud(cleanData, dbId, allSubtabs);
       if (result.ok) {
         console.log('[SolicList] DB persist OK — id:', result.id);
+        // Limpiar SAVED_DATA['new'] para que no contamine la próxima solicitud nueva
+        if (isNew) deleteSavedStore('new');
         toast.success(isNew ? 'Solicitud creada exitosamente' : 'Solicitud actualizada exitosamente', {
           description: `N° ${data.noSol} — Sincronizado con BD (ID: ${result.id?.substring(0, 8)}...)`,
           duration: 3000,

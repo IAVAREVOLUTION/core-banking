@@ -14,10 +14,11 @@ interface FasesSolicitudTabProps {
   mode: 'nuevo' | 'editar' | 'ver';
   productoId: string;
   faseIdActual: string;
-  faseActualSeq?: number;  // ADD: numero_consecutivo para comparar correctamente
+  faseActualSeq?: number;
+  estatusSolicitud?: string;
 }
 
-export function FasesSolicitudTab({ mode, productoId, faseIdActual, faseActualSeq }: FasesSolicitudTabProps) {
+export function FasesSolicitudTab({ mode, productoId, faseIdActual, faseActualSeq, estatusSolicitud }: FasesSolicitudTabProps) {
   const { productos: productosDB } = useProductosCatalogoDB(true);
   const [faseSeleccionada, setFaseSeleccionada] = useState<FaseDisplay | null>(null);
 
@@ -98,12 +99,17 @@ export function FasesSolicitudTab({ mode, productoId, faseIdActual, faseActualSe
           </h4>
           <div className="space-y-2">
             {fasesProducto.map((fase, index) => {
-              const isActive = faseActualSeq !== undefined
+              const flujoFinalizado = estatusSolicitud === 'Autorizada' || estatusSolicitud === 'Aprobado';
+              const isCurrentFase = faseActualSeq !== undefined
                 ? fase.seq === faseActualSeq
                 : fase.faseId === faseIdActual || parseInt(fase.faseId) === parseInt(faseIdActual);
-              const isPast = faseActualSeq !== undefined
+              // Fase completada: anterior a la actual, O es la actual y el flujo ya finalizó
+              const isPast = (faseActualSeq !== undefined
                 ? fase.seq < faseActualSeq
-                : parseInt(fase.faseId) < parseInt(faseIdActual);
+                : parseInt(fase.faseId) < parseInt(faseIdActual))
+                || (isCurrentFase && flujoFinalizado);
+              // Fase activa: es la actual pero el flujo NO está finalizado
+              const isActive = isCurrentFase && !flujoFinalizado;
               const isSelected = faseSeleccionada?.faseId === fase.faseId;
               const areaLabel = getAreaLabel(fase.descripcion, fase.area);
 

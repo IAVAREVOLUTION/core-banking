@@ -25,13 +25,18 @@ interface Props {
   simulacionInicial?: SimulacionRow[];
   /** Monto autorizado de la solicitud — usado para simulación de aportaciones */
   montoAutorizado?: number;
+  /** Notifica la fecha del último pago cuando cambia la tabla/calendario */
+  onFechaFinChange?: (fecha: string) => void;
 }
 
 /** Determina si el producto es de tipo Captación/Aportación (no crédito) */
 function esCaptacion(lineaProducto: string, tipoProducto?: string): boolean {
   const linea = (lineaProducto || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-  const tipo = (tipoProducto || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  // lineaProducto es la señal definitiva — si dice 'credito' nunca es captación
+  if (linea.includes('cred')) return false;
   if (linea.includes('captac') || linea.includes('ahorro') || linea.includes('invers')) return true;
+  // Solo usar tipoProducto como señal secundaria cuando lineaProducto es ambiguo
+  const tipo = (tipoProducto || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   if (tipo.includes('aportac') || tipo.includes('ahorro') || tipo.includes('captac') || tipo.includes('invers')) return true;
   return false;
 }
@@ -139,7 +144,7 @@ function generarCalendarioAportaciones(
   return rows;
 }
 
-export function SimulacionTab({ mode, solicitudId, lineaProducto, tipoProducto, calendarioAportaciones, simulacionInicial, montoAutorizado }: Props) {
+export function SimulacionTab({ mode, solicitudId, lineaProducto, tipoProducto, calendarioAportaciones, simulacionInicial, montoAutorizado, onFechaFinChange }: Props) {
   const isRO = mode === 'ver';
   const isCap = esCaptacion(lineaProducto, tipoProducto);
 
@@ -191,10 +196,19 @@ export function SimulacionTab({ mode, solicitudId, lineaProducto, tipoProducto, 
   // Prioridad: sessionStorage > savedStore > prop (cotización heredada)
   const getInitCalRows = (): AportacionRow[] | null => {
     const fromSession = loadFromSession<AportacionRow[]>(solicitudId, 'simulacion_cal');
-    if (fromSession && fromSession.length > 0) return fromSession;
-    const fromSaved = loadFromSavedStore<AportacionRow[]>(solicitudId, 'simulacion_cal');
-    if (fromSaved && fromSaved.length > 0) return fromSaved;
-    if (calendarioAportaciones && calendarioAportaciones.length > 0) return calendarioAportaciones;
+    console.log('[SimulacionTab] getInitCalRows | solicitudId:', solicitudId, '| isCap:', isCap, '| mode:', mode,
+      '| fromSession:', fromSession ? `${fromSession.length} rows` : 'null',
+      '| prop calendarioAportaciones:', calendarioAportaciones ? `${calendarioAportaciones.length} rows` : 'null');
+    if (fromSession && fromSession.length > 0) { console.log('[SimulacionTab] → usando SESSION'); return fromSession; }
+    // Para solicitudes nuevas, SAVED_DATA['new'] puede tener datos de una sesión anterior.
+    // Solo usar savedStore en editar/ver, no en nuevo.
+    if (mode !== 'nuevo') {
+      const fromSaved = loadFromSavedStore<AportacionRow[]>(solicitudId, 'simulacion_cal');
+      console.log('[SimulacionTab] fromSavedStore:', fromSaved ? `${fromSaved.length} rows` : 'null');
+      if (fromSaved && fromSaved.length > 0) { console.log('[SimulacionTab] → usando SAVED_STORE'); return fromSaved; }
+    }
+    if (calendarioAportaciones && calendarioAportaciones.length > 0) { console.log('[SimulacionTab] → usando PROP'); return calendarioAportaciones; }
+    console.log('[SimulacionTab] → null (sin datos)');
     return null;
   };
 
@@ -218,6 +232,19 @@ export function SimulacionTab({ mode, solicitudId, lineaProducto, tipoProducto, 
     if (!isRO && isCap && calRows) saveToSession(solicitudId, 'simulacion_cal', calRows);
   }, [calRows, solicitudId, isRO, isCap]);
 
+  // Notificar fecha del último pago a SolicitudCreditoForm → campo "Fecha Fin"
+  useEffect(() => {
+    if (!onFechaFinChange || isCap) return;
+    const last = rows[rows.length - 1];
+    if (last?.fechaPago) onFechaFinChange(last.fechaPago);
+  }, [rows]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!onFechaFinChange || !isCap) return;
+    const last = calRows?.[calRows.length - 1];
+    if (last?.fecha) onFechaFinChange(last.fecha);
+  }, [calRows]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── Leer Términos y Condiciones actualizados desde sessionStorage ──
   const readTerminos = (): TerminosCondiciones => {
     return (
@@ -231,7 +258,9 @@ export function SimulacionTab({ mode, solicitudId, lineaProducto, tipoProducto, 
   // ── Simular Crédito ──
   const handleSimularCredito = () => {
     const terminos = readTerminos();
-    const monto = parseFloat(parseCurrency(terminos.montoSolicitado || '0'));
+    const montoSol = parseFloat(parseCurrency(terminos.montoSolicitado || '0'));
+    // Monto Autorizado tiene prioridad sobre Monto Solicitado en Términos
+    const monto = (montoAutorizado && montoAutorizado > 0) ? montoAutorizado : montoSol;
     const tasa = parseFloat(String(terminos.tasa || '0').replace(/[^0-9.-]/g, ''));
     const plazo = parseInt(String(terminos.plazo || '0'));
     const frecuencia = terminos.frecuencia || 'Mensual';
@@ -252,7 +281,8 @@ export function SimulacionTab({ mode, solicitudId, lineaProducto, tipoProducto, 
     const newRows = generarSimulacion(monto, tasa, plazo, frecuencia, fechaPrimerPago, tipoCalculo, seguro);
     setRows(newRows);
     saveToSession(solicitudId, 'simulacion', newRows);
-    toast.success('Simulación generada', { description: `${newRows.length} pagos (${tipoCalculo})`, duration: 3000 });
+    const fuenteMonto = (montoAutorizado && montoAutorizado > 0) ? 'Monto Autorizado' : 'Monto Solicitado';
+    toast.success('Simulación generada', { description: `${newRows.length} pagos (${tipoCalculo}) · ${fuenteMonto}: ${formatCurrency(monto)}`, duration: 3000 });
   };
 
   // ── Simular Captación/Aportación ──
