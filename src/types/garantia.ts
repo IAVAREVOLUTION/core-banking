@@ -28,6 +28,8 @@ export interface Garantia {
   estatus: string; // STATUS - VARCHAR(30) - Opcional
   estado: string; // STATE - VARCHAR(30) - Opcional
   municipio: string; // COUNTY - VARCHAR(30) - Opcional
+  montoCubrirGarantia?: number; // Monto a cubrir con la garantía
+  porcentajeAforo?: number;     // % de aforo (ej: 70 = 70%)
   // ── FK a J_CLIENTES ──
   cliente_id?: string; // uuid FK → J_CLIENTES.uuid (se guarda en columna)
   clienteNombre?: string; // nombre para mostrar en UI (NO se persiste en columna, va en data)

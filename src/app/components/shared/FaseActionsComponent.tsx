@@ -102,16 +102,19 @@ export function FaseActionsComponent({
   const puedeSolicitudActivacion =
     faseContiene('solicitud') && faseContiene('activac') && !faseContiene('activar cuenta', 'activar_cuenta');
 
-  // "Activación Cuenta Financiera" — fase IA de Línea de Crédito que ejecuta promptIA sin modal de activación
-  const esCuentaFinanciera =
-    faseContiene('activac') && faseContiene('cuenta') && faseContiene('financiera');
+  // "Activar cuenta y finalizar" — solo para Línea de Crédito en fase "Activación Cuenta Financiera"
+  const lpLower = (formData.lineaProducto || '').toLowerCase();
+  const esLineaCredito = lpLower.includes('nea') && lpLower.includes('cr');
+  const esCuentaFinanciera = esLineaCredito && faseContiene('activac');
 
-  // Fase de activación pura (sin "solicitud" ni "cuenta financiera") — muestra botón "Ver Solicitud de Activación"
+  // Fase de activación pura — solo si NO es "Activación Cuenta Financiera" ni similar
+  // Excluir fases que contengan "cuenta" o "financier" porque esas son activaciones directas
   const puedeVerActivacion =
     !puedeSolicitudActivacion &&
     !esCuentaFinanciera &&
     faseContiene('activac') &&
-    !faseContiene('activar cuenta', 'activar_cuenta');
+    !faseContiene('activar cuenta', 'activar_cuenta') &&
+    !faseContiene('cuenta', 'financier');
 
   // "Activar Cuenta" — nombre contiene "activar cuenta"
   const puedeActivarCuenta = faseContiene('activar cuenta', 'activar_cuenta');

@@ -26,6 +26,7 @@ export interface SolicitudActivacionModalProps {
     cliente: string;
     clienteId: string;
     lineaProducto: string;
+    tipoProducto?: string;
     montoTransaccion: string;
     moneda: string;
     productoId: string;
@@ -141,11 +142,19 @@ export function SolicitudActivacionModal({
     );
   }
 
+  // Para Inversión en modo edición: el monto guardado pudo ser 0 (bug anterior).
+  // Siempre usar el monto calculado en el seed (= monto_autorizado) para sobreescribir.
+  const esInversionSeed = (seed.tipoProducto || '').toLowerCase().includes('invers');
+  const seedMontoNum = parseFloat((seed.montoTransaccion || '0').replace(/[^0-9.-]/g, '')) || 0;
+  const editItemCorrected = (!isNew && existingActivacion && esInversionSeed && seedMontoNum > 0)
+    ? { ...existingActivacion, montoTransaccion: seed.montoTransaccion }
+    : existingActivacion;
+
   return (
     <div className="fixed inset-0 z-50 bg-white overflow-auto">
       <SolicitudActivacionList
         initialNewData={isNew ? initialNewData : undefined}
-        initialEditItem={!isNew ? existingActivacion : undefined}
+        initialEditItem={!isNew ? editItemCorrected : undefined}
         initialReadOnly={readOnly}
         onSavedFromOriginacion={handleSaved}
         onCancelFromOriginacion={onClose}

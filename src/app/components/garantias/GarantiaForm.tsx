@@ -137,6 +137,8 @@ export function GarantiaForm({
       estatus: '',
       estado: '',
       municipio: '',
+      montoCubrirGarantia: undefined,
+      porcentajeAforo: undefined,
       cliente_id: '',
       clienteNombre: '',
     };
@@ -815,7 +817,7 @@ export function GarantiaForm({
                   {isView ? (
                     <div className="flex-1 px-2 py-1 text-xs text-gray-700">{formData.estado}</div>
                   ) : (
-                    <select 
+                    <select
                       value={formData.estado}
                       onChange={(e) => handleChange('estado', e.target.value)}
                       className="flex-1 px-2 py-0.5 text-xs border border-gray-300 rounded"
@@ -833,8 +835,8 @@ export function GarantiaForm({
                     <div className="flex-1 px-2 py-1 text-xs text-gray-700">{formData.municipio}</div>
                   ) : (
                     <div className="flex-1">
-                      <input 
-                        type="text" 
+                      <input
+                        type="text"
                         value={formData.municipio}
                         onChange={(e) => handleChange('municipio', e.target.value)}
                         maxLength={30}
@@ -849,6 +851,55 @@ export function GarantiaForm({
                 </div>
               </div>
 
+              {/* Fila 5b — Monto a Cubrir Garantía y % Aforo */}
+              <div className="grid grid-cols-3 gap-x-4">
+                <div className="flex items-center gap-2">
+                  <label className="text-xs w-32 flex-shrink-0 text-gray-700">Monto a Cubrir</label>
+                  {isView ? (
+                    <div className="flex-1 px-2 py-1 text-xs text-gray-700">
+                      {formData.montoCubrirGarantia != null
+                        ? new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 2 }).format(formData.montoCubrirGarantia)
+                        : '—'}
+                    </div>
+                  ) : (
+                    <div className="flex-1 relative">
+                      <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-400">$</span>
+                      <input
+                        type="number"
+                        value={formData.montoCubrirGarantia ?? ''}
+                        onChange={(e) => handleChange('montoCubrirGarantia', e.target.value === '' ? (undefined as any) : parseFloat(e.target.value) || 0)}
+                        step="0.01"
+                        placeholder="0.00"
+                        className="w-full pl-5 pr-2 py-0.5 text-xs border border-gray-300 rounded"
+                      />
+                    </div>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <label className="text-xs w-32 flex-shrink-0 text-gray-700">% Aforo</label>
+                  {isView ? (
+                    <div className="flex-1 px-2 py-1 text-xs text-gray-700">
+                      {formData.porcentajeAforo != null ? `${formData.porcentajeAforo}%` : '—'}
+                    </div>
+                  ) : (
+                    <div className="flex-1 relative">
+                      <input
+                        type="number"
+                        value={formData.porcentajeAforo ?? ''}
+                        onChange={(e) => handleChange('porcentajeAforo', e.target.value === '' ? (undefined as any) : parseFloat(e.target.value) || 0)}
+                        step="0.01"
+                        min="0"
+                        max="100"
+                        placeholder="0"
+                        className="w-full pr-6 pl-2 py-0.5 text-xs border border-gray-300 rounded"
+                      />
+                      <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-400">%</span>
+                    </div>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">{/* vacío */}</div>
+              </div>
+
               {/* Fila 6 - 1 columna completa (textarea) */}
               <div className="grid grid-cols-1 gap-x-4">
                 <div className="flex items-start gap-2">
@@ -857,7 +908,7 @@ export function GarantiaForm({
                     <div className="flex-1 px-2 py-1 text-xs text-gray-700">{formData.ubicacion}</div>
                   ) : (
                     <div className="flex-1">
-                      <textarea 
+                      <textarea
                         value={formData.ubicacion}
                         onChange={(e) => handleChange('ubicacion', e.target.value)}
                         rows={2}
@@ -876,7 +927,7 @@ export function GarantiaForm({
                   {isView ? (
                     <div className="flex-1 px-2 py-1 text-xs text-gray-700">{formData.descripcion}</div>
                   ) : (
-                    <textarea 
+                    <textarea
                       value={formData.descripcion}
                       onChange={(e) => handleChange('descripcion', e.target.value)}
                       rows={3}
@@ -894,7 +945,7 @@ export function GarantiaForm({
                     <div className="flex-1 px-2 py-1 text-xs text-gray-700">{formData.observaciones}</div>
                   ) : (
                     <div className="flex-1">
-                      <textarea 
+                      <textarea
                         value={formData.observaciones}
                         onChange={(e) => handleChange('observaciones', e.target.value)}
                         maxLength={255}
@@ -1200,7 +1251,7 @@ export function GarantiaForm({
                       {isView ? (
                         <div className="flex-1 px-2 py-1 text-xs text-gray-700">{formData.estado}</div>
                       ) : (
-                        <select 
+                        <select
                           value={formData.estado}
                           onChange={(e) => handleChange('estado', e.target.value)}
                           className="flex-1 px-2 py-0.5 text-xs border border-gray-300 rounded"
@@ -1218,8 +1269,8 @@ export function GarantiaForm({
                         <div className="flex-1 px-2 py-1 text-xs text-gray-700">{formData.municipio}</div>
                       ) : (
                         <div className="flex-1">
-                          <input 
-                            type="text" 
+                          <input
+                            type="text"
                             value={formData.municipio}
                             onChange={(e) => handleChange('municipio', e.target.value)}
                             maxLength={30}
@@ -1229,9 +1280,56 @@ export function GarantiaForm({
                         </div>
                       )}
                     </div>
+                    <div className="flex items-center gap-2">{/* vacío */}</div>
+                  </div>
+
+                  {/* Fila 5b — Monto a Cubrir Garantía y % Aforo */}
+                  <div className="grid grid-cols-3 gap-x-4">
                     <div className="flex items-center gap-2">
-                      {/* Columna vacía */}
+                      <label className="text-xs w-32 flex-shrink-0 text-gray-700">Monto a Cubrir</label>
+                      {isView ? (
+                        <div className="flex-1 px-2 py-1 text-xs text-gray-700">
+                          {formData.montoCubrirGarantia != null
+                            ? new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 2 }).format(formData.montoCubrirGarantia)
+                            : '—'}
+                        </div>
+                      ) : (
+                        <div className="flex-1 relative">
+                          <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-400">$</span>
+                          <input
+                            type="number"
+                            value={formData.montoCubrirGarantia ?? ''}
+                            onChange={(e) => handleChange('montoCubrirGarantia', e.target.value === '' ? (undefined as any) : parseFloat(e.target.value) || 0)}
+                            step="0.01"
+                            placeholder="0.00"
+                            className="w-full pl-5 pr-2 py-0.5 text-xs border border-gray-300 rounded"
+                          />
+                        </div>
+                      )}
                     </div>
+                    <div className="flex items-center gap-2">
+                      <label className="text-xs w-32 flex-shrink-0 text-gray-700">% Aforo</label>
+                      {isView ? (
+                        <div className="flex-1 px-2 py-1 text-xs text-gray-700">
+                          {formData.porcentajeAforo != null ? `${formData.porcentajeAforo}%` : '—'}
+                        </div>
+                      ) : (
+                        <div className="flex-1 relative">
+                          <input
+                            type="number"
+                            value={formData.porcentajeAforo ?? ''}
+                            onChange={(e) => handleChange('porcentajeAforo', e.target.value === '' ? (undefined as any) : parseFloat(e.target.value) || 0)}
+                            step="0.01"
+                            min="0"
+                            max="100"
+                            placeholder="0"
+                            className="w-full pr-6 pl-2 py-0.5 text-xs border border-gray-300 rounded"
+                          />
+                          <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-400">%</span>
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">{/* vacío */}</div>
                   </div>
 
                   {/* Fila 6 - 1 columna completa (textarea) */}

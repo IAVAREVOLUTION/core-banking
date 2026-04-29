@@ -116,6 +116,8 @@ export interface SolicitudDBRow {
   cta_eje_chec: boolean | null;
   fases: string | null;
   data: Record<string, any> | null;
+  monto_cubrir_garantia: number | null;
+  porcentaje_aforo: number | null;
   // ── JOIN fields from J_CLIENTES ──
   cliente_nombre?: string | null;
   cliente_ap_paterno?: string | null;
@@ -180,6 +182,25 @@ function mapRowToListItem(row: SolicitudDBRow): SolicitudListItem {
   // ── Sucursal ──
   const sucursal = hdr.sucursal || d.sucursal || row.producto_sucursal || '';
 
+  // ── Inyectar monto_cubrir_garantia y porcentaje_aforo (columnas top-level) en _data ──
+  // Esto permite que preloadSubtabsFromDBData los lea desde data.solicitud.garantias[0]
+  const montoCubrir = row.monto_cubrir_garantia;
+  const porcentajeAf = row.porcentaje_aforo;
+  if (montoCubrir != null || porcentajeAf != null) {
+    const garantiasOrig: any[] = Array.isArray(d.solicitud?.garantias) ? d.solicitud.garantias : [];
+    let garantiasActualizadas: any[];
+    if (garantiasOrig.length === 0) {
+      // Sin garantías en JSONB — crear entrada mínima para transportar los valores
+      garantiasActualizadas = [{ monto_cubrir_garantia: montoCubrir, porcentaje_aforo: porcentajeAf }];
+    } else {
+      // Inyectar en la primera garantía sin mutar el array original
+      garantiasActualizadas = garantiasOrig.map((g: any, i: number) =>
+        i === 0 ? { ...g, monto_cubrir_garantia: montoCubrir ?? g.monto_cubrir_garantia, porcentaje_aforo: porcentajeAf ?? g.porcentaje_aforo } : g
+      );
+    }
+    d = { ...d, solicitud: { ...d.solicitud, garantias: garantiasActualizadas } };
+  }
+
   return {
     id: row.id as any, // UUID string
     noSol: row.no_sol || hdr.no_sol || d.noSol || '',
@@ -215,6 +236,8 @@ function mapRowToListItem(row: SolicitudDBRow): SolicitudListItem {
     _fases: row.fases || null,
     _fechaInicio: row.fecha_inicio || null,
     _fechaFin: row.fecha_fin_cu || null,
+    _montoCubrirGarantia: row.monto_cubrir_garantia ?? null,
+    _porcentajeAforo: row.porcentaje_aforo ?? null,
   } as SolicitudListItem & Record<string, any>;
 }
 
@@ -354,22 +377,51 @@ function formToDBPayload(form: SolicitudFormData, allSubtabs?: Record<string, an
   const coreSolicitud: Record<string, any> = {
     header: mergedHeader,
     terminos_condiciones: mergedTc,
-    simulacion: {
-      tipo_tabla: terminos.tipoCalculo || origSol.simulacion?.tipo_tabla || null,
-      resultado_simulacion: simulacion.map((r: any) => ({
-        no_pago: r.noPago, fecha_pago: r.fechaPago, saldo_insoluto: r.saldoInsoluto,
-        pago_capital: r.pagoCapital, pago_interes: r.pagoInteres, iva_interes: r.ivaInteres,
-        pago_periodo: r.pagoPeriodo, pago_seguro: r.pagoSeguro, pago_total: r.pagoTotal,
-      })),
-      calendario_aportaciones: (() => {
-        // Prioridad: calendario generado/editado en la tab (session) > prop de cotización > original en BD
-        const fromSession = allSubtabs?.simulacion_cal;
-        if (Array.isArray(fromSession) && fromSession.length > 0) return fromSession;
-        if (Array.isArray((form as any)._calendarioAportaciones) && (form as any)._calendarioAportaciones.length > 0)
-          return (form as any)._calendarioAportaciones;
-        return origSol.simulacion?.calendario_aportaciones || [];
-      })(),
-    },
+    simulacion: (() => {
+      const invRows: any[] = allSubtabs?.simulacion_inv || [];
+      const isInversion = invRows.length > 0 || !!(terminos as any).metodoIntereses;
+
+      if (isInversion && invRows.length > 0) {
+        // Tabla de flujo de inversión
+        return {
+          tipo_tabla: (terminos as any).metodoIntereses || terminos.tipoCalculo || origSol.simulacion?.tipo_tabla || null,
+          resultado_simulacion: invRows.map((r: any) => ({
+            no_pago: r.periodo,
+            fecha_pago: r.fechaInversion,
+            capital_inicial: r.capitalInicial,
+            interes_bruto: r.interesBruto,
+            retencion_isr: r.retencionISR,
+            iva_interes: r.retencionISR,
+            interes_neto: r.interesNeto,
+            pago_interes: r.interesNeto,
+            pago_periodo: r.interesBruto,
+            pago_capital: 0,
+            pago_seguro: 0,
+            capital_final: r.capitalFinal,
+            saldo_insoluto: r.capitalFinal,
+            pago_total: r.capitalFinal,
+          })),
+          calendario_aportaciones: [],
+        };
+      }
+
+      // Crédito / Captación
+      return {
+        tipo_tabla: terminos.tipoCalculo || origSol.simulacion?.tipo_tabla || null,
+        resultado_simulacion: simulacion.map((r: any) => ({
+          no_pago: r.noPago, fecha_pago: r.fechaPago, saldo_insoluto: r.saldoInsoluto,
+          pago_capital: r.pagoCapital, pago_interes: r.pagoInteres, iva_interes: r.ivaInteres,
+          pago_periodo: r.pagoPeriodo, pago_seguro: r.pagoSeguro, pago_total: r.pagoTotal,
+        })),
+        calendario_aportaciones: (() => {
+          const fromSession = allSubtabs?.simulacion_cal;
+          if (Array.isArray(fromSession) && fromSession.length > 0) return fromSession;
+          if (Array.isArray((form as any)._calendarioAportaciones) && (form as any)._calendarioAportaciones.length > 0)
+            return (form as any)._calendarioAportaciones;
+          return origSol.simulacion?.calendario_aportaciones || [];
+        })(),
+      };
+    })(),
     expediente_electronico: {
       documentos: documentos.map((doc: any) => ({
         id: doc.id || null,
@@ -396,6 +448,8 @@ function formToDBPayload(form: SolicitudFormData, allSubtabs?: Record<string, an
     garantias: garantias.map((g: any) => ({
       tipo_garantia: g.tipo || null, subtipo: g.subtipo || null,
       descripcion: g.descripcion || null, valor_garantia: g.valorNominal || null,
+      monto_cubrir_garantia: g.montoCubrirGarantia ?? null,
+      porcentaje_aforo: g.porcentajeAforo ?? null,
       ubicacion: g.ubicacion || null, estatus: g.estatus || null,
       observaciones: g.nota || null, fase: g.fase || null,
       fase_id: g.faseId || null, area: g.area || null,
@@ -447,6 +501,10 @@ function formToDBPayload(form: SolicitudFormData, allSubtabs?: Record<string, an
     ? form.cotizacionId
     : null;
 
+  // Leer monto_cubrir_garantia y porcentaje_aforo desde terminos (columnas top-level de J_CUENTAS_CORP_CLIENTES)
+  const montoCubrirGarantia = terminos.montoCubrirGarantia != null ? Number(terminos.montoCubrirGarantia) : null;
+  const porcentajeAforo = terminos.porcentajeAforo != null ? Number(terminos.porcentajeAforo) : null;
+
   return {
     type: 'Solicitudes',
     no_sol: form.noSol || '',
@@ -462,6 +520,8 @@ function formToDBPayload(form: SolicitudFormData, allSubtabs?: Record<string, an
     monto_aut: isNaN(montoAutNum) ? 0 : montoAutNum,
     estatus_sol: form.estatusSolicitud || 'Pendiente',
     fases: form.faseId || '1',
+    monto_cubrir_garantia: montoCubrirGarantia,
+    porcentaje_aforo: porcentajeAforo,
     data: mergedData,
   };
 }
@@ -1234,8 +1294,34 @@ export function useSolicitudesDB(active: boolean) {
   ): Promise<{ ok: boolean; id?: string; error?: string }> => {
     setSaving(true);
     try {
-      const payload = formToDBPayload(form, allSubtabs);
       const isNew = !existingDbId;
+
+      // ── FIX CRÍTICO: Guardia de _originalData ──
+      // Si estamos en modo edición y falta _originalData, el deepMerge en formToDBPayload
+      // producirá un objeto parcial (solo campos Core) que sobreescribirá datos de banca móvil.
+      // Solución: recuperar data actual de la BD antes de construir el payload.
+      let subtabsWithOriginal = allSubtabs;
+      if (!isNew && !(allSubtabs?._originalData) && existingDbId) {
+        console.warn('[SolicDB] SAVE — _originalData faltante en modo edición, recuperando de BD...');
+        try {
+          const { data: row } = await supabase
+            .from('J_CUENTAS_CORP_CLIENTES')
+            .select('data')
+            .eq('id', existingDbId)
+            .single();
+          if (row?.data) {
+            const fetchedData = typeof row.data === 'string' ? JSON.parse(row.data) : row.data;
+            subtabsWithOriginal = { ...(allSubtabs || {}), _originalData: fetchedData };
+            console.log('[SolicDB] SAVE — _originalData recuperado de BD, keys:', Object.keys(fetchedData).length);
+          } else {
+            console.warn('[SolicDB] SAVE — BD devolvió data vacío para id:', existingDbId);
+          }
+        } catch (fetchErr: any) {
+          console.warn('[SolicDB] SAVE — no se pudo recuperar _originalData de BD:', fetchErr?.message);
+        }
+      }
+
+      const payload = formToDBPayload(form, subtabsWithOriginal);
 
       console.log('[SolicDB] SAVE — isNew:', isNew, '| dbId:', existingDbId,
         '| payload columns: no_sol=', payload.no_sol, '| tipo_produc=', payload.tipo_produc,

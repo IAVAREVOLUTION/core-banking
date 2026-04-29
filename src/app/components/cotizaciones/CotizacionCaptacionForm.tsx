@@ -35,6 +35,9 @@ import {
   validarCotizacionCaptacion,
   FRECUENCIAS,
   computePartialData,
+  calcularFlujInversion,
+  getDiasFrecuencia,
+  type FlujInversionRow,
 } from './cotizacionCaptacionTypes';
 import { useClientesDB } from '../../hooks/useClientesDB';
 import { useProductosCaptacionDB } from '../../hooks/useProductosCaptacionDB';
@@ -154,7 +157,7 @@ export function CotizacionCaptacionForm({ mode, cotizacion, onSave, onBack, onCr
   }, [productosDB]);
 
   // ── State ──
-  const [activeTab, setActiveTab] = useState<'datos-generales' | 'calendario-aportaciones'>('datos-generales');
+  const [activeTab, setActiveTab] = useState<string>('datos-generales');
   const [showClienteModal, setShowClienteModal] = useState(false);
   const [clienteSearch, setClienteSearch] = useState('');
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
@@ -343,11 +346,29 @@ export function CotizacionCaptacionForm({ mode, cotizacion, onSave, onBack, onCr
     : 'w-full px-3 py-2 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500';
   const readonlyClass = 'w-full px-3 py-2 text-xs bg-gray-100 border border-gray-200 rounded text-gray-500';
 
-  // ── Tabs definition ──
+  // ── Tabs definition — condicional según tipo de producto ──
   const tabs = [
-    { id: 'datos-generales' as const, label: 'Datos Generales' },
-    { id: 'calendario-aportaciones' as const, label: 'Calendario de Aportaciones' },
+    { id: 'datos-generales', label: 'Datos Generales' },
+    isInversion
+      ? { id: 'tabla-flujo-inversion', label: 'Tabla de Flujo de Inversión' }
+      : { id: 'calendario-aportaciones', label: 'Calendario de Aportaciones' },
   ];
+
+  // ── Tabla de Flujo de Inversión ──
+  const tablaFlujo = useMemo((): FlujInversionRow[] => {
+    if (!isInversion) return [];
+    const freq = data.frecuenciaCapitalizacion || data.periodoCumplirMontoMinimo;
+    const metodo = data.metodoIntereses || 'Al vencimiento';
+    return calcularFlujInversion(
+      Number(data.montoCotizado) || 0,
+      Number(data.tasaMinInteres) || 0,
+      Number(data.plazoCumplirMontoMinimo) || 0,
+      freq,
+      data.fechaPrimeraAportacion || '',
+      metodo,
+    );
+  }, [isInversion, data.montoCotizado, data.tasaMinInteres, data.plazoCumplirMontoMinimo,
+      data.frecuenciaCapitalizacion, data.periodoCumplirMontoMinimo, data.fechaPrimeraAportacion, data.metodoIntereses]);
 
   const filteredClientes = clientePickerItems.filter(cl => {
     const s = clienteSearch.toLowerCase();
@@ -488,10 +509,30 @@ export function CotizacionCaptacionForm({ mode, cotizacion, onSave, onBack, onCr
               <path d="M16 13H8M16 17H8M10 9H8" />
             </svg>
             <h2 className="text-lg font-normal text-gray-800">
-              {isCreate ? 'Nueva Cotización — Captación' : mode === 'edit' ? 'Editar Cotización — Captación' : 'Ver Cotización — Captación'}
+              {isCreate
+                ? `Nueva Cotización — ${isInversion ? 'Inversión a Plazo' : 'Captación'}`
+                : mode === 'edit'
+                  ? `Editar Cotización — ${isInversion ? 'Inversión a Plazo' : 'Captación'}`
+                  : `Ver Cotización — ${isInversion ? 'Inversión a Plazo' : 'Captación'}`}
             </h2>
           </div>
           <div className="flex items-center gap-2">
+            {!isView && isInversion && (
+              <button
+                onClick={() => {
+                  if (!data.montoCotizado || !data.tasaMinInteres || !data.plazoCumplirMontoMinimo || !data.fechaPrimeraAportacion) {
+                    toast.error('Complete monto, tasa, plazo y fecha de inversión');
+                    return;
+                  }
+                  setActiveTab('tabla-flujo-inversion');
+                  toast.success('Tabla de Flujo de Inversión generada');
+                }}
+                className="px-5 py-1.5 bg-green-600 text-white rounded text-sm font-medium hover:bg-green-700 flex items-center gap-1.5"
+              >
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 7h12M8 2l5 5-5 5"/></svg>
+                COTIZAR
+              </button>
+            )}
             {!isView && (
               <button onClick={handleSubmit} className="px-5 py-1.5 btn-secondary-theme rounded text-sm font-medium">
                 {isCreate ? 'Crear Cotización' : 'Guardar Cambios'}
@@ -827,10 +868,12 @@ export function CotizacionCaptacionForm({ mode, cotizacion, onSave, onBack, onCr
                 </div>
               )}
 
-              {/* Sección: Condiciones — spec §4.3, §4.5, §5, §6 */}
+              {/* Sección: Condiciones */}
               <div className="border-t border-gray-300">
-                <div className="border-l-4 border-primary-theme px-3 py-1.5">
-                  <span className="text-xs font-medium text-gray-800 uppercase">Condiciones de la Cotización</span>
+                <div className={`border-l-4 px-3 py-1.5 ${isInversion ? 'border-purple-500 bg-purple-50' : 'border-primary-theme'}`}>
+                  <span className="text-xs font-medium text-gray-800 uppercase">
+                    {isInversion ? 'Condiciones de la Inversión' : 'Condiciones de la Cotización'}
+                  </span>
                 </div>
                 <div className="p-4 space-y-4">
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -880,7 +923,7 @@ export function CotizacionCaptacionForm({ mode, cotizacion, onSave, onBack, onCr
                     </div>
                     {/* Frecuencia */}
                     <div className="flex flex-col">
-                      <label className="text-[10px] text-gray-600 mb-1">Frecuencia Capitalización <span className="text-red-500">*</span></label>
+                      <label className="text-[10px] text-gray-600 mb-1">Frecuencia <span className="text-red-500">*</span></label>
                       <select
                         value={data.frecuenciaCapitalizacion}
                         disabled={isView}
@@ -898,16 +941,38 @@ export function CotizacionCaptacionForm({ mode, cotizacion, onSave, onBack, onCr
                     </div>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    {/* spec §5: Intereses Generados (calculado) */}
-                    <div className="flex flex-col">
-                      <label className="text-[10px] text-gray-600 mb-1">Interés Generado por Periodo <span className="text-[9px] text-gray-400">(calculado)</span></label>
-                      <input
-                        value={data.interesGeneradoPeriodo ? formatMoney(data.interesGeneradoPeriodo) : '$0.00'}
-                        disabled
-                        className={readonlyClass}
-                      />
-                      <span className="text-[9px] text-gray-400 mt-0.5">= Monto × (Tasa / 360) × Días frecuencia</span>
-                    </div>
+                    {/* Interés Generado — solo Aportación */}
+                    {!isInversion && (
+                      <div className="flex flex-col">
+                        <label className="text-[10px] text-gray-600 mb-1">Interés Generado por Periodo <span className="text-[9px] text-gray-400">(calculado)</span></label>
+                        <input
+                          value={data.interesGeneradoPeriodo ? formatMoney(data.interesGeneradoPeriodo) : '$0.00'}
+                          disabled
+                          className={readonlyClass}
+                        />
+                        <span className="text-[9px] text-gray-400 mt-0.5">= Monto × (Tasa / 360) × Días frecuencia</span>
+                      </div>
+                    )}
+                    {/* Método de Pago de Intereses — solo Inversión */}
+                    {isInversion && (
+                      <div className="flex flex-col">
+                        <label className="text-[10px] text-gray-600 mb-1">Método de Pago de Intereses <span className="text-red-500">*</span></label>
+                        <select
+                          value={data.metodoIntereses || 'Al vencimiento'}
+                          disabled={isView}
+                          onChange={e => setData({ metodoIntereses: e.target.value })}
+                          className={fieldClass}
+                        >
+                          <option value="Al vencimiento">Al vencimiento</option>
+                          <option value="Capitalizable">Capitalizable</option>
+                        </select>
+                        <span className="text-[9px] text-purple-500 mt-0.5">
+                          {(data.metodoIntereses || 'Al vencimiento') === 'Capitalizable'
+                            ? 'Compuesto: M × (1 + tasa_período)^plazo − M'
+                            : 'Simple: M × tasa × (plazo × días / 360)'}
+                        </span>
+                      </div>
+                    )}
                     {/* spec §4.5: Plazo — dropdown from matriz when inversión, free number otherwise */}
                     <div className="flex flex-col">
                       <label className="text-[10px] text-gray-600 mb-1">
@@ -959,10 +1024,10 @@ export function CotizacionCaptacionForm({ mode, cotizacion, onSave, onBack, onCr
                         </>
                       )}
                     </div>
-                    {/* spec §6: Fecha primera aportación, obligatoria si plazo > 0 */}
+                    {/* spec §6: Fecha — "Fecha de Inversión" para Inversión, "Fecha Primera Aportación" para Aportación */}
                     <div className="flex flex-col">
                       <label className="text-[10px] text-gray-600 mb-1">
-                        Fecha Primera Aportación
+                        {isInversion ? 'Fecha de Inversión' : 'Fecha Primera Aportación'}
                         {data.plazoCumplirMontoMinimo > 0 && <span className="text-red-500 ml-1">*</span>}
                       </label>
                       <div className="relative" ref={datePickerRef}>
@@ -1078,40 +1143,177 @@ export function CotizacionCaptacionForm({ mode, cotizacion, onSave, onBack, onCr
                       )}
                     </div>
                   </div>
-                  {/* Periodo Cumplir — top-level data field */}
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div className="flex flex-col">
-                      <label className="text-[10px] text-gray-600 mb-1">Periodo Cumplir Monto Mínimo {isInversion && selectedMatrizRow?.periodo ? <span className="text-[9px] text-green-600 ml-1">(✓ desde matriz: {selectedMatrizRow.periodo})</span> : <span className="text-[9px] text-gray-400">(data.periodoCumplirMontoMinimo)</span>}</label>
-                      <select
-                        value={data.periodoCumplirMontoMinimo}
-                        disabled={isView}
-                        onChange={e => setData({ periodoCumplirMontoMinimo: e.target.value })}
-                        className={isView ? readonlyClass : fieldClass}
-                      >
-                        <option value="">— Seleccionar —</option>
-                        {periodosDropdown.map(p => (
-                          <option key={p} value={p}>{p}</option>
-                        ))}
-                        {/* Compatibilidad: mostrar valor guardado si no está en los periodos del producto */}
-                        {data.periodoCumplirMontoMinimo && !periodosDropdown.includes(data.periodoCumplirMontoMinimo) && (
-                          <option value={data.periodoCumplirMontoMinimo}>{data.periodoCumplirMontoMinimo}</option>
-                        )}
-                      </select>
+                  {/* Periodo Cumplir — solo Aportación */}
+                  {!isInversion && (
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div className="flex flex-col">
+                        <label className="text-[10px] text-gray-600 mb-1">Periodo Cumplir Monto Mínimo</label>
+                        <select
+                          value={data.periodoCumplirMontoMinimo}
+                          disabled={isView}
+                          onChange={e => setData({ periodoCumplirMontoMinimo: e.target.value })}
+                          className={isView ? readonlyClass : fieldClass}
+                        >
+                          <option value="">— Seleccionar —</option>
+                          {periodosDropdown.map(p => <option key={p} value={p}>{p}</option>)}
+                          {data.periodoCumplirMontoMinimo && !periodosDropdown.includes(data.periodoCumplirMontoMinimo) && (
+                            <option value={data.periodoCumplirMontoMinimo}>{data.periodoCumplirMontoMinimo}</option>
+                          )}
+                        </select>
+                      </div>
+                      <div className="flex flex-col">
+                        <label className="text-[10px] text-gray-600 mb-1">Descripción</label>
+                        <input type="text" value={form.descripcion} disabled={isView}
+                          onChange={e => setForm(prev => ({ ...prev, descripcion: e.target.value }))}
+                          placeholder="Descripción de la cotización..." className={fieldClass} maxLength={255} />
+                      </div>
                     </div>
-                    <div className="flex flex-col">
-                      <label className="text-[10px] text-gray-600 mb-1">Descripción</label>
-                      <input
-                        type="text"
-                        value={form.descripcion}
-                        disabled={isView}
-                        onChange={e => setForm(prev => ({ ...prev, descripcion: e.target.value }))}
-                        placeholder="Descripción de la cotización..."
-                        className={fieldClass}
-                        maxLength={255}
-                      />
+                  )}
+                  {/* Renovación y Descripción — Inversión */}
+                  {isInversion && (
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div className="flex flex-col">
+                        <label className="text-[10px] text-gray-600 mb-1">Renovación Automática</label>
+                        <label className="flex items-center gap-2 mt-1 cursor-pointer select-none">
+                          <input
+                            type="checkbox"
+                            checked={data.renovacionAutomatica ?? false}
+                            disabled={isView}
+                            onChange={e => setData({ renovacionAutomatica: e.target.checked, numeroRenovaciones: e.target.checked ? (data.numeroRenovaciones ?? 0) : 0 })}
+                            className="w-4 h-4 accent-purple-600"
+                          />
+                          <span className="text-xs text-gray-700">{data.renovacionAutomatica ? 'Sí' : 'No'}</span>
+                        </label>
+                      </div>
+                      {data.renovacionAutomatica && (
+                        <div className="flex flex-col">
+                          <label className="text-[10px] text-gray-600 mb-1">Número de Renovaciones <span className="text-red-500">*</span></label>
+                          <input
+                            type="number"
+                            min={0}
+                            value={data.numeroRenovaciones ?? 0}
+                            disabled={isView}
+                            onChange={e => setData({ numeroRenovaciones: Math.max(0, parseInt(e.target.value) || 0) })}
+                            className={fieldClass}
+                          />
+                          <span className="text-[9px] text-gray-400 mt-0.5">0 = renovaciones ilimitadas</span>
+                        </div>
+                      )}
+                      <div className="flex flex-col">
+                        <label className="text-[10px] text-gray-600 mb-1">Descripción</label>
+                        <input type="text" value={form.descripcion} disabled={isView}
+                          onChange={e => setForm(prev => ({ ...prev, descripcion: e.target.value }))}
+                          placeholder="Descripción de la cotización..." className={fieldClass} maxLength={255} />
+                      </div>
                     </div>
-                  </div>
+                  )}
                 </div>
+              </div>
+            </div>
+          )}
+
+          {/* ═══════════ TAB: TABLA DE FLUJO DE INVERSIÓN — solo Inversión ═══════════ */}
+          {activeTab === 'tabla-flujo-inversion' && (
+            <div className="p-0">
+              <div className="border-t border-gray-300">
+                <div className="bg-purple-50 border-l-4 border-purple-500 px-3 py-2 flex items-center justify-between">
+                  <span className="text-sm font-medium text-purple-800">TABLA DE FLUJO DE INVERSIÓN</span>
+                  <span className="text-[10px] text-purple-600">
+                    Método: <strong>{data.metodoIntereses || 'Al vencimiento'}</strong>
+                    {' '}| Tasa: <strong>{data.tasaMinInteres}%</strong>
+                    {' '}| Plazo: <strong>{data.plazoCumplirMontoMinimo} períodos</strong>
+                    {' '}| ISR: <strong>1.04% anual</strong>
+                  </span>
+                </div>
+
+                {tablaFlujo.length === 0 ? (
+                  <div className="p-8 text-center text-gray-500 text-sm">
+                    <svg width="48" height="48" viewBox="0 0 48 48" fill="none" stroke="#CBD5E1" strokeWidth="1.5" className="mx-auto mb-3">
+                      <rect x="6" y="10" width="36" height="30" rx="3" /><path d="M6 18h36" /><path d="M16 6v8M32 6v8" />
+                    </svg>
+                    <p>Complete los campos: <strong>Monto</strong>, <strong>Tasa</strong>, <strong>Plazo</strong>, <strong>Fecha de Inversión</strong> y <strong>Frecuencia</strong>.</p>
+                  </div>
+                ) : (
+                  <div className="p-4">
+                    {/* Resumen */}
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+                      <div className="bg-purple-50 border border-purple-200 rounded p-3">
+                        <span className="text-[10px] text-purple-600">Capital Inicial</span>
+                        <p className="text-base font-semibold text-purple-800">{formatMoney(Number(data.montoCotizado))}</p>
+                      </div>
+                      <div className="bg-green-50 border border-green-200 rounded p-3">
+                        <span className="text-[10px] text-green-600">Interés Neto Total</span>
+                        <p className="text-base font-semibold text-green-800">
+                          {formatMoney(tablaFlujo.reduce((s, r, i, arr) =>
+                            (data.metodoIntereses || 'Al vencimiento') === 'Capitalizable'
+                              ? s + r.interesNeto
+                              : i === arr.length - 1 ? r.interesNeto : s
+                          , 0))}
+                        </p>
+                      </div>
+                      <div className="bg-red-50 border border-red-200 rounded p-3">
+                        <span className="text-[10px] text-red-600">Retención ISR Total</span>
+                        <p className="text-base font-semibold text-red-800">
+                          {formatMoney(tablaFlujo.reduce((s, r, i, arr) =>
+                            (data.metodoIntereses || 'Al vencimiento') === 'Capitalizable'
+                              ? s + r.retencionISR
+                              : i === arr.length - 1 ? r.retencionISR : s
+                          , 0))}
+                        </p>
+                      </div>
+                      <div className="bg-blue-50 border border-blue-200 rounded p-3">
+                        <span className="text-[10px] text-blue-600">Capital Final</span>
+                        <p className="text-base font-semibold text-blue-800">{formatMoney(tablaFlujo[tablaFlujo.length - 1]?.capitalFinal || 0)}</p>
+                      </div>
+                    </div>
+
+                    {/* Tabla */}
+                    <div className="border border-gray-300 overflow-x-auto">
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr className="bg-[#2E5C91] text-white">
+                            <th className="px-3 py-2 text-center font-medium whitespace-nowrap">Período</th>
+                            <th className="px-3 py-2 text-left font-medium whitespace-nowrap">Fecha de Inversión</th>
+                            <th className="px-3 py-2 text-right font-medium whitespace-nowrap">Capital Inicial</th>
+                            <th className="px-3 py-2 text-right font-medium whitespace-nowrap">Interés Bruto</th>
+                            <th className="px-3 py-2 text-right font-medium whitespace-nowrap">Retención ISR</th>
+                            <th className="px-3 py-2 text-right font-medium whitespace-nowrap">Interés Neto</th>
+                            <th className="px-3 py-2 text-right font-medium whitespace-nowrap">Capital Final</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {tablaFlujo.map((row, idx) => {
+                            const esUltima = idx === tablaFlujo.length - 1;
+                            return (
+                              <tr
+                                key={row.periodo}
+                                className={`border-b border-gray-200 ${esUltima ? 'bg-blue-50 font-medium' : ''}`}
+                                style={!esUltima ? { backgroundColor: idx % 2 === 1 ? '#F5F5F5' : '#FFFFFF' } : undefined}
+                              >
+                                <td className="px-3 py-2 text-center text-gray-700">{row.periodo}</td>
+                                <td className="px-3 py-2 text-gray-700 whitespace-nowrap">{formatDateCalendar(row.fechaInversion)}</td>
+                                <td className="px-3 py-2 text-right text-gray-700">{formatMoney(row.capitalInicial)}</td>
+                                <td className="px-3 py-2 text-right text-gray-700">{formatMoney(row.interesBruto)}</td>
+                                <td className="px-3 py-2 text-right text-red-600">{formatMoney(row.retencionISR)}</td>
+                                <td className="px-3 py-2 text-right text-green-700">{formatMoney(row.interesNeto)}</td>
+                                <td className={`px-3 py-2 text-right ${esUltima ? 'text-blue-800 font-semibold' : 'text-gray-700'}`}>{formatMoney(row.capitalFinal)}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                        <tfoot>
+                          <tr className="bg-gray-100 border-t border-gray-300">
+                            <td colSpan={6} className="px-3 py-2 text-xs font-medium text-gray-800 text-right">Capital Final:</td>
+                            <td className="px-3 py-2 text-xs font-bold text-blue-800 text-right">
+                              {formatMoney(tablaFlujo[tablaFlujo.length - 1]?.capitalFinal || 0)}
+                            </td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+                    <p className="text-[9px] text-gray-400 mt-2">ISR: 1.04% anual SAT 2024 sobre capital. La última fila muestra los valores acumulados.</p>
+                  </div>
+                )}
               </div>
             </div>
           )}

@@ -470,16 +470,12 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
       const rawData = productoSeleccionado?.rawData as Record<string, any> | undefined;
       const requisitosProducto = getRequisitosFromRawData(rawData);
 
-      // ── Detectar fase especial "Activación Cuenta Financiera" (Línea de Crédito) ──
-      // Esta fase ejecuta exclusivamente su prompt IA sin validar documentos ni avanzar fase.
+      // ── Detectar "Activación Cuenta Financiera" en Línea de Crédito ──────────
       const faseNombre = faseActualReal?.fase || formData.descripcionFase || `Fase ${seqActual}`;
-      // Detección: Línea de Crédito en su última fase O fase con "activac" en nombre
-      const lp = (formData.lineaProducto || '').toLowerCase();
-      const esLineaCredito = lp.includes('nea') && lp.includes('cr'); // 'nea' en lí**nea**, 'cr' en **cr**édito
-      const esUltimaFase = !fasesDelProducto.find(f => f.seq === seqActual + 1);
-      const fn = faseNombre.toLowerCase();
-      const esActivacionCuentaFinanciera = (esLineaCredito && esUltimaFase) || (esLineaCredito && fn.includes('activac'));
-      console.log(`[ACF-v2] lp="${lp}" esLineaCredito=${esLineaCredito} esUltimaFase=${esUltimaFase} fn="${fn}" esActivacion=${esActivacionCuentaFinanciera}`);
+      const lpLower = (formData.lineaProducto || '').toLowerCase();
+      const esLineaCredito = lpLower.includes('nea') && lpLower.includes('cr');
+      const esActivacionCuentaFinanciera = esLineaCredito && faseNombre.toLowerCase().includes('activac');
+      console.log(`[ACF] lineaProducto="${formData.lineaProducto}" fase="${faseNombre}" esActivacion=${esActivacionCuentaFinanciera}`);
 
       // ── Activación Cuenta Financiera: manejo completo aquí, sin IA ──────
       if (esActivacionCuentaFinanciera) {
@@ -565,7 +561,24 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
       // ── 3a. Validación IA con el prompt de la fase ──
       // Usa faseActualReal.promptIA; si no resuelve (faseActualReal nulo), usa formData.promptIAFase.
       const fasePromptIA = faseActualReal?.promptIA || (formData as any).promptIAFase || '';
-      if (fasePromptIA) {
+
+      // Si todos los documentos requeridos de esta fase ya están validados por IA,
+      // la validación de fase es redundante — saltar directo al avance.
+      const docsRequeridosFase = requisitosProducto.filter((r: any) => {
+        const rFaseId = Number(r.faseId ?? r.fase_id ?? 0);
+        if (rFaseId !== seqActual) return false;
+        return r.obligatorio !== false;
+      });
+      const todosValidados = docsRequeridosFase.length > 0 && docsRequeridosFase.every((req: any) => {
+        const tipoReq = (req.tipoDocumento || req.tipo_documento || '').toLowerCase();
+        return documentos.some(d =>
+          (d.tipoDocumento || '').toLowerCase().includes(tipoReq.substring(0, 8)) &&
+          d.validadoIA === true &&
+          d.estatus === 'Validado'
+        );
+      });
+
+      if (fasePromptIA && !todosValidados) {
         const toastIA = toast.loading(`Validando fase con IA: "${faseNombre}"...`, {
           description: 'Enviando datos de documentos al validador IA...',
         });
@@ -708,22 +721,39 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
           });
           setShowIAFaseDebug(true);
 
-          console.log(`[Fase ${seqActual}] Enviando → /validar-documento-ia`);
+          // ── Llamada con reintentos (hasta 3 intentos, espera 2s entre cada uno) ──
+          const MAX_REINTENTOS = 3;
+          let resFaseIA: Response | null = null;
+          let ultimoError = '';
 
-          const resFaseIA = await fetch(`${API_BASE_FASE}/validar-documento-ia`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${publicAnonKey}`,
-            },
-            body: JSON.stringify(payloadFaseIA),
-          });
+          for (let intento = 1; intento <= MAX_REINTENTOS; intento++) {
+            try {
+              if (intento > 1) {
+                toast.loading(`Reintentando validación IA (${intento}/${MAX_REINTENTOS})...`);
+                await new Promise(r => setTimeout(r, 2000));
+              }
+              console.log(`[Fase ${seqActual}] Enviando → /validar-documento-ia (intento ${intento}/${MAX_REINTENTOS})`);
+              resFaseIA = await fetch(`${API_BASE_FASE}/validar-documento-ia`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${publicAnonKey}` },
+                body: JSON.stringify(payloadFaseIA),
+              });
+              // Solo reintentar en errores de servidor (5xx) o red — no en 4xx
+              if (resFaseIA.ok || resFaseIA.status < 500) break;
+              ultimoError = `HTTP ${resFaseIA.status}`;
+              console.warn(`[Fase ${seqActual}] Intento ${intento} falló: ${ultimoError}`);
+            } catch (netErr: any) {
+              ultimoError = netErr.message;
+              console.warn(`[Fase ${seqActual}] Intento ${intento} error de red: ${ultimoError}`);
+              if (intento === MAX_REINTENTOS) resFaseIA = null;
+            }
+          }
 
           toast.dismiss(toastIA);
 
-          if (resFaseIA.ok) {
+          if (resFaseIA?.ok) {
             const resultadoFaseIA = await resFaseIA.json();
-            setIaFaseDebug(prev => prev ? { ...prev, status: 'ok', httpStatus: resFaseIA.status, resultado: resultadoFaseIA } : null);
+            setIaFaseDebug(prev => prev ? { ...prev, status: 'ok', httpStatus: resFaseIA!.status, resultado: resultadoFaseIA } : null);
             console.log(`[Fase ${seqActual}] IA resultado:`, resultadoFaseIA);
 
             if (resultadoFaseIA.valido === false) {
@@ -734,26 +764,25 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
               return;
             }
 
-
             toast.success(`IA: Fase "${faseNombre}" validada`, {
               description: resultadoFaseIA.motivos?.length > 0
                 ? resultadoFaseIA.motivos.slice(0, 2).join(' · ')
                 : 'Todos los criterios de la fase se cumplen.',
               duration: 5000,
             });
-          } else if (resFaseIA.status === 404) {
-            setIaFaseDebug(prev => prev ? { ...prev, status: 'error', httpStatus: 404, errorMsg: 'Endpoint no encontrado (404)' } : null);
-            console.warn(`[Fase ${seqActual}] /validar-documento-ia 404.`);
           } else {
-            const errText = await resFaseIA.text();
-            setIaFaseDebug(prev => prev ? { ...prev, status: 'error', httpStatus: resFaseIA.status, errorMsg: errText } : null);
-            console.warn(`[Fase ${seqActual}] Error IA HTTP ${resFaseIA.status}:`, errText);
+            const httpStatus = resFaseIA?.status ?? 0;
+            const errText = resFaseIA ? await resFaseIA.text().catch(() => ultimoError) : ultimoError;
+            setIaFaseDebug(prev => prev ? { ...prev, status: 'error', httpStatus, errorMsg: errText } : null);
+            console.warn(`[Fase ${seqActual}] IA falló tras ${MAX_REINTENTOS} intentos: ${errText.substring(0, 200)}`);
+            // No bloquear — continuar avance de fase
           }
         } catch (errFaseIA: any) {
           toast.dismiss(toastIA);
-          console.warn(`[Fase ${seqActual}] Error de red en validación IA de fase:`, errFaseIA.message);
-          // No bloquear por errores de red — continuar
+          console.warn(`[Fase ${seqActual}] Error inesperado en validación IA:`, errFaseIA.message);
         }
+      } else if (todosValidados) {
+        console.log(`[Fase ${seqActual}] Todos los docs requeridos ya validados por IA — omitiendo validación de fase.`);
       } else {
         setIaFaseDebug({
           faseSeq: seqActual,
@@ -833,6 +862,27 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
           toast.success('Fase avanzada correctamente', { description: `${faseActualReal?.fase || formData.descripcionFase} → ${sigFase.fase}` });
         } else {
           toast.warning('Fase actualizada localmente (sin conexión BD)', { description: result.error || 'Sincronización pendiente' });
+        }
+
+        // ── Auto-guardado al avanzar fase ──
+        // Guardar el estado completo de la solicitud para no perder datos al cambiar de fase
+        try {
+          const subtabsAutoSave: Record<string, any> = {};
+          const subtabKeys = ['terminos', 'simulacion', 'simulacion_cal', 'simulacion_inv', 'documentos', 'garantias', 'comisiones', 'autorizaciones', 'notas', 'partesRelacionadas', '_originalData'];
+          for (const key of subtabKeys) {
+            const data = loadFromSession(storageId, key) ?? loadFromSavedStore(storageId, key);
+            if (data) subtabsAutoSave[key] = data;
+          }
+          const formDataConFase = {
+            ...formData,
+            faseId: sigFase.faseId,
+            descripcionFase: sigFase.fase,
+            area: nuevaAreaActual,
+            estatusSolicitud: formData.estatusSolicitud === 'Pendiente' ? 'En proceso' : formData.estatusSolicitud,
+          };
+          await onSave?.({ ...formDataConFase, _allSubtabs: subtabsAutoSave });
+        } catch (autoSaveErr) {
+          console.warn('[handleEnviarFase] Auto-guardado falló (no bloquea):', autoSaveErr);
         }
       } else {
         toast.success('Fase avanzada', { description: `${faseActualReal?.fase || formData.descripcionFase} → ${sigFase.fase}. Guarda para persistir.` });
@@ -1687,7 +1737,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
 
     // ── Recopilar datos de TODAS las subtabs ANTES de commitAndClearSession ──
     const allSubtabs: Record<string, any> = {};
-    const subtabKeys = ['terminos', 'simulacion', 'simulacion_cal', 'documentos', 'garantias', 'comisiones', 'autorizaciones', 'notas', 'partesRelacionadas', '_originalData'];
+    const subtabKeys = ['terminos', 'simulacion', 'simulacion_cal', 'simulacion_inv', 'documentos', 'garantias', 'comisiones', 'autorizaciones', 'notas', 'partesRelacionadas', '_originalData'];
     for (const key of subtabKeys) {
       // _originalData puede haber sido limpiado de session por commitAndClearSession en el save anterior;
       // usar savedStore como fallback para no perder los datos de banca móvil al hacer deep merge
@@ -1703,6 +1753,11 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
     } else {
       console.log('[SolicForm] handleSave → SIN simulacion_cal en subtabs (puede ser normal para Crédito)');
     }
+    if (allSubtabs.simulacion_inv) {
+      console.log('[SolicForm] handleSave → simulacion_inv count:', Array.isArray(allSubtabs.simulacion_inv) ? allSubtabs.simulacion_inv.length : 'NOT-ARRAY');
+    } else {
+      console.log('[SolicForm] handleSave → SIN simulacion_inv (cotizar primero en tab Simulación)');
+    }
     if (allSubtabs.comisiones) {
       console.log('[SolicForm] handleSave → comisiones count:', Array.isArray(allSubtabs.comisiones) ? allSubtabs.comisiones.length : 'NOT-ARRAY', '| data:', JSON.stringify(allSubtabs.comisiones).substring(0, 300));
     } else {
@@ -1715,6 +1770,11 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
       await onSave?.({ ...d, _allSubtabs: allSubtabs });
       // Solo limpiar session DESPUÉS de que la BD confirmó
       saveToSavedStore(storageId, 'form', d);
+      // Actualizar _originalData en savedStore con los datos que se acaban de guardar,
+      // para que el próximo merge incluya los últimos datos y no pierda info de banca móvil
+      if (allSubtabs._originalData) {
+        saveToSavedStore(storageId, '_originalData', allSubtabs._originalData);
+      }
       commitAndClearSession(storageId);
       saveToSavedStore(storageId, 'form', d);
     } catch (err) {
@@ -1904,6 +1964,15 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
               )}
               {iaFaseDebug.status === 'skipped' && (
                 <span className="px-2 py-0.5 rounded-full bg-gray-500 text-white text-[10px] font-bold">SIN PROMPT</span>
+              )}
+              {/* Modelo IA usado */}
+              {iaFaseDebug.resultado?.modelo && (
+                <span className="px-2 py-0.5 rounded-full bg-violet-900 text-violet-200 text-[10px] font-mono border border-violet-500" title="Modelo IA utilizado">
+                  🤖 {iaFaseDebug.resultado.modelo}
+                </span>
+              )}
+              {iaFaseDebug.resultado?._rateLimited && (
+                <span className="px-2 py-0.5 rounded-full bg-orange-600 text-white text-[10px] font-bold">⚠ SIN IA (rate limit)</span>
               )}
               <button onClick={() => setShowIAFaseDebug(false)} className="text-violet-300 hover:text-white transition-colors ml-1">
                 <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M2 2l8 8M10 2l-8 8"/></svg>
@@ -2456,6 +2525,9 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
                     curpCliente={formData._curp || ''}
                     rfcCliente={formData._rfc || ''}
                     fasePromptIA={fasePromptIA}
+                    tipoPersona={formData.tipoPersona || ''}
+                    lineaProducto={formData.lineaProducto || ''}
+                    descripcionFase={formData.descripcionFase || ''}
                     onEnviarSolicitud={modo === 'originacion' ? handleEnviarSolicitud : undefined}
                   />
                 )}
@@ -2525,24 +2597,52 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
               })();
               const _s: any[] = _sSession.length > 0 ? _sSession : _sOrig;
               const frecuencia = _t.frecuencia || '';
-              // Primer pago real de la simulación (pagoPeriodo del periodo 1)
-              const primerPago = _s.length > 0 && (_s[0].pagoPeriodo ?? 0) > 0
-                ? (_s[0].pagoPeriodo as number)
-                : 0;
-              const montoTotalRaw = _t.montoSolicitado || formData.montoSolicitado || '0';
-              const montoTotal = parseFloat(String(montoTotalRaw).replace(/[^0-9.-]/g, '')) || 0;
-              const plazoMeses = parseInt(String(_t.plazo || '0'), 10) || 1;
-              const numPeriodos = calcularNumeroPeriodos(plazoMeses, frecuencia);
-              // Fallback solo si realmente no hay simulación (registro sin tabla de amortización)
-              const pagoPeriodo = primerPago > 0 ? primerPago : (montoTotal > 0 && numPeriodos > 0 ? montoTotal / numPeriodos : 0);
-              // Fecha Compromiso = Fecha Inicio de la solicitud (spec: debe coincidir con fecha_inicio)
+
+              // ── Regla de negocio: MONTO TRANSACCIÓN según tipo de producto ──
+              const lpNorm = (formData.lineaProducto || '').toLowerCase();
+              const tpNorm = (formData.tipoProducto || '').toLowerCase();
+              const esCredito = lpNorm.includes('cr') && !lpNorm.includes('cap') && !lpNorm.includes('apor');
+              const esCaptacionOAportacion = lpNorm.includes('cap') || lpNorm.includes('apor');
+              const esInversion = tpNorm.includes('invers') || lpNorm.includes('invers');
+
+              const _montoAutNum = parseFloat(String(formData.montoAutorizado || '0').replace(/[^0-9.-]/g, '')) || 0;
+              const _montoSolNum = parseFloat(String(_t.montoSolicitado || formData.montoSolicitado || '0').replace(/[^0-9.-]/g, '')) || 0;
+              const _montoBase = _montoAutNum > 0 ? _montoAutNum : _montoSolNum;
+
+              let montoTransaccion = '0';
+
+              if (esCredito || esInversion) {
+                // Crédito e Inversión: usar monto autorizado (o solicitado como fallback)
+                montoTransaccion = String(_montoBase.toFixed(2));
+              } else if (esCaptacionOAportacion) {
+                // Captación/Aportación: primer pago del calendario de aportaciones
+                const calAportaciones: any[] = (() => {
+                  const fromSession = loadFromSession<any[]>(storageId, 'simulacion_cal') || loadFromSavedStore<any[]>(storageId, 'simulacion_cal') || [];
+                  if (fromSession.length > 0) return fromSession;
+                  const fromOrig = _origData?.solicitud?.simulacion?.calendario_aportaciones;
+                  return Array.isArray(fromOrig) ? fromOrig : [];
+                })();
+                const primerAportacion = calAportaciones.length > 0
+                  ? parseFloat(String(calAportaciones[0].monto ?? calAportaciones[0].pagoPeriodo ?? calAportaciones[0].pago_periodo ?? 0)) || 0
+                  : 0;
+                const primerSimulacion = _s.length > 0 ? (parseFloat(String(_s[0].pagoPeriodo ?? 0)) || 0) : 0;
+                const primerPago = primerAportacion > 0 ? primerAportacion : primerSimulacion;
+                montoTransaccion = String((primerPago > 0 ? primerPago : _montoBase).toFixed(2));
+              } else {
+                // Línea de Crédito u otro: primer pago de simulación
+                const primerPago = _s.length > 0 ? (parseFloat(String(_s[0].pagoPeriodo ?? 0)) || 0) : 0;
+                montoTransaccion = String((primerPago > 0 ? primerPago : 0).toFixed(2));
+              }
+
+              // Fecha Compromiso = Fecha Inicio de la solicitud
               const fechaCompromiso: string = formData.fechaInicio || '';
               return {
                 cliente: [formData.nombrePersona, formData.apellidoPaternoPersona, formData.apellidoMaternoPersona]
                   .filter(Boolean).join(' ').trim(),
                 clienteId: formData._clienteId || '',
                 lineaProducto: formData.lineaProducto || '',
-                montoTransaccion: pagoPeriodo > 0 ? String(pagoPeriodo.toFixed(2)) : (formData.montoSolicitado || '0'),
+                tipoProducto: formData.tipoProducto || '',
+                montoTransaccion,
                 moneda: _t.moneda || 'MXN',
                 productoId: formData.productoId || '',
                 fechaCompromiso,

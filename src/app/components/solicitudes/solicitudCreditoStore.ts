@@ -57,6 +57,11 @@ export interface TerminosCondiciones {
   montoGarantia: string;
   seguroFinanciado: boolean;
   montoSeguro: string;
+  // Inversión / Captación
+  metodoIntereses?: string;      // 'Al vencimiento' | 'Capitalizable'
+  // Crédito / Línea de Crédito — columnas top-level en J_CUENTAS_CORP_CLIENTES
+  montoCubrirGarantia?: number;  // monto_cubrir_garantia
+  porcentajeAforo?: number;      // porcentaje_aforo (ej: 70 = 70%)
   // Captación — Rendimientos (tabla de tasas por plazo)
   rendimientos?: RendimientoRow[];
   // Captación — perfil del inversionista
@@ -139,6 +144,8 @@ export interface Garantia {
   subtipo: string;
   descripcion: string;
   valorNominal: number;
+  montoCubrirGarantia?: number;  // monto_cubrir_garantia en BD
+  porcentajeAforo?: number;       // porcentaje_aforo en BD (ej: 70 = 70%)
   ubicacion: string;
   estatus: string;
   nota: string;
@@ -625,10 +632,10 @@ export const EMPTY_TERMINOS: TerminosCondiciones = {
   seguroFinanciado: false,
   montoSeguro: '',
   rendimientos: [],
-  perfilInversionista: '',
-  riesgoInversionista: '',
-  horizonteInversion: '',
-  experienciaInversion: '',
+  perfilInversionista: 'Conservador',
+  riesgoInversionista: 'Bajo',
+  horizonteInversion: 'Corto plazo',
+  experienciaInversion: 'Básica',
 };
 
 // ---- Mock de requisitos del producto ----

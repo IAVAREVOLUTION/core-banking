@@ -489,10 +489,13 @@ interface Props {
   curpCliente?: string;
   rfcCliente?: string;
   fasePromptIA?: string;
+  tipoPersona?: string;
+  lineaProducto?: string;
+  descripcionFase?: string;
   onEnviarSolicitud?: () => void;
 }
 
-export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, productoId, nombreSolicitante, curpCliente, rfcCliente, fasePromptIA, onEnviarSolicitud }: Props) {
+export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, productoId, nombreSolicitante, curpCliente, rfcCliente, fasePromptIA, tipoPersona, lineaProducto, descripcionFase, onEnviarSolicitud }: Props) {
   // ── State: requisitos del producto (desde DB) ──
   const [requisitosDB, setRequisitosDB] = useState<RequisitoProducto[]>([]);
   const [loadingReqs, setLoadingReqs] = useState(false);
@@ -589,8 +592,9 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
   const [fileDataUrls, setFileDataUrls] = useState<Record<number, string>>({});
   const [previewDocId, setPreviewDocId] = useState<number | null>(null);
   const [uploading, setUploading] = useState(false);
-  const [iaResultModal, setIaResultModal] = useState<{ docId: number; result: any } | null>(null);
+  const [iaResultModal, setIaResultModal] = useState<{ docId: number; result: any; promptEnviado?: string; rawJson?: string } | null>(null);
   const [showIADebug, setShowIADebug] = useState(false);
+  const [lastModeloIA, setLastModeloIA] = useState<string | null>(null);
   const [showAgregarModal, setShowAgregarModal] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const isRO = mode === 'ver';
@@ -1060,7 +1064,7 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
     }
 
     const toastId = toast.loading('Validando documento con IA...', {
-      description: `${doc.tipoDocumento} — Groq Llama 3.2 Vision${isPdf ? ' (PDF→imagen)' : ''}`,
+      description: `${doc.tipoDocumento}${isPdf ? ' (PDF→imagen)' : ''} — conectando...`,
     });
 
     try {
@@ -1095,6 +1099,11 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
         nombreSolicitante: nombreSolicitante || '(no proporcionado)',
         curpCliente: curpCliente || '',
         rfcCliente: rfcCliente || '',
+        // Contexto de la solicitud — evita que la IA rechace por "no especificado"
+        tipoPersona: tipoPersona || '',
+        lineaProducto: lineaProducto || '',
+        faseActual: descripcionFase || `Fase ${faseIdActual}`,
+        faseNumero: faseIdActual,
       };
       if (imageBase64) {
         payload.imageBase64 = imageBase64;
@@ -1127,6 +1136,9 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
 
       const esValido = result.valido === true;
       const confianza = typeof result.confianza === 'number' ? Math.round(result.confianza * 100) : null;
+      const modeloUsado: string = result.modelo || 'desconocido';
+      setLastModeloIA(modeloUsado);
+      const modeloCorto = modeloUsado.includes('/') ? modeloUsado.split('/').pop()! : modeloUsado;
 
       // Actualizar documento con resultado IA
       setDocumentos(prev => prev.map(d =>
@@ -1140,8 +1152,8 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
               nota: d.nota
                 ? d.nota
                 : esValido
-                  ? `IA: Validado${confianza ? ` (${confianza}%)` : ''}`
-                  : `IA: Rechazado — ${(result.motivos || []).join('; ').substring(0, 100)}`,
+                  ? `IA: Validado${confianza ? ` (${confianza}%)` : ''} · ${modeloCorto}`
+                  : `IA: Rechazado — ${(result.motivos || []).join('; ').substring(0, 80)} · ${modeloCorto}`,
             }
           : d
       ));
@@ -1150,18 +1162,18 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
 
       if (esValido) {
         toast.success('Documento VALIDADO por IA', {
-          description: `${doc.tipoDocumento}${confianza ? ` — Confianza: ${confianza}%` : ''} — ${(result.motivos || []).slice(0, 2).join('. ')}`,
+          description: `${doc.tipoDocumento}${confianza ? ` · ${confianza}%` : ''} · 🤖 ${modeloCorto}`,
           duration: 6000,
         });
       } else {
         toast.error('Documento RECHAZADO por IA', {
-          description: `${doc.tipoDocumento} — ${(result.motivos || ['Sin motivo específico']).slice(0, 2).join('. ')}`,
+          description: `${doc.tipoDocumento} · ${(result.motivos || ['Sin motivo']).slice(0, 1).join('')} · 🤖 ${modeloCorto}`,
           duration: 8000,
         });
       }
 
       // Mostrar modal con resultado detallado
-      setIaResultModal({ docId, result });
+      setIaResultModal({ docId, result, promptEnviado: promptAEnviar, rawJson: JSON.stringify(result, null, 2) });
     } catch (err: any) {
       console.error(`${LOG} [IA] Error:`, err);
       toast.dismiss(toastId);
@@ -1395,15 +1407,28 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
                             <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="2"><path d="M2 5l2 2 4-4" /></svg>
                             Validado — Ver Resultado
                           </button>
-                        ) : docCargado && docCargado.validadoIA && docCargado.estatus === 'Rechazado' ? (
-                          <button
-                            onClick={() => handleVerResultadoIA(docCargado)}
-                            className="inline-flex items-center gap-1 text-red-700 bg-red-50 px-2 py-0.5 rounded text-[10px] border border-red-200 hover:bg-red-100 cursor-pointer transition-colors"
-                            title="Clic para ver resultado de validación IA"
-                          >
-                            <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 3l4 4M7 3l-4 4" /></svg>
-                            Rechazado — Ver Resultado
-                          </button>
+                        ) : docCargado && docCargado.validadoIA && (docCargado.estatus || '').toLowerCase() !== 'validado' ? (
+                          <div className="flex flex-col items-center gap-1">
+                            <button
+                              onClick={() => handleVerResultadoIA(docCargado)}
+                              className="inline-flex items-center gap-1 text-red-700 bg-red-50 px-2 py-0.5 rounded text-[10px] border border-red-200 hover:bg-red-100 cursor-pointer transition-colors"
+                              title="Ver motivos del rechazo"
+                            >
+                              <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 3l4 4M7 3l-4 4" /></svg>
+                              Rechazado
+                            </button>
+                            {!isRO && (
+                              <button
+                                onClick={() => handleValidarIA(docCargado.id)}
+                                disabled={validatingId === docCargado.id}
+                                className="inline-flex items-center gap-1 text-orange-700 bg-orange-50 px-2 py-0.5 rounded text-[10px] border border-orange-300 hover:bg-orange-100 cursor-pointer transition-colors disabled:opacity-50"
+                                title="Reintentar validación IA"
+                              >
+                                <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M1.5 5A3.5 3.5 0 1 0 3 2"/><path d="M1.5 2v3h3"/></svg>
+                                {validatingId === docCargado.id ? 'Reintentando...' : 'Reintentar'}
+                              </button>
+                            )}
+                          </div>
                         ) : docCargado ? (
                           <div className="flex flex-col items-center gap-1">
                             <span className="inline-flex items-center text-amber-700 bg-amber-50 px-2 py-0.5 rounded text-[10px] border border-amber-200">Pendiente IA</span>
@@ -1534,6 +1559,11 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
               </svg>
               Debug IA
             </button>
+            {lastModeloIA && (
+              <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-mono bg-violet-50 text-violet-700 border border-violet-200" title="Último modelo IA utilizado">
+                🤖 {lastModeloIA.includes('/') ? lastModeloIA.split('/').pop() : lastModeloIA}
+              </span>
+            )}
             {!isRO && (
               <button
                 onClick={() => setShowAgregarModal(true)}
@@ -1547,6 +1577,68 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
             )}
           </div>
         </div>
+
+        {/* ── Panel Debug IA ── */}
+        {showIADebug && (
+          <div className="mb-3 border border-violet-200 rounded-xl bg-violet-50/60 overflow-hidden">
+            <div className="px-4 py-2.5 bg-violet-100/80 border-b border-violet-200 flex items-center justify-between">
+              <span className="text-[11px] font-bold text-violet-800 uppercase tracking-wider">🤖 Debug IA</span>
+              <button onClick={() => setShowIADebug(false)} className="text-violet-400 hover:text-violet-700">
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2"><path d="M2 2l8 8M10 2l-8 8" /></svg>
+              </button>
+            </div>
+            <div className="p-4 space-y-3 text-xs">
+              {/* Modelo y contexto */}
+              <div className="grid grid-cols-2 gap-2">
+                <div className="bg-white border border-violet-100 rounded-lg p-2.5">
+                  <p className="text-[10px] text-violet-500 font-medium mb-1">Último modelo</p>
+                  <p className="font-mono text-violet-800 text-[11px]">{lastModeloIA || '(sin validaciones aún)'}</p>
+                </div>
+                <div className="bg-white border border-violet-100 rounded-lg p-2.5">
+                  <p className="text-[10px] text-violet-500 font-medium mb-1">Fase / Producto</p>
+                  <p className="font-mono text-violet-800 text-[11px]">Fase {faseIdActual} · {productoId?.substring(0, 8) || 'sin producto'}…</p>
+                </div>
+                <div className="bg-white border border-violet-100 rounded-lg p-2.5">
+                  <p className="text-[10px] text-violet-500 font-medium mb-1">Requisitos cargados</p>
+                  <p className="font-mono text-violet-800 text-[11px]">{requisitos.length} total · {requisitos.filter(r => r.promptIA).length} con promptIA</p>
+                </div>
+                <div className="bg-white border border-violet-100 rounded-lg p-2.5">
+                  <p className="text-[10px] text-violet-500 font-medium mb-1">Docs validados IA</p>
+                  <p className="font-mono text-violet-800 text-[11px]">{documentos.filter(d => d.validadoIA).length} / {documentos.length}</p>
+                </div>
+              </div>
+              {/* Requisitos con prompts */}
+              {requisitos.length > 0 && (
+                <details className="group">
+                  <summary className="cursor-pointer text-[11px] font-bold text-violet-700 flex items-center gap-1.5 select-none list-none">
+                    <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" className="transition-transform group-open:rotate-90 shrink-0"><path d="M3 2l4 3-4 3" /></svg>
+                    Requisitos y prompts ({requisitos.length})
+                  </summary>
+                  <div className="mt-2 space-y-1.5 max-h-48 overflow-auto">
+                    {requisitos.map(r => (
+                      <div key={r.id} className="bg-white border border-violet-100 rounded-lg px-3 py-2">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="font-medium text-gray-700 text-[11px]">{r.tipoDocumento}</span>
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${r.promptIA ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-400'}`}>
+                            {r.promptIA ? 'con prompt' : 'sin prompt'}
+                          </span>
+                        </div>
+                        {r.promptIA && <p className="text-[10px] text-gray-500 font-mono truncate">{r.promptIA.substring(0, 100)}…</p>}
+                      </div>
+                    ))}
+                  </div>
+                </details>
+              )}
+              {/* Prompt de fase */}
+              {fasePromptIA && (
+                <div className="bg-white border border-violet-100 rounded-lg p-2.5">
+                  <p className="text-[10px] text-violet-500 font-medium mb-1">Prompt IA de Fase</p>
+                  <p className="text-[10px] text-gray-600 font-mono">{fasePromptIA.substring(0, 200)}{fasePromptIA.length > 200 ? '…' : ''}</p>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* ── Tabla de documentos cargados ── */}
         {documentosFiltrados.length === 0 ? (
@@ -1632,6 +1724,7 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
                               Resultado
                             </button>
                           )}
+                          {/* Validar IA — solo si aún no validado */}
                           {!doc.validadoIA && !isRO && (
                             <button onClick={() => handleValidarIA(doc.id)} disabled={validatingId === doc.id}
                               className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium border transition-all ${
@@ -1643,6 +1736,23 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
                                 <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.3"><circle cx="5" cy="3.5" r="2.5" /><path d="M1 9c0-2 1.8-3.5 4-3.5s4 1.5 4 3.5" strokeLinecap="round" /><path d="M7 2.5l1.5-1M3 2.5L1.5 1.5" strokeLinecap="round" /></svg>
                               )}
                               {validatingId === doc.id ? 'Validando...' : 'Validar IA'}
+                            </button>
+                          )}
+                          {/* Reintentar — si validado por IA y no es Validado (puede ser Rechazado u otro) */}
+                          {doc.validadoIA && (doc.estatus || '').toLowerCase() !== 'validado' && !isRO && (
+                            <button onClick={() => handleValidarIA(doc.id)} disabled={validatingId === doc.id}
+                              title="Reintentar validación IA"
+                              className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium border transition-all ${
+                                validatingId === doc.id
+                                  ? 'text-orange-400 bg-orange-50 border-orange-200/60 cursor-wait'
+                                  : 'text-orange-700 bg-orange-50 hover:bg-orange-100 border-orange-300 hover:shadow-sm'
+                              }`}>
+                              {validatingId === doc.id ? (
+                                <svg className="animate-spin h-2.5 w-2.5" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="6" cy="6" r="5" strokeOpacity="0.25" /><path d="M6 1a5 5 0 0 1 5 5" strokeLinecap="round" /></svg>
+                              ) : (
+                                <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M1.5 5A3.5 3.5 0 1 0 3 2"/><path d="M1.5 2v3h3"/></svg>
+                              )}
+                              {validatingId === doc.id ? 'Reintentando...' : 'Reintentar'}
                             </button>
                           )}
                           {!isRO && (
@@ -1699,43 +1809,60 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
         const r = iaResultModal.result;
         const esValido = r.valido === true;
         const confianza = typeof r.confianza === 'number' ? Math.round(r.confianza * 100) : null;
+        const modelo = r.modelo || 'desconocido';
+        const modeloCorto = modelo.includes('/') ? modelo.split('/').pop() : modelo;
+        const docModal = documentos.find(d => d.id === iaResultModal.docId);
         return (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setIaResultModal(null)}>
-            <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full max-h-[80vh] overflow-hidden border border-gray-200/50" onClick={e => e.stopPropagation()}>
+            <div className="bg-white rounded-2xl shadow-2xl max-w-xl w-full max-h-[88vh] overflow-hidden border border-gray-200/50 flex flex-col" onClick={e => e.stopPropagation()}>
+
+              {/* Header */}
               <div className={`flex items-center justify-between px-5 py-4 border-b ${esValido ? 'bg-emerald-50 border-emerald-100' : 'bg-red-50 border-red-100'}`}>
                 <div className="flex items-center gap-3">
-                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${esValido ? 'bg-emerald-100' : 'bg-red-100'}`}>
-                    {esValido ? (
-                      <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="#059669" strokeWidth="2.5"><path d="M4 10l4 4 8-8" /></svg>
-                    ) : (
-                      <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="#DC2626" strokeWidth="2.5"><path d="M5 5l10 10M15 5l-10 10" /></svg>
-                    )}
+                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${esValido ? 'bg-emerald-100' : 'bg-red-100'}`}>
+                    {esValido
+                      ? <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="#059669" strokeWidth="2.5"><path d="M4 10l4 4 8-8" /></svg>
+                      : <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="#DC2626" strokeWidth="2.5"><path d="M5 5l10 10M15 5l-10 10" /></svg>
+                    }
                   </div>
-                  <div>
+                  <div className="min-w-0">
                     <h5 className={`text-sm font-bold ${esValido ? 'text-emerald-800' : 'text-red-800'}`}>
                       {esValido ? 'Documento VALIDADO' : 'Documento RECHAZADO'}
                     </h5>
-                    {confianza !== null && (
-                      <div className="flex items-center gap-2 mt-1">
-                        <div className="w-16 h-1.5 rounded-full bg-gray-200 overflow-hidden">
-                          <div className={`h-full rounded-full ${confianza >= 80 ? 'bg-emerald-500' : confianza >= 50 ? 'bg-amber-500' : 'bg-red-500'}`} style={{ width: `${confianza}%` }} />
-                        </div>
-                        <span className={`text-[10px] font-bold ${confianza >= 80 ? 'text-emerald-600' : confianza >= 50 ? 'text-amber-600' : 'text-red-600'}`}>{confianza}%</span>
-                      </div>
-                    )}
+                    {docModal && <p className="text-[11px] text-gray-500 truncate mt-0.5">{docModal.tipoDocumento}</p>}
                   </div>
                 </div>
-                <button onClick={() => setIaResultModal(null)} className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-white/60 transition-colors">
+                <button onClick={() => setIaResultModal(null)} className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-white/60 transition-colors shrink-0">
                   <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 3l8 8M11 3l-8 8" /></svg>
                 </button>
               </div>
-              <div className="p-5 overflow-auto max-h-[60vh] space-y-4">
+
+              {/* Confianza + modelo */}
+              <div className="px-5 py-2.5 flex items-center gap-4 border-b border-gray-100 bg-gray-50/60">
+                {confianza !== null && (
+                  <div className="flex items-center gap-2 flex-1">
+                    <span className="text-[10px] text-gray-500 font-medium shrink-0">Confianza</span>
+                    <div className="flex-1 h-2 rounded-full bg-gray-200 overflow-hidden">
+                      <div className={`h-full rounded-full ${confianza >= 80 ? 'bg-emerald-500' : confianza >= 50 ? 'bg-amber-500' : 'bg-red-500'}`} style={{ width: `${confianza}%` }} />
+                    </div>
+                    <span className={`text-xs font-bold tabular-nums ${confianza >= 80 ? 'text-emerald-600' : confianza >= 50 ? 'text-amber-600' : 'text-red-600'}`}>{confianza}%</span>
+                  </div>
+                )}
+                <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-mono bg-violet-50 text-violet-700 border border-violet-200 shrink-0">
+                  🤖 {modeloCorto}
+                </span>
+              </div>
+
+              {/* Body */}
+              <div className="p-5 overflow-auto flex-1 space-y-4">
+
+                {/* Motivos */}
                 {Array.isArray(r.motivos) && r.motivos.length > 0 && (
                   <div>
-                    <h6 className="text-[11px] font-bold text-gray-600 uppercase mb-2">Motivos</h6>
-                    <div className="space-y-2">
+                    <h6 className="text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-2">Motivos</h6>
+                    <div className="space-y-1.5">
                       {r.motivos.map((m: string, i: number) => (
-                        <div key={i} className={`flex items-start gap-2.5 p-2.5 rounded-lg ${esValido ? 'bg-emerald-50/60' : 'bg-red-50/60'}`}>
+                        <div key={i} className={`flex items-start gap-2.5 p-2.5 rounded-lg border ${esValido ? 'bg-emerald-50/60 border-emerald-100' : 'bg-red-50/60 border-red-100'}`}>
                           <span className={`mt-0.5 shrink-0 w-5 h-5 flex items-center justify-center rounded-md text-[10px] font-bold ${esValido ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>{i + 1}</span>
                           <span className="text-xs text-gray-700 leading-relaxed">{m}</span>
                         </div>
@@ -1743,21 +1870,56 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
                     </div>
                   </div>
                 )}
-                {r.extraido && Object.keys(r.extraido).length > 0 && (
+
+                {/* Datos extraídos */}
+                {r.extraido && Object.keys(r.extraido).filter(k => r.extraido[k] && r.extraido[k] !== '...' && r.extraido[k] !== 'N/A').length > 0 && (
                   <div>
-                    <h6 className="text-[11px] font-bold text-gray-600 uppercase mb-2">Datos extraídos</h6>
-                    <div className="bg-blue-50/60 border border-blue-100 rounded-xl p-3.5 space-y-1.5">
+                    <h6 className="text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-2">Datos extraídos</h6>
+                    <div className="bg-blue-50/60 border border-blue-100 rounded-xl p-3">
                       {Object.entries(r.extraido).filter(([, v]) => v && v !== '...' && v !== 'N/A').map(([key, val]) => (
                         <div key={key} className="flex items-baseline justify-between py-1.5 border-b border-blue-100/60 last:border-0">
-                          <span className="text-[11px] text-blue-600 font-medium">{key.replace(/_/g, ' ')}</span>
-                          <span className="text-xs text-gray-800 font-medium ml-4">{String(val)}</span>
+                          <span className="text-[11px] text-blue-600 font-medium capitalize">{key.replace(/_/g, ' ')}</span>
+                          <span className="text-xs text-gray-800 font-semibold ml-4 text-right">{String(val)}</span>
                         </div>
                       ))}
                     </div>
                   </div>
                 )}
+
+                {/* Prompt enviado */}
+                {iaResultModal.promptEnviado && (
+                  <details className="group">
+                    <summary className="cursor-pointer text-[11px] font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1.5 select-none list-none hover:text-gray-700">
+                      <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" className="transition-transform group-open:rotate-90 shrink-0"><path d="M3 2l4 3-4 3" /></svg>
+                      Prompt enviado
+                    </summary>
+                    <div className="mt-2 bg-gray-900 rounded-lg p-3 overflow-auto max-h-36">
+                      <pre className="text-[10px] text-gray-300 whitespace-pre-wrap leading-relaxed font-mono">{iaResultModal.promptEnviado}</pre>
+                    </div>
+                  </details>
+                )}
+
+                {/* JSON raw */}
+                {iaResultModal.rawJson && (
+                  <details className="group">
+                    <summary className="cursor-pointer text-[11px] font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1.5 select-none list-none hover:text-gray-700">
+                      <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" className="transition-transform group-open:rotate-90 shrink-0"><path d="M3 2l4 3-4 3" /></svg>
+                      JSON completo
+                    </summary>
+                    <div className="mt-2 bg-gray-900 rounded-lg p-3 overflow-auto max-h-48 relative">
+                      <button
+                        onClick={() => navigator.clipboard.writeText(iaResultModal.rawJson!)}
+                        className="absolute top-2 right-2 px-2 py-0.5 rounded text-[10px] bg-gray-700 text-gray-300 hover:bg-gray-600 transition-colors"
+                      >Copiar</button>
+                      <pre className="text-[10px] text-green-400 whitespace-pre-wrap leading-relaxed font-mono pr-12">{iaResultModal.rawJson}</pre>
+                    </div>
+                  </details>
+                )}
               </div>
-              <div className="px-5 py-3.5 border-t border-gray-100 bg-gray-50/50 flex justify-end">
+
+              {/* Footer */}
+              <div className="px-5 py-3 border-t border-gray-100 bg-gray-50/50 flex items-center justify-between">
+                <span className="text-[10px] text-gray-400 font-mono">{new Date().toLocaleTimeString('es-MX')}</span>
                 <button onClick={() => setIaResultModal(null)} className="px-5 py-2 bg-white border border-gray-200 text-gray-600 rounded-lg text-xs font-medium hover:bg-gray-50 shadow-sm transition-colors">
                   Cerrar
                 </button>

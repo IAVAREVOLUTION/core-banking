@@ -6,6 +6,7 @@ import {
   MOCK_SIMULACION, MOCK_TERMINOS, formatCurrency, generarSimulacion, parseCurrency,
   CAT_FRECUENCIA,
 } from './solicitudCreditoStore';
+import { FlujInversionRow, calcularFlujInversion, TASA_ISR_ANUAL } from '../cotizaciones/cotizacionCaptacionTypes';
 
 interface AportacionRow {
   noAportacion: number;
@@ -147,6 +148,8 @@ function generarCalendarioAportaciones(
 export function SimulacionTab({ mode, solicitudId, lineaProducto, tipoProducto, calendarioAportaciones, simulacionInicial, montoAutorizado, onFechaFinChange }: Props) {
   const isRO = mode === 'ver';
   const isCap = esCaptacion(lineaProducto, tipoProducto);
+  const _tpRaw = (tipoProducto || lineaProducto || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  const isInversion = isCap && _tpRaw.includes('invers');
 
   // ── Amortización (solo crédito) ──
   const getInitRows = (): SimulacionRow[] => {
@@ -255,6 +258,63 @@ export function SimulacionTab({ mode, solicitudId, lineaProducto, tipoProducto, 
     );
   };
 
+  // ── Tabla de Flujo de Inversión ──
+  const getInitInvRows = (): FlujInversionRow[] | null => {
+    const s = loadFromSession<FlujInversionRow[]>(solicitudId, 'simulacion_inv');
+    if (s && s.length > 0) return s;
+    if (mode !== 'nuevo') {
+      const saved = loadFromSavedStore<FlujInversionRow[]>(solicitudId, 'simulacion_inv');
+      if (saved && saved.length > 0) return saved;
+    }
+    return null;
+  };
+
+  const [invRows, setInvRows] = useState<FlujInversionRow[] | null>(isInversion ? getInitInvRows : null);
+
+  useEffect(() => {
+    if (!isRO && isInversion && invRows) saveToSession(solicitudId, 'simulacion_inv', invRows);
+  }, [invRows, solicitudId, isRO, isInversion]);
+
+  useEffect(() => {
+    if (!onFechaFinChange || !isInversion || !invRows) return;
+    const last = invRows[invRows.length - 1];
+    if (last?.fechaInversion) onFechaFinChange(last.fechaInversion);
+  }, [invRows]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleSimularInversion = () => {
+    const terminos = readTerminos();
+    const montoBase = (montoAutorizado && montoAutorizado > 0) ? montoAutorizado : parseFloat(parseCurrency(terminos.montoSolicitado || '0'));
+    const tasa = parseFloat(String(terminos.tasa || '0').replace(/[^0-9.-]/g, ''));
+    const plazo = parseInt(String(terminos.plazo || '0'));
+    const frecuencia = terminos.frecuencia || 'Mensual';
+    const fechaRaw = terminos.fechaPrimeraAportacion || terminos.fechaPrimerPago || '';
+    // Normalize DD/MM/YYYY → YYYY-MM-DD for calcularFlujInversion
+    const normalizarFecha = (f: string): string => {
+      const parts = f.split('/');
+      if (parts.length === 3 && parts[0].length === 2) return `${parts[2]}-${parts[1]}-${parts[0]}`;
+      return f;
+    };
+    const fechaInicio = normalizarFecha(fechaRaw);
+    const metodo = terminos.metodoIntereses || 'Al vencimiento';
+
+    if (montoBase <= 0 || tasa <= 0 || plazo <= 0) {
+      toast.error('Datos insuficientes', {
+        description: `Complete Monto (${montoBase}), Tasa (${tasa}) y Plazo (${plazo}) en Términos y Condiciones.`,
+        duration: 4000,
+      });
+      return;
+    }
+    if (!fechaInicio) {
+      toast.error('Fecha de Inversión requerida', { description: 'Complete la Fecha de Inversión en Términos y Condiciones.', duration: 3000 });
+      return;
+    }
+
+    const newRows = calcularFlujInversion(montoBase, tasa, plazo, frecuencia, fechaInicio, metodo, TASA_ISR_ANUAL);
+    setInvRows(newRows);
+    saveToSession(solicitudId, 'simulacion_inv', newRows);
+    toast.success('Tabla de flujo generada', { description: `${newRows.length} período(s) · Método: ${metodo}`, duration: 3000 });
+  };
+
   // ── Simular Crédito ──
   const handleSimularCredito = () => {
     const terminos = readTerminos();
@@ -314,6 +374,116 @@ export function SimulacionTab({ mode, solicitudId, lineaProducto, tipoProducto, 
       duration: 3000,
     });
   };
+
+  // ════════════════════════════════════════════════
+  // INVERSIÓN A PLAZO — tabla de flujo
+  // ════════════════════════════════════════════════
+  if (isInversion) {
+    const terminos = readTerminos();
+    const metodoActual = terminos.metodoIntereses || 'Al vencimiento';
+    const totalInteresBruto = invRows ? invRows.reduce((s, r) => s + r.interesBruto, 0) : 0;
+    const totalISR = invRows ? invRows.reduce((s, r) => s + r.retencionISR, 0) : 0;
+    const totalInteresNeto = invRows ? invRows.reduce((s, r) => s + r.interesNeto, 0) : 0;
+    const capitalFinalTotal = invRows && invRows.length > 0 ? invRows[invRows.length - 1].capitalFinal : 0;
+
+    return (
+      <div className="border border-gray-200 bg-white p-0">
+        <div className="border-t border-gray-300">
+          <div className="bg-purple-50 border-l-4 border-purple-500 px-3 py-2 flex items-center justify-between">
+            <span className="text-sm font-medium text-purple-900">TABLA DE FLUJO DE INVERSIÓN</span>
+            {!isRO && (
+              <button
+                onClick={handleSimularInversion}
+                className="px-4 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded text-xs flex items-center gap-1.5"
+              >
+                <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" strokeWidth="1.5">
+                  <path d="M6.5 1v5.5L9 9" strokeLinecap="round" strokeLinejoin="round"/>
+                  <circle cx="6.5" cy="6.5" r="5.5"/>
+                </svg>
+                Cotizar
+              </button>
+            )}
+          </div>
+
+          {!invRows ? (
+            <div className="p-8 text-center text-gray-500 text-sm">
+              <svg width="48" height="48" viewBox="0 0 48 48" fill="none" stroke="#CBD5E1" strokeWidth="1.5" className="mx-auto mb-3">
+                <rect x="6" y="10" width="36" height="30" rx="3" />
+                <path d="M6 18h36" /><path d="M16 6v8M32 6v8" />
+              </svg>
+              <p>No se ha generado la tabla de flujo de inversión.</p>
+              <p className="text-xs text-gray-400 mt-1">
+                Complete los Términos y Condiciones y presione <strong>Cotizar</strong>.
+              </p>
+            </div>
+          ) : (
+            <div className="p-4">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+                <div className="bg-purple-50 border border-purple-200 rounded p-3">
+                  <span className="text-[10px] text-purple-600">Método</span>
+                  <p className="text-base font-medium text-purple-900">{metodoActual}</p>
+                </div>
+                <div className="bg-green-50 border border-green-200 rounded p-3">
+                  <span className="text-[10px] text-green-600">Interés Bruto Total</span>
+                  <p className="text-base font-medium text-green-800">{formatCurrency(totalInteresBruto)}</p>
+                </div>
+                <div className="bg-red-50 border border-red-200 rounded p-3">
+                  <span className="text-[10px] text-red-600">Retención ISR Total</span>
+                  <p className="text-base font-medium text-red-800">{formatCurrency(totalISR)}</p>
+                </div>
+                <div className="bg-blue-50 border border-blue-200 rounded p-3">
+                  <span className="text-[10px] text-blue-600">Capital Final</span>
+                  <p className="text-base font-medium text-blue-900">{formatCurrency(capitalFinalTotal)}</p>
+                </div>
+              </div>
+
+              <div className="border border-gray-300 overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="bg-purple-700 text-white">
+                      <th className="px-3 py-2.5 text-center font-medium whitespace-nowrap">Período</th>
+                      <th className="px-3 py-2.5 text-left font-medium whitespace-nowrap">Fecha</th>
+                      <th className="px-3 py-2.5 text-right font-medium whitespace-nowrap">Capital Inicial</th>
+                      <th className="px-3 py-2.5 text-right font-medium whitespace-nowrap">Interés Bruto</th>
+                      <th className="px-3 py-2.5 text-right font-medium whitespace-nowrap">Retención ISR</th>
+                      <th className="px-3 py-2.5 text-right font-medium whitespace-nowrap">Interés Neto</th>
+                      <th className="px-3 py-2.5 text-right font-medium whitespace-nowrap">Capital Final</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {invRows.map((r, idx) => (
+                      <tr
+                        key={r.periodo}
+                        className="border-b border-gray-200"
+                        style={{ backgroundColor: idx % 2 === 1 ? '#F5F3FF' : '#FFFFFF' }}
+                      >
+                        <td className="px-3 py-2 text-center text-gray-700">{r.periodo}</td>
+                        <td className="px-3 py-2 text-gray-700">{formatDateCalendar(r.fechaInversion)}</td>
+                        <td className="px-3 py-2 text-right text-gray-700">{formatCurrency(r.capitalInicial)}</td>
+                        <td className="px-3 py-2 text-right text-gray-700">{formatCurrency(r.interesBruto)}</td>
+                        <td className="px-3 py-2 text-right text-red-700">{formatCurrency(r.retencionISR)}</td>
+                        <td className="px-3 py-2 text-right text-green-700">{formatCurrency(r.interesNeto)}</td>
+                        <td className="px-3 py-2 text-right font-medium text-purple-800">{formatCurrency(r.capitalFinal)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="bg-gray-100 border-t-2 border-gray-400 font-medium">
+                      <td colSpan={3} className="px-3 py-2.5 text-xs text-gray-800">TOTALES</td>
+                      <td className="px-3 py-2.5 text-xs text-right text-gray-800">{formatCurrency(totalInteresBruto)}</td>
+                      <td className="px-3 py-2.5 text-xs text-right text-red-800">{formatCurrency(totalISR)}</td>
+                      <td className="px-3 py-2.5 text-xs text-right text-green-800">{formatCurrency(totalInteresNeto)}</td>
+                      <td className="px-3 py-2.5 text-xs text-right text-purple-900 font-bold">{formatCurrency(capitalFinalTotal)}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   // ════════════════════════════════════════════════
   // CAPTACIÓN / APORTACIÓN

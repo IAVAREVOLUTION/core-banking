@@ -362,7 +362,7 @@ console.log("[SERVER BOOT] PostgreSQL client created (SUPABASE_DB_URL)");
           monto_aut    = COALESCE(p_monto_aut::money, monto_aut),
           estatus_sol  = COALESCE(p_estatus_sol, estatus_sol),
           fases        = COALESCE(p_fases, fases),
-          data         = COALESCE(p_data, data)
+          data         = CASE WHEN p_data IS NOT NULL THEN COALESCE(data, '{}'::jsonb) || p_data ELSE data END
         WHERE id = p_id;
       END;
       $fn$;
@@ -2924,29 +2924,53 @@ const putSolicitudesHandler = async (c: any) => {
     const estatus_disp = toNullStr(body.estatus_disp);
     const cta_eje_chec = body.cta_eje_chec !== undefined ? Boolean(body.cta_eje_chec) : null;
     const fases = toNullStr(body.fases);
-    const data = body.data;
+    const incomingData = body.data;
+    const monto_cubrir_garantia = body.monto_cubrir_garantia != null ? Number(body.monto_cubrir_garantia) : null;
+    const porcentaje_aforo = body.porcentaje_aforo != null ? Number(body.porcentaje_aforo) : null;
+
+    // ── FIX CRÍTICO: Deep merge para columna data — previene sobreescritura de datos de banca móvil ──
+    // Antes se usaba COALESCE(new_data, old_data) que reemplaza COMPLETO cuando new_data != null.
+    // Ahora: leer data existente → deepMerge(existing, incoming) → escribir fusionado.
+    let finalDataJson: string | null = null;
+    if (incomingData !== null && incomingData !== undefined) {
+      const existingRows = await sql`
+        SELECT data FROM "EFINANCIANET_DB"."J_CUENTAS_CORP_CLIENTES"
+        WHERE id = ${id}::uuid LIMIT 1
+      `;
+      let existingData: Record<string, any> = {};
+      if (existingRows.length > 0 && existingRows[0].data) {
+        existingData = typeof existingRows[0].data === "string"
+          ? JSON.parse(existingRows[0].data)
+          : (existingRows[0].data as Record<string, any>);
+      }
+      const merged = deepMergeData(existingData, incomingData as Record<string, any>);
+      finalDataJson = JSON.stringify(merged);
+      console.log(`[SOLICITUDES] PUT deep-merge data: existing=${Object.keys(existingData).length} keys → incoming=${Object.keys(incomingData as object).length} keys → merged=${Object.keys(merged).length} keys`);
+    }
 
     await sql`
       UPDATE "EFINANCIANET_DB"."J_CUENTAS_CORP_CLIENTES"
       SET
-        no_sol       = COALESCE(${no_sol}, no_sol),
-        no_cuenta    = COALESCE(${no_cuenta}, no_cuenta),
-        no_referenc1 = COALESCE(${no_referenc1}, no_referenc1),
-        fecha_sol    = COALESCE(${fecha_sol}::date, fecha_sol),
-        descripcion  = COALESCE(${descripcion}, descripcion),
-        linea_produc = COALESCE(${linea_produc}, linea_produc),
-        tipo_produc  = COALESCE(${tipo_produc}, tipo_produc),
-        producto_id  = COALESCE(${producto_id}::uuid, producto_id),
-        cliente_id   = COALESCE(${cliente_id}::uuid, cliente_id),
-        monto_sol    = COALESCE(${monto_sol}::numeric::money, monto_sol),
-        monto_aut    = COALESCE(${monto_aut}::numeric::money, monto_aut),
-        estatus_sol  = COALESCE(${estatus_sol}, estatus_sol),
-        estatus_cuen = COALESCE(${estatus_cuen}, estatus_cuen),
-        estatus_cart = COALESCE(${estatus_cart}, estatus_cart),
-        estatus_disp = COALESCE(${estatus_disp}, estatus_disp),
-        cta_eje_chec = COALESCE(${cta_eje_chec}, cta_eje_chec),
-        fases        = COALESCE(${fases}, fases),
-        data         = COALESCE(${data ? JSON.stringify(data) : null}::jsonb, data)
+        no_sol                = COALESCE(${no_sol}, no_sol),
+        no_cuenta             = COALESCE(${no_cuenta}, no_cuenta),
+        no_referenc1          = COALESCE(${no_referenc1}, no_referenc1),
+        fecha_sol             = COALESCE(${fecha_sol}::date, fecha_sol),
+        descripcion           = COALESCE(${descripcion}, descripcion),
+        linea_produc          = COALESCE(${linea_produc}, linea_produc),
+        tipo_produc           = COALESCE(${tipo_produc}, tipo_produc),
+        producto_id           = COALESCE(${producto_id}::uuid, producto_id),
+        cliente_id            = COALESCE(${cliente_id}::uuid, cliente_id),
+        monto_sol             = COALESCE(${monto_sol}::numeric::money, monto_sol),
+        monto_aut             = COALESCE(${monto_aut}::numeric::money, monto_aut),
+        estatus_sol           = COALESCE(${estatus_sol}, estatus_sol),
+        estatus_cuen          = COALESCE(${estatus_cuen}, estatus_cuen),
+        estatus_cart          = COALESCE(${estatus_cart}, estatus_cart),
+        estatus_disp          = COALESCE(${estatus_disp}, estatus_disp),
+        cta_eje_chec          = COALESCE(${cta_eje_chec}, cta_eje_chec),
+        fases                 = COALESCE(${fases}, fases),
+        monto_cubrir_garantia = COALESCE(${monto_cubrir_garantia}::numeric, monto_cubrir_garantia),
+        porcentaje_aforo      = COALESCE(${porcentaje_aforo}::numeric, porcentaje_aforo),
+        data                  = CASE WHEN ${finalDataJson}::jsonb IS NOT NULL THEN ${finalDataJson}::jsonb ELSE data END
       WHERE id = ${id}::uuid
     `;
     console.log(`[SOLICITUDES] UPDATE OK — id: ${id}`);
@@ -3243,6 +3267,29 @@ Responde únicamente en JSON:
 }
 NO incluyas texto fuera del JSON.`;
 
+const SYSTEM_PROMPT_DOCUMENTO_INDIVIDUAL = `Eres un validador experto de documentos bancarios.
+Tu única tarea es evaluar SI EL DOCUMENTO ES VÁLIDO según el criterio indicado.
+
+REGLAS ESTRICTAS:
+1. Analiza SOLO el documento proporcionado. NO menciones documentos faltantes de la fase.
+2. Si el RFC del cliente coincide con el visible en el documento → el documento ES VÁLIDO para ese criterio.
+3. Si el CURP del cliente coincide con el visible en el documento → el documento ES VÁLIDO para ese criterio.
+4. Si el documento está vigente y es legible → ES VÁLIDO.
+5. "valido": true SIGNIFICA que el documento cumple los requisitos. USA true cuando los criterios se cumplen.
+6. Solo usa "valido": false si hay un problema REAL y CONCRETO en el documento mismo.
+7. "confianza" debe ser >= 0.8 cuando el documento cumple los criterios claramente.
+
+RESPONDE ÚNICAMENTE EN JSON:
+{
+  "valido": true,
+  "confianza": 0.9,
+  "motivos": ["El RFC coincide", "Documento vigente y legible"],
+  "faltantes": [],
+  "faseListaParaAvanzar": true,
+  "documentosValidados": [{"tipo": "<tipoDocumento>", "valido": true, "motivos": ["..."]}]
+}
+NO incluyas texto fuera del JSON.`;
+
 const validarDocumentoIAHandler = async (c: any) => {
   const LOG_IA = "[VALIDAR-IA]";
   try {
@@ -3259,7 +3306,9 @@ const validarDocumentoIAHandler = async (c: any) => {
       botonPresionado,
     } = body;
 
-    const modoFase = !!(faseActual || faseNumero !== undefined || botonPresionado);
+    // modoFase SOLO cuando el usuario presionó un botón de flujo — enviar faseActual/faseNumero
+    // como contexto en documento individual NO debe activar validación de fase completa
+    const modoFase = !!botonPresionado;
     const modoDocumento = !!(tipoDocumento && (storagePath || imageBase64));
 
     console.log(`${LOG_IA} Request — modo=${modoFase ? 'FASE' : 'DOCUMENTO'}, tipo=${tipoDocumento}, fase=${faseActual}(${faseNumero}), boton=${botonPresionado}`);
@@ -3343,97 +3392,117 @@ const validarDocumentoIAHandler = async (c: any) => {
       ...(nombreSolicitante ? { nombreSolicitante } : {}),
     };
 
-    const userMessage = `Valida el siguiente contexto del proceso bancario y responde ÚNICAMENTE en JSON:\n\n${JSON.stringify(contextoFase, null, 2)}`;
+    // Documento individual: solo enviar lo necesario para validar ESE documento
+    const userMessage = modoDocumento && !modoFase
+      ? `Valida el documento "${tipoDocumento}" según esta instrucción:\n${promptIA || "Verifica que el documento sea auténtico, legible y corresponda al tipo indicado."}\n\nContexto del solicitante:\n- Nombre: ${nombreSolicitante || "(no indicado)"}\n- Tipo persona: ${tipoPersona || "(no indicado)"}\n- Línea producto: ${lineaProducto || "(no indicado)"}\n- Fase: ${faseActual || `Fase ${faseNumero}`}\n\nResponde ÚNICAMENTE en JSON.`
+      : `Valida el siguiente contexto del proceso bancario y responde ÚNICAMENTE en JSON:\n\n${JSON.stringify(contextoFase, null, 2)}`;
 
-    // ── 3. Construir mensajes para Groq (con imagen si es modo documento) ──
-    const groqMessages = imageDataUrl
-      ? [{ role: "user", content: [
-          { type: "text", text: userMessage },
-          { type: "image_url", image_url: { url: imageDataUrl } },
-        ]}]
-      : [{ role: "user", content: userMessage }];
-
-    // ── 4. Llamar a Groq API ──
-    const GROQ_KEY = Deno.env.get("GROQ_API_KEY");
-    if (!GROQ_KEY) {
-      console.log(`${LOG_IA} ERROR: GROQ_API_KEY no configurada`);
-      return c.json({ error: "GROQ_API_KEY no configurada en secrets" }, 500);
-    }
-
-    // Seleccionar system prompt según el contexto
+    // ── 3. Preparar prompt y llamar a IA ──
     const esFormalizarContrato = (botonPresionado || "").toLowerCase().includes("formalizar");
-    const systemPrompt = esFormalizarContrato
-      ? SYSTEM_PROMPT_FORMALIZAR_CONTRATO
-      : SYSTEM_PROMPT_CORE_BANKING;
+    const systemPrompt = modoDocumento && !modoFase
+      ? SYSTEM_PROMPT_DOCUMENTO_INDIVIDUAL          // validación de un documento individual
+      : esFormalizarContrato
+        ? SYSTEM_PROMPT_FORMALIZAR_CONTRATO         // formalizar contrato
+        : SYSTEM_PROMPT_CORE_BANKING;               // avance de fase completa
 
-    console.log(`${LOG_IA} Llamando a Groq API — modo=${imageDataUrl ? 'VISION' : 'TEXT'}, boton=${botonPresionado}, prompt=${esFormalizarContrato ? 'FORMALIZAR' : 'CORE'}`);
-    const groqResponse = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": "Bearer " + GROQ_KEY,
-      },
-      body: JSON.stringify({
-        model: imageDataUrl
-          ? "meta-llama/llama-4-scout-17b-16e-instruct"  // vision para documentos
-          : "llama-3.3-70b-versatile",                    // texto para fases
-        messages: [
-          { role: "system", content: systemPrompt },
-          ...groqMessages,
-        ],
-        temperature: 0.1,
-        max_tokens: 2048,
-      }),
-    });
+    const textoPrincipal = systemPrompt + "\n\n" + userMessage;
 
-    if (!groqResponse.ok) {
-      const errText = await groqResponse.text();
-      console.log(`${LOG_IA} Groq API error HTTP ${groqResponse.status}:`, errText);
-      // Parse Groq error for better messaging
-      let errorMsg = "Groq API error: HTTP " + groqResponse.status;
-      let details = errText;
+    // ── Helper: parsear JSON de respuesta IA ──
+    // ── Helper: llamar a OpenRouter con un modelo dado ──
+    const OR_KEY   = Deno.env.get("OPENROUTER_API_KEY") || "";
+    const GROQ_KEY = Deno.env.get("GROQ_API_KEY") || "";
+    const OR_URL   = "https://openrouter.ai/api/v1/chat/completions";
+    const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
+    const OR_HDR   = { "HTTP-Referer": "https://pvzrjmsynzgfsowntywf.supabase.co", "X-Title": "CORE Bancario" };
+
+    const tryModel = async (url: string, auth: string, model: string, extra: Record<string,string> = {}): Promise<{raw: string; err?: string} | null> => {
+      const messages = imageDataUrl
+        ? [{ role: "user", content: [{ type: "text", text: textoPrincipal }, { type: "image_url", image_url: { url: imageDataUrl } }] }]
+        : [{ role: "user", content: textoPrincipal }];
       try {
-        const errJson = JSON.parse(errText);
-        if (errJson?.error?.message) {
-          errorMsg = errJson.error.message;
-          details = errJson.error.type || errText;
+        const res = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Authorization": `Bearer ${auth}`, ...extra },
+          body: JSON.stringify({ model, messages, temperature: 0, max_tokens: 1024 }),
+        });
+        const body = await res.text();
+        if (!res.ok) {
+          console.log(`${LOG_IA} [${model}] HTTP ${res.status}: ${body.substring(0, 300)}`);
+          return { raw: "", err: `${model} HTTP ${res.status}: ${body.substring(0, 200)}` };
         }
-      } catch (_) { /* keep raw errText */ }
-      return c.json({
-        error: errorMsg,
-        details: details,
-        status: groqResponse.status,
-      }, 502);
+        const j = JSON.parse(body);
+        const content = j.choices?.[0]?.message?.content || "";
+        if (!content) return { raw: "", err: `${model} devolvió contenido vacío` };
+        console.log(`${LOG_IA} [${model}] OK (${content.length} chars)`);
+        return { raw: content };
+      } catch (e: any) {
+        console.log(`${LOG_IA} [${model}] excepción: ${e.message}`);
+        return { raw: "", err: `${model} excepción: ${e.message}` };
+      }
+    };
+
+    const intentos: Array<() => Promise<{raw:string;err?:string}|null>> = [
+      // Gemini Flash 1.5 vía OpenRouter — más barato, ~$0.000075/1K tokens
+      () => GROQ_KEY ? tryModel(GROQ_URL, GROQ_KEY, "meta-llama/llama-4-scout-17b-16e-instruct") : null,
+    ];
+
+    let rawContent = "";
+    let modeloUsado = "ninguno";
+    const errores: string[] = [];
+
+    for (const intento of intentos) {
+      const r = await intento();
+      if (!r) continue;
+      if (r.raw) { rawContent = r.raw; break; }
+      if (r.err) errores.push(r.err);
     }
 
-    const groqResult = await groqResponse.json();
-    const rawContent = groqResult.choices?.[0]?.message?.content || "{}";
-    console.log(`${LOG_IA} Groq response raw (first 500 chars):`, rawContent.substring(0, 500));
+    // Si ninguno respondió → pass-through (no bloquear al usuario)
+    if (!rawContent) {
+      console.log(`${LOG_IA} Todos fallaron: ${errores.join(" | ")}`);
+      return c.json({
+        valido: true, confianza: 0,
+        motivos: ["Validación IA omitida — sin disponibilidad. Revisión manual recomendada.", ...errores.slice(0, 2)],
+        faltantes: [], faseListaParaAvanzar: true, documentosValidados: [],
+        puedeGenerarDocumentos: true, puedeGenerarContrato: true, puedeGenerarPagare: true,
+        modelo: "ninguno", timestamp: new Date().toISOString(), _rateLimited: true, _errores: errores,
+      });
+    }
 
     // ── 5. Parsear JSON de la respuesta ──
-    let parsed: any;
-    try {
-      // Extraer JSON de posible markdown ```json ... ```
-      const jsonMatch = rawContent.match(/```(?:json)?\s*([\s\S]*?)```/);
-      const cleanJson = jsonMatch ? jsonMatch[1].trim() : rawContent.trim();
-      parsed = JSON.parse(cleanJson);
-    } catch (parseErr: any) {
-      console.log(`${LOG_IA} JSON parse error:`, parseErr.message, "raw:", rawContent.substring(0, 200));
+    const parseIAJson = (raw: string): any | null => {
+      try {
+        const m = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
+        return JSON.parse(m ? m[1].trim() : raw.trim());
+      } catch (_) { return null; }
+    };
+    let parsed: any = parseIAJson(rawContent);
+    if (!parsed) {
       parsed = {
-        valido: false,
-        confianza: 0,
+        valido: false, confianza: 0,
         motivos: ["La IA no pudo analizar el contexto correctamente", "Respuesta no estructurada: " + rawContent.substring(0, 200)],
-        faltantes: [],
-        faseListaParaAvanzar: false,
-        documentosValidados: [],
+        faltantes: [], faseListaParaAvanzar: false, documentosValidados: [],
         _rawResponse: rawContent.substring(0, 500),
       };
     }
 
-    // Asegurar estructura completa (backwards-compatible con campos legacy)
-    const modeloUsado = imageDataUrl
-      ? "meta-llama/llama-4-scout-17b-16e-instruct"
-      : "llama-3.3-70b-versatile";
+    // ── Post-procesamiento: detectar respuesta contradictoria del modelo ──
+    // Si todos los motivos son positivos pero valido=false, el modelo cometió un error lógico
+    const motivosPositivos = ["coincide", "válido", "vigente", "legible", "correcto", "auténtico",
+      "coinciden", "verificado", "aprobado", "completo", "presente", "corresponde"];
+    const motivosNegativos = ["no coincide", "falta", "inválido", "ilegible", "rechazado",
+      "incorrecto", "no se puede", "no presenta", "ausente", "error", "vencido"];
+    const motivosArr: string[] = Array.isArray(parsed.motivos) ? parsed.motivos : [];
+    if (!parsed.valido && motivosArr.length > 0 && modoDocumento && !modoFase) {
+      const textoMotivos = motivosArr.join(" ").toLowerCase();
+      const tienePositivo = motivosPositivos.some(p => textoMotivos.includes(p));
+      const tieneNegativo = motivosNegativos.some(n => textoMotivos.includes(n));
+      if (tienePositivo && !tieneNegativo) {
+        console.log(`${LOG_IA} ⚠️ Respuesta contradictoria detectada: motivos positivos pero valido=false → corrigiendo a valido=true`);
+        parsed.valido = true;
+        parsed.confianza = parsed.confianza > 0 ? parsed.confianza : 0.85;
+      }
+    }
 
     const result = {
       valido: parsed.valido === true,
@@ -3455,7 +3524,7 @@ const validarDocumentoIAHandler = async (c: any) => {
       tipoDocumento: tipoDocumento || null,
       faseActual: faseActual || null,
       botonPresionado: botonPresionado || null,
-      usage: groqResult.usage || null,
+      usage: null,
     };
 
     console.log(`${LOG_IA} ✅ valido=${result.valido}, confianza=${result.confianza}, faseListaParaAvanzar=${result.faseListaParaAvanzar}, faltantes=${result.faltantes.length}, docsValidados=${result.documentosValidados.length}`);

@@ -99,6 +99,8 @@ function mapRowToGarantia(row: JGarantiaRow): Garantia {
     estatus: def.estatus || '',
     estado: def.estado || '',
     municipio: def.municipio || '',
+    montoCubrirGarantia: def.montoCubrirGarantia != null ? Number(def.montoCubrirGarantia) : undefined,
+    porcentajeAforo: def.porcentajeAforo != null ? Number(def.porcentajeAforo) : undefined,
     cliente_id: row.cliente_id || '',
     clienteNombre: def.clienteNombre || '',
     documentos: Array.isArray(exp.documentos) ? exp.documentos : [],
@@ -127,6 +129,8 @@ function buildDataJson(g: Garantia): Record<string, any> {
       estatus: g.estatus,
       estado: g.estado,
       municipio: g.municipio,
+      montoCubrirGarantia: g.montoCubrirGarantia ?? null,
+      porcentajeAforo: g.porcentajeAforo ?? null,
       clienteNombre: g.clienteNombre || '',
     },
     expedienteElectronico: {
