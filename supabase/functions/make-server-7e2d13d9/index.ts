@@ -3181,48 +3181,41 @@ Si falta un documento obligatorio, repórtalo.
 ────────────────────────────────────────
 3. VALIDACIÓN DE SUBTABS Y CONFIGURACIÓN
 ────────────────────────────────────────
-Verifica:
-- Que existan los subtabs requeridos por la fase.
-- Que existan plantillas configuradas (Solicitud, Contrato, Pagaré, Minuta).
-- Que las plantillas correspondan al producto.
-- Que los documentos generados provengan de la plantilla correcta.
+Verifica SOLO cuando los datos estén presentes:
+- Si se proporcionaron subtabs → verificar que correspondan a la fase.
+- Si se proporcionaron plantillas → verificar que estén activas y sean correctas.
+- Si NO se proporcionaron subtabs o plantillas → NO bloquear por este motivo. No es un error de configuración faltante en el sistema, sino que el producto puede no requerirlos.
+- Para productos de Captación/Inversión: NO se requieren plantillas de Contrato ni Pagaré. Solo aplica "solicitud" si existe.
+- Si el payload llega con campos vacíos (documentos, subtabs, plantillas, reglas) → interpretar como contexto mínimo y ser PERMISIVO. Aprobar si los datos del cliente y monto están presentes.
 
 ────────────────────────────────────────
 4. VALIDACIÓN DE REGLAS DE NEGOCIO POR FASE
 ────────────────────────────────────────
+REGLA GENERAL: Si los campos de contexto (documentos, subtabs, plantillas, reglas) llegan vacíos,
+ser PERMISIVO y aprobar basándose en los datos básicos disponibles (cliente, monto, fase).
+
+Para productos de Captación/Inversión (lineaProducto = "Captación" o tipoProducto contiene "Inversión"):
+- NO requerir Contrato ni Pagaré en ninguna fase.
+- Las fases son personalizadas por el producto — validar solo lo que se proporciona.
+- Si hay documentos → validarlos. Si no hay → aprobar.
+
+Para productos de Crédito/Línea de Crédito:
 FASE 1 — Expediente Electrónico
 - Validar que los datos del cliente estén completos.
-- Validar que existan los documentos base según tipo de persona.
+- Validar que existan los documentos base según tipo de persona (si se proporcionan).
 FASE 2 — Integración / Solicitud
-- Validar que exista el PDF "SOLICITUD".
-- Validar encabezado EXACTO: "SOLICITUD".
-- Validar datos del cliente y monto.
-- Validar firma (si aplica).
+- Validar que exista el PDF "SOLICITUD" (si se proporcionan documentos generados).
+- Validar datos del cliente y monto (si están disponibles).
 FASE 3 — Análisis / RFC
-- Validar que exista la Constancia Fiscal SAT.
-- Validar que el RFC coincida con el del cliente.
+- Validar RFC (si se proporcionan documentos).
 FASE 4 — Expediente Jurídico / Formalización
-- Validar Acta Constitutiva.
-- Validar plantillas de Contrato y Pagaré.
-- Validar generación de Contrato.pdf y Pagare.pdf.
-- Validar datos del crédito, términos y condiciones y garantías.
+- Validar plantillas de Contrato y Pagaré (solo si se proporcionan plantillas).
 FASE 5 — Validación de Firmas
-- Validar Contrato firmado.
-- Validar Pagaré firmado.
-- Validar firmas legibles.
+- Validar Contrato y Pagaré firmados (solo si se proporcionan documentos).
 FASE 6 — Solicitud de Activación
-- Validar que todas las fases anteriores estén completas.
-- Validar garantías (si aplica).
-- Validar comités (si aplica).
-- Validar cargos.
-- Validar creación de Cuenta por Pagar o Cuenta por Cobrar.
+- Validar garantías y cargos (solo si se proporcionan).
 FASE 7 — Activación de Cuenta
-- Validar que el estatus en Solicitudes de Activación sea "Pagado".
-- Validar que se puedan actualizar los estatus:
-  - Estatus Solicitud = Autorizada
-  - Estatus Cuenta = Activa
-  - Estatus Pago = Pagado
-  - Estatus Cartera = Activa
+- Validar estatus de Solicitud de Activación (si se proporciona).
 
 ────────────────────────────────────────
 5. VALIDACIÓN DE BOTONES Y ACCIONES

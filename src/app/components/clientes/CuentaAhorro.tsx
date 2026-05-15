@@ -312,7 +312,7 @@ export function CuentaAhorro({ onBack, mode, clienteId, onCuentaEjeChange }: Cue
                         {cuenta.productoNombre || '—'}
                       </td>
                       <td className="px-3 py-2 text-xs text-gray-700 text-right border-r border-gray-300">
-                        {formatMoney(cuenta.montoAut)}
+                        {formatMoney(cuenta.saldoActual)}
                       </td>
                       <td className="px-3 py-2 text-center border-r border-gray-300">
                         {estatusBadge(cuenta.estatusCuen)}

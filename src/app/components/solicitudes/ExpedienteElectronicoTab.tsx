@@ -1189,11 +1189,11 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
   const handleEliminar = (docId: number) => {
     const doc = documentos.find(d => d.id === docId);
     if (!doc) return;
-    if (doc.storagePath) {
-      deleteFileFromStorage(doc.storagePath);
-    }
-    setDocumentos(prev => prev.filter(d => d.id !== docId));
-    toast.success('Documento eliminado');
+    if (doc.storagePath) deleteFileFromStorage(doc.storagePath);
+    const updated = documentos.filter(d => d.id !== docId);
+    setDocumentos(updated);
+    saveToSession(solicitudId, 'documentos', updated);
+    toast.success('Documento eliminado', { description: doc.tipoDocumento, duration: 3000 });
   };
 
   const handleFileSelect = () => {
@@ -1756,8 +1756,13 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
                             </button>
                           )}
                           {!isRO && (
-                            <button onClick={() => handleEliminar(doc.id)} className="inline-flex items-center justify-center w-6 h-6 rounded-md text-gray-400 hover:text-red-600 hover:bg-red-50 border border-transparent hover:border-red-200 transition-colors">
-                              <svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M1.5 3h8M4 3V1.5h3V3M3 3v6.5a1 1 0 001 1h3a1 1 0 001-1V3" /></svg>
+                            <button
+                              onClick={() => handleEliminar(doc.id)}
+                              className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 transition-colors"
+                              title="Quitar documento del expediente"
+                            >
+                              <svg width="10" height="10" viewBox="0 0 11 11" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M1.5 3h8M4 3V1.5h3V3M3 3v6.5a1 1 0 001 1h3a1 1 0 001-1V3" /></svg>
+                              Quitar
                             </button>
                           )}
                         </div>

@@ -1303,13 +1303,30 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
         return toObjectURL(fallbackFn());
       };
 
-      const contratoUrl = await generarUrlDesdeRef(plantillaContrato, () => generarContratoPDF(datosSolicitud));
-      const pagareUrl   = await generarUrlDesdeRef(plantillaPagare,   () => generarPagePDF(datosSolicitud));
+      const tpNormFormal = (
+        formData.tipoProducto ||
+        productoSeleccionado?.tipoProducto ||
+        (productoSeleccionado?.rawData as any)?.tipoProducto ||
+        (productoSeleccionado?.rawData as any)?.default?.tipoProducto ||
+        ''
+      ).toLowerCase();
+      const esInversionFormal = tpNormFormal.includes('invers');
+      console.log('[Formalizar] tipoProducto raw:', formData.tipoProducto, '| tpNorm:', tpNormFormal, '| esInversion:', esInversionFormal);
+
+      // Para Inversión: ignorar la plantilla de contrato (es de crédito) y usar PDF de inversión.
+      // Pasar null como plantilla fuerza el fallback → generarSolicitudPDF detecta isInversion.
+      const contratoUrl = await generarUrlDesdeRef(
+        esInversionFormal ? null : plantillaContrato,
+        () => esInversionFormal ? generarSolicitudPDF(datosSolicitud) : generarContratoPDF(datosSolicitud)
+      );
+      const pagareUrl = esInversionFormal
+        ? null
+        : await generarUrlDesdeRef(plantillaPagare, () => generarPagePDF(datosSolicitud));
 
       // ── Abrir en pestañas nuevas ──
       const tabContrato = window.open(contratoUrl, '_blank');
-      const tabPagare   = window.open(pagareUrl,   '_blank');
-      if (!tabContrato || !tabPagare) {
+      const tabPagare   = pagareUrl ? window.open(pagareUrl, '_blank') : null;
+      if (!tabContrato || (pagareUrl && !tabPagare)) {
         toast.warning('El navegador bloqueó las pestañas', {
           description: 'Permita las ventanas emergentes para este sitio y vuelva a intentarlo.',
         });
@@ -1324,8 +1341,9 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
         a.click();
         document.body.removeChild(a);
       };
-      descargar(contratoUrl, `Contrato_${formData.noSol}.pdf`);
-      descargar(pagareUrl,   `Pagare_${formData.noSol}.pdf`);
+      const docLabel = esInversionFormal ? 'Solicitud_Inversion' : 'Contrato';
+      descargar(contratoUrl, `${docLabel}_${formData.noSol}.pdf`);
+      if (pagareUrl) descargar(pagareUrl, `Pagare_${formData.noSol}.pdf`);
 
       // Liberar blob URLs tras 2 minutos
       setTimeout(() => { URL.revokeObjectURL(contratoUrl); URL.revokeObjectURL(pagareUrl); }, 120_000);

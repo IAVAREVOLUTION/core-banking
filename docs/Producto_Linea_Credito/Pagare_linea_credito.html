@@ -3,219 +3,358 @@
 <head>
 <meta charset="UTF-8" />
 <title>Pagaré de Línea de Crédito</title>
-
 <style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
   body {
-    font-family: "Helvetica Neue", Arial, sans-serif;
-    margin: 0;
-    color: #1a1a1a;
-    font-size: 12px;
+    font-family: "Times New Roman", Times, serif;
+    color: #111;
+    font-size: 11.5px;
+    background: #fff;
   }
 
   .page {
     width: 210mm;
     min-height: 297mm;
-    padding: 30mm 25mm 20mm 25mm;
-    box-sizing: border-box;
+    padding: 18mm 22mm 16mm 22mm;
     display: flex;
     flex-direction: column;
     justify-content: space-between;
+    background: #fff;
   }
 
-  /* HEADER */
+  /* ── HEADER ── */
   .header {
     display: flex;
     justify-content: space-between;
-    align-items: center;
-    margin-bottom: 20px;
+    align-items: flex-start;
+    padding-bottom: 10px;
+    border-bottom: 2.5px solid #1a3a5c;
+    margin-bottom: 16px;
   }
 
-  .brand {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-  }
+  .brand { display: flex; align-items: center; gap: 10px; }
+  .logo  { height: 44px; width: auto; }
 
-  .logo {
-    height: 40px;
-  }
-
-  .brand-name {
+  .brand-info .brand-name {
+    font-family: "Helvetica Neue", Arial, sans-serif;
     font-weight: 700;
-    font-size: 14px;
+    font-size: 13px;
+    color: #1a3a5c;
+    letter-spacing: 0.3px;
   }
-
-  .brand small {
-    font-size: 10px;
-    color: #666;
+  .brand-info .brand-sub {
+    font-family: "Helvetica Neue", Arial, sans-serif;
+    font-size: 9px;
+    color: #555;
+    margin-top: 2px;
   }
 
   .doc-meta {
     text-align: right;
-    font-size: 11px;
+    font-size: 10px;
+    color: #333;
+    line-height: 1.7;
   }
-
-  /* TITLE */
-  .title {
-    text-align: center;
-    font-size: 18px;
+  .doc-meta .doc-no {
+    font-family: "Helvetica Neue", Arial, sans-serif;
     font-weight: 700;
-    letter-spacing: 2px;
-    margin: 10px 0 25px 0;
+    font-size: 11px;
+    color: #1a3a5c;
+    margin-bottom: 2px;
   }
 
-  /* CONTENT */
+  /* ── WATERMARK BAND ── */
+  .watermark-band {
+    background: #1a3a5c;
+    color: #fff;
+    text-align: center;
+    font-family: "Helvetica Neue", Arial, sans-serif;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 4px;
+    padding: 7px 0;
+    margin-bottom: 18px;
+  }
+
+  /* ── AMOUNT BOX ── */
+  .amount-box {
+    border: 2px solid #1a3a5c;
+    border-radius: 4px;
+    padding: 10px 16px;
+    margin: 16px 0;
+    background: #f0f4f9;
+    text-align: center;
+  }
+  .amount-box .amount-label {
+    font-family: "Helvetica Neue", Arial, sans-serif;
+    font-size: 9px;
+    color: #555;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 4px;
+  }
+  .amount-box .amount-value {
+    font-family: "Helvetica Neue", Arial, sans-serif;
+    font-size: 15px;
+    font-weight: 700;
+    color: #1a3a5c;
+  }
+  .amount-box .amount-letra {
+    font-size: 10.5px;
+    color: #333;
+    margin-top: 3px;
+    font-style: italic;
+  }
+
+  /* ── CONTENT ── */
   .content {
     text-align: justify;
-    line-height: 1.6;
+    line-height: 1.65;
+    flex: 1;
   }
 
-  .section {
-    margin-bottom: 14px;
-  }
+  .section { margin-bottom: 11px; }
 
-  .highlight {
-    font-weight: 600;
-  }
+  .bold  { font-weight: 700; }
+  .upper { text-transform: uppercase; }
 
-  .amount {
-    text-align: center;
-    font-size: 14px;
-    font-weight: 700;
-    margin: 20px 0;
-  }
-
-  /* SIGNATURE */
-  .signature-block {
-    margin-top: 60px;
-    display: flex;
-    justify-content: space-between;
-  }
-
-  .signature {
-    width: 45%;
-    text-align: center;
-  }
-
-  .line {
-    margin-top: 60px;
-    border-top: 1px solid #000;
-    padding-top: 6px;
-    font-size: 11px;
-  }
-
-  /* FOOTER */
-  .footer {
-    font-size: 9px;
-    color: #666;
-  }
-
-  .footer-line {
+  /* ── DATA TABLE ── */
+  .data-table {
     width: 100%;
-    height: 1px;
-    background: #ccc;
+    border-collapse: collapse;
+    margin: 14px 0;
+    font-size: 10.5px;
+  }
+  .data-table td {
+    padding: 5px 8px;
+    border: 1px solid #ccd4de;
+    vertical-align: top;
+  }
+  .data-table td.label {
+    background: #eef2f7;
+    font-weight: 700;
+    color: #1a3a5c;
+    width: 38%;
+    font-family: "Helvetica Neue", Arial, sans-serif;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+  }
+
+  /* ── CLAUSES ── */
+  .clause-title {
+    font-family: "Helvetica Neue", Arial, sans-serif;
+    font-weight: 700;
+    font-size: 10.5px;
+    color: #1a3a5c;
+    text-transform: uppercase;
+    margin: 13px 0 4px 0;
+    letter-spacing: 0.5px;
+  }
+
+  /* ── SIGNATURES ── */
+  .signature-section { margin-top: 32px; }
+  .signature-title {
+    font-family: "Helvetica Neue", Arial, sans-serif;
+    font-size: 9px;
+    font-weight: 700;
+    color: #1a3a5c;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    border-bottom: 1px solid #1a3a5c;
+    padding-bottom: 4px;
+    margin-bottom: 24px;
+  }
+  .sig-row {
+    display: flex;
+    justify-content: space-around;
+    gap: 20px;
+  }
+  .sig-box {
+    flex: 1;
+    text-align: center;
+    max-width: 48%;
+  }
+  .sig-area {
+    border-bottom: 1.5px solid #111;
+    height: 52px;
     margin-bottom: 6px;
   }
-
-  .footer-content {
-    display: flex;
-    justify-content: space-between;
+  .sig-label {
+    font-family: "Helvetica Neue", Arial, sans-serif;
+    font-size: 9px;
+    font-weight: 700;
+    color: #1a3a5c;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .sig-name {
+    font-size: 9.5px;
+    color: #444;
+    margin-top: 2px;
+  }
+  .sig-rfc {
+    font-size: 8.5px;
+    color: #777;
   }
 
+  /* ── FOOTER ── */
+  .footer {
+    margin-top: 14px;
+    border-top: 1.5px solid #1a3a5c;
+    padding-top: 6px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-family: "Helvetica Neue", Arial, sans-serif;
+    font-size: 8px;
+    color: #666;
+  }
+  .footer .folio {
+    font-weight: 700;
+    color: #1a3a5c;
+    font-size: 8.5px;
+  }
+
+  /* ── LEGAL NOTE ── */
+  .legal-note {
+    background: #f7f9fc;
+    border-left: 3px solid #1a3a5c;
+    padding: 8px 10px;
+    font-size: 9.5px;
+    color: #444;
+    margin: 12px 0;
+    line-height: 1.5;
+  }
 </style>
 </head>
-
 <body>
 <div class="page">
 
-  <div>
+  <!-- ══ MAIN CONTENT ══ -->
+  <div class="content-wrapper">
 
     <!-- HEADER -->
     <div class="header">
       <div class="brand">
-        <img class="logo" src="/src/assets/7b6cb23c00b7817818c638af3eae0a416e1e9f57.png"/>
-        <div>
+        <img class="logo" src="/src/assets/7b6cb23c00b7817818c638af3eae0a416e1e9f57.png" alt="Logo"/>
+        <div class="brand-info">
           <div class="brand-name">{{institucionNombre}}</div>
-          <small>{{empresa_razon_social}}</small>
+          <div class="brand-sub">{{empresa_razon_social}}</div>
         </div>
       </div>
-
       <div class="doc-meta">
+        <div class="doc-no">Folio: {{noSol}}</div>
         <div><strong>Lugar:</strong> {{ciudad}}</div>
-        <div><strong>Fecha:</strong> {{fecha_emision}}</div>
+        <div><strong>Fecha de emisión:</strong> {{fecha_emision}}</div>
+        <div><strong>Vencimiento:</strong> {{fecha_vencimiento}}</div>
       </div>
     </div>
 
-    <!-- TITLE -->
-    <div class="title">PAGARÉ DE LÍNEA DE CRÉDITO</div>
+    <!-- TITLE BAND -->
+    <div class="watermark-band">PAGARÉ &nbsp;·&nbsp; LÍNEA DE CRÉDITO</div>
 
-    <!-- CONTENT -->
-    <div class="content">
+    <!-- MONTO -->
+    <div class="amount-box">
+      <div class="amount-label">Importe máximo garantizado</div>
+      <div class="amount-value">{{limite_numero}} {{moneda}}</div>
+      <div class="amount-letra">{{limite_letra}}</div>
+    </div>
 
-      <div class="section">
-        Por medio del presente título de crédito, yo 
-        <span class="highlight">{{deudor_nombre}}</span>, con RFC 
-        <span class="highlight">{{deudor_rfc}}</span>, con domicilio en 
-        <span class="highlight">{{deudor_domicilio}}</span>, me obligo de manera 
-        <span class="highlight">incondicional</span> a pagar a la orden de 
-        <span class="highlight">{{acreedor_nombre}}</span>, las cantidades que resulten a mi cargo
-        derivadas del uso de la línea de crédito que me ha sido otorgada.
-      </div>
+    <!-- DATOS DEL SUSCRIPTOR -->
+    <div class="clause-title">I. Datos del Suscriptor</div>
+    <table class="data-table">
+      <tr>
+        <td class="label">Nombre completo</td>
+        <td>{{deudor_nombre}}</td>
+      </tr>
+      <tr>
+        <td class="label">RFC</td>
+        <td>{{deudor_rfc}}</td>
+      </tr>
+      <tr>
+        <td class="label">Domicilio</td>
+        <td>{{deudor_domicilio}}</td>
+      </tr>
+      <tr>
+        <td class="label">Acreedor (Institución)</td>
+        <td>{{acreedor_nombre}}</td>
+      </tr>
+    </table>
 
-      <div class="section">
-        El importe máximo garantizado mediante el presente pagaré será hasta por la cantidad de:
-      </div>
+    <!-- CONDICIONES -->
+    <div class="clause-title">II. Condiciones del Crédito</div>
+    <table class="data-table">
+      <tr>
+        <td class="label">Línea de crédito otorgada</td>
+        <td><strong>{{limite_numero}} {{moneda}}</strong></td>
+      </tr>
+      <tr>
+        <td class="label">Tasa de interés ordinaria</td>
+        <td>{{tasa_interes}}% anual sobre saldos insolutos</td>
+      </tr>
+      <tr>
+        <td class="label">Tasa de interés moratoria</td>
+        <td>{{tasa_moratoria}}% anual en caso de mora</td>
+      </tr>
+      <tr>
+        <td class="label">Lugar de pago</td>
+        <td>{{lugar_pago}}</td>
+      </tr>
+    </table>
 
-      <div class="amount">
-        {{limite_letra}} <br/>
-        ({{limite_numero}} {{moneda}})
-      </div>
+    <!-- CLÁUSULAS -->
+    <div class="clause-title">III. Declaraciones y Compromisos</div>
+    <div class="section">
+      Por medio del presente título de crédito, yo <span class="bold">{{deudor_nombre}}</span>,
+      con RFC <span class="bold">{{deudor_rfc}}</span>, con domicilio en <span class="bold">{{deudor_domicilio}}</span>,
+      me obligo de manera <span class="bold">incondicional e irrevocable</span> a pagar a la orden de
+      <span class="bold">{{acreedor_nombre}}</span> las cantidades que resulten a mi cargo derivadas
+      del uso de la línea de crédito que me ha sido otorgada, en los términos y condiciones
+      estipulados en el contrato respectivo.
+    </div>
 
-      <div class="section">
-        Este pagaré tiene carácter <span class="highlight">revolvente</span>, por lo que ampara todas las disposiciones,
-        cargos, intereses, comisiones y demás obligaciones derivadas del contrato de línea de crédito celebrado
-        entre las partes.
-      </div>
+    <div class="clause-title">IV. Carácter del Título</div>
+    <div class="section">
+      Este pagaré tiene carácter <span class="bold">revolvente</span>, por lo que ampara todas las
+      disposiciones, cargos, intereses, comisiones y demás obligaciones derivadas del contrato de
+      línea de crédito celebrado entre las partes. El pago deberá realizarse conforme a los estados
+      de cuenta emitidos por <span class="bold">{{acreedor_nombre}}</span>, siendo exigible el saldo
+      total en caso de incumplimiento o vencimiento anticipado.
+    </div>
 
-      <div class="section">
-        El pago de las cantidades adeudadas deberá realizarse conforme a los estados de cuenta emitidos por 
-        <span class="highlight">{{acreedor_nombre}}</span>, siendo exigible el saldo total en caso de incumplimiento.
-      </div>
+    <div class="clause-title">V. Renuncia y Jurisdicción</div>
+    <div class="section">
+      El suscriptor renuncia expresamente a los beneficios de orden, excusión y división,
+      obligándose solidariamente junto con su aval en caso de existir. Para la interpretación
+      y cumplimiento del presente pagaré, las partes se someten expresamente a la jurisdicción
+      de los tribunales competentes de <span class="bold">{{jurisdiccion}}</span>, renunciando
+      al fuero que pudiera corresponderles por razón de su domicilio presente o futuro.
+    </div>
 
-      <div class="section">
-        El presente documento causará intereses ordinarios a una tasa de 
-        <span class="highlight">{{tasa_interes}}% anual</span>, calculados sobre saldos insolutos,
-        así como intereses moratorios a una tasa de 
-        <span class="highlight">{{tasa_moratoria}}% anual</span> en caso de mora.
-      </div>
-
-      <div class="section">
-        El suscriptor renuncia expresamente a los beneficios de orden, excusión y división,
-        obligándose solidariamente junto con su aval en caso de existir.
-      </div>
-
-      <div class="section">
-        Para la interpretación y cumplimiento del presente pagaré, las partes se someten a la jurisdicción
-        de los tribunales competentes de 
-        <span class="highlight">{{jurisdiccion}}</span>.
-      </div>
-
-      <div class="section">
-        Este pagaré es de carácter mercantil y se rige por la Ley General de Títulos y Operaciones de Crédito.
-      </div>
-
+    <div class="legal-note">
+      Este pagaré es de carácter mercantil y se rige por la <strong>Ley General de Títulos y
+      Operaciones de Crédito</strong> vigente. En caso de mora, el tenedor podrá exigir el pago
+      inmediato del saldo total adeudado sin necesidad de requerimiento previo.
     </div>
 
     <!-- SIGNATURES -->
-    <div class="signature-block">
-      <div class="signature">
-        <div class="line">{{deudor_nombre}}</div>
-        SUSCRIPTOR (DEUDOR)
-      </div>
-
-      <div class="signature">
-        <div class="line">{{aval_nombre}}</div>
-        AVAL
+    <div class="signature-section">
+      <div class="signature-title">Firmas de conformidad</div>
+      <div class="sig-row">
+        <div class="sig-box">
+          <div class="sig-area"></div>
+          <div class="sig-label">Suscriptor (Deudor)</div>
+          <div class="sig-name">{{deudor_nombre}}</div>
+          <div class="sig-rfc">RFC: {{deudor_rfc}}</div>
+        </div>
+        <div class="sig-box">
+          <div class="sig-area"></div>
+          <div class="sig-label">Aval</div>
+          <div class="sig-name">{{aval_nombre}}</div>
+          <div class="sig-rfc">&nbsp;</div>
+        </div>
       </div>
     </div>
 
@@ -223,11 +362,9 @@
 
   <!-- FOOTER -->
   <div class="footer">
-    <div class="footer-line"></div>
-    <div class="footer-content">
-      <span>{{institucionNombre}}</span>
-      <span>Documento confidencial · Título de crédito</span>
-    </div>
+    <span class="folio">{{institucionNombre}} · Folio: {{noSol}}</span>
+    <span>Emitido el {{fecha_emision}} en {{ciudad}}</span>
+    <span>Documento confidencial · Título de crédito · LGTOC</span>
   </div>
 
 </div>

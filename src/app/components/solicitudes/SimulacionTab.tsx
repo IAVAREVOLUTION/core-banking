@@ -389,8 +389,8 @@ export function SimulacionTab({ mode, solicitudId, lineaProducto, tipoProducto, 
     return (
       <div className="border border-gray-200 bg-white p-0">
         <div className="border-t border-gray-300">
-          <div className="bg-purple-50 border-l-4 border-purple-500 px-3 py-2 flex items-center justify-between">
-            <span className="text-sm font-medium text-purple-900">TABLA DE FLUJO DE INVERSIÓN</span>
+          <div className="bg-primary-tint-theme border-l-4 border-primary-theme px-3 py-2 flex items-center justify-between">
+            <span className="text-sm font-medium text-gray-800">TABLA DE FLUJO DE INVERSIÓN</span>
             {!isRO && (
               <button
                 onClick={handleSimularInversion}
@@ -440,7 +440,7 @@ export function SimulacionTab({ mode, solicitudId, lineaProducto, tipoProducto, 
               <div className="border border-gray-300 overflow-x-auto">
                 <table className="w-full text-xs">
                   <thead>
-                    <tr className="bg-purple-700 text-white">
+                    <tr className="bg-[#2E5C91] text-white">
                       <th className="px-3 py-2.5 text-center font-medium whitespace-nowrap">Período</th>
                       <th className="px-3 py-2.5 text-left font-medium whitespace-nowrap">Fecha</th>
                       <th className="px-3 py-2.5 text-right font-medium whitespace-nowrap">Capital Inicial</th>

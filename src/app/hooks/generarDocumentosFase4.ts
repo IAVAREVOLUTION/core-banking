@@ -667,6 +667,10 @@ export function generarSolicitudPDF(datos: DatosSolicitud): string {
   const tasa   = t.tasa  || t.tasaAnual  ? `${t.tasa  || t.tasaAnual}%` : 'Sin definir';
   const moneda = t.moneda || 'MXN';
   const fecha  = new Date().toLocaleDateString('es-MX');
+
+  const tpNorm = (datos.tipoProducto || '').toLowerCase();
+  const esInversion = tpNorm.includes('invers');
+
   const rows: Array<[string, string]> = [
     ['No. Solicitud',   datos.noSol || 'N/A'],
     ['Fecha',           fecha],
@@ -685,23 +689,44 @@ export function generarSolicitudPDF(datos: DatosSolicitud): string {
     ['Tipo de Producto', datos.tipoProducto || 'N/A'],
     ['Producto',        datos.productoNombre || datos.tipoProducto || 'N/A'],
     ['',                ''],
-    ['CONDICIONES DEL CREDITO', ''],
-    ['Monto Solicitado', `${moneda} ${monto}`],
-    ['Plazo',           plazo],
-    ['Tasa Anual',      tasa],
-    ['Moneda',          moneda],
-    ['Finalidad',       datos.finalidad || 'N/A'],
+    ...(esInversion ? [
+      ['CONDICIONES DE LA INVERSION', ''] as [string,string],
+      ['Monto de Inversión',  `${moneda} ${monto}`] as [string,string],
+      ['Plazo',               plazo] as [string,string],
+      ['Tasa / Rendimiento',  tasa] as [string,string],
+      ['Método de Intereses', String(t.metodoIntereses || (t as any).metodoPagoIntereses || 'N/A')] as [string,string],
+      ['Fecha de Inversión',  String(t.fechaPrimeraAportacion || (t as any).fechaInversion || 'N/A')] as [string,string],
+      ['Moneda',              moneda] as [string,string],
+      ['',                    ''] as [string,string],
+      ['PERFIL DEL INVERSIONISTA', ''] as [string,string],
+      ['Perfil',              String(t.perfilInversionista || 'N/A')] as [string,string],
+      ['Riesgo',              String(t.riesgoInversionista || 'N/A')] as [string,string],
+      ['Horizonte',           String(t.horizonteInversion  || 'N/A')] as [string,string],
+      ['Experiencia',         String(t.experienciaInversion || 'N/A')] as [string,string],
+    ] : [
+      ['CONDICIONES DEL CREDITO', ''] as [string,string],
+      ['Monto Solicitado', `${moneda} ${monto}`] as [string,string],
+      ['Plazo',            plazo] as [string,string],
+      ['Tasa Anual',       tasa] as [string,string],
+      ['Moneda',           moneda] as [string,string],
+      ['Finalidad',        datos.finalidad || 'N/A'] as [string,string],
+    ]),
     ['',                ''],
     ['SUCURSAL',        datos.sucursal || 'N/A'],
     ['',                ''],
-    ['DECLARACION DEL SOLICITANTE', ''],
-    ['El suscrito manifiesta que los datos proporcionados', ''],
-    ['son verdaderos y autoriza a la institucion a', ''],
-    ['verificar la informacion en los registros correspondientes.', ''],
+    [esInversion ? 'DECLARACION DEL INVERSIONISTA' : 'DECLARACION DEL SOLICITANTE', ''],
+    [esInversion
+      ? 'El inversionista declara que los recursos son de procedencia licita'
+      : 'El suscrito manifiesta que los datos proporcionados son verdaderos', ''],
+    ['y autoriza a la institucion a verificar la informacion correspondiente.', ''],
     ['',                ''],
     ['Fecha de solicitud:', fecha],
   ];
-  return buildPDFDataUrl('SOLICITUD DE CREDITO', rows);
+
+  return buildPDFDataUrl(
+    esInversion ? 'SOLICITUD DE INVERSION A PLAZO' : 'SOLICITUD DE CREDITO',
+    rows
+  );
 }
 
 /**
@@ -884,6 +909,13 @@ export function sustituirPlaceholders(html: string, datos: DatosSolicitud): stri
     .replace(/\{\{horizonte\}\}/g, String(t.horizonteInversion || (t as any).horizonte || 'N/A'))
     .replace(/\{\{experiencia\}\}/g, String(t.experienciaInversion || (t as any).experiencia || 'N/A'))
     .replace(/\{\{rendimiento\}\}/g, String(t.tasa || (t as any).rendimiento || 'N/A'))
+    .replace(/\{\{metodo_intereses\}\}/g, String(t.metodoIntereses || (t as any).metodoPagoIntereses || 'N/A'))
+    .replace(/\{\{metodoIntereses\}\}/g, String(t.metodoIntereses || (t as any).metodoPagoIntereses || 'N/A'))
+    .replace(/\{\{metodo_pago_intereses\}\}/g, String(t.metodoIntereses || (t as any).metodoPagoIntereses || 'N/A'))
+    .replace(/\{\{fecha_inversion\}\}/g, String(t.fechaPrimeraAportacion || (t as any).fechaInversion || 'N/A'))
+    .replace(/\{\{fecha_primera_aportacion\}\}/g, String(t.fechaPrimeraAportacion || (t as any).fechaInversion || 'N/A'))
+    .replace(/\{\{monto_inversion\}\}/g, monto)
+    .replace(/\{\{montoInversion\}\}/g, monto)
     // ── Catch-all: cualquier {{placeholder}} no reconocido → vacío ──
     .replace(/\{\{[^}]+\}\}/g, '');
 }
@@ -924,14 +956,21 @@ export async function htmlToPdfBlobUrl(html: string): Promise<string> {
   // CRÍTICO: left:-9999px hace que getBoundingClientRect().left = -9999 y
   // html2canvas renderiza fuera del canvas → PDF en blanco.
   const container = document.createElement('div');
-  // width:794px ≈ 210mm a 96 DPI; overflow:visible para que el contenido no se corte
-  container.style.cssText = 'position:fixed;left:0;top:0;width:794px;background:#fff;z-index:-1;pointer-events:none;overflow:visible;';
+  // 850px en lugar de 794px para evitar que texto alineado a la derecha quede cortado al borde.
+  // El PDF final escala la imagen a 210mm (A4) independientemente del ancho de captura.
+  const CAPTURE_W = 850;
+  container.style.cssText = `position:fixed;left:0;top:0;width:${CAPTURE_W}px;background:#fff;z-index:-1;pointer-events:none;overflow:visible;`;
 
-  // Estilos dentro del contenedor → se eliminan con él al hacer removeChild
   const styleTag = styleBlocks.length
     ? `<style>${styleBlocks.join('\n')}</style>`
     : '';
-  container.innerHTML = styleTag + bodyContent;
+  // Override extra para que el contenido interno no desborde horizontalmente
+  const safetyStyle = `<style>
+    *{box-sizing:border-box!important}
+    body,html{max-width:100%!important;overflow-x:hidden!important}
+    .page,.sheet{max-width:100%!important}
+  </style>`;
+  container.innerHTML = safetyStyle + styleTag + bodyContent;
   document.body.appendChild(container);
 
   // Esperar fonts e imágenes
@@ -946,7 +985,7 @@ export async function htmlToPdfBlobUrl(html: string): Promise<string> {
     // Forzar que la altura mínima se compute (para que flex space-between funcione)
     const computedH = window.getComputedStyle(pageEl).minHeight;
     const minHPx = computedH && computedH !== 'none' ? parseFloat(computedH) : 0;
-    const elW = 794;
+    const elW = CAPTURE_W;
     const elH = Math.max(pageEl.scrollHeight, pageEl.offsetHeight, minHPx, 100);
 
     const canvas = await html2canvas(pageEl, {
@@ -957,7 +996,7 @@ export async function htmlToPdfBlobUrl(html: string): Promise<string> {
       backgroundColor: '#ffffff',
       width: elW,
       height: elH,
-      windowWidth: 794,
+      windowWidth: CAPTURE_W,
       windowHeight: elH,
     });
 
