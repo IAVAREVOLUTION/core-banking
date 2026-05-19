@@ -1864,6 +1864,84 @@ const getSignedUrlHandler = async (c: any) => {
   }
 };
 
+// POST /storage/reportes-regulatorios/upload
+// Body: multipart/form-data con campos 'file' (Blob) y 'reporteId' (UUID)
+// Retorna: { success, nombre, url, storagePath, storageBucket, mime, tamanoKB }
+const uploadReporteHandler = async (c: any) => {
+  try {
+    console.log("[REPORTE UPLOAD] Recibiendo petición...");
+    const body = await c.req.parseBody();
+    const file = body["file"];
+    const reporteId = body["reporteId"] as string;
+
+    if (!reporteId) {
+      return c.json({ error: "Campo obligatorio faltante: reporteId" }, 400);
+    }
+    const isFileOrBlob = file && (file instanceof File || file instanceof Blob);
+    if (!isFileOrBlob) {
+      return c.json({ error: `Campo obligatorio faltante: file. Recibido: ${typeof file}` }, 400);
+    }
+
+    const fileNameRaw = (file as any).name || `reporte_${Date.now()}`;
+    const fileSize = file.size || 0;
+    const fileExt = fileNameRaw.split('.').pop()?.toLowerCase() || 'txt';
+
+    const textMimeMap: Record<string, string> = {
+      html: "text/html", htm: "text/html",
+      json: "application/json",
+      csv: "text/csv",
+      xml: "application/xml", txt: "text/plain",
+      md: "text/markdown",
+    };
+    const fileMime = file.type || textMimeMap[fileExt] || "text/plain";
+
+    const safeName = fileNameRaw.replace(/[^a-zA-Z0-9._-]/g, "_");
+    const ts = Date.now();
+    const finalFileName = `${ts}_${safeName}`;
+    const storagePath = `reportes-regulatorios/${reporteId}/${finalFileName}`;
+
+    console.log(`[REPORTE UPLOAD] Subiendo: ${storagePath} (${fileMime}, ${(fileSize / 1024).toFixed(1)} KB)`);
+
+    const arrayBuffer = await file.arrayBuffer();
+    const uint8 = new Uint8Array(arrayBuffer);
+
+    const { error: uploadError } = await supabase.storage
+      .from(BUCKET_NAME)
+      .upload(storagePath, uint8, { contentType: fileMime, upsert: true });
+
+    if (uploadError) {
+      console.log(`[REPORTE UPLOAD] Error:`, uploadError.message);
+      return c.json({ error: `Error al subir archivo: ${uploadError.message}` }, 500);
+    }
+
+    const supaUrl = Deno.env.get("SUPABASE_URL") || "";
+    let viewUrl = `${supaUrl}/storage/v1/object/public/${BUCKET_NAME}/${storagePath}`;
+    try {
+      const { data: signedData } = await supabase.storage
+        .from(BUCKET_NAME)
+        .createSignedUrl(storagePath, 3600);
+      if (signedData?.signedUrl) viewUrl = signedData.signedUrl;
+    } catch (_) {}
+
+    const tamanoKB = Math.max(1, Math.round(fileSize / 1024));
+    console.log(`[REPORTE UPLOAD] ✅ ${storagePath}`);
+
+    return c.json({
+      success: true,
+      nombre: fileNameRaw,
+      url: viewUrl,
+      storagePath,
+      storageBucket: BUCKET_NAME,
+      mime: fileMime,
+      tamanoKB,
+    });
+  } catch (err: any) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.log("[REPORTE UPLOAD] Error no capturado:", msg);
+    return c.json({ error: `Error al procesar carga: ${msg}` }, 500);
+  }
+};
+
 // DELETE /storage/expedientes/delete
 // Body JSON: { storagePath }
 const deleteExpedienteFileHandler = async (c: any) => {
@@ -2468,6 +2546,289 @@ const deleteCatalogoDocumentoHandler = async (c: any) => {
 };
 
 // ═══════════════════════════════════════════════════════════════════
+// EJECUTAR REPORTE REGULATORIO — Genera el reporte vía Groq Vision/Text
+// POST /ejecutar-reporte-ia
+// Body: { claveReporte, nombreReporte, formatoSalida, promptIA, fechaInicio, fechaFin, parametrosExtra }
+// ═══════════════════════════════════════════════════════════════════
+const ejecutarReporteIAHandler = async (c: any) => {
+  const LOG_REP = "[EjecReporte]";
+  try {
+    const body = await c.req.json();
+    const { claveReporte, nombreReporte, formatoSalida, promptIA, fechaInicio, fechaFin, parametrosExtra } = body;
+
+    if (!claveReporte || !promptIA) {
+      return c.json({ error: "Faltan parámetros obligatorios: claveReporte, promptIA" }, 400);
+    }
+
+    const GROQ_KEY = Deno.env.get("GROQ_API_KEY");
+    if (!GROQ_KEY) {
+      return c.json({ error: "GROQ_API_KEY no configurada en secrets" }, 500);
+    }
+
+    const fechaSistema = new Date().toISOString();
+
+    const promptFinal =
+      promptIA +
+      (fechaInicio && fechaFin ? `\n\nPeríodo: del ${fechaInicio} al ${fechaFin}.` : '') +
+      (parametrosExtra ? `\n${parametrosExtra}` : '') +
+      `\n\nIMPORTANTE: No uses bloques de código markdown (\`\`\`). Responde directamente con el contenido solicitado, sin ningún texto adicional fuera del formato indicado.`;
+
+    console.log(`${LOG_REP} Ejecutando reporte ${claveReporte} via Groq (texto)...`);
+
+    const groqRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer " + GROQ_KEY,
+      },
+      body: JSON.stringify({
+        model: "meta-llama/llama-4-scout-17b-16e-instruct",
+        messages: [{ role: "user", content: promptFinal }],
+        temperature: 0.2,
+        max_tokens: 4096,
+      }),
+    });
+
+    if (!groqRes.ok) {
+      const errText = await groqRes.text();
+      return c.json({ error: `Groq API error: HTTP ${groqRes.status}`, details: errText }, 502);
+    }
+
+    const groqResult = await groqRes.json();
+    const contenido = groqResult.choices?.[0]?.message?.content || "";
+
+    console.log(`${LOG_REP} ✅ Reporte generado — ${contenido.length} chars`);
+    return c.json({
+      success: true,
+      contenido,
+      modelo: "meta-llama/llama-4-scout-17b-16e-instruct",
+      claveReporte,
+      formatoSalida,
+      fechaInicio,
+      fechaFin,
+      timestamp: fechaSistema,
+      usage: groqResult.usage || null,
+    });
+  } catch (err: any) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.log(`[EjecReporte] Error: ${msg}`);
+    return c.json({ error: "Error interno al ejecutar reporte", details: msg }, 500);
+  }
+};
+
+// ═══════════════════════════════════════════════════════════════════
+// REPORTES REGULATORIOS — CRUD via SQL directo contra J_CATALOGO_REPORTES_REGULATORIOS
+// Tabla: EFINANCIANET_DB.J_CATALOGO_REPORTES_REGULATORIOS
+// Columnas: id uuid PK, clave_reporte varchar, nombre_reporte varchar,
+//           formato_salida varchar, prompt_ia text
+// ═══════════════════════════════════════════════════════════════════
+
+// GET /reportes-regulatorios
+const getReportesRegulariosHandler = async (c: any) => {
+  try {
+    console.log("[ReportesReg] GET /reportes-regulatorios");
+    const rows = await sql`
+      SELECT id, clave_reporte, nombre_reporte, formato_salida, prompt_ia
+      FROM "EFINANCIANET_DB"."J_CATALOGO_REPORTES_REGULATORIOS"
+      ORDER BY clave_reporte ASC
+    `;
+    console.log(`[ReportesReg] ${rows.length} registros`);
+    return c.json({ success: true, data: rows });
+  } catch (err: any) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.log("[ReportesReg] Error GET:", msg);
+    return c.json({ error: `Error de base de datos: ${msg}` }, 500);
+  }
+};
+
+// POST /reportes-regulatorios — Body: { clave_reporte, nombre_reporte, formato_salida, prompt_ia }
+const postReporteRegulatorioHandler = async (c: any) => {
+  try {
+    const body = await c.req.json();
+    const { clave_reporte, nombre_reporte, formato_salida, prompt_ia } = body;
+
+    if (!clave_reporte || !nombre_reporte || !formato_salida || !prompt_ia) {
+      return c.json({ error: "Campos obligatorios: clave_reporte, nombre_reporte, formato_salida, prompt_ia" }, 400);
+    }
+
+    console.log(`[ReportesReg] POST — clave=${clave_reporte}`);
+    const inserted = await sql`
+      INSERT INTO "EFINANCIANET_DB"."J_CATALOGO_REPORTES_REGULATORIOS"
+        (clave_reporte, nombre_reporte, formato_salida, prompt_ia)
+      VALUES
+        (${clave_reporte}, ${nombre_reporte}, ${formato_salida}, ${prompt_ia})
+      RETURNING id, clave_reporte, nombre_reporte, formato_salida, prompt_ia
+    `;
+
+    console.log(`[ReportesReg] INSERT exitoso — id: ${inserted[0]?.id}`);
+    return c.json({ success: true, data: inserted[0] }, 201);
+  } catch (err: any) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.log("[ReportesReg] Error POST:", msg);
+    return c.json({ error: `Error de base de datos: ${msg}` }, 500);
+  }
+};
+
+// PUT /reportes-regulatorios/:id — Body: { clave_reporte, nombre_reporte, formato_salida, prompt_ia }
+const putReporteRegulatorioHandler = async (c: any) => {
+  try {
+    const id = c.req.param("id");
+    const body = await c.req.json();
+    const { clave_reporte, nombre_reporte, formato_salida, prompt_ia } = body;
+
+    if (!id || !clave_reporte || !nombre_reporte || !formato_salida || !prompt_ia) {
+      return c.json({ error: "Campos obligatorios: id, clave_reporte, nombre_reporte, formato_salida, prompt_ia" }, 400);
+    }
+
+    console.log(`[ReportesReg] PUT /reportes-regulatorios/${id}`);
+    const updated = await sql`
+      UPDATE "EFINANCIANET_DB"."J_CATALOGO_REPORTES_REGULATORIOS"
+      SET
+        clave_reporte  = ${clave_reporte},
+        nombre_reporte = ${nombre_reporte},
+        formato_salida = ${formato_salida},
+        prompt_ia      = ${prompt_ia}
+      WHERE id = ${id}
+      RETURNING id, clave_reporte, nombre_reporte, formato_salida, prompt_ia
+    `;
+
+    if (updated.length === 0) {
+      return c.json({ error: `No se encontró registro con id=${id}` }, 404);
+    }
+
+    console.log(`[ReportesReg] UPDATE exitoso — id: ${id}`);
+    return c.json({ success: true, data: updated[0] });
+  } catch (err: any) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.log("[ReportesReg] Error PUT:", msg);
+    return c.json({ error: `Error de base de datos: ${msg}` }, 500);
+  }
+};
+
+// DELETE /reportes-regulatorios/:id
+const deleteReporteRegulatorioHandler = async (c: any) => {
+  try {
+    const id = c.req.param("id");
+    if (!id) return c.json({ error: "Se requiere el parámetro id" }, 400);
+
+    console.log(`[ReportesReg] DELETE /reportes-regulatorios/${id}`);
+    await sql`
+      DELETE FROM "EFINANCIANET_DB"."J_CATALOGO_REPORTES_REGULATORIOS"
+      WHERE id = ${id}
+    `;
+
+    console.log(`[ReportesReg] DELETE exitoso — id: ${id}`);
+    return c.json({ success: true, message: `Reporte ${id} eliminado` });
+  } catch (err: any) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.log("[ReportesReg] Error DELETE:", msg);
+    return c.json({ error: `Error de base de datos: ${msg}` }, 500);
+  }
+};
+
+// ═══════════════════════════════════════════════════════════════════
+// J_REPORTES_REGULATORIOS — CRUD (historial de ejecuciones)
+// Tabla: EFINANCIANET_DB.J_REPORTES_REGULATORIOS
+// Columnas: id, fecha_creacion, periodicidad, nombre_reporte, estatus,
+//           id_catalogo_reportes_regulatorios, data (jsonb)
+// ═══════════════════════════════════════════════════════════════════
+
+// GET /reportes-ejecuciones
+const getReportesEjecucionesHandler = async (c: any) => {
+  try {
+    console.log("[ReportesEjec] GET /reportes-ejecuciones");
+    const rows = await sql`
+      SELECT id, fecha_creacion, periodicidad, nombre_reporte, estatus,
+             id_catalogo_reportes_regulatorios, data
+      FROM "EFINANCIANET_DB"."J_REPORTES_REGULATORIOS"
+      ORDER BY fecha_creacion DESC
+    `;
+    console.log(`[ReportesEjec] ${rows.length} registros`);
+    return c.json({ success: true, data: rows });
+  } catch (err: any) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.log("[ReportesEjec] Error GET:", msg);
+    return c.json({ error: `Error de base de datos: ${msg}` }, 500);
+  }
+};
+
+// POST /reportes-ejecuciones — Body: { periodicidad, nombre_reporte, id_catalogo_reportes_regulatorios, data? }
+const postReporteEjecucionHandler = async (c: any) => {
+  try {
+    const body = await c.req.json();
+    const { periodicidad, nombre_reporte, id_catalogo_reportes_regulatorios, data } = body;
+
+    if (!periodicidad || !nombre_reporte || !id_catalogo_reportes_regulatorios) {
+      return c.json({ error: "Campos obligatorios: periodicidad, nombre_reporte, id_catalogo_reportes_regulatorios" }, 400);
+    }
+
+    console.log(`[ReportesEjec] POST — catalogo_id=${id_catalogo_reportes_regulatorios}`);
+    const inserted = await sql`
+      INSERT INTO "EFINANCIANET_DB"."J_REPORTES_REGULATORIOS"
+        (periodicidad, nombre_reporte, id_catalogo_reportes_regulatorios, data)
+      VALUES
+        (${periodicidad}, ${nombre_reporte}, ${id_catalogo_reportes_regulatorios},
+         ${data ? sql.json(data) : null})
+      RETURNING id, fecha_creacion, periodicidad, nombre_reporte, estatus,
+                id_catalogo_reportes_regulatorios, data
+    `;
+    console.log(`[ReportesEjec] INSERT exitoso — id: ${inserted[0]?.id}`);
+    return c.json({ success: true, data: inserted[0] }, 201);
+  } catch (err: any) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.log("[ReportesEjec] Error POST:", msg);
+    return c.json({ error: `Error de base de datos: ${msg}` }, 500);
+  }
+};
+
+// PUT /reportes-ejecuciones/:id — Body: { periodicidad, nombre_reporte, estatus, data? }
+const putReporteEjecucionHandler = async (c: any) => {
+  try {
+    const id = c.req.param("id");
+    const body = await c.req.json();
+    const { periodicidad, nombre_reporte, estatus, data } = body;
+
+    if (!id) return c.json({ error: "Se requiere el parámetro id" }, 400);
+
+    console.log(`[ReportesEjec] PUT /reportes-ejecuciones/${id}`);
+    const updated = await sql`
+      UPDATE "EFINANCIANET_DB"."J_REPORTES_REGULATORIOS"
+      SET
+        periodicidad  = COALESCE(${periodicidad ?? null}, periodicidad),
+        nombre_reporte = COALESCE(${nombre_reporte ?? null}, nombre_reporte),
+        estatus       = COALESCE(${estatus ?? null}, estatus),
+        data          = ${data !== undefined ? sql.json(data) : sql`data`}
+      WHERE id = ${id}
+      RETURNING id, fecha_creacion, periodicidad, nombre_reporte, estatus,
+                id_catalogo_reportes_regulatorios, data
+    `;
+    if (updated.length === 0) return c.json({ error: `No se encontró id=${id}` }, 404);
+    console.log(`[ReportesEjec] UPDATE exitoso — id: ${id}`);
+    return c.json({ success: true, data: updated[0] });
+  } catch (err: any) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.log("[ReportesEjec] Error PUT:", msg);
+    return c.json({ error: `Error de base de datos: ${msg}` }, 500);
+  }
+};
+
+// DELETE /reportes-ejecuciones/:id
+const deleteReporteEjecucionHandler = async (c: any) => {
+  try {
+    const id = c.req.param("id");
+    if (!id) return c.json({ error: "Se requiere el parámetro id" }, 400);
+    console.log(`[ReportesEjec] DELETE /reportes-ejecuciones/${id}`);
+    await sql`DELETE FROM "EFINANCIANET_DB"."J_REPORTES_REGULATORIOS" WHERE id = ${id}`;
+    console.log(`[ReportesEjec] DELETE exitoso — id: ${id}`);
+    return c.json({ success: true, message: `Ejecución ${id} eliminada` });
+  } catch (err: any) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.log("[ReportesEjec] Error DELETE:", msg);
+    return c.json({ error: `Error de base de datos: ${msg}` }, 500);
+  }
+};
+
+// ═══════════════════════════════════════════════════════════════════
 // MOUNT ROUTES — AMBOS prefijos
 // ═══════════════════════════════════════════════════════════════════
 const PREFIX = "/make-server-7e2d13d9";
@@ -2519,6 +2880,20 @@ app.get(`${PREFIX}/catalogos/documentos`, getCatalogoDocumentosHandler);
 app.post(`${PREFIX}/catalogos/documentos`, postCatalogoDocumentoHandler);
 app.put(`${PREFIX}/catalogos/documentos/:id`, putCatalogoDocumentoHandler);
 app.delete(`${PREFIX}/catalogos/documentos/:id`, deleteCatalogoDocumentoHandler);
+// ── Ejecución de Reportes Regulatorios ──
+app.post(`${PREFIX}/ejecutar-reporte-ia`, ejecutarReporteIAHandler);
+// ── Reportes Regulatorios (catálogo) ──
+app.get(`${PREFIX}/reportes-regulatorios`, getReportesRegulariosHandler);
+app.post(`${PREFIX}/reportes-regulatorios`, postReporteRegulatorioHandler);
+app.put(`${PREFIX}/reportes-regulatorios/:id`, putReporteRegulatorioHandler);
+app.delete(`${PREFIX}/reportes-regulatorios/:id`, deleteReporteRegulatorioHandler);
+// ── J_REPORTES_REGULATORIOS (ejecuciones) ──
+app.get(`${PREFIX}/reportes-ejecuciones`, getReportesEjecucionesHandler);
+app.post(`${PREFIX}/reportes-ejecuciones`, postReporteEjecucionHandler);
+app.put(`${PREFIX}/reportes-ejecuciones/:id`, putReporteEjecucionHandler);
+app.delete(`${PREFIX}/reportes-ejecuciones/:id`, deleteReporteEjecucionHandler);
+// ── Storage Reportes Regulatorios ──
+app.post(`${PREFIX}/storage/reportes-regulatorios/upload`, uploadReporteHandler);
 
 // ── Rutas SIN prefijo (caso B — fallback) ──
 app.get("/health", healthHandler);
@@ -2567,6 +2942,20 @@ app.get("/catalogos/documentos", getCatalogoDocumentosHandler);
 app.post("/catalogos/documentos", postCatalogoDocumentoHandler);
 app.put("/catalogos/documentos/:id", putCatalogoDocumentoHandler);
 app.delete("/catalogos/documentos/:id", deleteCatalogoDocumentoHandler);
+// ── Ejecución de Reportes Regulatorios (sin prefijo — fallback) ──
+app.post("/ejecutar-reporte-ia", ejecutarReporteIAHandler);
+// ── Reportes Regulatorios catálogo (sin prefijo — fallback) ──
+app.get("/reportes-regulatorios", getReportesRegulariosHandler);
+app.post("/reportes-regulatorios", postReporteRegulatorioHandler);
+app.put("/reportes-regulatorios/:id", putReporteRegulatorioHandler);
+app.delete("/reportes-regulatorios/:id", deleteReporteRegulatorioHandler);
+// ── J_REPORTES_REGULATORIOS ejecuciones (sin prefijo — fallback) ──
+app.get("/reportes-ejecuciones", getReportesEjecucionesHandler);
+app.post("/reportes-ejecuciones", postReporteEjecucionHandler);
+app.put("/reportes-ejecuciones/:id", putReporteEjecucionHandler);
+app.delete("/reportes-ejecuciones/:id", deleteReporteEjecucionHandler);
+// ── Storage Reportes Regulatorios (sin prefijo — fallback) ──
+app.post("/storage/reportes-regulatorios/upload", uploadReporteHandler);
 
 // ── Solicitudes de Crédito (direct SQL — J_CUENTAS_CORP_CLIENTES) ──
 

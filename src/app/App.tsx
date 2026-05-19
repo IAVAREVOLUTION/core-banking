@@ -49,6 +49,7 @@ import { SolicitudActivacionList } from './components/solicitudes-activacion/Sol
 import { useSolicitudesActivacionDB } from './hooks/useSolicitudesActivacionDB';
 import { AvisosVencimientoModule } from './components/avisos-vencimiento/AvisosVencimientoModule';
 import { ConfiguracionModule } from './components/configuracion/ConfiguracionModule';
+import { EjecReportesModule } from './components/reportes-regulatorios/EjecReportesModule';
 import { PagosReferenciadosModule } from './components/pagos-referenciados/PagosReferenciadosModule';
 import { CasosCobranzaModule } from './components/casos-cobranza/CasosCobranzaModule';
 import { CotizacionesModule } from './components/cotizaciones/CotizacionesModule';
@@ -60,7 +61,7 @@ import { useProductosCaptacionDB } from './hooks/useProductosCaptacionDB';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 
 type View = 'list' | 'form' | 'direccion';
-type Module = 'dashboard' | 'configuracion' | 'productos' | 'garantias' | 'prospectos' | 'clientes' | 'cotizaciones' | 'cuentas-ahorro' | 'solicitudes-creditos' | 'solicitudes-activacion' | 'originacion' | 'creditos' | 'inversiones' | 'cartera-credito' | 'cartera-inversion' | 'cartera-ahorro' | 'avisos-vencimiento' | 'pld' | 'pagos-referenciados' | 'casos-cobranza';
+type Module = 'dashboard' | 'configuracion' | 'productos' | 'garantias' | 'prospectos' | 'clientes' | 'cotizaciones' | 'cuentas-ahorro' | 'solicitudes-creditos' | 'solicitudes-activacion' | 'originacion' | 'creditos' | 'inversiones' | 'cartera-credito' | 'cartera-inversion' | 'cartera-ahorro' | 'avisos-vencimiento' | 'pld' | 'pagos-referenciados' | 'casos-cobranza' | 'ejec-reportes';
 type ClienteView = 'dashboard' | 'list' | 'form' | 'direccion';
 type ProspectoView = 'dashboard' | 'list' | 'form';
 type SolicitudView = 'dashboard' | 'list' | 'form';
@@ -666,6 +667,7 @@ function App() {
     { id: 'cartera-credito', label: 'Cartera crédito' },
     { id: 'cartera-inversion', label: 'Cartera inversión' },
     { id: 'cartera-ahorro', label: 'Cartera ahorro' },
+    { id: 'ejec-reportes', label: 'Ejec. Reportes Regulatorios' },
   ];
 
   return (
@@ -1396,6 +1398,8 @@ function App() {
           <PagosReferenciadosModule />
         ) : currentModule === 'casos-cobranza' ? (
           <CasosCobranzaModule />
+        ) : currentModule === 'ejec-reportes' ? (
+          <EjecReportesModule />
         ) : (
           <div className="p-8 text-center text-gray-500">
             Módulo en desarrollo
