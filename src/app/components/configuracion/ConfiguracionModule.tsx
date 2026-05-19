@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Settings, Building2, MapPin, Briefcase, UserCheck, Landmark, Store, Wrench, BookOpen, ChevronRight, ClipboardList } from 'lucide-react';
+import { Settings, Building2, MapPin, Briefcase, UserCheck, Landmark, Store, Wrench, BookOpen, ChevronRight, ClipboardList, Calculator } from 'lucide-react';
 import { SucursalesSection } from './SucursalesSection';
 import { InstitucionesFinancierasSection } from './InstitucionesFinancierasSection';
 import { PuestosTrabajoSection } from './PuestosTrabajoSection';
@@ -10,6 +10,7 @@ import { ParametrosSucursalesSection } from './ParametrosSucursalesSection';
 import { MantenimientoSection } from './MantenimientoSection';
 import { CatalogoDocumentosSection } from './CatalogoDocumentosSection';
 import { ReportesRegulariosSection } from './ReportesRegulariosSection';
+import { CatalogosContablesSection } from './CatalogosContablesSection';
 
 // ═══════════════════════════════════════════════════════════════════
 // TIPOS
@@ -24,7 +25,8 @@ type ConfigTab =
   | 'empleados'
   | 'mantenimiento'
   | 'catalogo-documentos'
-  | 'reportes-regulatorios';
+  | 'reportes-regulatorios'
+  | 'catalogos-contables';
 
 interface TabDef {
   id: ConfigTab;
@@ -64,6 +66,7 @@ const CONFIG_TAB_GROUPS: TabGroup[] = [
       { id: 'mantenimiento', label: 'Mantenimiento BD', icon: <Wrench size={14} /> },
       { id: 'catalogo-documentos', label: 'Catálogos', icon: <BookOpen size={14} /> },
       { id: 'reportes-regulatorios', label: 'Reportes Regulatorios', icon: <ClipboardList size={14} /> },
+      { id: 'catalogos-contables', label: 'Catálogos Contables', icon: <Calculator size={14} /> },
     ],
   },
 ];
@@ -122,6 +125,7 @@ export function ConfiguracionModule() {
       {activeTab === 'mantenimiento' && <MantenimientoSection />}
       {activeTab === 'catalogo-documentos' && <CatalogoDocumentosSection />}
       {activeTab === 'reportes-regulatorios' && <ReportesRegulariosSection />}
+      {activeTab === 'catalogos-contables' && <CatalogosContablesSection />}
     </>
   );
 }

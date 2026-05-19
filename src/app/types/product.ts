@@ -178,6 +178,7 @@ export interface Product {
   expedientesElectronicos?: any[];
   autorizacionNiveles?: any[];
   eventoContable?: any[];
+  motorContable?: any[];
 
   // Campos del sistema
   usuarioRegistro: string;

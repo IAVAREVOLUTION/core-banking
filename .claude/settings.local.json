@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(npx tsc:*)",
-      "mcp__Claude_Preview__preview_start"
+      "mcp__Claude_Preview__preview_start",
+      "Bash(npx supabase@2.100.1 functions deploy server --project-ref pvzrjmsynzgfsowntywf)"
     ]
   }
 }

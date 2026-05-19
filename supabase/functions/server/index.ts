@@ -2727,6 +2727,223 @@ const deleteReporteRegulatorioHandler = async (c: any) => {
 };
 
 // ═══════════════════════════════════════════════════════════════════
+// CATÁLOGOS CONTABLES — 3 tablas independientes
+// ═══════════════════════════════════════════════════════════════════
+
+// ── 1. J_CATALOGO_CATALOGOS_CONTABLES ─────────────────────────────
+
+const getCatalogosContablesHandler = async (c: any) => {
+  try {
+    const rows = await sql`
+      SELECT id, cuenta_gl, nombre
+      FROM "EFINANCIANET_DB"."J_CATALOGO_CATALOGOS_CONTABLES"
+      ORDER BY cuenta_gl ASC
+    `;
+    return c.json({ success: true, data: rows });
+  } catch (err: any) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return c.json({ error: `Error de base de datos: ${msg}` }, 500);
+  }
+};
+
+const postCatalogoContableHandler = async (c: any) => {
+  try {
+    const body = await c.req.json();
+    const { cuenta_gl, nombre } = body;
+    if (!cuenta_gl || !nombre) {
+      return c.json({ error: "Campos obligatorios: cuenta_gl, nombre" }, 400);
+    }
+    const inserted = await sql`
+      INSERT INTO "EFINANCIANET_DB"."J_CATALOGO_CATALOGOS_CONTABLES"
+        (cuenta_gl, nombre)
+      VALUES
+        (${cuenta_gl}, ${nombre})
+      RETURNING id, cuenta_gl, nombre
+    `;
+    return c.json({ success: true, data: inserted[0] }, 201);
+  } catch (err: any) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return c.json({ error: `Error de base de datos: ${msg}` }, 500);
+  }
+};
+
+const putCatalogoContableHandler = async (c: any) => {
+  try {
+    const id = c.req.param("id");
+    const body = await c.req.json();
+    const { cuenta_gl, nombre } = body;
+    if (!id || !cuenta_gl || !nombre) {
+      return c.json({ error: "Campos obligatorios: id, cuenta_gl, nombre" }, 400);
+    }
+    const updated = await sql`
+      UPDATE "EFINANCIANET_DB"."J_CATALOGO_CATALOGOS_CONTABLES"
+      SET cuenta_gl = ${cuenta_gl}, nombre = ${nombre}
+      WHERE id = ${id}
+      RETURNING id, cuenta_gl, nombre
+    `;
+    if (updated.length === 0) return c.json({ error: `No se encontró registro con id=${id}` }, 404);
+    return c.json({ success: true, data: updated[0] });
+  } catch (err: any) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return c.json({ error: `Error de base de datos: ${msg}` }, 500);
+  }
+};
+
+const deleteCatalogoContableHandler = async (c: any) => {
+  try {
+    const id = c.req.param("id");
+    if (!id) return c.json({ error: "Se requiere el parámetro id" }, 400);
+    await sql`DELETE FROM "EFINANCIANET_DB"."J_CATALOGO_CATALOGOS_CONTABLES" WHERE id = ${id}`;
+    return c.json({ success: true, message: `Registro ${id} eliminado` });
+  } catch (err: any) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return c.json({ error: `Error de base de datos: ${msg}` }, 500);
+  }
+};
+
+// ── 2. J_CATALOGO_EVENTOS_CONTABLES ───────────────────────────────
+
+const getEventosContablesHandler = async (c: any) => {
+  try {
+    const rows = await sql`
+      SELECT id, codigo, evento, prompt_ia
+      FROM "EFINANCIANET_DB"."J_CATALOGO_EVENTOS_CONTABLES"
+      ORDER BY codigo ASC
+    `;
+    return c.json({ success: true, data: rows });
+  } catch (err: any) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return c.json({ error: `Error de base de datos: ${msg}` }, 500);
+  }
+};
+
+const postEventoContableHandler = async (c: any) => {
+  try {
+    const body = await c.req.json();
+    const { codigo, evento, prompt_ia } = body;
+    if (!codigo || !evento) {
+      return c.json({ error: "Campos obligatorios: codigo, evento" }, 400);
+    }
+    const inserted = await sql`
+      INSERT INTO "EFINANCIANET_DB"."J_CATALOGO_EVENTOS_CONTABLES"
+        (codigo, evento, prompt_ia)
+      VALUES
+        (${codigo}, ${evento}, ${prompt_ia ?? null})
+      RETURNING id, codigo, evento, prompt_ia
+    `;
+    return c.json({ success: true, data: inserted[0] }, 201);
+  } catch (err: any) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return c.json({ error: `Error de base de datos: ${msg}` }, 500);
+  }
+};
+
+const putEventoContableHandler = async (c: any) => {
+  try {
+    const id = c.req.param("id");
+    const body = await c.req.json();
+    const { codigo, evento, prompt_ia } = body;
+    if (!id || !codigo || !evento) {
+      return c.json({ error: "Campos obligatorios: id, codigo, evento" }, 400);
+    }
+    const updated = await sql`
+      UPDATE "EFINANCIANET_DB"."J_CATALOGO_EVENTOS_CONTABLES"
+      SET codigo = ${codigo}, evento = ${evento}, prompt_ia = ${prompt_ia ?? null}
+      WHERE id = ${id}
+      RETURNING id, codigo, evento, prompt_ia
+    `;
+    if (updated.length === 0) return c.json({ error: `No se encontró registro con id=${id}` }, 404);
+    return c.json({ success: true, data: updated[0] });
+  } catch (err: any) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return c.json({ error: `Error de base de datos: ${msg}` }, 500);
+  }
+};
+
+const deleteEventoContableHandler = async (c: any) => {
+  try {
+    const id = c.req.param("id");
+    if (!id) return c.json({ error: "Se requiere el parámetro id" }, 400);
+    await sql`DELETE FROM "EFINANCIANET_DB"."J_CATALOGO_EVENTOS_CONTABLES" WHERE id = ${id}`;
+    return c.json({ success: true, message: `Evento ${id} eliminado` });
+  } catch (err: any) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return c.json({ error: `Error de base de datos: ${msg}` }, 500);
+  }
+};
+
+// ── 3. J_CATALOGO_COMPONENTES ─────────────────────────────────────
+
+const getComponentesContablesHandler = async (c: any) => {
+  try {
+    const rows = await sql`
+      SELECT id, codigo, nombre
+      FROM "EFINANCIANET_DB"."J_CATALOGO_COMPONENTES"
+      ORDER BY codigo ASC
+    `;
+    return c.json({ success: true, data: rows });
+  } catch (err: any) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return c.json({ error: `Error de base de datos: ${msg}` }, 500);
+  }
+};
+
+const postComponenteContableHandler = async (c: any) => {
+  try {
+    const body = await c.req.json();
+    const { codigo, nombre } = body;
+    if (!codigo || !nombre) {
+      return c.json({ error: "Campos obligatorios: codigo, nombre" }, 400);
+    }
+    const inserted = await sql`
+      INSERT INTO "EFINANCIANET_DB"."J_CATALOGO_COMPONENTES"
+        (codigo, nombre)
+      VALUES
+        (${codigo}, ${nombre})
+      RETURNING id, codigo, nombre
+    `;
+    return c.json({ success: true, data: inserted[0] }, 201);
+  } catch (err: any) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return c.json({ error: `Error de base de datos: ${msg}` }, 500);
+  }
+};
+
+const putComponenteContableHandler = async (c: any) => {
+  try {
+    const id = c.req.param("id");
+    const body = await c.req.json();
+    const { codigo, nombre } = body;
+    if (!id || !codigo || !nombre) {
+      return c.json({ error: "Campos obligatorios: id, codigo, nombre" }, 400);
+    }
+    const updated = await sql`
+      UPDATE "EFINANCIANET_DB"."J_CATALOGO_COMPONENTES"
+      SET codigo = ${codigo}, nombre = ${nombre}
+      WHERE id = ${id}
+      RETURNING id, codigo, nombre
+    `;
+    if (updated.length === 0) return c.json({ error: `No se encontró registro con id=${id}` }, 404);
+    return c.json({ success: true, data: updated[0] });
+  } catch (err: any) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return c.json({ error: `Error de base de datos: ${msg}` }, 500);
+  }
+};
+
+const deleteComponenteContableHandler = async (c: any) => {
+  try {
+    const id = c.req.param("id");
+    if (!id) return c.json({ error: "Se requiere el parámetro id" }, 400);
+    await sql`DELETE FROM "EFINANCIANET_DB"."J_CATALOGO_COMPONENTES" WHERE id = ${id}`;
+    return c.json({ success: true, message: `Componente ${id} eliminado` });
+  } catch (err: any) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return c.json({ error: `Error de base de datos: ${msg}` }, 500);
+  }
+};
+
+// ═══════════════════════════════════════════════════════════════════
 // J_REPORTES_REGULATORIOS — CRUD (historial de ejecuciones)
 // Tabla: EFINANCIANET_DB.J_REPORTES_REGULATORIOS
 // Columnas: id, fecha_creacion, periodicidad, nombre_reporte, estatus,
@@ -2887,6 +3104,19 @@ app.get(`${PREFIX}/reportes-regulatorios`, getReportesRegulariosHandler);
 app.post(`${PREFIX}/reportes-regulatorios`, postReporteRegulatorioHandler);
 app.put(`${PREFIX}/reportes-regulatorios/:id`, putReporteRegulatorioHandler);
 app.delete(`${PREFIX}/reportes-regulatorios/:id`, deleteReporteRegulatorioHandler);
+// ── Catálogos Contables (con prefijo) ──
+app.get(`${PREFIX}/catalogos-contables`, getCatalogosContablesHandler);
+app.post(`${PREFIX}/catalogos-contables`, postCatalogoContableHandler);
+app.put(`${PREFIX}/catalogos-contables/:id`, putCatalogoContableHandler);
+app.delete(`${PREFIX}/catalogos-contables/:id`, deleteCatalogoContableHandler);
+app.get(`${PREFIX}/eventos-contables`, getEventosContablesHandler);
+app.post(`${PREFIX}/eventos-contables`, postEventoContableHandler);
+app.put(`${PREFIX}/eventos-contables/:id`, putEventoContableHandler);
+app.delete(`${PREFIX}/eventos-contables/:id`, deleteEventoContableHandler);
+app.get(`${PREFIX}/componentes-contables`, getComponentesContablesHandler);
+app.post(`${PREFIX}/componentes-contables`, postComponenteContableHandler);
+app.put(`${PREFIX}/componentes-contables/:id`, putComponenteContableHandler);
+app.delete(`${PREFIX}/componentes-contables/:id`, deleteComponenteContableHandler);
 // ── J_REPORTES_REGULATORIOS (ejecuciones) ──
 app.get(`${PREFIX}/reportes-ejecuciones`, getReportesEjecucionesHandler);
 app.post(`${PREFIX}/reportes-ejecuciones`, postReporteEjecucionHandler);
@@ -2949,6 +3179,19 @@ app.get("/reportes-regulatorios", getReportesRegulariosHandler);
 app.post("/reportes-regulatorios", postReporteRegulatorioHandler);
 app.put("/reportes-regulatorios/:id", putReporteRegulatorioHandler);
 app.delete("/reportes-regulatorios/:id", deleteReporteRegulatorioHandler);
+// ── Catálogos Contables ──
+app.get("/catalogos-contables", getCatalogosContablesHandler);
+app.post("/catalogos-contables", postCatalogoContableHandler);
+app.put("/catalogos-contables/:id", putCatalogoContableHandler);
+app.delete("/catalogos-contables/:id", deleteCatalogoContableHandler);
+app.get("/eventos-contables", getEventosContablesHandler);
+app.post("/eventos-contables", postEventoContableHandler);
+app.put("/eventos-contables/:id", putEventoContableHandler);
+app.delete("/eventos-contables/:id", deleteEventoContableHandler);
+app.get("/componentes-contables", getComponentesContablesHandler);
+app.post("/componentes-contables", postComponenteContableHandler);
+app.put("/componentes-contables/:id", putComponenteContableHandler);
+app.delete("/componentes-contables/:id", deleteComponenteContableHandler);
 // ── J_REPORTES_REGULATORIOS ejecuciones (sin prefijo — fallback) ──
 app.get("/reportes-ejecuciones", getReportesEjecucionesHandler);
 app.post("/reportes-ejecuciones", postReporteEjecucionHandler);

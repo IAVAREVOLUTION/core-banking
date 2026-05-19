@@ -86,6 +86,7 @@ function mapRowToProduct(row: ProductoCreditoRow, index: number): Product {
     expedientesElectronicos: Array.isArray(d.expedientesElectronicos) ? d.expedientesElectronicos : undefined,
     autorizacionNiveles: Array.isArray(d.autorizacion) ? d.autorizacion : undefined,
     eventoContable: Array.isArray(d.eventoContable) ? d.eventoContable : undefined,
+    motorContable: Array.isArray(d.motorContable) ? d.motorContable : undefined,
     // ── Plantillas institucionales ──
     plantillas: Array.isArray(d.plantillas) ? d.plantillas : undefined,
   };
