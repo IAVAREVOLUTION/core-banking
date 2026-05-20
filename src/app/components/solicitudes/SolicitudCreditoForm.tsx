@@ -797,7 +797,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
         console.log(`[Fase ${seqActual}] Sin promptIA configurado — omitiendo validacion IA de fase.`);
       }
 
-      // ── 3b. Fase 4: validar Términos, Garantías y Comités antes de avanzar ──
+      // ── 3b. Fase 4: validar Términos, Garantías, Comités y contratos/pagarés formalizados ──
       if (seqActual === 4) {
         const terminos4: any = loadFromSession<any>(storageId, 'terminos') || loadFromSavedStore<any>(storageId, 'terminos') || {};
         const garantias4: any[] = loadFromSession<any[]>(storageId, 'garantias') || loadFromSavedStore<any[]>(storageId, 'garantias') || [];
@@ -813,6 +813,15 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
         if (!resultFase4.valid) {
           toast.error('Requisitos de formalización incompletos', {
             description: resultFase4.errors.slice(0, 3).join(' · ') + (resultFase4.errors.length > 3 ? ` (+${resultFase4.errors.length - 3} más)` : ''),
+          });
+          return;
+        }
+        // Validar que contratos y pagarés estén formalizados antes de pasar a "Validación contratos y pagarés"
+        const resultContratos4 = validarContratosYPagares(documentos);
+        if (!resultContratos4.valid) {
+          toast.error('Formaliza el contrato antes de avanzar', {
+            description: resultContratos4.errors.join(' · '),
+            duration: 8000,
           });
           return;
         }
@@ -1005,6 +1014,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
             telefono:        g('telefono') || g('telefonoDomicilio') || g('celular') || g('telefonoCelular') || extra.telefono,
             email:           g('correoElectronico') || g('email') || g('correo') || extra.email,
             fechaNacimiento: g('fechaNacimiento') || g('fechaNac') || extra.fechaNacimiento,
+            gobierno:        g('institucionGobierno') || extra.gobierno,
             nombreDB,
           };
           console.log('[obtenerDatosCliente] resultado:', { rfc: extra.rfc, curp: extra.curp, domicilio: extra.domicilio?.slice(0, 40), nombreDB });
@@ -1015,6 +1025,19 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
     }
     return extra;
   }, [formData, projectId, publicAnonKey]);
+
+  // Hidratar _gobierno para registros existentes que no lo tengan en session
+  useEffect(() => {
+    if (mode === 'nuevo') return;
+    if ((formData as any)._gobierno) return;
+    if (!(formData as any)._clienteId) return;
+    obtenerDatosCliente().then(extra => {
+      if (extra.gobierno) {
+        (setFormData as any)(prev => ({ ...prev, _gobierno: extra.gobierno }));
+      }
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [(formData as any)._clienteId, mode]);
 
   /** Formalizar Contrato — Fase 4. Valida docs previos, términos, garantías y comités. */
     /**
@@ -2404,6 +2427,14 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
                       </div>
                     )}
 
+                    {/* ── Institución de Gobierno ── */}
+                    <div className={`flex items-center gap-3 px-3 py-1.5 rounded text-xs border ${(formData as any)._gobierno ? 'bg-amber-50 border-amber-200' : 'bg-gray-50 border-gray-200'}`}>
+                      <span className="text-gray-500 font-medium min-w-[150px]">Institución de Gobierno</span>
+                      <span className={(formData as any)._gobierno ? 'text-amber-900 font-medium' : 'text-gray-400'}>
+                        {(formData as any)._gobierno || '—'}
+                      </span>
+                    </div>
+
                     {/* ── FASE ACTUAL (datos del JSON) ── */}
                     <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
                       <h4 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
@@ -2690,6 +2721,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
           set('tipoPersona', c.personalidad?.toLowerCase().includes('moral') ? 'Moral' : 'Física');
           set('_rfc' as keyof SolicitudFormData, c.rfc || '');
           set('_curp' as keyof SolicitudFormData, c.curp || '');
+          set('_gobierno' as keyof SolicitudFormData, c.gobierno || '');
           (setFormData as any)(prev => ({
             ...prev,
             _domicilio: c.domicilio || '',

@@ -273,7 +273,7 @@ async function trySchemaSelect(): Promise<{ ok: boolean; items: SolicitudActivac
       .schema('EFINANCIANET_DB')
       .from('J_SOLICITUDES_ACTIVACION')
       .select('id, cliente_id, solicitud_id, type, created_at, fecha_compromiso, estatus, data')
-      .order('fecha_solicitud', { ascending: false });
+      .order('created_at', { ascending: false });
 
     if (error) {
       console.log('[useSolicitudesActivacionDB] INTENTO 2 FALLÓ:', error.message);
@@ -484,6 +484,19 @@ export function useSolicitudesActivacionDB(enabled: boolean) {
               if (directErr) throw new Error(directErr.message);
             }
           }
+
+          // Patch session immediately so refetch fallback uses fresh estatus
+          try {
+            const cached = sessionStorage.getItem(SS_KEY);
+            if (cached) {
+              const items = JSON.parse(cached);
+              const idx = items.findIndex((i: Record<string, unknown>) => i._dbId === dbId || i.id === dbId);
+              if (idx >= 0) {
+                items[idx] = { ...items[idx], estatus: payload.estatus };
+                sessionStorage.setItem(SS_KEY, JSON.stringify(items));
+              }
+            }
+          } catch { /* ignore */ }
 
           await refetch();
           return { ok: true, id: dbId };

@@ -16,7 +16,7 @@ import {
   parsePct,
   lineaProdToTipo,
 } from '../../hooks/useSolicitudesActivacionDB';
-import { activarCuentaDB } from '../../hooks/useSolicitudesDB';
+import { activarCuentaDB, crearCuentaEjeDB } from '../../hooks/useSolicitudesDB';
 
 type ViewState =
   | { type: 'list' }
@@ -408,31 +408,60 @@ estatus:               initialEditItem.estatus || d.estatus || 'Pendiente',
             isNew2,
             dbIdForEnviar,
           });
-          // Activar la cuenta PRIMERO — independiente del resultado del save
-          if (data._fromActivar && data.solicitudId) {
-            const UUID_RE_ACT = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-            if (UUID_RE_ACT.test(data.solicitudId)) {
+          // Activar la cuenta y crear cuenta eje
+          const UUID_RE_ACT = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+          if (data._fromActivar) {
+            const solIdValido = !!(data.solicitudId && UUID_RE_ACT.test(data.solicitudId));
+            let clienteIdFinal = data.clienteId || '';
+
+            // Paso 1: actualizar el registro de crédito/captación si hay solicitudId válido
+            if (solIdValido) {
               try {
-                // Generar número de cuenta de 16 dígitos
                 const noCuenta = String(Math.floor(Math.random() * 9000000000000000) + 1000000000000000);
+                const montoNum = parseFloat((data.montoTransaccion || '0').replace(/[^0-9.-]/g, '')) || 0;
+                const linea = (data.lineaProducto || '').toLowerCase();
+                const esCaptacion = linea.includes('captacion') || linea.includes('ahorro') || linea.includes('aportacion') || linea.includes('inversion');
+                console.log('[onEnviar] activarCuentaDB →', data.solicitudId, 'clienteId actual:', clienteIdFinal);
                 const activResult = await activarCuentaDB(data.solicitudId, {
-                  estatus_sol:  'Autorizada',
-                  estatus_cuen: 'Activa',
-                  estatus_disp: 'Pagado',
-                  estatus_cart: 'Activa',
-                  no_cuenta:    noCuenta,
-                  cta_eje_chec: true,
+                  estatus_sol:       'Autorizada',
+                  estatus_cuen:      'Activa',
+                  estatus_disp:      'Pagado',
+                  estatus_cart:      'Activa',
+                  no_cuenta:         noCuenta,
+                  cta_eje_chec:      esCaptacion,
+                  monto_transaccion: montoNum,
+                  lineaProducto:     data.lineaProducto || '',
                 }, data.lineaProducto);
+                // Usar clienteId del backend (más confiable que el del form)
+                if (activResult.clienteId) clienteIdFinal = activResult.clienteId;
                 if (activResult.ok) {
-                  data.estatus = 'Autorizada';
-                  data._estatusFromDB = 'Autorizada';
                   toast.success('¡Solicitud completada!', { description: 'Cuenta activada — Estatus: Autorizada' });
                 } else {
-                  toast.warning('No se pudo finalizar la solicitud', { description: activResult.error || 'Revise la consola' });
+                  console.warn('[onEnviar] activarCuentaDB falló:', activResult.error);
+                  toast.warning('No se pudo actualizar el registro de crédito', { description: activResult.error || 'Revise la consola' });
                 }
               } catch (err) {
-                console.error('Error al activar cuenta desde módulo standalone:', err);
+                console.error('[onEnviar] Error en activarCuentaDB:', err);
               }
+            } else {
+              console.warn('[onEnviar] solicitudId no es UUID válido — omitiendo activarCuentaDB. solicitudId:', data.solicitudId);
+            }
+
+            // Marcar como Autorizada en el registro de activación (siempre)
+            data.estatus = 'Autorizada';
+            data._estatusFromDB = 'Autorizada';
+
+            // Paso 2: crear cuenta eje — SIEMPRE, independiente de si activarCuentaDB OK
+            console.log('[onEnviar] clienteIdFinal para cuenta:', clienteIdFinal, '| solicitudId:', data.solicitudId);
+            if (clienteIdFinal && UUID_RE_ACT.test(clienteIdFinal)) {
+              const montoNum2 = parseFloat((data.montoTransaccion || '0').replace(/[^0-9.-]/g, '')) || 0;
+              console.log('[onEnviar] Creando cuenta — solicitudId:', data.solicitudId, 'linea:', data.lineaProducto, 'tipo:', data.type, 'monto:', montoNum2);
+              crearCuentaEjeDB(clienteIdFinal, data.cliente, data.solicitudId || undefined, data.lineaProducto || undefined, data.type || undefined, montoNum2)
+                .then(() => console.log('[onEnviar] Cuenta por solicitud creada OK'))
+                .catch(err => console.error('[onEnviar] Error creando cuenta:', err));
+            } else {
+              console.warn('[onEnviar] SIN clienteId para cuenta eje — solicitudId:', data.solicitudId, 'clienteId form:', data.clienteId);
+              // Último recurso: intentar con solicitudId si es el mismo cliente
             }
           }
 
@@ -534,9 +563,11 @@ estatus:               initialEditItem.estatus || d.estatus || 'Pendiente',
   const handleEstatusChange = (v: string) => { setFilterEstatus(v); setCurrentPage(1); };
 
   const statusClass = (estatus: string) => {
-    if (estatus === 'Activada')    return 'text-green-700 bg-green-50 border-green-200';
+    if (['Activada', 'Autorizada', 'Activo', 'Pagado'].includes(estatus))
+      return 'text-green-700 bg-green-50 border-green-200';
     if (estatus === 'Rechazada')   return 'text-red-700 bg-red-50 border-red-200';
     if (estatus === 'En Revisión') return 'text-blue-700 bg-blue-50 border-blue-200';
+    if (estatus === 'Enviada')     return 'text-blue-700 bg-blue-50 border-blue-200';
     if (estatus === 'Aprobada')    return 'text-purple-700 bg-purple-50 border-purple-200';
     return 'text-amber-700 bg-amber-50 border-amber-200';
   };
@@ -655,6 +686,9 @@ estatus:               initialEditItem.estatus || d.estatus || 'Pendiente',
               >
                 <option value="">Todos</option>
                 <option value="Pendiente">Pendiente</option>
+                <option value="Enviada">Enviada</option>
+                <option value="Pagado">Pagado</option>
+                <option value="Autorizada">Autorizada</option>
                 <option value="En Revisión">En Revisión</option>
                 <option value="Aprobada">Aprobada</option>
                 <option value="Activada">Activada</option>

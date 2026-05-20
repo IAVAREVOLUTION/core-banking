@@ -103,6 +103,7 @@ export function buildFormDataFromListItem(s: SolicitudListItem): Record<string, 
     _clienteId: extra._clienteId || hdr.cliente_id || d._clienteId || '',
     _curp: extra._clienteCurp || hdr.curp || d._curp || d.curp || '',
     _rfc: extra._clienteRfc || hdr.rfc || d._rfc || d.rfc || '',
+    _gobierno: extra._gobierno || hdr._gobierno || d._gobierno || '',
     // Calendario de aportaciones heredado de Cotización — persistido en data.solicitud.simulacion
     _calendarioAportaciones: (() => {
       const cal = sol.simulacion?.calendario_aportaciones;
@@ -575,6 +576,7 @@ estatusSolicitud: s.estatusSolicitud || d.estatusSolicitud || 'Pendiente',
         || (typeof s.montoAutorizado === 'number' && s.montoAutorizado > 0 ? s.montoAutorizado.toFixed(2) : null)
         || d.montoAutorizado || '0.00',
       _clienteId: extra._clienteId || hdr.cliente_id || d._clienteId || '',
+      _gobierno: extra._gobierno || hdr._gobierno || d._gobierno || '',
       _calendarioAportaciones: (d.solicitud?.simulacion?.calendario_aportaciones || []).map((r: any) => ({
         noAportacion: r.no_aportacion ?? r.noAportacion,
         fecha: r.fecha,

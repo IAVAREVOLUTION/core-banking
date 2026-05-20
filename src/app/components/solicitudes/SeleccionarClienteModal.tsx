@@ -29,6 +29,7 @@ interface ClienteItem {
   telefono: string;
   email: string;
   fechaNacimiento: string;
+  gobierno: string;
 }
 
 /** Mapea fila cruda de J_CLIENTES → ClienteItem */
@@ -79,6 +80,7 @@ function mapRow(row: JClienteRow): ClienteItem {
     telefono: g('telefono') || g('celular') || g('telefonoCelular') || '',
     email: g('correoElectronico') || g('email') || g('correo') || '',
     fechaNacimiento: g('fechaNacimiento') || g('fechaNac') || '',
+    gobierno: g('institucionGobierno') || '',
   };
 }
 

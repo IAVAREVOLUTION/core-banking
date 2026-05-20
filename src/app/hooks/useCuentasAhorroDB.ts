@@ -103,6 +103,7 @@ export interface CuentaAhorroListItem {
   id: string;
   noSol: string;
   noCuenta: string;
+  noReferenc1: string;
   clienteId: string;
   clienteNombre: string;
   productoId: string;
@@ -189,14 +190,16 @@ export interface UpdateCuentaAhorroPayload {
 // MAPEO ROW → ListItem
 // ═══════════════════════════════════════════════════════════════════
 function mapRow(row: JCuentaAhorroRow): CuentaAhorroListItem {
+  const r = row as any;
   return {
     id: row.id,
     noSol: row.no_sol || '',
     noCuenta: row.no_cuenta || '',
-    clienteId: row.cliente_id || '',
-    clienteNombre: row.cliente_nombre || row.cliente_id || '—',
-    productoId: row.producto_id || '',
-    productoNombre: row.producto_nombre || row.producto_id || '—',
+    noReferenc1: row.no_referenc1 || '',
+    clienteId: row.cliente_id || r.cliente_id_eff || '',
+    clienteNombre: r.cliente_nombre || row.cliente_nombre || row.cliente_id || r.cliente_id_eff || '—',
+    productoId: row.producto_id || r.producto_id_eff || '',
+    productoNombre: r.producto_nombre || row.producto_nombre || row.producto_id || '—',
     fechaSol: row.fecha_sol || '',
     fechaAutori: row.fecha_autori || '',
     saldoActual: parseMoney(row.saldo_actual) ?? 0,
@@ -326,30 +329,9 @@ export async function getCuentaAhorroById(id: string): Promise<{ ok: boolean; ro
     return { ok: false, error: 'Registro no encontrado en sessionStorage' };
   }
 
-  // Intento 1: RPC
+  // Intento 1: Edge Function — tiene JOINs con J_CLIENTES y J_PRODUCTOS (cliente_nombre, producto_nombre)
   try {
-    console.log(`${LOG} getCuentaAhorroById Intento 1 → supabase.rpc('get_cuenta_ahorro_by_id')`);
-    const { data, error } = await supabase.rpc('get_cuenta_ahorro_by_id', { p_id: id });
-
-    if (!error && data) {
-      const rows = Array.isArray(data) ? data : [data];
-      if (rows.length > 0) {
-        const row = rows[0] as JCuentaAhorroRow;
-        console.log(`${LOG} getCuentaAhorroById RPC OK`);
-        saveFullRow(row); // persistir fila completa
-        return { ok: true, row };
-      }
-    }
-    if (error) {
-      console.log(`${LOG} getCuentaAhorroById RPC no disponible: ${error.message}`);
-    }
-  } catch (e: any) {
-    console.log(`${LOG} getCuentaAhorroById RPC no disponible: ${e?.message || e}`);
-  }
-
-  // Intento 2: Edge Function
-  try {
-    console.log(`${LOG} getCuentaAhorroById Intento 2 → Edge Function GET /cuentas-ahorro?id=${id}`);
+    console.log(`${LOG} getCuentaAhorroById Intento 1 → Edge Function GET /cuentas-ahorro?id=${id}`);
     const res = await fetch(`${API_BASE}/cuentas-ahorro?id=${id}`, {
       headers: {
         'Authorization': `Bearer ${publicAnonKey}`,
@@ -384,6 +366,24 @@ export async function getCuentaAhorroById(id: string): Promise<{ ok: boolean; ro
     }
   } catch (e: any) {
     console.log(`${LOG} getCuentaAhorroById Edge Function no disponible: ${e?.message || e}`);
+  }
+
+  // Intento 2: RPC (sin JOINs — solo datos base)
+  try {
+    console.log(`${LOG} getCuentaAhorroById Intento 2 → supabase.rpc('get_cuenta_ahorro_by_id')`);
+    const { data, error } = await supabase.rpc('get_cuenta_ahorro_by_id', { p_id: id });
+    if (!error && data) {
+      const rows = Array.isArray(data) ? data : [data];
+      if (rows.length > 0) {
+        const row = rows[0] as JCuentaAhorroRow;
+        console.log(`${LOG} getCuentaAhorroById RPC OK (sin nombres de cliente/producto)`);
+        saveFullRow(row);
+        return { ok: true, row };
+      }
+    }
+    if (error) console.log(`${LOG} getCuentaAhorroById RPC no disponible: ${error.message}`);
+  } catch (e: any) {
+    console.log(`${LOG} getCuentaAhorroById RPC no disponible: ${e?.message || e}`);
   }
 
   // Intento 3: sessionStorage — fila completa

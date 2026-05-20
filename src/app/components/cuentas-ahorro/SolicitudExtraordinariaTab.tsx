@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import {
   SolicitudExtraordinaria, saveToSession, loadFromSession, generateId,
@@ -57,7 +57,7 @@ export function SolicitudExtraordinariaTab({ mode, accountId }: SolicitudExtraor
 
   return (
     <div className="bg-white">
-      <div className="bg-blue-50 border-l-4 border-primary-theme px-3 py-2 mb-3 flex items-center justify-between">
+      <div className="bg-[#D9E2F3] border-l-4 border-[#4A6FA5] px-3 py-2 mb-3 flex items-center justify-between">
         <span className="text-sm font-medium text-gray-800">SOLICITUD EXTRAORDINARIA</span>
         {!isReadOnly && (
           <div className="flex items-center gap-2">
@@ -70,14 +70,14 @@ export function SolicitudExtraordinariaTab({ mode, accountId }: SolicitudExtraor
       <div className="border border-gray-300 bg-white overflow-x-auto">
         <table className="w-full border-collapse min-w-[1300px]">
           <thead>
-            <tr className="bg-gray-100 border-b border-gray-300">
-              <th className="px-3 py-2 text-xs font-medium text-gray-700 text-left border-r border-gray-300 w-[120px]">N Cuenta</th>
-              <th className="px-3 py-2 text-xs font-medium text-gray-700 text-left border-r border-gray-300 w-[180px]">Producto Financiero</th>
-              <th className="px-3 py-2 text-xs font-medium text-gray-700 text-left border-r border-gray-300 w-[160px]">Area que Solicito *</th>
-              <th className="px-3 py-2 text-xs font-medium text-gray-700 text-left border-r border-gray-300 w-[150px]">Puesto de Trabajo *</th>
-              <th className="px-3 py-2 text-xs font-medium text-gray-700 text-left border-r border-gray-300 w-[200px]">Solicitud Extraordinaria *</th>
-              <th className="px-3 py-2 text-xs font-medium text-gray-700 text-left border-r border-gray-300 w-[160px]">Area que Autorizo</th>
-              <th className="px-3 py-2 text-xs font-medium text-gray-700 text-left border-r border-gray-300">Observaciones</th>
+            <tr className="bg-[#D0D0D0] border-b border-gray-300">
+              <th className="px-3 py-2 text-xs font-normal text-gray-700 text-left border-r border-gray-300 w-[120px]">N Cuenta</th>
+              <th className="px-3 py-2 text-xs font-normal text-gray-700 text-left border-r border-gray-300 w-[180px]">Producto Financiero</th>
+              <th className="px-3 py-2 text-xs font-normal text-gray-700 text-left border-r border-gray-300 w-[160px]">Area que Solicito *</th>
+              <th className="px-3 py-2 text-xs font-normal text-gray-700 text-left border-r border-gray-300 w-[150px]">Puesto de Trabajo *</th>
+              <th className="px-3 py-2 text-xs font-normal text-gray-700 text-left border-r border-gray-300 w-[200px]">Solicitud Extraordinaria *</th>
+              <th className="px-3 py-2 text-xs font-normal text-gray-700 text-left border-r border-gray-300 w-[160px]">Area que Autorizo</th>
+              <th className="px-3 py-2 text-xs font-normal text-gray-700 text-left border-r border-gray-300">Observaciones</th>
               <th className="px-3 py-2 text-xs font-medium text-gray-700 text-left w-[120px]">Estatus *</th>
             </tr>
           </thead>
@@ -85,7 +85,12 @@ export function SolicitudExtraordinariaTab({ mode, accountId }: SolicitudExtraor
             {solicitudes.length === 0 ? (
               <tr><td colSpan={8} className="px-3 py-6 text-center text-xs text-gray-400">{mode === 'nuevo' ? 'Agregue solicitudes con el boton Nuevo' : 'Sin solicitudes registradas'}</td></tr>
             ) : solicitudes.map((s, idx) => (
-              <tr key={s.id} className={`border-b border-gray-300 cursor-pointer ${selectedIndex === idx ? 'bg-blue-50' : 'hover:bg-gray-50'}`} onClick={() => !isReadOnly && setSelectedIndex(idx)}>
+              <tr key={s.id}
+                className="border-b border-gray-200 cursor-pointer transition-colors"
+                style={{ backgroundColor: selectedIndex === idx ? '#DBEAFE' : idx % 2 === 1 ? '#EEEEEE' : '#FFFFFF' }}
+                onMouseEnter={e => { if (selectedIndex !== idx) e.currentTarget.style.backgroundColor = '#E8F4F8'; }}
+                onMouseLeave={e => { if (selectedIndex !== idx) e.currentTarget.style.backgroundColor = idx % 2 === 1 ? '#EEEEEE' : '#FFFFFF'; }}
+                onClick={() => !isReadOnly && setSelectedIndex(idx)}>
                 <td className="px-2 py-1.5 border-r border-gray-300">
                   <input type="text" value={s.numeroCuenta} disabled={isReadOnly} onChange={e => { e.stopPropagation(); update(idx, 'numeroCuenta', e.target.value); }} onClick={e => e.stopPropagation()} className="w-full px-1 py-1 text-xs border border-gray-300 rounded bg-white" />
                 </td>
@@ -153,3 +158,4 @@ export function SolicitudExtraordinariaTab({ mode, accountId }: SolicitudExtraor
     </div>
   );
 }
+

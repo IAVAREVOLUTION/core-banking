@@ -126,6 +126,7 @@ export interface SolicitudDBRow {
   cliente_curp?: string | null;
   cliente_tipo?: string | null;
   cliente_subtipo?: string | null;
+  institucion_gobierno?: string | null;
   // ── JOIN fields from J_PRODUCTOS ──
   producto_nombre?: string | null;
   producto_clave?: string | null;
@@ -226,6 +227,7 @@ function mapRowToListItem(row: SolicitudDBRow): SolicitudListItem {
     _clienteCurp: row.cliente_curp || null,
     _clienteRfc: row.cliente_rfc || null,
     _clienteTipo: row.cliente_tipo || null,
+    _gobierno: row.institucion_gobierno || null,
     _tipoPersona: hdr.tipo_persona || d.tipoPersona || row.cliente_tipo || null,
     _productoNombre: row.producto_nombre || null,
     _productoClave: row.producto_clave || null,
@@ -1078,11 +1080,39 @@ export async function crearCuentaPorCobrarDB(
  * - Crédito/Captación: requiere que datos.estatus='Pagado' para activar
  * - Línea de Crédito: permite activación sin validación de estatus
  */
+// Crea la cuenta eje para el cliente si no existe — llama a /activar-prospecto (idempotente)
+export async function crearCuentaEjeDB(
+  clienteId: string,
+  nombreCliente?: string,
+  solicitudId?: string,
+  lineaProduc?: string,
+  tipoProduc?: string,
+  montoInicial?: number,
+): Promise<void> {
+  if (!clienteId || !UUID_RE.test(clienteId)) return;
+  try {
+    const body: Record<string, unknown> = { cliente_id: clienteId, nombre_prospecto: nombreCliente || '' };
+    if (solicitudId && UUID_RE.test(solicitudId)) body.solicitud_id = solicitudId;
+    if (lineaProduc) body.linea_produc = lineaProduc;
+    if (tipoProduc)  body.tipo_produc  = tipoProduc;
+    if (montoInicial !== undefined && montoInicial > 0) body.monto_inicial = montoInicial;
+    const res = await fetch(`${API_BASE}/activar-prospecto`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${publicAnonKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const json = await res.json().catch(() => ({}));
+    console.log('[SolicDB] crearCuentaEje OK — clienteId:', clienteId, '| solicitudId:', solicitudId, '| linea:', lineaProduc, '| tipo:', tipoProduc, '| resp:', json);
+  } catch (e: any) {
+    console.warn('[SolicDB] crearCuentaEje error (no bloquea):', e?.message);
+  }
+}
+
 export async function activarCuentaDB(
   id: string,
   datos: Record<string, any>,
   lineaProducto?: string,
-): Promise<{ ok: boolean; error?: string }> {
+): Promise<{ ok: boolean; error?: string; clienteId?: string }> {
   if (!DB_AVAILABLE) return { ok: false, error: 'DB no disponible' };
   if (!UUID_RE.test(id)) return { ok: false, error: 'ID inválido (no UUID)' };
 
@@ -1095,8 +1125,8 @@ export async function activarCuentaDB(
     });
     const json = await res.json().catch(() => ({}));
     if (res.ok && json.ok !== false) {
-      console.log('[SolicDB] activarCuenta POST OK', json.data);
-      return { ok: true };
+      console.log('[SolicDB] activarCuenta POST OK', json.clienteId);
+      return { ok: true, clienteId: json.clienteId };
     }
     // HTTP 2xx pero el handler reportó divergencia o fallo lógico
     if (json.ok === false) {

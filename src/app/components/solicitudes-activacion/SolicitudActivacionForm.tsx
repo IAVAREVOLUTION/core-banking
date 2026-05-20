@@ -126,12 +126,13 @@ function SectionTitle({ label }: { label: string }) {
 // ─── Reusable field grid for both master and Default tab ──────────────────────
 
 const CAT_ESTATUS = [
-  { value: 'Pendiente', label: 'Pendiente' },
-  { value: 'Enviada',   label: 'Enviada'   },
-  { value: 'Pagado',    label: 'Pagado'    },
-  { value: 'Activo',    label: 'Activo'    },
-  { value: 'Activada',  label: 'Activada'  },
-  { value: 'Rechazada', label: 'Rechazada' },
+  { value: 'Pendiente',  label: 'Pendiente'  },
+  { value: 'Enviada',    label: 'Enviada'    },
+  { value: 'Pagado',     label: 'Pagado'     },
+  { value: 'Autorizada', label: 'Autorizada' },
+  { value: 'Activo',     label: 'Activo'     },
+  { value: 'Activada',   label: 'Activada'   },
+  { value: 'Rechazada',  label: 'Rechazada'  },
 ];
 
 interface FieldGridProps {
@@ -321,8 +322,8 @@ export function SolicitudActivacionForm({
   /** Enviar = guardar con estatus "Enviada". Registra fecha de envío en data. */
   const handleEnviarSolicitud = () => {
     if (!validate()) { toast.error('Faltan campos requeridos'); return; }
-    if (formData.estatus === 'Enviada') {
-      toast.info('La solicitud ya fue enviada anteriormente.'); return;
+    if (['Enviada', 'Pagado', 'Activo', 'Autorizada', 'Activada'].includes(formData.estatus)) {
+      toast.info(`La solicitud ya tiene estatus: ${formData.estatus}.`); return;
     }
     const dataEnviada: SolicitudActivacionFormData = {
       ...formData,
@@ -394,7 +395,8 @@ export function SolicitudActivacionForm({
   const esLineaCredito = (formData.lineaProducto || '')
     .toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').includes('linea');
   const puedeActivar  = esPagado || esLineaCredito;
-  const yaEnviada  = formData.estatus === 'Enviada' || formData.estatus === 'Activo';
+  // Cualquier estatus "post-enviado" que no sea Pagado: no mostrar bot\u00f3n Enviar
+  const yaEnviada = ['Enviada', 'Activo', 'Autorizada', 'Activada'].includes(formData.estatus);
 
   const montoNum = parseCurrency(formData.montoTransaccion);
 

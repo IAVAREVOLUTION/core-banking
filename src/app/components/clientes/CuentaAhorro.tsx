@@ -58,7 +58,7 @@ export function CuentaAhorro({ onBack, mode, clienteId, onCuentaEjeChange }: Cue
       if (c.clienteId !== cid) continue;
       const estatus = norm(c.estatusCart);
       const tipo = norm(c.tipoProduc);
-      const pass = (estatus === 'activa') && (tipo === 'aportacion' || tipo === 'ahorro');
+      const pass = (estatus === 'activa') && (tipo.includes('ahorro') || tipo.includes('aportacion'));
       console.log(`${LOG} cuenta ${c.id.slice(0,8)} clienteId=${c.clienteId.slice(0,8)} cid=${cid.slice(0,8)} estatus="${c.estatusCart}"→"${estatus}" tipo="${c.tipoProduc}"→"${tipo}" pass=${pass}`);
       if (pass) result.push(c);
     }
