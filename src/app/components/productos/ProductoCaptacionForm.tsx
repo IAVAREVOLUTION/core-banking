@@ -14,6 +14,7 @@ import { PlantillasTab } from './tabs/PlantillasTab';
 import { useProductoPersistence, useProductoTabs } from '../../hooks/useProductoPersistence';
 import { syncToJProducts } from '../../hooks/useSyncJProducts';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
+import { MotorContableTab } from './tabs/MotorContableTab';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-7e2d13d9`;
 
@@ -118,6 +119,9 @@ export function ProductoCaptacionForm({ mode, productoId, producto, onCancel, on
   const sucursalRef = useRef<TabDataRef>(null);
   const expedientesRef = useRef<TabDataRef>(null);
   const plantillasRef = useRef<TabDataRef>(null);
+  const [motorContable, setMotorContable] = useState<any[]>(() =>
+    Array.isArray((producto as any)?.motorContable) ? (producto as any).motorContable : []
+  );
 
   // ── Limpiar sessionStorage stale al crear un producto nuevo ──
   // nextId es siempre el mismo valor entre sesiones; sin este clear,
@@ -735,8 +739,9 @@ export function ProductoCaptacionForm({ mode, productoId, producto, onCancel, on
       expedientesRegistros: expedientesRef.current?.getData() || [],
       tasasReferenciaRegistros: tasasReferencia || [],
       plantillas: plantillasRef.current?.getData() || [],
+      motorContable: motorContable,
     };
-    
+
     console.log('handleSave - Producto completo con registros:', newProduct);
 
     // ═══════════════════════════════════════════════════════════════
@@ -844,6 +849,7 @@ export function ProductoCaptacionForm({ mode, productoId, producto, onCancel, on
         expedientesRegistros,
         tasasReferenciaRegistros,
         plantillas: plantillasRef.current?.getData() || [],
+        motorContable: motorContable,
       };
 
       console.log('[handleSave] JSON institucional para J_PRODUCTOS.data:', jProductoData);
@@ -912,6 +918,7 @@ export function ProductoCaptacionForm({ mode, productoId, producto, onCancel, on
     // === Tabs específicos de Captación (mantener sin cambios) ===
     { id: 'constitucion', label: 'Constitución' },
     { id: 'acceso-cuenta', label: 'Acceso Cuenta' },
+    { id: 'motor-contable', label: 'Motor Contable' },
     // === Tabs adicionales de Captación ===
     { id: 'plantillas', label: 'Plantillas' },
   ];
@@ -1933,6 +1940,14 @@ export function ProductoCaptacionForm({ mode, productoId, producto, onCancel, on
               </table>
             </div>
           </div>
+        )}
+
+        {activeTab === 'motor-contable' && (
+          <MotorContableTab
+            value={motorContable}
+            onChange={setMotorContable}
+            readOnly={isViewMode}
+          />
         )}
 
         <div style={{ display: activeTab === 'plantillas' ? 'block' : 'none' }}>

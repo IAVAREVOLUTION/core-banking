@@ -142,6 +142,8 @@ export interface ProductoLineaCredito {
   periodosRegistros?: any[];
   tasasReferenciaRegistros?: any[];
   expedientes?: any[];
+  plantillas?: any[];
+  motorContable?: any[];
   
   // Campos del sistema (mantener para compatibilidad)
   lineaProducto: string;

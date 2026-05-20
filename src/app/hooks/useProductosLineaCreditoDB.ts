@@ -208,6 +208,7 @@ function mapRowToProduct(row: ProductoLineaCreditoRow, index: number): ProductoL
     expedientes: Array.isArray(d.expedientes) ? d.expedientes : undefined,
     // ── Plantillas institucionales ──
     plantillas: Array.isArray(d.plantillas) ? d.plantillas : undefined,
+    motorContable: Array.isArray(d.motorContable) ? d.motorContable : undefined,
   } as ProductoLineaCredito;
 }
 

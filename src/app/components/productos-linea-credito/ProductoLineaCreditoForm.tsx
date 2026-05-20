@@ -25,6 +25,7 @@ import { GarantiaTab } from '../productos/tabs/GarantiaTab';
 import { ComisionesTab } from '../productos/tabs/ComisionesTab';
 import { ExpedientesProductoTab } from '../productos/tabs/ExpedientesProductoTab';
 import { PlantillasTab } from '../productos/tabs/PlantillasTab';
+import { MotorContableTab } from '../productos/tabs/MotorContableTab';
 import { useProductoPersistence, useProductoTabs } from '../../hooks/useProductoPersistence';
 import { syncToJProducts } from '../../hooks/useSyncJProducts';
 
@@ -397,6 +398,7 @@ export function ProductoLineaCreditoForm({
           condicionesDisposicion: formData.condicionesDisposicion || [],
           parametrosCalculo: formData.parametrosCalculo || [],
           plantillas: plantillasRef.current?.getData() || [],
+          motorContable: motorContable,
         };
 
         const existingDbUuid = product?.dbUuid || null;
@@ -448,6 +450,9 @@ export function ProductoLineaCreditoForm({
   const expedientesRef = useRef<{ getData: () => any[] }>(null);
   const comitesRef = useRef<{ getData: () => any[] }>(null);
   const plantillasRef = useRef<{ getData: () => any[] }>(null);
+  const [motorContable, setMotorContable] = useState<any[]>(() =>
+    Array.isArray((product as any)?.motorContable) ? (product as any).motorContable : []
+  );
 
   // Estado para Tasa Referencia (requerido por MatrizTasaVariableTab)
   interface TasaReferenciaItem {
@@ -556,6 +561,7 @@ export function ProductoLineaCreditoForm({
     { id: 'parametros-calculo', label: 'Parámetro de Cálculo' },
     { id: 'sucursal', label: 'Sucursal' },
     { id: 'garantias', label: 'Garantías' },
+    { id: 'motor-contable', label: 'Motor Contable' },
     // === Tabs adicionales ===
     { id: 'plantillas', label: 'Plantillas' },
   ];
@@ -960,6 +966,14 @@ export function ProductoLineaCreditoForm({
                 fases={product?.fases}
               />
             </div>
+
+            {activeTab === 'motor-contable' && (
+              <MotorContableTab
+                value={motorContable}
+                onChange={setMotorContable}
+                readOnly={isView}
+              />
+            )}
 
             <div style={{ display: activeTab === 'plantillas' ? 'block' : 'none' }}>
               <PlantillasTab
