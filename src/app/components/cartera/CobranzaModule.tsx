@@ -789,7 +789,7 @@ export function CobranzaModule() {
         <AvisosVencimientoPanel key="creditos"  subTipoFijo="Amortizacion" titulo="Avisos de Vencimiento — Créditos" />
       )}
       {activeTab === 'aportaciones' && (
-        <AvisosVencimientoPanel key="aportaciones" titulo="Avisos de Aportación — Captación" />
+        <AvisosVencimientoPanel key="aportaciones" subTipoFijo="Aportacion" titulo="Avisos de Aportación — Captación" />
       )}
     </>
   );

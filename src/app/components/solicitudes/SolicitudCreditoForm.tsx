@@ -33,7 +33,7 @@ import { FasesSolicitudTab } from './tabs/FasesSolicitudTab';
 import { SeleccionarClienteModal } from './SeleccionarClienteModal';
 import { PartesRelacionadasTab } from './tabs/PartesRelacionadasTab';
 import { useProductosCatalogoDB, type ProductoCatalogo } from '../../hooks/useProductosCatalogoDB';
-import { fetchNextNoSol, updateFaseSolicitudDB, avanzarFaseSolicitudDB, regresarFaseSolicitudDB, formalizarContratoSolicitudDB, activarCuentaDB, actualizarEstatusSolicitudDB } from '../../hooks/useSolicitudesDB';
+import { fetchNextNoSol, updateFaseSolicitudDB, avanzarFaseSolicitudDB, regresarFaseSolicitudDB, formalizarContratoSolicitudDB, activarCuentaDB, actualizarEstatusSolicitudDB, crearCuentaDesdeSolicitudDB } from '../../hooks/useSolicitudesDB';
 import {
   validarDocumentosFase, validarDocumentosPorFase, validarNotaReciente, validarFormalizarContrato,
   validarContratosYPagares, validarFase4Envio, validarFase6, leerRequisitosProducto,
@@ -520,6 +520,28 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
           await actualizarEstatusSolicitudDB(dbIdAct, 'Autorizada').catch(e =>
             console.warn('[ActCuentaFin] Fallback también falló:', e)
           );
+        }
+
+        // Crear cuenta nueva en J_CUENTAS_CORP_CLIENTES para esta solicitud autorizada
+        if (dbIdAct) {
+          crearCuentaDesdeSolicitudDB({
+            solicitudId:     dbIdAct,
+            clienteId:       formData._clienteId || '',
+            productoId:      formData.productoId || '',
+            noSol:           formData.noSol || '',
+            lineaProducto:   formData.lineaProducto || '',
+            tipoProducto:    formData.tipoProducto || '',
+            montoSolicitado: parseFloat(String(formData.montoSolicitado || 0)) || undefined,
+            montoAutorizado: parseFloat(String(formData.montoAutorizado || formData.montoSolicitado || 0)) || undefined,
+          }).then(r => {
+            if (r.ok && r.noCuenta) {
+              toast.success('Cuenta creada en módulo Cuentas de Ahorro', {
+                description: `No. Cuenta: ${r.noCuenta} — ${formData.lineaProducto}`,
+              });
+            } else if (!r.ok) {
+              console.warn('[ActCuentaFin] crearCuentaDesdeSolicitud falló:', r.error);
+            }
+          });
         }
 
         toast.dismiss(toastActiv);
@@ -1566,8 +1588,15 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
 
       // Actualizar J_CUENTAS_CORP_CLIENTES con los 4 estatus de activación
       const UUID_RE_ACT = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-      const actDbId = String(storageId);
-      if (storageId !== 'new' && UUID_RE_ACT.test(actDbId)) {
+      // Priorizar formData.id (UUID real de BD) sobre storageId (puede ser número)
+      const actDbId = UUID_RE_ACT.test(String(formData.id || ''))
+        ? String(formData.id)
+        : UUID_RE_ACT.test(String(storageId))
+          ? String(storageId)
+          : '';
+      console.log('[PROMPT_IA] actDbId resuelto:', actDbId, '| formData.id:', formData.id, '| storageId:', storageId);
+
+      if (actDbId) {
         try {
           const actResult = await activarCuentaDB(actDbId, {
             estatus_sol:  'Aprobado',
@@ -1576,14 +1605,38 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
             estatus_cart: 'Activa',
           }, formData.lineaProducto);
           if (actResult.ok) {
-            // Sincronizar estatusSolicitud en UI con el valor persistido en BD
             setFormData(prev => ({ ...prev, estatusSolicitud: 'Aprobado', faseId: '7', descripcionFase: 'Completada' }));
           } else {
             console.warn('[PROMPT_IA] activarCuentaDB (modal path) falló:', actResult.error);
           }
+
+          // Crear cuenta nueva en J_CUENTAS_CORP_CLIENTES para esta solicitud autorizada
+          const cuentaResult = await crearCuentaDesdeSolicitudDB({
+            solicitudId:      actDbId,
+            clienteId:        formData._clienteId || actResult.clienteId || '',
+            productoId:       formData.productoId || '',
+            noSol:            formData.noSol || '',
+            lineaProducto:    formData.lineaProducto || '',
+            tipoProducto:     formData.tipoProducto || '',
+            montoSolicitado:  parseFloat(String(formData.montoSolicitado || 0)) || undefined,
+            montoAutorizado:  parseFloat(String(formData.montoAutorizado || formData.montoSolicitado || 0)) || undefined,
+          });
+          if (cuentaResult.ok && cuentaResult.noCuenta) {
+            toast.success('Cuenta creada exitosamente', {
+              description: `No. Cuenta: ${cuentaResult.noCuenta} — ${formData.lineaProducto}`,
+            });
+          } else if (!cuentaResult.ok) {
+            console.warn('[PROMPT_IA] crearCuentaDesdeSolicitud falló:', cuentaResult.error);
+            toast.warning('Cuenta activada pero no se pudo crear el registro de cuenta', {
+              description: cuentaResult.error,
+            });
+          }
         } catch (err) {
           console.error('[PROMPT_IA] Error en activarCuentaDB (modal path):', err);
         }
+      } else {
+        console.warn('[PROMPT_IA] No se pudo resolver UUID de solicitud — formData.id:', formData.id, 'storageId:', storageId);
+        toast.warning('No se pudo crear la cuenta — ID de solicitud no disponible');
       }
 
     } else if (estatusNorm === 'enviada' && !fromActivar) {
@@ -1628,8 +1681,14 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
     setEnviandoFase(true);
     try {
       // Actualizar estatus en BD (Spec §C.2)
-      const dbId = storageId !== 'new' ? String(storageId) : null;
       const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      // Priorizar formData.id (UUID real de BD) sobre storageId (puede ser número)
+      const dbId = UUID_REGEX.test(String(formData.id || ''))
+        ? String(formData.id)
+        : UUID_REGEX.test(String(storageId))
+          ? String(storageId)
+          : null;
+      console.log('[handleActivarCuenta] dbId resuelto:', dbId, '| formData.id:', formData.id, '| storageId:', storageId);
 
       const datosActivacion = {
         estatusSolicitud: 'Aprobado',
@@ -1639,10 +1698,9 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
         fechaActivacion:  new Date().toISOString().split('T')[0],
       };
 
-      // Actualizar estado local - usar 'Aprobado' como estatus final al activar cuenta
       setFormData(prev => ({ ...prev, estatusSolicitud: 'Aprobado', faseId: '7', descripcionFase: 'Completada' }));
 
-      if (dbId && UUID_REGEX.test(dbId)) {
+      if (dbId) {
         const res = await activarCuentaDB(dbId, datosActivacion, formData.lineaProducto);
         if (res.ok) {
           toast.success('¡Cuenta activada exitosamente!', {
@@ -1650,6 +1708,26 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
           });
         } else {
           toast.warning(res.error || 'Cuenta activada localmente (sin conexión BD)', { description: res.error });
+        }
+
+        // Crear cuenta nueva en J_CUENTAS_CORP_CLIENTES para esta solicitud autorizada
+        const cuentaResult = await crearCuentaDesdeSolicitudDB({
+          solicitudId:     dbId,
+          clienteId:       formData._clienteId || res.clienteId || '',
+          productoId:      formData.productoId || '',
+          noSol:           formData.noSol || '',
+          lineaProducto:   formData.lineaProducto || '',
+          tipoProducto:    formData.tipoProducto || '',
+          montoSolicitado: parseFloat(String(formData.montoSolicitado || 0)) || undefined,
+          montoAutorizado: parseFloat(String(formData.montoAutorizado || formData.montoSolicitado || 0)) || undefined,
+        });
+        if (cuentaResult.ok && cuentaResult.noCuenta) {
+          toast.success('Cuenta creada en módulo Cuentas de Ahorro', {
+            description: `No. Cuenta: ${cuentaResult.noCuenta} — ${formData.lineaProducto}`,
+          });
+        } else if (!cuentaResult.ok) {
+          console.warn('[handleActivarCuenta] crearCuentaDesdeSolicitud falló:', cuentaResult.error);
+          toast.warning('No se pudo crear el registro de cuenta', { description: cuentaResult.error });
         }
       } else {
         toast.success('Cuenta activada (modo local)', { description: formData.noSol });

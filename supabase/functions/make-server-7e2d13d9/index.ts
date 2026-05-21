@@ -683,12 +683,12 @@ const activarProspectoHandler = async (c: any) => {
 
     // ── MODO POR SOLICITUD: crear una cuenta dedicada para cada solicitud ──────
     if (solicitudUuid) {
-      // Idempotencia: ¿ya existe cuenta para esta solicitud específica?
+      // Idempotencia via JSONB — no_referenc1 es VARCHAR(30), no acepta UUID de 36 chars
       const existsSol = await sql`
         SELECT id, no_cuenta FROM "EFINANCIANET_DB"."J_CUENTAS_CORP_CLIENTES"
-        WHERE no_referenc1 = ${solicitudUuid}
+        WHERE type = 'CuentaAhorro'
+          AND data->'metadatos'->>'solicitudId' = ${solicitudUuid}
           AND cliente_id = ${clienteUuid}::uuid
-          AND type = 'CuentaAhorro'
         LIMIT 1
       `;
       if (existsSol.length > 0) {
@@ -736,6 +736,7 @@ const activarProspectoHandler = async (c: any) => {
         movimientos: [movInicial],
       });
 
+      // no_referenc1 es VARCHAR(30) — no acepta UUID. Usar noSol (13 chars) ahí.
       const inserted = await sql`
         INSERT INTO "EFINANCIANET_DB"."J_CUENTAS_CORP_CLIENTES" (
           type, no_sol, no_cuenta, no_referenc1, fecha_sol, fecha_autori, fecha_inicio,
@@ -744,7 +745,7 @@ const activarProspectoHandler = async (c: any) => {
           estatus_disp, estatus_sol, estatus_cart, estatus_cuen,
           cta_eje_chec, fases, data
         ) VALUES (
-          'CuentaAhorro', ${noSol}, ${noCuenta}, ${solicitudUuid},
+          'CuentaAhorro', ${noSol}, ${noCuenta}, ${noSol},
           ${now}::timestamptz, ${now}::timestamptz, ${now}::timestamptz,
           ${'Cuenta generada por activación: ' + (nombre_prospecto || 'Sin nombre')},
           ${lineaProd}, ${tipoProd}, ${productoEjeId}::uuid, ${productoEjeId}, ${clienteUuid}::uuid,
@@ -2381,6 +2382,7 @@ const getCuentasAhorroHandler = async (c: any) => {
       LEFT JOIN "EFINANCIANET_DB"."J_CLIENTES"  cl ON cl.id = COALESCE(s.cliente_id, sa.cliente_id)
       LEFT JOIN "EFINANCIANET_DB"."J_PRODUCTOS"  p  ON p.id  = COALESCE(s.producto_id, sa_sol.producto_id)
       WHERE (
+        -- CAPTACION sin CuentaAhorro dedicada (evita duplicados)
         LOWER(REPLACE(REPLACE(s.linea_produc, 'á','a'), 'ó','o')) = 'captacion'
         AND (
           LOWER(REPLACE(REPLACE(s.tipo_produc, 'ó','o'), 'ó','o')) ILIKE '%ahorro%'
@@ -2389,14 +2391,17 @@ const getCuentasAhorroHandler = async (c: any) => {
           OR LOWER(s.tipo_produc) ILIKE '%inversion%'
           OR LOWER(s.tipo_produc) ILIKE '%inversión%'
         )
+        AND NOT EXISTS (
+          SELECT 1 FROM "EFINANCIANET_DB"."J_CUENTAS_CORP_CLIENTES" ca
+          WHERE ca.no_referenc1 = s.id::text AND ca.type = 'CuentaAhorro'
+        )
       )
       OR s.cta_eje_chec = true
-      -- Cuentas creadas por activación de solicitud específica
+      -- Cuentas creadas por activación de solicitud específica (cualquier línea de producto)
       OR (
         s.type = 'CuentaAhorro'
         AND s.estatus_cuen = 'Activa'
-        AND s.no_referenc1 IS NOT NULL
-        AND LENGTH(s.no_referenc1) > 10
+        AND (s.data->'metadatos'->>'solicitudId') IS NOT NULL
       )
       ORDER BY s.fecha_sol DESC NULLS LAST
     `;
@@ -2597,10 +2602,11 @@ const postCuentasAhorroHandler = async (c: any) => {
 
     console.log("[CUENTAS-AHORRO] Sanitized:", JSON.stringify({ no_sol, no_cuenta, fecha_sol, producto_id, cliente_id, cta_eje_chec, monto_sol }));
 
-    const estatus_sol = cta_eje_chec === true ? 'Autorizada' : null;
-    const estatus_cuen = cta_eje_chec === true ? 'Activa' : null;
-    const estatus_cart = cta_eje_chec === true ? 'Activa' : null;
-    const estatus_disp = 'No Aplica';
+    // Aceptar estatus explícitos del payload; si no vienen, inferir desde cta_eje_chec
+    const estatus_sol  = toNullStr(body.p_estatus_sol  ?? body.estatus_sol)  ?? (cta_eje_chec === true ? 'Autorizada' : null);
+    const estatus_cuen = toNullStr(body.p_estatus_cuen ?? body.estatus_cuen) ?? (cta_eje_chec === true ? 'Activa' : null);
+    const estatus_cart = toNullStr(body.p_estatus_cart ?? body.estatus_cart) ?? (cta_eje_chec === true ? 'Activa' : null);
+    const estatus_disp = toNullStr(body.p_estatus_disp ?? body.estatus_disp) ?? 'No Aplica';
 
     const rows = await sql`
       INSERT INTO "EFINANCIANET_DB"."J_CUENTAS_CORP_CLIENTES" (
@@ -3104,6 +3110,82 @@ const postSolicitudesHandler = async (c: any) => {
   }
 };
 
+// ── Helper: crea CuentaAhorro por solicitud (idempotente por JSONB solicitudId) ──
+// no_referenc1 es VARCHAR(30) — no puede almacenar un UUID de 36 chars.
+// Se usa data->metadatos->solicitudId para la relación y la idempotencia.
+async function crearCuentaAhorroParaSolicitud(
+  solicitudId: string,
+  clienteId: string,
+  lineaProd: string,
+  tipoProd: string,
+  montoTransaccion: number,
+  nombreCliente: string,
+): Promise<string | null> {
+  const LOG = '[CREAR-CUENTA-AHORRO]';
+  try {
+    // Idempotencia via JSONB — no_referenc1 no puede almacenar UUID (VARCHAR 30)
+    const existe = await sql`
+      SELECT id FROM "EFINANCIANET_DB"."J_CUENTAS_CORP_CLIENTES"
+      WHERE type = 'CuentaAhorro'
+        AND data->'metadatos'->>'solicitudId' = ${solicitudId}
+        AND cliente_id = ${clienteId}::uuid
+      LIMIT 1
+    `;
+    if (existe.length > 0) {
+      console.log(`${LOG} Ya existe para solicitud ${solicitudId}: ${existe[0].id}`);
+      return existe[0].id;
+    }
+    const lineaNorm = lineaProd.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+    const esCaptacion = lineaNorm.includes('captacion') || lineaNorm.includes('ahorro')
+      || lineaNorm.includes('inversion') || lineaNorm.includes('aportacion');
+    const tipoMov  = esCaptacion ? 'Abono Inicial' : 'Cargo Inicial';
+    const saldoFin = esCaptacion ? montoTransaccion : 0;
+    // noSolC = 13 chars máximo — cabe en VARCHAR(30)
+    const noSolC   = `CEJE-${solicitudId.substring(0, 8)}`;
+    const noCuenta = `0147${String(Math.floor(Math.random() * 99999999)).padStart(8, '0')}`;
+    const now      = new Date().toISOString();
+    const movInicial = {
+      id: `mov-apertura-${Date.now()}`,
+      fechaHora: now, fechaRegistro: now,
+      tipo: tipoMov, concepto: 'Apertura de Cuenta',
+      referencia: `Solicitud ${solicitudId.substring(0, 8)}`,
+      monto: montoTransaccion, usuario: 'Sistema',
+      estatus: 'Aplicado', saldoInicial: 0, saldoFinal: saldoFin,
+      origenCreacion: 'ActivacionSolicitud',
+    };
+    const dataJson = JSON.stringify({
+      metadatos: { noSol: noSolC, noCuenta, solicitudId, origenCreacion: 'ActivacionSolicitud', titular: nombreCliente },
+      estatusCuenta: 'Activa', estatusSolicitud: 'Autorizada', estatusCartera: 'Activa',
+      saldoActual: saldoFin, fechaApertura: now,
+      movimientos: [movInicial],
+    });
+    // no_referenc1 = noSolC (13 chars) — no el UUID completo
+    const [ins] = await sql`
+      INSERT INTO "EFINANCIANET_DB"."J_CUENTAS_CORP_CLIENTES" (
+        type, no_sol, no_cuenta, no_referenc1, fecha_sol, fecha_autori, fecha_inicio,
+        descripcion, linea_produc, tipo_produc, cliente_id,
+        saldo_actual, monto_sol, monto_aut, monto_disp,
+        estatus_disp, estatus_sol, estatus_cart, estatus_cuen,
+        cta_eje_chec, fases, data
+      ) VALUES (
+        'CuentaAhorro', ${noSolC}, ${noCuenta}, ${noSolC},
+        ${now}::timestamptz, ${now}::timestamptz, ${now}::timestamptz,
+        ${'Cuenta por activación: ' + nombreCliente},
+        ${lineaProd}, ${tipoProd}, ${clienteId}::uuid,
+        ${saldoFin}::numeric, ${montoTransaccion}::numeric, ${montoTransaccion}::numeric, 0,
+        'No Aplica', 'Autorizada', 'Activa', 'Activa',
+        false, 'Activa', ${dataJson}::jsonb
+      )
+      RETURNING id, no_cuenta
+    `;
+    console.log(`${LOG} ✅ CuentaAhorro id=${ins.id} noCuenta=${ins.no_cuenta} solicitudId=${solicitudId}`);
+    return ins.id;
+  } catch (e: any) {
+    console.warn(`${LOG} Error:`, e?.message);
+    return null;
+  }
+}
+
 const putSolicitudesHandler = async (c: any) => {
   try {
     const id = c.req.param('id');
@@ -3181,6 +3263,40 @@ const putSolicitudesHandler = async (c: any) => {
       WHERE id = ${id}::uuid
     `;
     console.log(`[SOLICITUDES] UPDATE OK — id: ${id}`);
+
+    // Si el estatus cambia a Autorizada/Aprobado → crear CuentaAhorro por solicitud
+    const estatusAutoriza = estatus_sol && ['Autorizada', 'Aprobado'].includes(estatus_sol);
+    if (estatusAutoriza) {
+      // Leer el registro completo para tener cliente_id, linea, tipo, monto aunque no vengan en el body
+      try {
+        const [solRow] = await sql`
+          SELECT cliente_id, linea_produc, tipo_produc,
+            TRIM(REPLACE(REPLACE(monto_aut::text,'$',''),',',' '))::numeric AS monto_num
+          FROM "EFINANCIANET_DB"."J_CUENTAS_CORP_CLIENTES"
+          WHERE id = ${id}::uuid LIMIT 1
+        `;
+        const clienteIdFin = (cliente_id || solRow?.cliente_id)?.toString() || null;
+        if (clienteIdFin && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(clienteIdFin)) {
+          let nombreCl = 'Sin nombre';
+          try {
+            const [clRow] = await sql`SELECT data FROM "EFINANCIANET_DB"."J_CLIENTES" WHERE id = ${clienteIdFin}::uuid LIMIT 1`;
+            if (clRow?.data) {
+              const cd = parseJsonbData(clRow.data);
+              nombreCl = [cd.nombre, cd.apellidoPaterno, cd.apellidoMaterno].filter(Boolean).join(' ') || 'Sin nombre';
+            }
+          } catch { /* sin nombre */ }
+          const lineaFin  = linea_produc || solRow?.linea_produc || 'CAPTACION';
+          const tipoFin   = tipo_produc  || solRow?.tipo_produc  || 'Ahorro';
+          const montoFin  = monto_aut != null ? monto_aut : (parseFloat(String(solRow?.monto_num || '0')) || 0);
+          crearCuentaAhorroParaSolicitud(id, clienteIdFin, lineaFin, tipoFin, montoFin, nombreCl);
+        } else {
+          console.warn(`[SOLICITUDES] Autorizada pero sin cliente_id válido — id: ${id} clienteId: ${clienteIdFin}`);
+        }
+      } catch (e: any) {
+        console.warn(`[SOLICITUDES] Error al crear CuentaAhorro tras autorización:`, e?.message);
+      }
+    }
+
     return c.json({ ok: true });
   } catch (err: any) {
     console.log(`[SOLICITUDES] Error PUT:`, err?.message);
@@ -3441,8 +3557,28 @@ const activarCuentaSolicitudHandler = async (c: any) => {
       console.warn(`${LOG} No se pudo actualizar J_SOLICITUDES_ACTIVACION: ${saErr?.message}`);
     }
 
-    console.log(`${LOG} ✅ cuenta=${id} tipo=${tipoMovimiento} monto=${montoTransaccion} saldoFinal=${saldoFinal} clienteId=${clienteIdFinal}`);
-    return c.json({ ok: true, tipoMovimiento, montoTransaccion, saldoFinal, clienteId: clienteIdFinal });
+    // ── Crear CuentaAhorro dedicada por solicitud (idempotente via helper) ──────
+    let cuentaAhorroId: string | null = null;
+    if (clienteIdFinal) {
+      let nombreCliente = 'Sin nombre';
+      try {
+        const [clRow] = await sql`SELECT data FROM "EFINANCIANET_DB"."J_CLIENTES" WHERE id = ${clienteIdFinal}::uuid LIMIT 1`;
+        if (clRow?.data) {
+          const cd = parseJsonbData(clRow.data);
+          nombreCliente = [cd.nombre, cd.apellidoPaterno, cd.apellidoMaterno].filter(Boolean).join(' ') || 'Sin nombre';
+        }
+      } catch { /* sin nombre */ }
+      cuentaAhorroId = await crearCuentaAhorroParaSolicitud(
+        id, clienteIdFinal,
+        String(cuenta.linea_produc || 'CAPTACION'),
+        String(cuenta.tipo_produc  || 'Ahorro'),
+        montoTransaccion,
+        nombreCliente,
+      );
+    }
+
+    console.log(`${LOG} ✅ cuenta=${id} tipo=${tipoMovimiento} monto=${montoTransaccion} saldoFinal=${saldoFinal} clienteId=${clienteIdFinal} cuentaAhorroId=${cuentaAhorroId}`);
+    return c.json({ ok: true, tipoMovimiento, montoTransaccion, saldoFinal, clienteId: clienteIdFinal, cuentaAhorroId });
   } catch (err: any) {
     console.error(`${LOG} Error:`, err?.message);
     return c.json({ ok: false, error: String(err?.message || err) }, 500);
@@ -5171,6 +5307,49 @@ const putSolicitudActivacionHandler = async (c: any) => {
 
 app.put(`${PREFIX}/solicitudes-activacion/:id`, putSolicitudActivacionHandler);
 app.put(`/solicitudes-activacion/:id`, putSolicitudActivacionHandler);
+
+// ── Admin: ejecutar migración SQL (temporal) ──
+app.post(`/admin/run-migration`, async (c: any) => {
+  try {
+    await sql`
+      CREATE OR REPLACE FUNCTION public.get_cuentas_ahorro()
+      RETURNS TABLE (
+        id UUID, type TEXT, no_sol TEXT, no_cuenta TEXT, no_referenc1 TEXT,
+        fecha_sol TIMESTAMPTZ, fecha_autori TIMESTAMPTZ, fecha_disper TIMESTAMPTZ,
+        fecha_cancel TIMESTAMPTZ, fecha_inicio TIMESTAMPTZ, fecha_fin_cu TIMESTAMPTZ,
+        descripcion TEXT, linea_produc TEXT, tipo_produc TEXT,
+        producto_id UUID, producto_eje TEXT, cliente_id UUID,
+        saldo_actual NUMERIC, monto_sol NUMERIC, monto_aut NUMERIC, monto_disp NUMERIC,
+        estatus_disp TEXT, estatus_sol TEXT, estatus_cart TEXT, estatus_cuen TEXT,
+        cta_eje_chec TEXT, fases TEXT, data JSONB,
+        cliente_nombre TEXT, producto_nombre TEXT
+      )
+      LANGUAGE sql SECURITY DEFINER SET search_path = ''
+      AS $$
+        SELECT c.id, c.type, c.no_sol, c.no_cuenta, c.no_referenc1,
+          c.fecha_sol, c.fecha_autori, c.fecha_disper, c.fecha_cancel,
+          c.fecha_inicio, c.fecha_fin_cu, c.descripcion,
+          c.linea_produc, c.tipo_produc, c.producto_id, c.producto_eje,
+          c.cliente_id, c.saldo_actual, c.monto_sol, c.monto_aut, c.monto_disp,
+          c.estatus_disp, c.estatus_sol, c.estatus_cart, c.estatus_cuen,
+          c.cta_eje_chec, c.fases, c.data,
+          COALESCE(NULLIF(TRIM(COALESCE(cl.data->>'nombre','') || ' ' || COALESCE(cl.data->>'apellidoPaterno','') || ' ' || COALESCE(cl.data->>'apellidoMaterno','')), ''), cl.data->>'razonSocial', c.cliente_id::TEXT) AS cliente_nombre,
+          COALESCE(p.data->>'nombre', p.data->>'nombreProducto', c.producto_id::TEXT) AS producto_nombre
+        FROM "EFINANCIANET_DB"."J_CUENTAS_CORP_CLIENTES" c
+        LEFT JOIN "EFINANCIANET_DB"."J_CLIENTES" cl ON cl.id = c.cliente_id
+        LEFT JOIN "EFINANCIANET_DB"."J_PRODUCTOS" p ON p.id = c.producto_id
+        WHERE (c.linea_produc = 'CAPTACION' AND c.tipo_produc = 'Ahorro')
+           OR c.cta_eje_chec = TRUE
+           OR (c.type = 'CuentaAhorro' AND (c.data->'metadatos'->>'solicitudId') IS NOT NULL)
+        ORDER BY c.fecha_sol DESC NULLS LAST;
+      $$
+    `;
+    await sql`GRANT EXECUTE ON FUNCTION public.get_cuentas_ahorro() TO anon, authenticated, service_role`;
+    return c.json({ ok: true, msg: 'get_cuentas_ahorro actualizado' });
+  } catch (e: any) {
+    return c.json({ ok: false, error: e.message }, 500);
+  }
+});
 
 // ═══════════════════════════════════════════════════════════════════
 // SERVE — FORCE REDEPLOY 2026-02-25T12:00:00Z

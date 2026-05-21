@@ -1080,6 +1080,146 @@ export async function crearCuentaPorCobrarDB(
  * - Crédito/Captación: requiere que datos.estatus='Pagado' para activar
  * - Línea de Crédito: permite activación sin validación de estatus
  */
+// ─── Generador de número de cuenta (mismo formato que CuentasAhorroForm) ────
+function generateNoCuentaInterno(): string {
+  const now = new Date();
+  const y = String(now.getFullYear()).slice(-2);
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const rand = String(Math.floor(Math.random() * 900000) + 100000);
+  return `01${y}${m}${rand}`;
+}
+
+/**
+ * Crea una cuenta nueva en J_CUENTAS_CORP_CLIENTES para una solicitud autorizada.
+ * Debe llamarse inmediatamente después de que la solicitud cambia a 'Autorizada'.
+ * Soporta: Crédito, Captación, Aportación, Inversión, Línea de Crédito.
+ */
+export async function crearCuentaDesdeSolicitudDB(params: {
+  solicitudId: string;
+  clienteId: string;
+  productoId: string;
+  noSol: string;
+  lineaProducto: string;
+  tipoProducto: string;
+  montoSolicitado?: number;
+  montoAutorizado?: number;
+  data?: Record<string, unknown>;
+}): Promise<{ ok: boolean; noCuenta?: string; error?: string }> {
+  const PRODUCTOS_CON_CUENTA = ['crédito', 'captacion', 'captación', 'aportacion', 'aportación', 'inversion', 'inversión', 'linea', 'línea'];
+  const lineaNorm = (params.lineaProducto || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  const debeCrear = PRODUCTOS_CON_CUENTA.some(p => lineaNorm.includes(p));
+  if (!debeCrear) {
+    console.log('[SolicDB] crearCuentaDesdeSolicitud — línea no genera cuenta:', params.lineaProducto);
+    return { ok: true };
+  }
+
+  // Si clienteId no viene o no es UUID, obtenerlo directamente de la solicitud en BD
+  let clienteIdFinal = UUID_RE.test(params.clienteId || '') ? params.clienteId : '';
+  let noSolFinal = params.noSol || '';
+  let lineaFinal = params.lineaProducto || '';
+  let tipoFinal = params.tipoProducto || '';
+
+  if ((!clienteIdFinal || !noSolFinal) && UUID_RE.test(params.solicitudId)) {
+    try {
+      const res = await fetch(`${API_BASE}/solicitudes-credito/${params.solicitudId}`, {
+        headers: { Authorization: `Bearer ${publicAnonKey}` },
+      });
+      if (res.ok) {
+        const row = await res.json();
+        if (!clienteIdFinal && UUID_RE.test(row.cliente_id || '')) clienteIdFinal = row.cliente_id;
+        if (!noSolFinal) noSolFinal = row.no_sol || '';
+        if (!lineaFinal) lineaFinal = row.linea_produc || row.tipo_produc || '';
+        if (!tipoFinal)  tipoFinal  = row.tipo_produc || '';
+        console.log('[SolicDB] crearCuentaDesdeSolicitud — datos resueltos desde BD: clienteId=', clienteIdFinal, 'noSol=', noSolFinal);
+      }
+    } catch (e: any) {
+      console.warn('[SolicDB] crearCuentaDesdeSolicitud — no se pudo resolver datos desde BD:', e?.message);
+    }
+  }
+
+  if (!clienteIdFinal) {
+    return { ok: false, error: 'cliente_id requerido y no disponible — asegura que la solicitud tiene cliente asignado' };
+  }
+  if (!noSolFinal) {
+    return { ok: false, error: 'no_sol requerido y no disponible' };
+  }
+
+  const noCuenta = generateNoCuentaInterno();
+  const hoy = new Date().toISOString().split('T')[0];
+
+  const payload = {
+    p_no_sol:       noSolFinal,
+    p_no_cuenta:    noCuenta,
+    p_fecha_sol:    hoy,
+    p_fecha_autori: hoy,
+    p_linea_produc: lineaFinal || params.lineaProducto,
+    p_tipo_produc:  tipoFinal  || params.tipoProducto,
+    p_producto_id:  UUID_RE.test(params.productoId || '') ? params.productoId : null,
+    p_cliente_id:   clienteIdFinal,
+    p_monto_sol:    params.montoSolicitado  || null,
+    p_monto_aut:    params.montoAutorizado  || null,
+    p_estatus_sol:  'Autorizada',
+    p_estatus_cuen: 'Activa',
+    p_estatus_cart: 'Activa',
+    p_estatus_disp: 'Aplicado',
+    p_cta_eje_chec: false,
+    p_fases:        '7',
+    p_data: {
+      ...(params.data || {}),
+      metadatos: {
+        solicitudId: params.solicitudId,
+        origenActivacion: true,
+      },
+      estatus:        'Autorizada',
+      movimientoInicial: {
+        tipo:       'Abono Inicial',
+        referencia: `Apertura de Cuenta / Solicitud ${noSolFinal}`,
+        estatus:    'Aplicado',
+      },
+    },
+  };
+
+  // Intento 1: Edge Function POST /cuentas-ahorro
+  try {
+    const res = await fetch(`${API_BASE}/cuentas-ahorro`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${publicAnonKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (res.ok) {
+      const json = await res.json().catch(() => ({}));
+      console.log('[SolicDB] crearCuentaDesdeSolicitud Edge OK — noCuenta:', noCuenta, '| id:', json?.id);
+      window.dispatchEvent(new Event('cuentaAhorroRefetch'));
+      return { ok: true, noCuenta };
+    }
+    const errText = await res.text().catch(() => '');
+    console.warn('[SolicDB] crearCuentaDesdeSolicitud Edge HTTP', res.status, errText);
+  } catch (e: any) {
+    console.warn('[SolicDB] crearCuentaDesdeSolicitud Edge excepción:', e?.message);
+  }
+
+  // Intento 2: RPC insert_cuenta_ahorro
+  try {
+    const rpcPayload = {
+      ...payload,
+      p_fecha_sol:    `${hoy}T00:00:00.000Z`,
+      p_fecha_autori: `${hoy}T00:00:00.000Z`,
+      p_data:         JSON.stringify(payload.p_data),
+    };
+    const { data, error } = await supabase.rpc('insert_cuenta_ahorro', rpcPayload as any);
+    if (!error && data) {
+      console.log('[SolicDB] crearCuentaDesdeSolicitud RPC OK — noCuenta:', noCuenta);
+      window.dispatchEvent(new Event('cuentaAhorroRefetch'));
+      return { ok: true, noCuenta };
+    }
+    if (error) console.warn('[SolicDB] crearCuentaDesdeSolicitud RPC error:', error.message);
+  } catch (e: any) {
+    console.warn('[SolicDB] crearCuentaDesdeSolicitud RPC excepción:', e?.message);
+  }
+
+  return { ok: false, error: 'No se pudo crear la cuenta en BD (Edge + RPC fallaron)' };
+}
+
 // Crea la cuenta eje para el cliente si no existe — llama a /activar-prospecto (idempotente)
 export async function crearCuentaEjeDB(
   clienteId: string,

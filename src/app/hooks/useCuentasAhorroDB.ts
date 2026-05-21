@@ -418,30 +418,9 @@ export function useCuentasAhorroDB() {
       return;
     }
 
-    // ── Intento 1: RPC ──
+    // ── Intento 1: Edge Function (tiene filtro completo: CAPTACION + cta_eje_chec + CuentaAhorro por activación) ──
     try {
-      console.log(`${LOG} Intento 1 → supabase.rpc('get_cuentas_ahorro')`);
-      const { data, error } = await supabase.rpc('get_cuentas_ahorro');
-
-      if (!error && Array.isArray(data)) {
-        const mapped = (data as JCuentaAhorroRow[]).map(mapRow);
-        console.log(`${LOG} RPC OK — ${mapped.length} registros de BD`);
-        setCuentas(mapped);
-        saveLocal(mapped);
-        saveFullRows(data as JCuentaAhorroRow[]);
-        setBackendStatus('connected');
-        setLoading(false);
-        return;
-      }
-
-      console.warn(`${LOG} RPC error:`, error?.message || 'respuesta no-array');
-    } catch (e) {
-      console.warn(`${LOG} RPC excepción:`, e);
-    }
-
-    // ── Intento 2: Edge Function ──
-    try {
-      console.log(`${LOG} Intento 2 → Edge Function /cuentas-ahorro`);
+      console.log(`${LOG} Intento 1 → Edge Function /cuentas-ahorro`);
       const res = await fetch(`${API_BASE}/cuentas-ahorro`, {
         headers: {
           'Authorization': `Bearer ${publicAnonKey}`,
@@ -463,6 +442,27 @@ export function useCuentasAhorroDB() {
       console.warn(`${LOG} Edge Function status:`, res.status);
     } catch (e) {
       console.warn(`${LOG} Edge Function excepción:`, e);
+    }
+
+    // ── Intento 2: RPC (puede tener filtro desactualizado en BD) ──
+    try {
+      console.log(`${LOG} Intento 2 → supabase.rpc('get_cuentas_ahorro')`);
+      const { data, error } = await supabase.rpc('get_cuentas_ahorro');
+
+      if (!error && Array.isArray(data)) {
+        const mapped = (data as JCuentaAhorroRow[]).map(mapRow);
+        console.log(`${LOG} RPC OK — ${mapped.length} registros de BD`);
+        setCuentas(mapped);
+        saveLocal(mapped);
+        saveFullRows(data as JCuentaAhorroRow[]);
+        setBackendStatus('connected');
+        setLoading(false);
+        return;
+      }
+
+      console.warn(`${LOG} RPC error:`, error?.message || 'respuesta no-array');
+    } catch (e) {
+      console.warn(`${LOG} RPC excepción:`, e);
     }
 
     // ── Intento 3: sessionStorage fallback ──

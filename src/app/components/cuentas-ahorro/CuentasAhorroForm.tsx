@@ -29,6 +29,8 @@ import { CargosTab } from './CargosTab';
 import { BloqueosTab } from './BloqueosTab';
 import { SolicitudExtraordinariaTab } from './SolicitudExtraordinariaTab';
 import { CalendarioPagosTab } from './CalendarioPagosTab';
+import { AvisosVencimientoTab } from '../cartera/AvisosVencimientoTab';
+import { GeneracionContableTab } from '../cartera/GeneracionContableTab';
 import { DatePicker } from '@/app/components/ui/DatePicker';
 import { ClientePickerModal } from './ClientePickerModal';
 import type { ClientePickResult } from './ClientePickerModal';
@@ -642,6 +644,8 @@ export function CuentasAhorroForm({ mode, accountId, onCancel, onSave }: Cuentas
     { id: 'bloqueos', label: 'Bloqueos' },
     { id: 'solicitud',   label: 'Solicitud extraordinaria' },
     { id: 'calendario',  label: 'Calendario de Pagos' },
+    { id: 'avisos',      label: 'Avisos de Aportación' },
+    { id: 'contable',    label: 'Generación Contable' },
   ];
 
   // ═══════════════════════════════════════════════════════════════════
@@ -1170,6 +1174,8 @@ export function CuentasAhorroForm({ mode, accountId, onCancel, onSave }: Cuentas
             {activeTab === 'bloqueos'      && <BloqueosTab mode={mode} accountId={storageId} />}
             {activeTab === 'solicitud'     && <SolicitudExtraordinariaTab mode={mode} accountId={storageId} />}
             {activeTab === 'calendario'    && <CalendarioPagosTab accountId={isNew ? 'new' : dbForm.id} cliente={dbForm.clienteNombreDisplay || ''} noSol={dbForm.no_sol} noCuenta={dbForm.no_cuenta} moneda="MXN" />}
+            {activeTab === 'avisos'        && <AvisosVencimientoTab solicitudId={isNew ? 'new' : dbForm.id} />}
+            {activeTab === 'contable'      && <GeneracionContableTab solicitudId={isNew ? 'new' : dbForm.id} credito={{ noSol: dbForm.no_sol, cliente: dbForm.clienteNombreDisplay || '', montoAut: parseFloat(dbForm.monto_aut || '0') || 0 }} />}
           </div>
         )}
       </div>
