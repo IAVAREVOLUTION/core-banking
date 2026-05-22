@@ -39,6 +39,7 @@ const LOG = '[CatalogoContable]';
 function useCatalogoContableDB() {
   const [data, setData] = useState<CatalogoContable[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [synced, setSynced] = useState(false);
   const loadedRef = useRef(false);
 
@@ -55,10 +56,15 @@ function useCatalogoContableDB() {
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
       console.log(`${LOG} GET /${ENDPOINT}`);
       const res = await fetch(`${BASE_URL}/${ENDPOINT}`, { headers: HEADERS });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        const detail = body.path ? ` (path: ${body.path})` : '';
+        throw new Error((body.error || `HTTP ${res.status}`) + detail);
+      }
       const json = await res.json();
       const items: CatalogoContable[] = json.data || [];
       setData(items);
@@ -70,8 +76,11 @@ function useCatalogoContableDB() {
       if (cached.length > 0) {
         setData(cached);
         toast.warning('Modo offline', { description: 'Usando datos en cache. Los cambios se guardarán localmente.' });
+        setSynced(false);
+      } else {
+        setError(err.message || 'No se pudo conectar con el servidor');
+        setSynced(false);
       }
-      setSynced(false);
     } finally {
       setLoading(false);
     }
@@ -142,7 +151,7 @@ function useCatalogoContableDB() {
     }
   }, []);
 
-  return { data, loading, synced, fetchAll, create, update, remove };
+  return { data, loading, error, synced, fetchAll, create, update, remove };
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -285,13 +294,35 @@ export function CatalogoContableSection() {
     return `${base} border border-gray-300 bg-white focus:border-blue-500 focus:ring-1 ring-blue-500 outline-none transition-colors`;
   };
 
-  // ─── Loading ───────────────────────────────────────────────────
-  if (db.loading && mode === 'list') {
+  // ─── Loading / Error ───────────────────────────────────────────
+  if (mode === 'list' && db.loading) {
     return (
       <div className="p-6 bg-[#FAFBFC] min-h-[600px] flex items-center justify-center">
         <div className="flex flex-col items-center gap-3 text-gray-500">
           <Loader2 size={32} className="animate-spin text-[#2E5C91]" />
           <span className="text-sm">Cargando desde J_CATALOGO_CATALOGOS_CONTABLES...</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (mode === 'list' && db.error) {
+    return (
+      <div className="p-6 bg-[#FAFBFC] min-h-[600px] flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4 text-center max-w-sm">
+          <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center">
+            <AlertTriangle size={24} className="text-red-600" />
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-gray-800 mb-1">Error al cargar catálogo contable</p>
+            <p className="text-xs text-gray-500 font-mono bg-gray-100 px-2 py-1 rounded">{db.error}</p>
+          </div>
+          <button
+            onClick={() => db.fetchAll()}
+            className="flex items-center gap-2 px-4 py-2 bg-[#2E5C91] text-white text-xs font-medium rounded-sm hover:bg-[#1E4A7A] transition-colors"
+          >
+            <RefreshCw size={13} /> Reintentar
+          </button>
         </div>
       </div>
     );

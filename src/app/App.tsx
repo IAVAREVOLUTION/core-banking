@@ -53,6 +53,7 @@ import { EjecReportesModule } from './components/reportes-regulatorios/EjecRepor
 import { PagosReferenciadosModule } from './components/pagos-referenciados/PagosReferenciadosModule';
 import { CasosCobranzaModule } from './components/casos-cobranza/CasosCobranzaModule';
 import { CotizacionesModule } from './components/cotizaciones/CotizacionesModule';
+import { PolizasContablesModule } from './components/polizas-contables/PolizasContablesModule';
 import efinanciaLogo from '@/assets/7b6cb23c00b7817818c638af3eae0a416e1e9f57.png';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { useProductosCredito } from './hooks/useProductosCredito';
@@ -61,7 +62,7 @@ import { useProductosCaptacionDB } from './hooks/useProductosCaptacionDB';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 
 type View = 'list' | 'form' | 'direccion';
-type Module = 'dashboard' | 'configuracion' | 'productos' | 'garantias' | 'prospectos' | 'clientes' | 'cotizaciones' | 'cuentas-ahorro' | 'solicitudes-creditos' | 'solicitudes-activacion' | 'originacion' | 'creditos' | 'inversiones' | 'cartera-credito' | 'cartera-inversion' | 'cartera-ahorro' | 'avisos-vencimiento' | 'pld' | 'pagos-referenciados' | 'casos-cobranza' | 'ejec-reportes';
+type Module = 'dashboard' | 'configuracion' | 'productos' | 'garantias' | 'prospectos' | 'clientes' | 'cotizaciones' | 'cuentas-ahorro' | 'solicitudes-creditos' | 'solicitudes-activacion' | 'originacion' | 'creditos' | 'inversiones' | 'cartera-credito' | 'cartera-inversion' | 'cartera-ahorro' | 'avisos-vencimiento' | 'pld' | 'pagos-referenciados' | 'casos-cobranza' | 'ejec-reportes' | 'polizas-contables';
 type ClienteView = 'dashboard' | 'list' | 'form' | 'direccion';
 type ProspectoView = 'dashboard' | 'list' | 'form';
 type SolicitudView = 'dashboard' | 'list' | 'form';
@@ -668,6 +669,7 @@ function App() {
     { id: 'cartera-inversion', label: 'Cartera inversión' },
     { id: 'cartera-ahorro', label: 'Cartera ahorro' },
     { id: 'ejec-reportes', label: 'Ejec. Reportes Regulatorios' },
+    { id: 'polizas-contables', label: 'Pólizas Contables' },
   ];
 
   return (
@@ -1400,6 +1402,8 @@ function App() {
           <CasosCobranzaModule />
         ) : currentModule === 'ejec-reportes' ? (
           <EjecReportesModule />
+        ) : currentModule === 'polizas-contables' ? (
+          <PolizasContablesModule />
         ) : (
           <div className="p-8 text-center text-gray-500">
             Módulo en desarrollo

@@ -47,10 +47,10 @@ export function CatalogosContablesSection() {
         })}
       </div>
 
-      {/* Contenido de la sub-sección activa */}
-      {activeTab === 'catalogo-contable' && <CatalogoContableSection />}
-      {activeTab === 'eventos-contables' && <EventosContablesSection />}
-      {activeTab === 'componentes' && <ComponentesContablesSection />}
+      {/* Contenido de la sub-sección activa — display:none para no desmontar y evitar re-fetch en cold start */}
+      <div style={{ display: activeTab === 'catalogo-contable' ? 'block' : 'none' }}><CatalogoContableSection /></div>
+      <div style={{ display: activeTab === 'eventos-contables' ? 'block' : 'none' }}><EventosContablesSection /></div>
+      <div style={{ display: activeTab === 'componentes' ? 'block' : 'none' }}><ComponentesContablesSection /></div>
     </>
   );
 }

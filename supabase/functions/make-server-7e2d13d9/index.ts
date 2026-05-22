@@ -3734,6 +3734,110 @@ app.post(`${PREFIX}/validar-fase-ia`, validarFaseIAHandler);
 app.post("/validar-fase-ia", validarFaseIAHandler);
 console.log("[ROUTE] validar-fase-ia registered OK");
 
+// ═══════════════════════════════════════════════════════════════════
+// GL JOURNAL ENCABEZADO — CRUD vía SQL directo
+// Tabla: EFINANCIANET_DB.J_GL_JOURNAL_ENCABEZADO
+// ═══════════════════════════════════════════════════════════════════
+
+const getGlJournalHandler = async (c: any) => {
+  try {
+    const rows = await sql`
+      SELECT id, journal_date, producto_id, event_code, account_id,
+             transaction_id, currency, total_debit, total_credit,
+             status, created_at, data
+      FROM "EFINANCIANET_DB"."J_GL_JOURNAL_ENCABEZADO"
+      ORDER BY created_at DESC
+    `;
+    return c.json({ success: true, data: rows });
+  } catch (err: any) {
+    return c.json({ error: `Error al consultar J_GL_JOURNAL_ENCABEZADO: ${err.message ?? err}` }, 500);
+  }
+};
+
+const postGlJournalHandler = async (c: any) => {
+  try {
+    const body = await c.req.json();
+    const { journal_date, producto_id, event_code, account_id, currency, total_debit, total_credit, status, data } = body;
+    if (!journal_date || !producto_id || !event_code || !account_id || !currency) {
+      return c.json({ error: "Campos requeridos: journal_date, producto_id, event_code, account_id, currency" }, 400);
+    }
+    const inserted = await sql`
+      INSERT INTO "EFINANCIANET_DB"."J_GL_JOURNAL_ENCABEZADO"
+        (journal_date, producto_id, event_code, account_id, currency,
+         total_debit, total_credit, status, created_at, data)
+      VALUES (
+        ${journal_date}::date,
+        ${producto_id}::uuid,
+        ${event_code},
+        ${account_id}::uuid,
+        ${currency},
+        ${total_debit ?? 0},
+        ${total_credit ?? 0},
+        ${status ?? 'Creada'},
+        now(),
+        ${JSON.stringify(data ?? {})}::jsonb
+      )
+      RETURNING id, journal_date, producto_id, event_code, account_id,
+                transaction_id, currency, total_debit, total_credit,
+                status, created_at, data
+    `;
+    return c.json({ success: true, data: inserted[0] }, 201);
+  } catch (err: any) {
+    return c.json({ error: `Error al insertar en J_GL_JOURNAL_ENCABEZADO: ${err.message ?? err}` }, 500);
+  }
+};
+
+const putGlJournalHandler = async (c: any) => {
+  try {
+    const id = c.req.param("id");
+    if (!id) return c.json({ error: "Se requiere id" }, 400);
+    const body = await c.req.json();
+    const { journal_date, producto_id, event_code, account_id, currency, total_debit, total_credit, status, data } = body;
+    const updated = await sql`
+      UPDATE "EFINANCIANET_DB"."J_GL_JOURNAL_ENCABEZADO"
+      SET
+        journal_date  = COALESCE(${journal_date ?? null}::date,    journal_date),
+        producto_id   = COALESCE(${producto_id ?? null}::uuid,     producto_id),
+        event_code    = COALESCE(${event_code ?? null},             event_code),
+        account_id    = COALESCE(${account_id ?? null}::uuid,      account_id),
+        currency      = COALESCE(${currency ?? null},               currency),
+        total_debit   = COALESCE(${total_debit ?? null}::numeric,  total_debit),
+        total_credit  = COALESCE(${total_credit ?? null}::numeric, total_credit),
+        status        = COALESCE(${status ?? null},                 status),
+        data          = COALESCE(${data != null ? JSON.stringify(data) : null}::jsonb, data)
+      WHERE id = ${id}::uuid
+      RETURNING id, journal_date, producto_id, event_code, account_id,
+                transaction_id, currency, total_debit, total_credit,
+                status, created_at, data
+    `;
+    if (updated.length === 0) return c.json({ error: `No se encontró registro con id=${id}` }, 404);
+    return c.json({ success: true, data: updated[0] });
+  } catch (err: any) {
+    return c.json({ error: `Error al actualizar J_GL_JOURNAL_ENCABEZADO: ${err.message ?? err}` }, 500);
+  }
+};
+
+const deleteGlJournalHandler = async (c: any) => {
+  try {
+    const id = c.req.param("id");
+    if (!id) return c.json({ error: "Se requiere id" }, 400);
+    await sql`DELETE FROM "EFINANCIANET_DB"."J_GL_JOURNAL_ENCABEZADO" WHERE id = ${id}::uuid`;
+    return c.json({ success: true, message: `Póliza ${id} eliminada` });
+  } catch (err: any) {
+    return c.json({ error: `Error al eliminar en J_GL_JOURNAL_ENCABEZADO: ${err.message ?? err}` }, 500);
+  }
+};
+
+app.get(`${PREFIX}/gl-journal`, getGlJournalHandler);
+app.post(`${PREFIX}/gl-journal`, postGlJournalHandler);
+app.put(`${PREFIX}/gl-journal/:id`, putGlJournalHandler);
+app.delete(`${PREFIX}/gl-journal/:id`, deleteGlJournalHandler);
+app.get("/gl-journal", getGlJournalHandler);
+app.post("/gl-journal", postGlJournalHandler);
+app.put("/gl-journal/:id", putGlJournalHandler);
+app.delete("/gl-journal/:id", deleteGlJournalHandler);
+console.log("[ROUTE] gl-journal CRUD registered OK");
+
 // ─── Diagnostic 404 handler ─────────────────────────────────────────
 app.notFound((c) => {
   const info = {

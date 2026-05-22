@@ -125,7 +125,7 @@ export function ConfiguracionModule() {
       {activeTab === 'mantenimiento' && <MantenimientoSection />}
       {activeTab === 'catalogo-documentos' && <CatalogoDocumentosSection />}
       {activeTab === 'reportes-regulatorios' && <ReportesRegulariosSection />}
-      {activeTab === 'catalogos-contables' && <CatalogosContablesSection />}
+      <div style={{ display: activeTab === 'catalogos-contables' ? 'block' : 'none' }}><CatalogosContablesSection /></div>
     </>
   );
 }
