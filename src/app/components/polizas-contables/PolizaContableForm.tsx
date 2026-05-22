@@ -1,8 +1,9 @@
-import { useState } from 'react';
-import { Plus, Trash2 } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Search } from 'lucide-react';
 import { toast } from 'sonner';
-import { GL_JOURNAL_URL, GL_HEADERS } from '../../hooks/usePolizasContablesDB';
-import type { PolizaContable, Partida } from './PolizasContablesModule';
+import { GL_JOURNAL_URL, GL_BASE_URL, GL_HEADERS } from '../../hooks/usePolizasContablesDB';
+import type { PolizaContable } from './PolizasContablesModule';
+import { CuentaFinancieraPickerModal } from './CuentaFinancieraPickerModal';
 
 type FormMode = 'create' | 'edit' | 'view';
 
@@ -13,74 +14,139 @@ interface Props {
   onCancel: () => void;
 }
 
-type Tab = 'default' | 'detalle';
+interface EventoContable {
+  id: string;
+  codigo: string;
+  evento: string;
+  prompt_ia: string;
+}
 
-const TABS: { id: Tab; label: string }[] = [
-  { id: 'default', label: 'Default' },
-  { id: 'detalle', label: 'Detalle' },
-];
+interface CuentaContable {
+  id: string;
+  cuenta_gl: string;
+  nombre: string;
+}
 
-const CURRENCIES = ['MXN', 'USD', 'EUR'];
-const STATUSES: PolizaContable['status'][] = ['Creada', 'Aplicada', 'Cancelada', 'Procesando', 'Error'];
-
-const emptyPartida = (): Partida => ({ cuentaGl: '', nombreCuenta: '', concepto: '', debito: '', credito: '' });
+const STATUSES: PolizaContable['status'][] = ['Creada', 'Validada', 'Posteada'];
 
 export function PolizaContableForm({ mode, poliza, onSave, onCancel }: Props) {
   const isView = mode === 'view';
-  const [activeTab, setActiveTab] = useState<Tab>('default');
   const [saving, setSaving] = useState(false);
 
-  // Columnas físicas
-  const [journalDate, setJournalDate] = useState(poliza?.journal_date || new Date().toISOString().split('T')[0]);
-  const [eventCode, setEventCode] = useState(poliza?.event_code || '');
-  const [productoId, setProductoId] = useState(poliza?.producto_id || '');
-  const [accountId, setAccountId] = useState(poliza?.account_id || '');
-  const [currency, setCurrency] = useState(poliza?.currency || 'MXN');
-  const [status, setStatus] = useState<PolizaContable['status']>(poliza?.status || 'Creada');
-
-  // JSONB data
-  const [concepto, setConcepto] = useState(poliza?.data?.concepto || '');
-  const [referencia, setReferencia] = useState(poliza?.data?.referencia || '');
-  const [partidas, setPartidas] = useState<Partida[]>(
-    poliza?.data?.partidas && poliza.data.partidas.length > 0 ? poliza.data.partidas : [emptyPartida()]
+  // ── Columnas físicas ──────────────────────────────────────────────
+  const [journalDate, setJournalDate] = useState(
+    poliza?.journal_date || new Date().toISOString().split('T')[0]
   );
+  const [accountId, setAccountId]         = useState(poliza?.account_id || '');
+  const [noCuenta, setNoCuenta]           = useState(''); // informativo, no se persiste
+  const [productoId, setProductoId]       = useState(poliza?.producto_id || '');
+  const [eventCode, setEventCode]     = useState(poliza?.event_code || '');
+  const [totalDebit, setTotalDebit]   = useState(String(poliza?.total_debit ?? ''));
+  const [totalCredit, setTotalCredit] = useState(String(poliza?.total_credit ?? ''));
+  const [currency, setCurrency]       = useState(poliza?.currency || 'MXN');
+  const [status, setStatus]           = useState<PolizaContable['status']>(poliza?.status || 'Creada');
 
-  const totalDebito = partidas.reduce((s, p) => s + (parseFloat(p.debito) || 0), 0);
-  const totalCredito = partidas.reduce((s, p) => s + (parseFloat(p.credito) || 0), 0);
-  const balanced = Math.abs(totalDebito - totalCredito) < 0.01;
+  // ── JSONB data → subkey Detalle ──────────────────────────────────
+  const _det = poliza?.data?.Detalle ?? {};
+  const [dataEvento, setDataEvento]         = useState(_det.evento || '');
+  const [dataPromptIA, setDataPromptIA]     = useState(_det.prompt_ia || '');
+  const [dataCatalogoId, setDataCatalogoId] = useState(_det.catalogo_id || '');
+  const [dataSolicitudId, setDataSolicitudId] = useState(_det.solicitud_id || '');
+  const [dataCuentaContableId, setDataCuentaContableId] = useState(_det.cuenta_contable_id || '');
+  const [dataMontoCredito, setDataMontoCredito] = useState(String(_det.monto_credito ?? ''));
+  const [dataMontoDebito, setDataMontoDebito] = useState(String(_det.monto_debito ?? ''));
+  const [clienteId, setClienteId] = useState(_det.cliente_id || '');
+  const [clienteNombre, setClienteNombre] = useState(_det.cliente_nombre || '');
 
-  const addPartida = () => setPartidas(prev => [...prev, emptyPartida()]);
-  const removePartida = (i: number) => setPartidas(prev => prev.filter((_, j) => j !== i));
-  const updatePartida = (i: number, field: keyof Partida, val: string) =>
-    setPartidas(prev => prev.map((p, j) => j === i ? { ...p, [field]: val } : p));
+  // ── Catálogo de eventos ───────────────────────────────────────────
+  const [eventos, setEventos] = useState<EventoContable[]>([]);
+  const [cuentasContables, setCuentasContables] = useState<CuentaContable[]>([]);
 
-  const fmt = (n: number) => n.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  // ── Modal cuenta ──────────────────────────────────────────────────
+  const [cuentaModalOpen, setCuentaModalOpen] = useState(false);
+
+  // ── Tab activo ────────────────────────────────────────────────────
+  const [activeTab, setActiveTab] = useState<'default' | 'detalle'>('default');
+
+  // Cargar catálogos al montar
+  useEffect(() => {
+    fetch(`${GL_BASE_URL}/eventos-contables`, { headers: GL_HEADERS })
+      .then(r => r.json())
+      .then(j => { if (Array.isArray(j.data)) setEventos(j.data); })
+      .catch(() => {});
+    fetch(`${GL_BASE_URL}/catalogos-contables`, { headers: GL_HEADERS })
+      .then(r => r.json())
+      .then(j => { if (Array.isArray(j.data)) setCuentasContables(j.data); })
+      .catch(() => {});
+  }, []);
+
+  // Cuando el usuario selecciona una cuenta del modal
+  const handleCuentaSelect = (result: { account_id: string; no_cuenta: string; producto_id: string; producto_display: string; cliente_id: string; cliente_nombre: string }) => {
+    setAccountId(result.account_id);
+    setNoCuenta(result.no_cuenta);
+    setProductoId(result.producto_id);
+    setDataSolicitudId(result.account_id);
+    setClienteId(result.cliente_id);
+    setClienteNombre(result.cliente_nombre);
+  };
+
+  // Cuando cambia el evento: autocompletar campos JSONB
+  const handleEventoChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const codigo = e.target.value;
+    setEventCode(codigo);
+    const found = eventos.find(ev => ev.codigo === codigo);
+    if (found) {
+      setDataEvento(found.evento || '');
+      setDataPromptIA(found.prompt_ia || '');
+      setDataCatalogoId(found.id);
+    } else {
+      setDataEvento('');
+      setDataPromptIA('');
+      setDataCatalogoId('');
+    }
+  };
 
   const handleSave = async () => {
-    if (!journalDate) { toast.error('La fecha de la póliza es requerida'); return; }
-    if (!eventCode.trim()) { toast.error('El código de evento es requerido'); return; }
-    if (!balanced) { toast.error('La póliza no está balanceada (débito ≠ crédito)'); return; }
+    if (!journalDate)        { toast.error('La fecha valor es requerida'); return; }
+    if (!eventCode.trim())   { toast.error('El código de evento es requerido'); return; }
+    if (!accountId.trim())   { toast.error('Selecciona una cuenta financiera'); return; }
+    if (!productoId.trim())  { toast.error('La cuenta seleccionada no tiene producto asignado'); return; }
+    if (!currency.trim())    { toast.error('La moneda es requerida'); return; }
 
     setSaving(true);
     try {
       const body: Record<string, unknown> = {
         journal_date: journalDate,
-        event_code: eventCode,
-        currency,
+        event_code:   eventCode.trim(),
+        account_id:   accountId.trim(),
+        producto_id:  productoId.trim(),
+        currency:     currency.trim(),
         status,
-        total_debit: totalDebito,
-        total_credit: totalCredito,
-        data: { concepto, referencia, partidas },
+        total_debit:  parseFloat(totalDebit)  || 0,
+        total_credit: parseFloat(totalCredit) || 0,
+        data: {
+          Detalle: {
+            evento:             dataEvento,
+            prompt_ia:          dataPromptIA,
+            catalogo_id:        dataCatalogoId,
+            solicitud_id:       dataSolicitudId,
+            cuenta_contable_id: dataCuentaContableId,
+            monto_credito:      parseFloat(dataMontoCredito) || 0,
+            monto_debito:       parseFloat(dataMontoDebito)  || 0,
+            account_id:         accountId.trim(),
+            producto_id:        productoId.trim(),
+            cliente_id:         clienteId,
+            cliente_nombre:     clienteNombre,
+          },
+        },
       };
-      if (productoId.trim()) body.producto_id = productoId.trim();
-      if (accountId.trim()) body.account_id = accountId.trim();
 
       const isEdit = !!poliza?.id;
-      const url = isEdit ? `${GL_JOURNAL_URL}/${poliza!.id}` : GL_JOURNAL_URL;
-      const res = await fetch(url, {
-        method: isEdit ? 'PUT' : 'POST',
+      const url    = isEdit ? `${GL_JOURNAL_URL}/${poliza!.id}` : GL_JOURNAL_URL;
+      const res    = await fetch(url, {
+        method:  isEdit ? 'PUT' : 'POST',
         headers: GL_HEADERS,
-        body: JSON.stringify(body),
+        body:    JSON.stringify(body),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
@@ -94,13 +160,20 @@ export function PolizaContableForm({ mode, poliza, onSave, onCancel }: Props) {
     }
   };
 
-  const inputCls = `w-full px-2.5 py-1.5 text-xs border rounded focus:outline-none focus:border-primary-theme ${isView ? 'bg-gray-50 border-gray-200 text-gray-700 cursor-default' : 'border-gray-300 bg-white'}`;
-  const selectCls = `w-full px-2.5 py-1.5 text-xs border rounded focus:outline-none focus:border-primary-theme ${isView ? 'bg-gray-50 border-gray-200 text-gray-700 cursor-default' : 'border-gray-300 bg-white'}`;
-  const labelCls = 'block text-[11px] font-semibold text-gray-600 uppercase tracking-wide mb-1.5';
+  // ── Estilos reutilizables ─────────────────────────────────────────
+  const inputCls = `w-full px-2.5 py-1.5 text-xs border rounded focus:outline-none focus:border-primary-theme ${
+    isView ? 'bg-gray-50 border-gray-200 text-gray-700 cursor-default' : 'border-gray-300 bg-white'
+  }`;
+  const readonlyCls = 'w-full px-2.5 py-1.5 text-xs border rounded bg-gray-50 border-gray-200 text-gray-600 cursor-default';
+  const selectCls  = `w-full px-2.5 py-1.5 text-xs border rounded focus:outline-none focus:border-primary-theme ${
+    isView ? 'bg-gray-50 border-gray-200 text-gray-700 cursor-default' : 'border-gray-300 bg-white'
+  }`;
+  const labelCls   = 'block text-[11px] font-semibold text-gray-600 uppercase tracking-wide mb-1.5';
 
   return (
     <div className="bg-[#F0F0F0] min-h-screen">
-      {/* Header */}
+
+      {/* ── Header título ─────────────────────────────────────────── */}
       <div className="bg-white px-4 py-3 border-b border-gray-300">
         <div className="flex items-center gap-3">
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#4A90E2" strokeWidth="1.5">
@@ -108,7 +181,9 @@ export function PolizaContableForm({ mode, poliza, onSave, onCancel }: Props) {
             <path d="M3 8h18M8 3v18M3 13h18M3 18h18"/>
           </svg>
           <h2 className="text-lg font-normal text-gray-800">
-            {mode === 'create' ? 'Alta Póliza Contable' : mode === 'edit' ? 'Editar Póliza Contable' : 'Ver Póliza Contable'}
+            {mode === 'create' ? 'Alta Póliza Contable'
+              : mode === 'edit' ? 'Editar Póliza Contable'
+              : 'Ver Póliza Contable'}
           </h2>
           {poliza?.event_code && (
             <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded">
@@ -118,7 +193,7 @@ export function PolizaContableForm({ mode, poliza, onSave, onCancel }: Props) {
         </div>
       </div>
 
-      {/* Action buttons */}
+      {/* ── Botones de acción ─────────────────────────────────────── */}
       <div className="px-4 py-2.5 bg-white border-b border-gray-300">
         <div className="flex items-center gap-2">
           {!isView && (
@@ -153,11 +228,11 @@ export function PolizaContableForm({ mode, poliza, onSave, onCancel }: Props) {
         </div>
       </div>
 
-      {/* Form body */}
+      {/* ── Cuerpo del form ───────────────────────────────────────── */}
       <div className="px-4 py-4">
         <div className="bg-white border border-gray-300">
 
-          {/* Datos fijos — siempre visibles */}
+          {/* ── DATOS GENERALES ─────────────────────────────────── */}
           <div className="px-5 pt-5 pb-4 border-b border-gray-200 bg-gradient-to-b from-gray-50/60 to-white">
             <div className="flex items-center gap-2.5 bg-[#D9E2F3] px-4 py-2 mb-4 rounded border-l-4 border-[#4A6FA5] shadow-sm">
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#4A6FA5" strokeWidth="1.5">
@@ -165,173 +240,457 @@ export function PolizaContableForm({ mode, poliza, onSave, onCancel }: Props) {
                 <path d="M2 5h12M5 2v12M2 8h12M2 11h12"/>
               </svg>
               <span className="text-sm font-semibold text-[#2E5C91] tracking-wide uppercase">
-                Datos de la Póliza
+                Datos Generales
               </span>
             </div>
-            <div className="bg-white rounded border border-gray-200 px-4 py-3.5 shadow-sm">
-              <div className="grid grid-cols-4 gap-4">
+
+            <div className="bg-white rounded border border-gray-200 px-4 py-3.5 shadow-sm space-y-4">
+
+              {/* Campo Id — solo en edit/view */}
+              {poliza?.id && (
                 <div>
-                  <label className={labelCls}>Fecha <span className="text-red-500 normal-case font-normal">*</span></label>
-                  <input type="date" value={journalDate} onChange={e => setJournalDate(e.target.value)} readOnly={isView} className={inputCls} />
+                  <label className={labelCls}>Id</label>
+                  <input value={poliza.id} readOnly className={`${readonlyCls} font-mono`} />
+                </div>
+              )}
+
+              {/* Fila 1: Fecha valor | Moneda | Estatus */}
+              <div className="grid grid-cols-3 gap-4">
+                <div>
+                  <label className={labelCls}>
+                    Fecha Valor <span className="text-red-500 normal-case font-normal">*</span>
+                  </label>
+                  <input
+                    type="date"
+                    value={journalDate}
+                    onChange={e => setJournalDate(e.target.value)}
+                    readOnly={isView}
+                    className={inputCls}
+                  />
                 </div>
                 <div>
-                  <label className={labelCls}>Código de Evento <span className="text-red-500 normal-case font-normal">*</span></label>
-                  <input value={eventCode} onChange={e => setEventCode(e.target.value)} readOnly={isView} className={inputCls} placeholder="Ej. APERTURA_CUENTA" />
-                </div>
-                <div>
-                  <label className={labelCls}>Moneda</label>
-                  <select value={currency} onChange={e => setCurrency(e.target.value)} disabled={isView} className={selectCls}>
-                    {CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
-                  </select>
+                  <label className={labelCls}>
+                    Moneda <span className="text-red-500 normal-case font-normal">*</span>
+                  </label>
+                  <input
+                    value={currency}
+                    onChange={e => setCurrency(e.target.value)}
+                    readOnly={isView}
+                    placeholder="Ej. MXN"
+                    className={inputCls}
+                  />
                 </div>
                 <div>
                   <label className={labelCls}>Estatus</label>
-                  <select value={status} onChange={e => setStatus(e.target.value as PolizaContable['status'])} disabled={isView} className={selectCls}>
+                  <select
+                    value={status}
+                    onChange={e => setStatus(e.target.value as PolizaContable['status'])}
+                    disabled={isView}
+                    className={selectCls}
+                  >
                     {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
                   </select>
                 </div>
               </div>
+
+              {/* Fila 2: Id Cuenta (modal) | No. Cuenta (readonly) | Producto (readonly) */}
+              <div className="grid grid-cols-3 gap-4">
+                <div>
+                  <label className={labelCls}>Id Cuenta</label>
+                  <div className="flex gap-1.5">
+                    <input
+                      value={accountId}
+                      readOnly
+                      placeholder={isView ? '—' : '(seleccionar cuenta...)'}
+                      title={accountId}
+                      className={`${readonlyCls} font-mono flex-1 min-w-0 truncate`}
+                    />
+                    {!isView && (
+                      <button
+                        type="button"
+                        onClick={() => setCuentaModalOpen(true)}
+                        title="Seleccionar cuenta financiera"
+                        className="px-2.5 py-1.5 bg-[#4A6FA5] text-white rounded text-xs hover:bg-[#3A5F95] transition-colors flex items-center shrink-0"
+                      >
+                        <Search size={12} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <div>
+                  <label className={labelCls}>No. Cuenta</label>
+                  <input
+                    value={noCuenta}
+                    readOnly
+                    placeholder="—"
+                    className={readonlyCls}
+                  />
+                </div>
+                <div>
+                  <label className={labelCls}>Producto</label>
+                  <input
+                    value={productoId}
+                    readOnly
+                    placeholder="—"
+                    title={productoId}
+                    className={`${readonlyCls} font-mono truncate`}
+                  />
+                </div>
+              </div>
+
+              {/* Fila 3: Código de Evento | Total Débito | Total Crédito */}
+              <div className="grid grid-cols-3 gap-4">
+                <div>
+                  <label className={labelCls}>
+                    Código de Evento <span className="text-red-500 normal-case font-normal">*</span>
+                  </label>
+                  {isView ? (
+                    <input value={eventCode} readOnly className={readonlyCls} />
+                  ) : (
+                    <select value={eventCode} onChange={handleEventoChange} className={selectCls}>
+                      <option value="">— Seleccionar —</option>
+                      {eventos.map(ev => (
+                        <option key={ev.id} value={ev.codigo}>
+                          {ev.codigo}{ev.evento ? ` — ${ev.evento}` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+                <div>
+                  <label className={labelCls}>Total Débito</label>
+                  <input
+                    type="number"
+                    value={totalDebit}
+                    onChange={e => setTotalDebit(e.target.value)}
+                    readOnly={isView}
+                    step="0.01"
+                    min="0"
+                    placeholder="0.00"
+                    className={`${inputCls} text-right font-mono`}
+                  />
+                </div>
+                <div>
+                  <label className={labelCls}>Total Crédito</label>
+                  <input
+                    type="number"
+                    value={totalCredit}
+                    onChange={e => setTotalCredit(e.target.value)}
+                    readOnly={isView}
+                    step="0.01"
+                    min="0"
+                    placeholder="0.00"
+                    className={`${inputCls} text-right font-mono`}
+                  />
+                </div>
+              </div>
+
             </div>
           </div>
 
-          {/* Tabs navigation */}
+          {/* ── TAB BAR ──────────────────────────────────────────── */}
           <div className="bg-primary-theme text-white border-b border-gray-400">
-            <div className="flex items-center overflow-x-auto">
-              {TABS.map(tab => (
+            <div className="flex items-center">
+              {(['default', 'detalle'] as const).map(tab => (
                 <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
-                  className={`px-4 py-2.5 text-xs whitespace-nowrap border-r border-gray-500/30 transition-all ${
-                    activeTab === tab.id
+                  key={tab}
+                  onClick={() => setActiveTab(tab)}
+                  className={`px-4 py-2.5 text-xs border-r border-gray-500/30 transition-all capitalize ${
+                    activeTab === tab
                       ? 'bg-secondary-theme text-white font-medium'
                       : 'bg-primary-theme text-white/90 hover:bg-[#5A7FB5]'
                   }`}
                 >
-                  {tab.label}
+                  {tab === 'default' ? 'Default' : 'Detalle'}
                 </button>
               ))}
             </div>
           </div>
 
-          {/* Tab content */}
-          <div className="p-4">
+          {/* ── TAB: DEFAULT — copia del formulario ──────────────── */}
+          {activeTab === 'default' && (
+            <div className="p-4">
+              <div className="space-y-4">
 
-            {/* DEFAULT — campos adicionales */}
-            {activeTab === 'default' && (
-              <div className="max-w-3xl space-y-4">
-                <div className="grid grid-cols-2 gap-4">
+                {/* Id */}
+                {poliza?.id && (
                   <div>
-                    <label className={labelCls}>ID Producto</label>
-                    <input value={productoId} onChange={e => setProductoId(e.target.value)} readOnly={isView} className={`${inputCls} font-mono`} placeholder="UUID del producto" />
+                    <label className={labelCls}>Id</label>
+                    <input value={poliza.id} readOnly className={`${readonlyCls} font-mono`} />
                   </div>
+                )}
+
+                {/* Fila 1: Fecha Valor | Moneda | Estatus */}
+                <div className="grid grid-cols-3 gap-4">
+                  <div>
+                    <label className={labelCls}>
+                      Fecha Valor <span className="text-red-500 normal-case font-normal">*</span>
+                    </label>
+                    <input
+                      type="date"
+                      value={journalDate}
+                      onChange={e => setJournalDate(e.target.value)}
+                      readOnly={isView}
+                      className={inputCls}
+                    />
+                  </div>
+                  <div>
+                    <label className={labelCls}>
+                      Moneda <span className="text-red-500 normal-case font-normal">*</span>
+                    </label>
+                    <input
+                      value={currency}
+                      onChange={e => setCurrency(e.target.value)}
+                      readOnly={isView}
+                      placeholder="Ej. MXN"
+                      className={inputCls}
+                    />
+                  </div>
+                  <div>
+                    <label className={labelCls}>Estatus</label>
+                    <select
+                      value={status}
+                      onChange={e => setStatus(e.target.value as PolizaContable['status'])}
+                      disabled={isView}
+                      className={selectCls}
+                    >
+                      {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Fila 2: Id Cuenta | No. Cuenta | Producto */}
+                <div className="grid grid-cols-3 gap-4">
+                  <div>
+                    <label className={labelCls}>Id Cuenta</label>
+                    <div className="flex gap-1.5">
+                      <input
+                        value={accountId}
+                        readOnly
+                        placeholder={isView ? '—' : '(seleccionar cuenta...)'}
+                        title={accountId}
+                        className={`${readonlyCls} font-mono flex-1 min-w-0 truncate`}
+                      />
+                      {!isView && (
+                        <button
+                          type="button"
+                          onClick={() => setCuentaModalOpen(true)}
+                          title="Seleccionar cuenta financiera"
+                          className="px-2.5 py-1.5 bg-[#4A6FA5] text-white rounded text-xs hover:bg-[#3A5F95] transition-colors flex items-center shrink-0"
+                        >
+                          <Search size={12} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <div>
+                    <label className={labelCls}>No. Cuenta</label>
+                    <input value={noCuenta} readOnly placeholder="—" className={readonlyCls} />
+                  </div>
+                  <div>
+                    <label className={labelCls}>Producto</label>
+                    <input
+                      value={productoId}
+                      readOnly
+                      placeholder="—"
+                      title={productoId}
+                      className={`${readonlyCls} font-mono truncate`}
+                    />
+                  </div>
+                </div>
+
+                {/* Fila 3: Código de Evento | Total Débito | Total Crédito */}
+                <div className="grid grid-cols-3 gap-4">
+                  <div>
+                    <label className={labelCls}>
+                      Código de Evento <span className="text-red-500 normal-case font-normal">*</span>
+                    </label>
+                    {isView ? (
+                      <input value={eventCode} readOnly className={readonlyCls} />
+                    ) : (
+                      <select value={eventCode} onChange={handleEventoChange} className={selectCls}>
+                        <option value="">— Seleccionar —</option>
+                        {eventos.map(ev => (
+                          <option key={ev.id} value={ev.codigo}>
+                            {ev.codigo}{ev.evento ? ` — ${ev.evento}` : ''}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
+                  <div>
+                    <label className={labelCls}>Total Débito</label>
+                    <input
+                      type="number"
+                      value={totalDebit}
+                      onChange={e => setTotalDebit(e.target.value)}
+                      readOnly={isView}
+                      step="0.01"
+                      min="0"
+                      placeholder="0.00"
+                      className={`${inputCls} text-right font-mono`}
+                    />
+                  </div>
+                  <div>
+                    <label className={labelCls}>Total Crédito</label>
+                    <input
+                      type="number"
+                      value={totalCredit}
+                      onChange={e => setTotalCredit(e.target.value)}
+                      readOnly={isView}
+                      step="0.01"
+                      min="0"
+                      placeholder="0.00"
+                      className={`${inputCls} text-right font-mono`}
+                    />
+                  </div>
+                </div>
+
+              </div>
+            </div>
+          )}
+
+          {/* ── TAB: DETALLE — data JSONB ─────────────────────────── */}
+          {activeTab === 'detalle' && (
+            <div className="p-4">
+              <div className="space-y-4">
+
+                {/* Fila: ID Cuenta | ID Producto | ID Cliente | Nombre Cliente */}
+                <div className="grid grid-cols-4 gap-4">
                   <div>
                     <label className={labelCls}>ID Cuenta</label>
-                    <input value={accountId} onChange={e => setAccountId(e.target.value)} readOnly={isView} className={`${inputCls} font-mono`} placeholder="UUID de la cuenta" />
+                    <input value={accountId} readOnly placeholder="—" title={accountId} className={`${readonlyCls} font-mono truncate`} />
+                  </div>
+                  <div>
+                    <label className={labelCls}>ID Producto</label>
+                    <input value={productoId} readOnly placeholder="—" title={productoId} className={`${readonlyCls} font-mono truncate`} />
+                  </div>
+                  <div>
+                    <label className={labelCls}>ID Cliente</label>
+                    <input value={clienteId} readOnly placeholder="—" title={clienteId} className={`${readonlyCls} font-mono truncate`} />
+                  </div>
+                  <div>
+                    <label className={labelCls}>Nombre Cliente</label>
+                    <input value={clienteNombre} readOnly placeholder="—" className={readonlyCls} />
                   </div>
                 </div>
+
+                {/* Fila: Cuenta Contable | Monto Crédito | Monto Débito */}
+                <div className="grid grid-cols-3 gap-4">
+                  <div>
+                    <label className={labelCls}>Cuenta Contable</label>
+                    {isView ? (
+                      <input
+                        value={cuentasContables.find(c => c.id === dataCuentaContableId)
+                          ? `${cuentasContables.find(c => c.id === dataCuentaContableId)!.cuenta_gl} — ${cuentasContables.find(c => c.id === dataCuentaContableId)!.nombre}`
+                          : dataCuentaContableId || '—'}
+                        readOnly
+                        className={readonlyCls}
+                      />
+                    ) : (
+                      <select
+                        value={dataCuentaContableId}
+                        onChange={e => setDataCuentaContableId(e.target.value)}
+                        className={selectCls}
+                      >
+                        <option value="">— Seleccionar —</option>
+                        {cuentasContables.map(c => (
+                          <option key={c.id} value={c.id}>
+                            {c.cuenta_gl} — {c.nombre}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
+                  <div>
+                    <label className={labelCls}>Monto Crédito</label>
+                    <input
+                      type="number"
+                      value={dataMontoCredito}
+                      onChange={e => setDataMontoCredito(e.target.value)}
+                      readOnly={isView}
+                      step="0.01"
+                      min="0"
+                      placeholder="0.00"
+                      className={`${inputCls} text-right font-mono`}
+                    />
+                  </div>
+                  <div>
+                    <label className={labelCls}>Monto Débito</label>
+                    <input
+                      type="number"
+                      value={dataMontoDebito}
+                      onChange={e => setDataMontoDebito(e.target.value)}
+                      readOnly={isView}
+                      step="0.01"
+                      min="0"
+                      placeholder="0.00"
+                      className={`${inputCls} text-right font-mono`}
+                    />
+                  </div>
+                </div>
+
+                {/* Fila: Evento | Catálogo ID */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className={labelCls}>Evento</label>
+                    <input
+                      value={dataEvento}
+                      readOnly
+                      placeholder="—"
+                      className={readonlyCls}
+                    />
+                  </div>
+                  <div>
+                    <label className={labelCls}>Catálogo ID</label>
+                    <input
+                      value={dataCatalogoId}
+                      readOnly
+                      placeholder="—"
+                      title={dataCatalogoId}
+                      className={`${readonlyCls} font-mono`}
+                    />
+                  </div>
+                </div>
+
+                {/* Prompt IA */}
                 <div>
-                  <label className={labelCls}>Concepto</label>
-                  <textarea value={concepto} onChange={e => setConcepto(e.target.value)} readOnly={isView} rows={3} className={`${inputCls} resize-none`} placeholder="Descripción de la póliza..." />
+                  <label className={labelCls}>Prompt IA</label>
+                  <textarea
+                    value={dataPromptIA}
+                    readOnly
+                    rows={5}
+                    placeholder="—"
+                    className={`${readonlyCls} resize-none`}
+                  />
                 </div>
+
+                {/* Solicitud ID */}
                 <div>
-                  <label className={labelCls}>Referencia</label>
-                  <input value={referencia} onChange={e => setReferencia(e.target.value)} readOnly={isView} className={inputCls} placeholder="Número de referencia o documento origen" />
+                  <label className={labelCls}>Solicitud ID</label>
+                  <input
+                    value={dataSolicitudId}
+                    readOnly
+                    placeholder="—"
+                    title={dataSolicitudId}
+                    className={`${readonlyCls} font-mono`}
+                  />
                 </div>
+
               </div>
-            )}
+            </div>
+          )}
 
-            {/* DETALLE — partidas contables */}
-            {activeTab === 'detalle' && (
-              <div>
-                {/* Balance indicator */}
-                <div className={`mb-3 px-3 py-1.5 rounded text-xs flex items-center gap-2 ${balanced ? 'bg-green-50 border border-green-200 text-green-700' : 'bg-yellow-50 border border-yellow-200 text-yellow-700'}`}>
-                  <svg width="13" height="13" viewBox="0 0 14 14" fill="currentColor">
-                    {balanced
-                      ? <path d="M7 1a6 6 0 100 12A6 6 0 007 1zm-1 9L3.5 7.5l1-1L6 8.5l3.5-3.5 1 1L6 10z"/>
-                      : <path d="M7 1a6 6 0 100 12A6 6 0 007 1zm-.5 3h1v4h-1V4zm0 5h1v1h-1V9z"/>
-                    }
-                  </svg>
-                  {balanced
-                    ? `Balanceada — Débito: $${fmt(totalDebito)} | Crédito: $${fmt(totalCredito)}`
-                    : `Sin balance — Diferencia: $${fmt(Math.abs(totalDebito - totalCredito))} | Débito: $${fmt(totalDebito)} | Crédito: $${fmt(totalCredito)}`
-                  }
-                </div>
-
-                <div className="section-header-theme px-4 py-2 mb-3 flex items-center justify-between rounded-t">
-                  <span className="text-xs font-semibold tracking-wide uppercase">Partidas Contables</span>
-                  {!isView && (
-                    <button onClick={addPartida} className="flex items-center gap-1 px-3 py-1 bg-white/20 text-white text-xs rounded hover:bg-white/30 transition-colors">
-                      <Plus size={12} /> Agregar partida
-                    </button>
-                  )}
-                </div>
-
-                <div className="border border-gray-300 rounded-lg overflow-hidden shadow-sm">
-                  <table className="w-full text-xs">
-                    <thead className="table-header-theme">
-                      <tr>
-                        <th className="px-3 py-2 text-left font-semibold text-white/90 text-[11px] uppercase tracking-wide w-28">Cuenta GL</th>
-                        <th className="px-3 py-2 text-left font-semibold text-white/90 text-[11px] uppercase tracking-wide w-44">Nombre Cuenta</th>
-                        <th className="px-3 py-2 text-left font-semibold text-white/90 text-[11px] uppercase tracking-wide">Concepto</th>
-                        <th className="px-3 py-2 text-right font-semibold text-white/90 text-[11px] uppercase tracking-wide w-28">Débito</th>
-                        <th className="px-3 py-2 text-right font-semibold text-white/90 text-[11px] uppercase tracking-wide w-28">Crédito</th>
-                        {!isView && <th className="w-8"></th>}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {partidas.map((p, i) => (
-                        <tr key={i} className={`row-hover-theme transition-colors border-b border-gray-200 ${i % 2 === 0 ? 'bg-white' : 'bg-gray-50/60'}`}>
-                          <td className="px-2 py-1.5">
-                            {isView ? <span className="font-mono">{p.cuentaGl || '—'}</span> : (
-                              <input value={p.cuentaGl} onChange={e => updatePartida(i, 'cuentaGl', e.target.value)} className="w-full px-2 py-1 border border-gray-300 rounded text-xs font-mono focus:outline-none focus:border-primary-theme" placeholder="1101-0001" />
-                            )}
-                          </td>
-                          <td className="px-2 py-1.5">
-                            {isView ? <span>{p.nombreCuenta || '—'}</span> : (
-                              <input value={p.nombreCuenta} onChange={e => updatePartida(i, 'nombreCuenta', e.target.value)} className="w-full px-2 py-1 border border-gray-300 rounded text-xs focus:outline-none focus:border-primary-theme" placeholder="Nombre de la cuenta" />
-                            )}
-                          </td>
-                          <td className="px-2 py-1.5">
-                            {isView ? <span>{p.concepto || '—'}</span> : (
-                              <input value={p.concepto} onChange={e => updatePartida(i, 'concepto', e.target.value)} className="w-full px-2 py-1 border border-gray-300 rounded text-xs focus:outline-none focus:border-primary-theme" placeholder="Concepto de la partida" />
-                            )}
-                          </td>
-                          <td className="px-2 py-1.5">
-                            {isView ? <span className="font-mono text-right block">{p.debito ? `$${fmt(parseFloat(p.debito))}` : '—'}</span> : (
-                              <input type="number" value={p.debito} onChange={e => updatePartida(i, 'debito', e.target.value)} className="w-full px-2 py-1 border border-gray-300 rounded text-xs text-right font-mono focus:outline-none focus:border-primary-theme" placeholder="0.00" min="0" step="0.01" />
-                            )}
-                          </td>
-                          <td className="px-2 py-1.5">
-                            {isView ? <span className="font-mono text-right block">{p.credito ? `$${fmt(parseFloat(p.credito))}` : '—'}</span> : (
-                              <input type="number" value={p.credito} onChange={e => updatePartida(i, 'credito', e.target.value)} className="w-full px-2 py-1 border border-gray-300 rounded text-xs text-right font-mono focus:outline-none focus:border-primary-theme" placeholder="0.00" min="0" step="0.01" />
-                            )}
-                          </td>
-                          {!isView && (
-                            <td className="px-2 py-1.5 text-center">
-                              <button onClick={() => removePartida(i)} className="text-red-400 hover:text-red-600 transition-colors" disabled={partidas.length === 1}>
-                                <Trash2 size={13} />
-                              </button>
-                            </td>
-                          )}
-                        </tr>
-                      ))}
-                    </tbody>
-                    <tfoot>
-                      <tr className="bg-[#E8E8E8] border-t-2 border-gray-400">
-                        <td colSpan={3} className="px-3 py-2 text-xs font-semibold text-gray-700 uppercase tracking-wide">Totales</td>
-                        <td className="px-3 py-2 text-xs text-right font-mono font-bold text-gray-800">${fmt(totalDebito)}</td>
-                        <td className="px-3 py-2 text-xs text-right font-mono font-bold text-gray-800">${fmt(totalCredito)}</td>
-                        {!isView && <td />}
-                      </tr>
-                    </tfoot>
-                  </table>
-                </div>
-              </div>
-            )}
-
-          </div>
         </div>
       </div>
+
+      {/* ── Modal selector de cuenta ──────────────────────────────── */}
+      <CuentaFinancieraPickerModal
+        open={cuentaModalOpen}
+        onClose={() => setCuentaModalOpen(false)}
+        onSelect={handleCuentaSelect}
+      />
+
     </div>
   );
 }

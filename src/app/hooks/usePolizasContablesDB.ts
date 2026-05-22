@@ -2,7 +2,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 import type { PolizaContable } from '../components/polizas-contables/PolizasContablesModule';
 
-export const GL_JOURNAL_URL = `https://${projectId}.supabase.co/functions/v1/make-server-7e2d13d9/gl-journal`;
+export const GL_BASE_URL = `https://${projectId}.supabase.co/functions/v1/make-server-7e2d13d9`;
+export const GL_JOURNAL_URL = `${GL_BASE_URL}/gl-journal`;
 export const GL_HEADERS = {
   'Content-Type': 'application/json',
   'Authorization': `Bearer ${publicAnonKey}`,

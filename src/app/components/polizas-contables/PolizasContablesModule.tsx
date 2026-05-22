@@ -14,23 +14,16 @@ export interface PolizaContable {
   currency: string;
   total_debit: number;
   total_credit: number;
-  status: 'Creada' | 'Aplicada' | 'Cancelada' | 'Procesando' | 'Error';
+  status: 'Creada' | 'Validada' | 'Posteada';
   created_at?: string;
-  // JSONB data — campos flexibles
+  // JSONB data — estructura oficial
   data: {
-    concepto?: string;
-    referencia?: string;
-    partidas?: Partida[];
+    evento?: string;
+    prompt_ia?: string;
+    catalogo_id?: string;
+    solicitud_id?: string;
     [key: string]: any;
   };
-}
-
-export interface Partida {
-  cuentaGl: string;
-  nombreCuenta: string;
-  concepto: string;
-  debito: string;
-  credito: string;
 }
 
 type View = 'list' | 'form';

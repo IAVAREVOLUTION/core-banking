@@ -14,7 +14,7 @@ interface Props {
 
 const INIT_WIDTHS = {
   actions: 90, journal_date: 100, event_code: 140, currency: 80,
-  concepto: 200, status: 100, total_debit: 120, total_credit: 120, created_at: 130,
+  evento: 200, status: 100, total_debit: 120, total_credit: 120, created_at: 130,
 };
 
 const STATUS_STYLE: Record<string, string> = {
@@ -39,7 +39,7 @@ export function PolizaContableList({ polizas, onNew, onEdit, onView, loading, er
     return polizas
       .filter(p =>
         (p.event_code || '').toLowerCase().includes(q) ||
-        (p.data?.concepto || '').toLowerCase().includes(q) ||
+        (p.data?.evento || '').toLowerCase().includes(q) ||
         (p.status || '').toLowerCase().includes(q) ||
         (p.currency || '').toLowerCase().includes(q)
       )
@@ -127,7 +127,7 @@ export function PolizaContableList({ polizas, onNew, onEdit, onView, loading, er
             type="text"
             value={search}
             onChange={e => { setSearch(e.target.value); setPage(1); }}
-            placeholder="Buscar por evento, concepto, estatus..."
+            placeholder="Buscar por evento, código, estatus..."
             className="px-3 py-1 border border-gray-400 rounded text-sm w-72 bg-white"
           />
         </div>
@@ -208,7 +208,7 @@ export function PolizaContableList({ polizas, onNew, onEdit, onView, loading, er
                 <Th col="journal_date" label="FECHA" />
                 <Th col="event_code"   label="EVENTO" />
                 <Th col="currency"     label="MONEDA" />
-                <Th col="concepto"     label="CONCEPTO" />
+                <Th col="evento"       label="EVENTO" />
                 <Th col="status"       label="ESTATUS" />
                 <Th col="total_debit"  label="TOTAL DÉBITO" />
                 <Th col="total_credit" label="TOTAL CRÉDITO" />
@@ -239,7 +239,7 @@ export function PolizaContableList({ polizas, onNew, onEdit, onView, loading, er
                     <td className="px-3 py-2.5 text-xs text-gray-700" style={{ width: `${widths.journal_date}px` }}>{fmtDate(p.journal_date)}</td>
                     <td className="px-3 py-2.5 text-xs text-gray-700 font-mono overflow-hidden text-ellipsis whitespace-nowrap" style={{ width: `${widths.event_code}px` }}>{p.event_code || '—'}</td>
                     <td className="px-3 py-2.5 text-xs text-gray-700 font-medium" style={{ width: `${widths.currency}px` }}>{p.currency}</td>
-                    <td className="px-3 py-2.5 text-xs text-gray-700 overflow-hidden text-ellipsis whitespace-nowrap" style={{ width: `${widths.concepto}px` }}>{p.data?.concepto || '—'}</td>
+                    <td className="px-3 py-2.5 text-xs text-gray-700 overflow-hidden text-ellipsis whitespace-nowrap" style={{ width: `${widths.evento}px` }}>{p.data?.evento || '—'}</td>
                     <td className="px-3 py-2.5 text-xs" style={{ width: `${widths.status}px` }}>
                       <span className={`px-2 py-0.5 rounded text-[10px] font-medium ${STATUS_STYLE[p.status] || 'bg-gray-100 text-gray-600'}`}>
                         {p.status}
