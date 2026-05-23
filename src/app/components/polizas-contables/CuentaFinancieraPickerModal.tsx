@@ -9,7 +9,8 @@ export interface CuentaPickResult {
   producto_id: string;
   producto_display: string;
   cliente_id: string;
-  cliente_nombre: string; // nombre completo del cliente
+  cliente_nombre: string;
+  moneda: string; // data.solicitud.terminos_condiciones._raw.moneda
 }
 
 interface CuentaRow {
@@ -71,6 +72,7 @@ export function CuentaFinancieraPickerModal({ open, onClose, onSelect }: Props) 
 
   const handleSelect = (row: CuentaRow) => {
     const parts = [row.cliente_nombre, row.cliente_ap_paterno, row.cliente_ap_materno].filter(Boolean);
+    const moneda: string = row.data?.solicitud?.terminos_condiciones?._raw?.moneda || '';
     onSelect({
       account_id: row.id,
       no_cuenta: row.no_cuenta || '',
@@ -78,6 +80,7 @@ export function CuentaFinancieraPickerModal({ open, onClose, onSelect }: Props) 
       producto_display: row.producto_nombre || row.tipo_produc || row.producto_id || '',
       cliente_id: row.cliente_id || '',
       cliente_nombre: parts.join(' ') || '',
+      moneda,
     });
     onClose();
   };
