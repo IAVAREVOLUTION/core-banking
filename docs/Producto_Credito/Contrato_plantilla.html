@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<title>Contrato de Crédito</title>
+
+<style>
+  body {
+    font-family: "Helvetica Neue", Arial, sans-serif;
+    margin: 0;
+    color: #1a1a1a;
+    font-size: 12px;
+  }
+
+  .page {
+    width: 210mm;
+    min-height: 297mm;
+    padding: 30mm 25mm 20mm 25mm;
+    box-sizing: border-box;
+
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+  }
+
+  /* HEADER */
+  .header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+  }
+
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .logo {
+    height: 40px;
+  }
+
+  .brand-text {
+    line-height: 1.2;
+  }
+
+  .brand-name {
+    font-weight: 700;
+    font-size: 14px;
+  }
+
+  .brand small {
+    font-size: 10px;
+    color: #666;
+  }
+
+  .doc-meta {
+    text-align: right;
+    font-size: 11px;
+    line-height: 1.4;
+  }
+
+  /* TITLE */
+  .title {
+    text-align: center;
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    margin: 10px 0 20px 0;
+  }
+
+  /* TEXT */
+  .text {
+    text-align: justify;
+    line-height: 1.6;
+  }
+
+  .section {
+    margin-bottom: 14px;
+  }
+
+  .section-title {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    border-bottom: 1px solid #000;
+    margin-bottom: 6px;
+    padding-bottom: 2px;
+  }
+
+  .highlight {
+    font-weight: 600;
+  }
+
+  /* TABLE */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 8px 0;
+  }
+
+  td {
+    padding: 4px 2px;
+    vertical-align: top;
+  }
+
+  .label {
+    width: 35%;
+    font-size: 10px;
+    color: #555;
+  }
+
+  .value {
+    border-bottom: 1px solid #aaa;
+    font-weight: 500;
+  }
+
+  /* CLAUSES */
+  .clause {
+    margin-bottom: 10px;
+    text-align: justify;
+  }
+
+  .clause strong {
+    display: block;
+    margin-bottom: 2px;
+  }
+
+  /* SIGNATURE */
+  .signature-block {
+    margin-top: 50px;
+    display: flex;
+    justify-content: space-between;
+  }
+
+  .signature {
+    width: 45%;
+    text-align: center;
+  }
+
+  .line {
+    margin-top: 60px;
+    border-top: 1px solid #000;
+    padding-top: 6px;
+    font-size: 11px;
+  }
+
+  /* FOOTER */
+  .footer {
+    font-size: 9px;
+    color: #666;
+  }
+
+  .footer-line {
+    width: 100%;
+    height: 1px;
+    background: #ccc;
+    margin-bottom: 6px;
+  }
+
+  .footer-content {
+    display: flex;
+    justify-content: space-between;
+  }
+
+</style>
+</head>
+
+<body>
+<div class="page">
+
+  <div>
+
+    <!-- HEADER -->
+    <div class="header">
+      <div class="brand">
+        <img class="logo" src="/src/assets/7b6cb23c00b7817818c638af3eae0a416e1e9f57.png"/>
+        <div class="brand-text">
+          <div class="brand-name">{{institucionNombre}}</div>
+          <small>{{empresa_razon_social}}</small>
+        </div>
+      </div>
+
+      <div class="doc-meta">
+        <div><strong>Contrato No.:</strong> {{numeroSolicitud}}</div>
+        <div><strong>Fecha:</strong> {{fechaFirmaLarga}}</div>
+        <div><strong>Lugar:</strong> {{ciudadFirma}}</div>
+      </div>
+    </div>
+
+    <!-- TITLE -->
+    <div class="title">CONTRATO DE CRÉDITO</div>
+
+    <!-- INTRO -->
+    <div class="text section">
+      En {{ciudadFirma}}, a {{fechaFirmaLarga}}, comparecen por una parte 
+      <span class="highlight">{{institucionNombre}}</span>, en lo sucesivo 
+      <span class="highlight">“EL ACREDITANTE”</span>, y por la otra 
+      <span class="highlight">{{clienteNombreCompleto}}</span>, en lo sucesivo 
+      <span class="highlight">“EL ACREDITADO”</span>, quienes celebran el presente contrato conforme a lo siguiente:
+    </div>
+
+    <!-- DECLARACIONES -->
+    <div class="section">
+      <div class="section-title">Declaraciones</div>
+
+      <div class="text">
+        <strong>I. EL ACREDITANTE declara:</strong><br>
+        a) Que es una entidad legalmente constituida conforme a las leyes mexicanas.<br>
+        b) Que cuenta con facultades para otorgar crédito.
+      </div>
+
+      <div class="text" style="margin-top:8px;">
+        <strong>II. EL ACREDITADO declara:</strong><br>
+        a) Que es {{clienteTipoPersonaDescripcion}} con capacidad legal.<br>
+        b) Que sus datos son los siguientes:
+      </div>
+
+      <table>
+        <tr><td class="label">Nombre</td><td class="value">{{clienteNombreCompleto}}</td></tr>
+        <tr><td class="label">RFC</td><td class="value">{{clienteRFC}}</td></tr>
+        <tr><td class="label">CURP</td><td class="value">{{clienteCURP}}</td></tr>
+        <tr><td class="label">Domicilio</td><td class="value">{{clienteDomicilio}}</td></tr>
+        <tr><td class="label">Fecha de nacimiento</td><td class="value">{{clienteFechaNacimientoConstitucion}}</td></tr>
+      </table>
+
+      <div class="text">
+        c) Que solicita un crédito con las siguientes características:
+      </div>
+
+      <table>
+        <tr><td class="label">Producto</td><td class="value">{{productoNombre}}</td></tr>
+        <tr><td class="label">Monto</td><td class="value">{{montoCredito}} {{moneda}}</td></tr>
+        <tr><td class="label">Plazo</td><td class="value">{{plazoDescripcion}}</td></tr>
+        <tr><td class="label">Tasa</td><td class="value">{{tasaInteres}}% anual</td></tr>
+        <tr><td class="label">CAT</td><td class="value">{{cat}}%</td></tr>
+      </table>
+    </div>
+
+    <!-- CLAUSULAS -->
+    <div class="section">
+      <div class="section-title">Cláusulas</div>
+
+      <div class="clause">
+        <strong>PRIMERA. Objeto</strong>
+        El acreditante otorga un crédito por la cantidad de {{montoCredito}} {{moneda}}.
+      </div>
+
+      <div class="clause">
+        <strong>SEGUNDA. Disposición</strong>
+        El acreditado podrá disponer del crédito conforme a lo acordado.
+      </div>
+
+      <div class="clause">
+        <strong>TERCERA. Pagos</strong>
+        El acreditado se obliga a pagar en {{numeroPagos}} pagos de {{montoPago}} {{moneda}}.
+      </div>
+
+      <div class="clause">
+        <strong>CUARTA. Intereses</strong>
+        Se aplicará una tasa anual de {{tasaInteres}}% sobre saldos insolutos.
+      </div>
+
+      <div class="clause">
+        <strong>QUINTA. Mora</strong>
+        En caso de incumplimiento, se generarán intereses moratorios conforme a lo establecido.
+      </div>
+
+      <div class="clause">
+        <strong>SEXTA. Terminación anticipada</strong>
+        El acreditante podrá exigir el pago total en caso de incumplimiento.
+      </div>
+
+      <div class="clause">
+        <strong>SÉPTIMA. Jurisdicción</strong>
+        Las partes se someten a los tribunales de {{jurisdiccion}}.
+      </div>
+    </div>
+
+    <!-- CIERRE -->
+    <div class="text">
+      Leído el presente contrato y enteradas las partes de su contenido, lo firman para constancia.
+    </div>
+
+    <!-- FIRMAS -->
+    <div class="signature-block">
+      <div class="signature">
+        <div class="line">{{clienteNombreCompleto}}</div>
+        EL ACREDITADO
+      </div>
+
+      <div class="signature">
+        <div class="line">{{institucionNombre}}</div>
+        EL ACREDITANTE
+      </div>
+    </div>
+
+  </div>
+
+  <!-- FOOTER -->
+  <div class="footer">
+    <div class="footer-line"></div>
+    <div class="footer-content">
+      <span>{{institucionNombre}}</span>
+      <span>Documento confidencial · Contrato legal</span>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

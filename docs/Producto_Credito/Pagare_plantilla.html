@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<title>Pagaré</title>
+
+<style>
+  body {
+    font-family: "Helvetica Neue", Arial, sans-serif;
+    margin: 0;
+    color: #1a1a1a;
+    font-size: 12px;
+  }
+
+  .page {
+    width: 210mm;
+    min-height: 297mm;
+    padding: 30mm 25mm 20mm 25mm;
+    box-sizing: border-box;
+
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+  }
+
+  /* HEADER */
+  .header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 25px;
+  }
+
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .logo {
+    height: 40px;
+  }
+
+  .brand-text {
+    line-height: 1.2;
+  }
+
+  .brand-name {
+    font-weight: 700;
+    font-size: 14px;
+  }
+
+  .brand small {
+    font-size: 10px;
+    color: #666;
+  }
+
+  .doc-meta {
+    text-align: right;
+    font-size: 11px;
+  }
+
+  /* TITLE */
+  .title {
+    text-align: center;
+    font-size: 18px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    margin: 10px 0 25px 0;
+  }
+
+  /* BODY */
+  .content {
+    text-align: justify;
+    line-height: 1.6;
+  }
+
+  .highlight {
+    font-weight: 600;
+  }
+
+  .amount {
+    text-align: center;
+    margin: 20px 0;
+    font-size: 14px;
+    font-weight: 700;
+  }
+
+  .section {
+    margin-bottom: 15px;
+  }
+
+  /* SIGNATURE */
+  .signature-block {
+    margin-top: 60px;
+    display: flex;
+    justify-content: space-between;
+  }
+
+  .signature {
+    width: 45%;
+    text-align: center;
+  }
+
+  .line {
+    margin-top: 60px;
+    border-top: 1px solid #000;
+    padding-top: 6px;
+    font-size: 11px;
+  }
+
+  /* FOOTER */
+  .footer {
+    font-size: 9px;
+    color: #666;
+  }
+
+  .footer-line {
+    width: 100%;
+    height: 1px;
+    background: #ccc;
+    margin-bottom: 6px;
+  }
+
+  .footer-content {
+    display: flex;
+    justify-content: space-between;
+  }
+
+</style>
+</head>
+
+<body>
+<div class="page">
+
+  <!-- HEADER -->
+  <div>
+    <div class="header">
+      <div class="brand">
+        <img class="logo" src="/src/assets/7b6cb23c00b7817818c638af3eae0a416e1e9f57.png"/>
+        <div class="brand-text">
+          <div class="brand-name">{{empresa_nombre}}</div>
+          <small>{{empresa_razon_social}}</small>
+        </div>
+      </div>
+
+      <div class="doc-meta">
+        <div><strong>Lugar:</strong> {{ciudad}}</div>
+        <div><strong>Fecha:</strong> {{fecha_emision}}</div>
+      </div>
+    </div>
+
+    <!-- TITLE -->
+    <div class="title">PAGARÉ</div>
+
+    <!-- CONTENT -->
+    <div class="content">
+
+      <div class="section">
+        Por medio del presente documento, yo 
+        <span class="highlight">{{deudor_nombre}}</span>, con RFC 
+        <span class="highlight">{{deudor_rfc}}</span>, con domicilio en 
+        <span class="highlight">{{deudor_domicilio}}</span>, me obligo 
+        <span class="highlight">incondicionalmente</span> a pagar a la orden de 
+        <span class="highlight">{{acreedor_nombre}}</span> la cantidad de:
+      </div>
+
+      <div class="amount">
+        {{monto_letra}} <br/>
+        ({{monto_numero}} {{moneda}})
+      </div>
+
+      <div class="section">
+        Dicha cantidad será pagada el día 
+        <span class="highlight">{{fecha_vencimiento}}</span>, en el domicilio ubicado en 
+        <span class="highlight">{{lugar_pago}}</span>.
+      </div>
+
+      <div class="section">
+        El presente título causará intereses ordinarios a una tasa de 
+        <span class="highlight">{{tasa_interes}}% anual</span>, calculados sobre saldos insolutos.
+        En caso de incumplimiento, se generarán intereses moratorios a una tasa de 
+        <span class="highlight">{{tasa_moratoria}}% anual</span> hasta la total liquidación.
+      </div>
+
+      <div class="section">
+        El suscriptor renuncia expresamente a los beneficios de orden, excusión y división,
+        obligándose solidariamente junto con su aval en caso de existir.
+      </div>
+
+      <div class="section">
+        Para la interpretación y cumplimiento del presente pagaré, las partes se someten a la
+        jurisdicción de los tribunales competentes de 
+        <span class="highlight">{{jurisdiccion}}</span>, renunciando a cualquier otro fuero.
+      </div>
+
+      <div class="section">
+        Este documento tiene carácter de título de crédito y se rige conforme a la
+        Ley General de Títulos y Operaciones de Crédito.
+      </div>
+
+    </div>
+
+    <!-- SIGNATURES -->
+    <div class="signature-block">
+      <div class="signature">
+        <div class="line">{{deudor_nombre}}</div>
+        SUSCRIPTOR (DEUDOR)
+      </div>
+
+      <div class="signature">
+        <div class="line">{{aval_nombre}}</div>
+        AVAL
+      </div>
+    </div>
+
+  </div>
+
+  <!-- FOOTER -->
+  <div class="footer">
+    <div class="footer-line"></div>
+    <div class="footer-content">
+      <span>{{empresa_nombre}}</span>
+      <span>Documento confidencial · Título de crédito</span>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

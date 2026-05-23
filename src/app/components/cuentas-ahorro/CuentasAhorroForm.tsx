@@ -28,6 +28,9 @@ import { MovimientosTab } from './MovimientosTab';
 import { CargosTab } from './CargosTab';
 import { BloqueosTab } from './BloqueosTab';
 import { SolicitudExtraordinariaTab } from './SolicitudExtraordinariaTab';
+import { CalendarioPagosTab } from './CalendarioPagosTab';
+import { AvisosVencimientoTab } from '../cartera/AvisosVencimientoTab';
+import { GeneracionContableTab } from '../cartera/GeneracionContableTab';
 import { DatePicker } from '@/app/components/ui/DatePicker';
 import { ClientePickerModal } from './ClientePickerModal';
 import type { ClientePickResult } from './ClientePickerModal';
@@ -172,19 +175,36 @@ function generateNoCuenta(): string {
   return `01${y}${m}${rand}`;
 }
 
+// ── Helper: parsear JSONB (incluye caso character-indexed) ──
+function parseJsonbField(raw: unknown): Record<string, any> {
+  if (!raw) return {};
+  if (typeof raw === 'string') { try { return JSON.parse(raw); } catch { return {}; } }
+  if (typeof raw === 'object' && !Array.isArray(raw)) {
+    const obj = raw as Record<string, any>;
+    // Character-indexed: {'0':'{','1':'"',...}
+    if ('0' in obj) {
+      try { return JSON.parse(Object.values(obj).join('')); } catch { return {}; }
+    }
+    return obj;
+  }
+  return {};
+}
+
 // ── Helper: mapear JCuentaAhorroRow → CuentaAhorroDBForm ──
 function rowToForm(row: JCuentaAhorroRow): CuentaAhorroDBForm {
-  // data puede venir como string JSON desde Edge Function (postgres.js) o como objeto
-  let d: Record<string, any> = {};
-  if (row.data) {
-    if (typeof row.data === 'string') {
-      try { d = JSON.parse(row.data); } catch { d = {}; }
-    } else {
-      d = row.data as Record<string, any>;
-    }
-  }
+  const d = parseJsonbField(row.data);
+  const r = row as any; // campos extra del JOIN (cliente_nombre, producto_nombre, etc.)
 
-  console.log('[CuentasAhorroForm] rowToForm — id:', row.id, 'data keys:', Object.keys(d), 'data.cliente:', d.cliente, 'data.producto:', d.producto);
+  // Nombre del cliente: JOIN > data.cliente > UUID parcial
+  const clienteNombre = r.cliente_nombre || d.cliente?.nombreCompleto || '';
+  const clienteClave  = r.cliente_clave  || d.cliente?.claveCliente   || r.cliente_id?.slice(0, 8) || '';
+
+  // Nombre del producto: JOIN > data.producto > producto_eje
+  const productoNombre = r.producto_nombre || d.producto?.nombreProducto || row.producto_eje || '';
+  const productoClave  = r.producto_clave  || d.producto?.claveProducto  || '';
+
+  console.log('[CuentasAhorroForm] rowToForm — id:', row.id,
+    '| cliente:', clienteNombre, '| producto:', productoNombre);
 
   return {
     id: row.id,
@@ -199,12 +219,12 @@ function rowToForm(row: JCuentaAhorroRow): CuentaAhorroDBForm {
     cta_eje_chec: row.cta_eje_chec === true || row.cta_eje_chec === 'true' || row.cta_eje_chec === '1' || row.cta_eje_chec === 't',
     fases: row.fases || '',
     cliente_id: row.cliente_id || '',
-    clienteClaveDisplay: d.cliente?.claveCliente || row.cliente_id?.slice(0, 8) || '',
-    clienteNombreDisplay: d.cliente?.nombreCompleto || (row as any).cliente_nombre || '',
+    clienteClaveDisplay: clienteClave,
+    clienteNombreDisplay: clienteNombre,
     producto_id: row.producto_id || '',
     producto_eje: row.producto_eje || '',
-    productoClaveDisplay: d.producto?.claveProducto || '',
-    productoNombreDisplay: d.producto?.nombreProducto || (row as any).producto_nombre || row.producto_eje || '',
+    productoClaveDisplay: productoClave,
+    productoNombreDisplay: productoNombre,
     productoTasa: d.producto?.tasa || 0,
     productoMontoMinimo: d.producto?.montoMinimo || 0,
     saldo_actual: formatMoneyStr(row.saldo_actual) || '0.00',
@@ -297,12 +317,12 @@ export function CuentasAhorroForm({ mode, accountId, onCancel, onSave }: Cuentas
               cta_eje_chec: row.cta_eje_chec === true || row.cta_eje_chec === 'true' || row.cta_eje_chec === 't',
               fases: row.fases || '',
               cliente_id: row.cliente_id || '',
-              clienteClaveDisplay: d?.cliente?.claveCliente || row.cliente_id?.slice(0, 8) || '',
-              clienteNombreDisplay: d?.cliente?.nombreCompleto || (row as any).cliente_nombre || '',
+              clienteClaveDisplay: (row as any).cliente_clave || d?.cliente?.claveCliente || row.cliente_id?.slice(0, 8) || '',
+              clienteNombreDisplay: (row as any).cliente_nombre || d?.cliente?.nombreCompleto || '',
               producto_id: row.producto_id || '',
               producto_eje: row.producto_eje || '',
-              productoClaveDisplay: d?.producto?.claveProducto || '',
-              productoNombreDisplay: d?.producto?.nombreProducto || (row as any).producto_nombre || '',
+              productoClaveDisplay: (row as any).producto_clave || d?.producto?.claveProducto || '',
+              productoNombreDisplay: (row as any).producto_nombre || d?.producto?.nombreProducto || row.producto_eje || '',
               productoTasa: d?.producto?.tasa || 0,
               productoMontoMinimo: d?.producto?.montoMinimo || 0,
               saldo_actual: formatMoneyStr(row.saldo_actual) || '0.00',
@@ -494,14 +514,14 @@ export function CuentasAhorroForm({ mode, accountId, onCancel, onSave }: Cuentas
 
     if (result.ok) {
       if (result.persisted) {
-        toast.success('Cuenta de ahorro creada en J_CUENTAS_CORP_CLIENTES (BD)', {
+        toast.success('Cuenta de ahorro creada', {
           description: `No. Solicitud: ${dbForm.no_sol} — Cliente: ${dbForm.clienteNombreDisplay}`,
           duration: 4000,
         });
       } else {
-        toast.warning('Cuenta guardada SOLO en memoria local (sessionStorage)', {
-          description: `⚠️ NO se persistió en BD. La Edge Function v19.3 no está desplegada y el RPC insert_cuenta_ahorro tiene overloads ambiguos (PGRST106). Revisa la consola para más detalles.`,
-          duration: 10000,
+        toast.warning('Cuenta guardada temporalmente', {
+          description: 'No se pudo conectar con la base de datos. Los datos se guardaron localmente.',
+          duration: 6000,
         });
       }
       onSave?.(result.data);
@@ -574,8 +594,8 @@ export function CuentasAhorroForm({ mode, accountId, onCancel, onSave }: Cuentas
     setSaving(false);
 
     if (result.ok) {
-      toast.success('Cuenta actualizada en J_CUENTAS_CORP_CLIENTES', {
-        description: `ID: ${dbForm.id.slice(0, 8)}... — JSON MERGE aplicado`,
+      toast.success('Cuenta actualizada', {
+        description: `No. Cuenta: ${dbForm.no_cuenta}`,
         duration: 4000,
       });
       onSave?.(result.data);
@@ -622,7 +642,10 @@ export function CuentasAhorroForm({ mode, accountId, onCancel, onSave }: Cuentas
     { id: 'movimientos', label: 'Movimientos' },
     { id: 'cargos', label: 'Cargos' },
     { id: 'bloqueos', label: 'Bloqueos' },
-    { id: 'solicitud', label: 'Solicitud extraordinaria' },
+    { id: 'solicitud',   label: 'Solicitud extraordinaria' },
+    { id: 'calendario',  label: 'Calendario de Pagos' },
+    { id: 'avisos',      label: 'Avisos de Aportación' },
+    { id: 'contable',    label: 'Generación Contable' },
   ];
 
   // ═══════════════════════════════════════════════════════════════════
@@ -636,10 +659,7 @@ export function CuentasAhorroForm({ mode, accountId, onCancel, onSave }: Cuentas
           <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
         </svg>
         <span className="text-xs text-gray-500">
-          Cargando registro desde J_CUENTAS_CORP_CLIENTES...
-        </span>
-        <span className="text-[10px] text-gray-400 mt-1">
-          UUID: {String(accountId)}
+          Cargando...
         </span>
       </div>
     );
@@ -659,21 +679,11 @@ export function CuentasAhorroForm({ mode, accountId, onCancel, onSave }: Cuentas
             </svg>
             <span className="text-sm text-gray-700">
               {isNew
-                ? 'Alta Cuenta de Ahorro — J_CUENTAS_CORP_CLIENTES'
+                ? 'Nueva Cuenta de Ahorro'
                 : isEdit
-                  ? `Edición Cuenta de Ahorro — ${dbForm.no_cuenta || dbForm.id.slice(0, 8)}`
-                  : `Detalle Cuenta de Ahorro — ${dbForm.no_cuenta || dbForm.id.slice(0, 8)}`}
+                  ? `Editar Cuenta de Ahorro — ${dbForm.no_cuenta}`
+                  : `Cuenta de Ahorro — ${dbForm.no_cuenta}`}
             </span>
-            {backendStatus === 'connected' && (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] bg-green-50 text-green-700 border border-green-200">
-                <span className="w-1.5 h-1.5 rounded-full bg-green-500"></span> DB conectada
-              </span>
-            )}
-            {isEdit && (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] bg-amber-50 text-amber-700 border border-amber-200">
-                JSON MERGE
-              </span>
-            )}
           </div>
           <button onClick={onCancel} className="text-secondary-theme text-sm hover:underline">Lista</button>
         </div>
@@ -705,12 +715,6 @@ export function CuentasAhorroForm({ mode, accountId, onCancel, onSave }: Cuentas
       {/* ─── Formulario ─── */}
       <div className="px-6 py-6">
 
-        {/* ── ID (oculto para Edit/Ver, spec sección 1) ── */}
-        {!isNew && dbForm.id && (
-          <div className="mb-4 px-4 py-2 bg-gray-50 border border-gray-200 rounded text-[10px] text-gray-500">
-            <span className="text-gray-400">PK (id):</span> {dbForm.id}
-          </div>
-        )}
 
         {/* ── Sección: Información Principal ── */}
         <div className="bg-[#D9E2F3] border-l-4 border-[#4A6FA5] px-4 py-2 mb-5">
@@ -721,7 +725,7 @@ export function CuentasAhorroForm({ mode, accountId, onCancel, onSave }: Cuentas
           {/* ═══ Col 1 ═══ */}
           <div className="space-y-3">
             <div>
-              <Lbl req error={errors.no_sol}>No. Solicitud (no_sol){isNew ? ' — Auto' : ''}</Lbl>
+              <Lbl req error={errors.no_sol}>No. Solicitud</Lbl>
               <input
                 type="text"
                 value={dbForm.no_sol}
@@ -730,14 +734,11 @@ export function CuentasAhorroForm({ mode, accountId, onCancel, onSave }: Cuentas
                 placeholder="SOL-AH-0001"
                 className={inputCls(!!errors.no_sol, true)}
               />
-              {isNew && dbForm.no_sol && (
-                <span className="text-[10px] text-green-600 mt-0.5 block">Generado automaticamente</span>
-              )}
               {errors.no_sol && <span className="text-[10px] text-red-500 mt-0.5 block">{errors.no_sol}</span>}
             </div>
 
             <div>
-              <Lbl req error={errors.no_cuenta}>No. Cuenta (no_cuenta){isNew ? ' — Auto' : ''}</Lbl>
+              <Lbl req error={errors.no_cuenta}>No. Cuenta</Lbl>
               <input
                 type="text"
                 value={dbForm.no_cuenta}
@@ -746,14 +747,11 @@ export function CuentasAhorroForm({ mode, accountId, onCancel, onSave }: Cuentas
                 placeholder="0126XXXXXX"
                 className={inputCls(!!errors.no_cuenta, true)}
               />
-              {isNew && dbForm.no_cuenta && (
-                <span className="text-[10px] text-green-600 mt-0.5 block">Generado automaticamente</span>
-              )}
               {errors.no_cuenta && <span className="text-[10px] text-red-500 mt-0.5 block">{errors.no_cuenta}</span>}
             </div>
 
             <div>
-              <Lbl>No. Referencia (no_referenc1){isNew ? ' — Auto' : ''}</Lbl>
+              <Lbl>No. Referencia</Lbl>
               <input
                 type="text"
                 value={dbForm.no_referenc1}
@@ -762,13 +760,10 @@ export function CuentasAhorroForm({ mode, accountId, onCancel, onSave }: Cuentas
                 placeholder="REF-XXXXXX"
                 className={inputCls(false, true)}
               />
-              {isNew && dbForm.no_referenc1 && (
-                <span className="text-[10px] text-green-600 mt-0.5 block">Generado automaticamente</span>
-              )}
             </div>
 
             <div>
-              <Lbl req error={errors.fecha_sol}>Fecha Solicitud (fecha_sol)</Lbl>
+              <Lbl req error={errors.fecha_sol}>Fecha Solicitud</Lbl>
               <DatePicker
                 value={getDbDateDisplay('fecha_sol')}
                 onChange={v => setDbDate('fecha_sol', v)}
@@ -783,7 +778,7 @@ export function CuentasAhorroForm({ mode, accountId, onCancel, onSave }: Cuentas
           {/* ═══ Col 2: Pick Maps ═══ */}
           <div className="space-y-3">
             <div>
-              <Lbl req error={errors.cliente_id}>Cliente (Pick Map)</Lbl>
+              <Lbl req error={errors.cliente_id}>Cliente</Lbl>
               <div className="flex items-center gap-2">
                 <input
                   type="text"
@@ -804,13 +799,10 @@ export function CuentasAhorroForm({ mode, accountId, onCancel, onSave }: Cuentas
                 )}
               </div>
               {errors.cliente_id && <span className="text-[10px] text-red-500 mt-0.5 block">{errors.cliente_id}</span>}
-              {dbForm.cliente_id && (
-                <span className="text-[10px] text-gray-400 mt-0.5 block">UUID: {dbForm.cliente_id}</span>
-              )}
             </div>
 
             <div>
-              <Lbl req error={errors.producto_id}>Producto (Pick Map)</Lbl>
+              <Lbl req error={errors.producto_id}>Producto</Lbl>
               <div className="flex items-center gap-2">
                 <input
                   type="text"
@@ -831,11 +823,6 @@ export function CuentasAhorroForm({ mode, accountId, onCancel, onSave }: Cuentas
                 )}
               </div>
               {errors.producto_id && <span className="text-[10px] text-red-500 mt-0.5 block">{errors.producto_id}</span>}
-              {dbForm.producto_id && (
-                <div className="text-[10px] text-gray-400 mt-0.5">
-                  Tasa: {dbForm.productoTasa.toFixed(2)}% | Min: ${dbForm.productoMontoMinimo.toLocaleString()}
-                </div>
-              )}
             </div>
 
             <div>
@@ -865,11 +852,11 @@ export function CuentasAhorroForm({ mode, accountId, onCancel, onSave }: Cuentas
           {/* ═══ Col 3: Valores fijos + Fases ═══ */}
           <div className="space-y-3">
             <div>
-              <Lbl>Línea Producto (linea_produc)</Lbl>
+              <Lbl>Línea de Producto</Lbl>
               <input type="text" value={dbForm.linea_produc || 'CAPTACION'} disabled className={inputCls(false, true)} />
             </div>
             <div>
-              <Lbl>Tipo Producto (tipo_produc)</Lbl>
+              <Lbl>Tipo de Producto</Lbl>
               <input type="text" value={dbForm.tipo_produc || 'Ahorro'} disabled className={inputCls(false, true)} />
             </div>
             <div>
@@ -963,7 +950,7 @@ export function CuentasAhorroForm({ mode, accountId, onCancel, onSave }: Cuentas
 
         <div className="grid grid-cols-4 gap-x-6 gap-y-3 mb-8">
           <div>
-            <Lbl>Saldo Actual (saldo_actual)</Lbl>
+            <Lbl>Saldo Actual</Lbl>
             {isNew ? (
               <input type="text" value="$0.00" disabled className={inputCls(false, true)} />
             ) : (
@@ -979,7 +966,7 @@ export function CuentasAhorroForm({ mode, accountId, onCancel, onSave }: Cuentas
             )}
           </div>
           <div>
-            <Lbl>Monto Solicitado (monto_sol)</Lbl>
+            <Lbl>Monto Solicitado</Lbl>
             <input
               type="text"
               value={dbForm.monto_sol}
@@ -991,7 +978,7 @@ export function CuentasAhorroForm({ mode, accountId, onCancel, onSave }: Cuentas
             />
           </div>
           <div>
-            <Lbl>Monto Autorizado (monto_aut)</Lbl>
+            <Lbl>Monto Autorizado</Lbl>
             <input
               type="text"
               value={dbForm.monto_aut}
@@ -1003,7 +990,7 @@ export function CuentasAhorroForm({ mode, accountId, onCancel, onSave }: Cuentas
             />
           </div>
           <div>
-            <Lbl>Monto Dispersado (monto_disp)</Lbl>
+            <Lbl>Monto Dispersado</Lbl>
             <input
               type="text"
               value={dbForm.monto_disp}
@@ -1074,65 +1061,18 @@ export function CuentasAhorroForm({ mode, accountId, onCancel, onSave }: Cuentas
           </div>
         </div>
 
-        {/* ── JSON Preview ── */}
-        <div className="bg-[#D9E2F3] border-l-4 border-[#4A6FA5] px-4 py-2 mb-5">
-          <h3 className="text-sm text-gray-800 uppercase">
-            {isEdit ? 'Vista previa del JSON parcial (MERGE)' : 'Vista previa del JSON institucional (data)'}
-          </h3>
-        </div>
-        <div className="bg-gray-50 border border-gray-200 rounded p-4 mb-6">
-          <pre className="text-[10px] text-gray-600 whitespace-pre-wrap overflow-x-auto">
-{JSON.stringify(
-  isEdit
-    ? {
-        cliente: {
-          claveCliente: dbForm.clienteClaveDisplay || '',
-          nombreCompleto: dbForm.clienteNombreDisplay || '',
-        },
-        producto: {
-          claveProducto: dbForm.productoClaveDisplay || '',
-          nombreProducto: dbForm.productoNombreDisplay || '',
-          tasa: dbForm.productoTasa,
-          montoMinimo: dbForm.productoMontoMinimo,
-        },
-        metadatos: {
-          ultimaActualizacion: new Date().toISOString(),
-        },
-        _mergeRule: 'data = data || <este_json>::jsonb',
-      }
-    : {
-        cliente: {
-          claveCliente: dbForm.clienteClaveDisplay || '',
-          nombreCompleto: dbForm.clienteNombreDisplay || '',
-        },
-        producto: {
-          claveProducto: dbForm.productoClaveDisplay || '',
-          nombreProducto: dbForm.productoNombreDisplay || '',
-          tasa: dbForm.productoTasa,
-          montoMinimo: dbForm.productoMontoMinimo,
-        },
-        metadatos: {
-          creadoPor: 'usuario_actual',
-          fechaCreacion: new Date().toISOString(),
-          ultimaActualizacion: new Date().toISOString(),
-        },
-      },
-  null, 2
-)}
-          </pre>
-        </div>
 
         {/* ─── Tabs ─── */}
-        <div className="mb-6">
-          <div className="flex items-center gap-0 bg-primary-theme">
+        <div className="bg-primary-theme text-white border-b border-gray-400 mb-4">
+          <div className="flex items-center overflow-x-auto">
             {tabs.map(tab => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`px-3 py-2 text-[10px] whitespace-nowrap border-r border-gray-500/30 transition-colors ${
+                className={`px-4 py-2.5 text-xs whitespace-nowrap transition-colors ${
                   activeTab === tab.id
-                    ? 'bg-secondary-theme text-white'
-                    : 'text-white/90 hover:bg-[var(--theme-primary-hover)]'
+                    ? 'bg-secondary-theme text-white font-medium'
+                    : 'text-white/90 hover:bg-white/10'
                 }`}
               >
                 {tab.label}
@@ -1141,25 +1081,103 @@ export function CuentasAhorroForm({ mode, accountId, onCancel, onSave }: Cuentas
           </div>
         </div>
 
-        {/* ─── Default tab ─── */}
+        {/* ─── Default tab — resumen del registro ─── */}
         {activeTab === 'default' && (
-          <div className="text-xs text-gray-500 italic px-4">
-            {isNew
-              ? 'Los montos y tasas referenciales se mostrarán una vez creada la cuenta.'
-              : 'Los subtabs inferiores contienen información complementaria del registro.'}
+          <div className="space-y-4">
+            {/* Identificación */}
+            <div className="bg-white border border-gray-200 rounded">
+              <div className="bg-primary-tint-theme border-l-4 border-primary-theme px-3 py-2">
+                <span className="text-xs font-medium text-gray-800">Identificación</span>
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-x-8 px-4 py-3">
+                {[
+                  { label: 'No. Solicitud',  value: dbForm.no_sol },
+                  { label: 'No. Cuenta',     value: dbForm.no_cuenta },
+                  { label: 'No. Referencia', value: dbForm.no_referenc1 },
+                  { label: 'Cliente',        value: dbForm.clienteNombreDisplay },
+                  { label: 'Producto',       value: dbForm.productoNombreDisplay },
+                  { label: 'Línea',          value: dbForm.linea_produc },
+                  { label: 'Tipo',           value: dbForm.tipo_produc },
+                  { label: 'Fecha Solicitud', value: dbForm.fecha_sol ? dbForm.fecha_sol.split('T')[0].split('-').reverse().join('/') : '—' },
+                  { label: 'Cuenta Eje',     value: dbForm.cta_eje_chec ? 'Sí' : 'No' },
+                ].map(f => (
+                  <div key={f.label} className="py-1.5 border-b border-gray-100 last:border-0 flex items-center gap-2">
+                    <span className="text-[10px] text-gray-400 uppercase tracking-wide w-28 flex-shrink-0">{f.label}</span>
+                    <span className="text-xs text-gray-800 font-medium">{f.value || '—'}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Estatus y Montos */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Estatus */}
+              <div className="bg-white border border-gray-200 rounded">
+                <div className="bg-primary-tint-theme border-l-4 border-primary-theme px-3 py-2">
+                  <span className="text-xs font-medium text-gray-800">Estatus</span>
+                </div>
+                <div className="px-4 py-3 space-y-1.5">
+                  {[
+                    { label: 'Cuenta',     value: dbForm.estatus_cuen },
+                    { label: 'Cartera',    value: dbForm.estatus_cart },
+                    { label: 'Solicitud',  value: dbForm.estatus_sol },
+                    { label: 'Dispersión', value: dbForm.estatus_disp },
+                  ].map(f => (
+                    <div key={f.label} className="flex items-center gap-2 py-1 border-b border-gray-100 last:border-0">
+                      <span className="text-[10px] text-gray-400 uppercase tracking-wide w-24 flex-shrink-0">{f.label}</span>
+                      <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-medium ${
+                        f.value === 'Activa' || f.value === 'Activo' || f.value === 'Autorizado' ? 'bg-green-100 text-green-700'
+                        : f.value === 'Pendiente' ? 'bg-amber-100 text-amber-700'
+                        : f.value === 'Cancelado' || f.value === 'Cancelada' ? 'bg-gray-100 text-gray-600'
+                        : 'bg-blue-100 text-blue-700'
+                      }`}>{f.value || '—'}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Montos */}
+              <div className="bg-white border border-gray-200 rounded">
+                <div className="bg-primary-tint-theme border-l-4 border-primary-theme px-3 py-2">
+                  <span className="text-xs font-medium text-gray-800">Montos</span>
+                </div>
+                <div className="px-4 py-3 space-y-1.5">
+                  {[
+                    { label: 'Saldo Actual',      value: dbForm.saldo_actual },
+                    { label: 'Monto Autorizado',  value: dbForm.monto_aut },
+                    { label: 'Monto Solicitado',  value: dbForm.monto_sol },
+                    { label: 'Monto Dispersado',  value: dbForm.monto_disp },
+                  ].map(f => (
+                    <div key={f.label} className="flex items-center gap-2 py-1 border-b border-gray-100 last:border-0">
+                      <span className="text-[10px] text-gray-400 uppercase tracking-wide w-36 flex-shrink-0">{f.label}</span>
+                      <span className="text-xs text-gray-800 font-medium font-mono">
+                        {f.value ? `$ ${parseFloat(f.value).toLocaleString('es-MX', { minimumFractionDigits: 2 })}` : '—'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
           </div>
         )}
 
         {/* ─── Subtabs ─── */}
-        {activeTab === 'beneficiarios' && <BeneficiariosTab mode={mode} accountId={storageId} />}
-        {activeTab === 'cotitulares' && <CoTitularesTab mode={mode} accountId={storageId} />}
-        {activeTab === 'intereses' && <InteresesDiariosTab mode={mode} accountId={storageId} />}
-        {activeTab === 'rendimiento' && <RendimientoPeriodoTab mode={mode} accountId={storageId} />}
-        {activeTab === 'impuestos' && <ImpuestosTab mode={mode} accountId={storageId} />}
-        {activeTab === 'movimientos' && <MovimientosTab mode={mode} accountId={storageId} />}
-        {activeTab === 'cargos' && <CargosTab mode={mode} accountId={storageId} />}
-        {activeTab === 'bloqueos' && <BloqueosTab mode={mode} accountId={storageId} />}
-        {activeTab === 'solicitud' && <SolicitudExtraordinariaTab mode={mode} accountId={storageId} />}
+        {activeTab !== 'default' && (
+          <div className="bg-white border border-gray-300 p-4">
+            {activeTab === 'beneficiarios' && <BeneficiariosTab mode={mode} accountId={storageId} />}
+            {activeTab === 'cotitulares'   && <CoTitularesTab mode={mode} accountId={storageId} />}
+            {activeTab === 'intereses'     && <InteresesDiariosTab mode={mode} accountId={storageId} />}
+            {activeTab === 'rendimiento'   && <RendimientoPeriodoTab mode={mode} accountId={storageId} />}
+            {activeTab === 'impuestos'     && <ImpuestosTab mode={mode} accountId={storageId} />}
+            {activeTab === 'movimientos'   && <MovimientosTab mode={mode} accountId={isNew ? 'new' : dbForm.id} />}
+            {activeTab === 'cargos'        && <CargosTab mode={mode} accountId={storageId} />}
+            {activeTab === 'bloqueos'      && <BloqueosTab mode={mode} accountId={storageId} />}
+            {activeTab === 'solicitud'     && <SolicitudExtraordinariaTab mode={mode} accountId={storageId} />}
+            {activeTab === 'calendario'    && <CalendarioPagosTab accountId={isNew ? 'new' : dbForm.id} cliente={dbForm.clienteNombreDisplay || ''} noSol={dbForm.no_sol} noCuenta={dbForm.no_cuenta} moneda="MXN" />}
+            {activeTab === 'avisos'        && <AvisosVencimientoTab solicitudId={isNew ? 'new' : dbForm.id} />}
+            {activeTab === 'contable'      && <GeneracionContableTab solicitudId={isNew ? 'new' : dbForm.id} credito={{ noSol: dbForm.no_sol, cliente: dbForm.clienteNombreDisplay || '', montoAut: parseFloat(dbForm.monto_aut || '0') || 0 }} />}
+          </div>
+        )}
       </div>
 
       {/* ─── Modals ─── */}

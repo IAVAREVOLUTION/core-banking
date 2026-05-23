@@ -103,6 +103,7 @@ export interface CuentaAhorroListItem {
   id: string;
   noSol: string;
   noCuenta: string;
+  noReferenc1: string;
   clienteId: string;
   clienteNombre: string;
   productoId: string;
@@ -110,6 +111,7 @@ export interface CuentaAhorroListItem {
   fechaSol: string;
   fechaAutori: string;
   saldoActual: number;
+  montoAut: number;
   estatusCuen: string;
   estatusCart: string;
   estatusSol: string;
@@ -188,17 +190,23 @@ export interface UpdateCuentaAhorroPayload {
 // MAPEO ROW → ListItem
 // ═══════════════════════════════════════════════════════════════════
 function mapRow(row: JCuentaAhorroRow): CuentaAhorroListItem {
+  const r = row as any;
+  // Para CuentaAhorro creada por activación, el no_sol real está en data.metadatos.noSol
+  const dataMeta = typeof row.data === 'object' && row.data ? (row.data as any).metadatos : null;
+  const noSolDisplay = (row.type === 'CuentaAhorro' && dataMeta?.noSol) ? dataMeta.noSol : (row.no_sol || '');
   return {
     id: row.id,
-    noSol: row.no_sol || '',
+    noSol: noSolDisplay,
     noCuenta: row.no_cuenta || '',
-    clienteId: row.cliente_id || '',
-    clienteNombre: row.cliente_nombre || row.cliente_id || '—',
-    productoId: row.producto_id || '',
-    productoNombre: row.producto_nombre || row.producto_id || '—',
+    noReferenc1: row.no_referenc1 || '',
+    clienteId: row.cliente_id || r.cliente_id_eff || '',
+    clienteNombre: r.cliente_nombre || row.cliente_nombre || row.cliente_id || r.cliente_id_eff || '—',
+    productoId: row.producto_id || r.producto_id_eff || '',
+    productoNombre: r.producto_nombre || row.producto_nombre || row.producto_id || '—',
     fechaSol: row.fecha_sol || '',
     fechaAutori: row.fecha_autori || '',
     saldoActual: parseMoney(row.saldo_actual) ?? 0,
+    montoAut: parseMoney(row.monto_aut) ?? 0,
     estatusCuen: row.estatus_cuen || '—',
     estatusCart: row.estatus_cart || '—',
     estatusSol: row.estatus_sol || '—',
@@ -279,6 +287,36 @@ function mergeWithLocalEntries(dbItems: CuentaAhorroListItem[]): CuentaAhorroLis
 export const CUENTA_AHORRO_REFETCH_EVENT = 'cuentaAhorroRefetch';
 
 // ═══════════════════════════════════════════════════════════════════
+// REGISTRAR MOVIMIENTO en Cuenta Eje — función standalone
+// ═══════════════════════════════════════════════════════════════════
+export async function registrarMovimientoCuentaEje(
+  clienteId: string,
+  movimiento: Record<string, unknown>,
+  saldoNuevo: number,
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const res = await fetch(`${API_BASE}/cuentas-ahorro/movimiento`, {
+      method: 'PATCH',
+      headers: {
+        'Authorization': `Bearer ${publicAnonKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ cliente_id: clienteId, movimiento, saldo_nuevo: saldoNuevo }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      console.warn(`${LOG} registrarMovimientoCuentaEje ERROR HTTP ${res.status}:`, err?.error);
+      return { ok: false, error: err?.error || `HTTP ${res.status}` };
+    }
+    console.log(`${LOG} registrarMovimientoCuentaEje OK — clienteId=${clienteId} saldo=${saldoNuevo}`);
+    return { ok: true };
+  } catch (e: any) {
+    console.warn(`${LOG} registrarMovimientoCuentaEje EXCEPCIÓN:`, e?.message || e);
+    return { ok: false, error: e?.message || String(e) };
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // GET BY ID — función standalone (no hook) para evitar cambios de hook order
 // ═══════════════════════════════════════════════════════════════════
 export async function getCuentaAhorroById(id: string): Promise<{ ok: boolean; row?: JCuentaAhorroRow; error?: string }> {
@@ -294,30 +332,9 @@ export async function getCuentaAhorroById(id: string): Promise<{ ok: boolean; ro
     return { ok: false, error: 'Registro no encontrado en sessionStorage' };
   }
 
-  // Intento 1: RPC
+  // Intento 1: Edge Function — tiene JOINs con J_CLIENTES y J_PRODUCTOS (cliente_nombre, producto_nombre)
   try {
-    console.log(`${LOG} getCuentaAhorroById Intento 1 → supabase.rpc('get_cuenta_ahorro_by_id')`);
-    const { data, error } = await supabase.rpc('get_cuenta_ahorro_by_id', { p_id: id });
-
-    if (!error && data) {
-      const rows = Array.isArray(data) ? data : [data];
-      if (rows.length > 0) {
-        const row = rows[0] as JCuentaAhorroRow;
-        console.log(`${LOG} getCuentaAhorroById RPC OK`);
-        saveFullRow(row); // persistir fila completa
-        return { ok: true, row };
-      }
-    }
-    if (error) {
-      console.log(`${LOG} getCuentaAhorroById RPC no disponible: ${error.message}`);
-    }
-  } catch (e: any) {
-    console.log(`${LOG} getCuentaAhorroById RPC no disponible: ${e?.message || e}`);
-  }
-
-  // Intento 2: Edge Function
-  try {
-    console.log(`${LOG} getCuentaAhorroById Intento 2 → Edge Function GET /cuentas-ahorro?id=${id}`);
+    console.log(`${LOG} getCuentaAhorroById Intento 1 → Edge Function GET /cuentas-ahorro?id=${id}`);
     const res = await fetch(`${API_BASE}/cuentas-ahorro?id=${id}`, {
       headers: {
         'Authorization': `Bearer ${publicAnonKey}`,
@@ -354,6 +371,24 @@ export async function getCuentaAhorroById(id: string): Promise<{ ok: boolean; ro
     console.log(`${LOG} getCuentaAhorroById Edge Function no disponible: ${e?.message || e}`);
   }
 
+  // Intento 2: RPC (sin JOINs — solo datos base)
+  try {
+    console.log(`${LOG} getCuentaAhorroById Intento 2 → supabase.rpc('get_cuenta_ahorro_by_id')`);
+    const { data, error } = await supabase.rpc('get_cuenta_ahorro_by_id', { p_id: id });
+    if (!error && data) {
+      const rows = Array.isArray(data) ? data : [data];
+      if (rows.length > 0) {
+        const row = rows[0] as JCuentaAhorroRow;
+        console.log(`${LOG} getCuentaAhorroById RPC OK (sin nombres de cliente/producto)`);
+        saveFullRow(row);
+        return { ok: true, row };
+      }
+    }
+    if (error) console.log(`${LOG} getCuentaAhorroById RPC no disponible: ${error.message}`);
+  } catch (e: any) {
+    console.log(`${LOG} getCuentaAhorroById RPC no disponible: ${e?.message || e}`);
+  }
+
   // Intento 3: sessionStorage — fila completa
   const fullRow = loadFullRowById(id);
   if (fullRow) {
@@ -386,30 +421,9 @@ export function useCuentasAhorroDB() {
       return;
     }
 
-    // ── Intento 1: RPC ──
+    // ── Intento 1: Edge Function (tiene filtro completo: CAPTACION + cta_eje_chec + CuentaAhorro por activación) ──
     try {
-      console.log(`${LOG} Intento 1 → supabase.rpc('get_cuentas_ahorro')`);
-      const { data, error } = await supabase.rpc('get_cuentas_ahorro');
-
-      if (!error && Array.isArray(data)) {
-        const mapped = (data as JCuentaAhorroRow[]).map(mapRow);
-        console.log(`${LOG} RPC OK — ${mapped.length} registros de BD`);
-        setCuentas(mapped);
-        saveLocal(mapped);
-        saveFullRows(data as JCuentaAhorroRow[]);
-        setBackendStatus('connected');
-        setLoading(false);
-        return;
-      }
-
-      console.warn(`${LOG} RPC error:`, error?.message || 'respuesta no-array');
-    } catch (e) {
-      console.warn(`${LOG} RPC excepción:`, e);
-    }
-
-    // ── Intento 2: Edge Function ──
-    try {
-      console.log(`${LOG} Intento 2 → Edge Function /cuentas-ahorro`);
+      console.log(`${LOG} Intento 1 → Edge Function /cuentas-ahorro`);
       const res = await fetch(`${API_BASE}/cuentas-ahorro`, {
         headers: {
           'Authorization': `Bearer ${publicAnonKey}`,
@@ -431,6 +445,27 @@ export function useCuentasAhorroDB() {
       console.warn(`${LOG} Edge Function status:`, res.status);
     } catch (e) {
       console.warn(`${LOG} Edge Function excepción:`, e);
+    }
+
+    // ── Intento 2: RPC (puede tener filtro desactualizado en BD) ──
+    try {
+      console.log(`${LOG} Intento 2 → supabase.rpc('get_cuentas_ahorro')`);
+      const { data, error } = await supabase.rpc('get_cuentas_ahorro');
+
+      if (!error && Array.isArray(data)) {
+        const mapped = (data as JCuentaAhorroRow[]).map(mapRow);
+        console.log(`${LOG} RPC OK — ${mapped.length} registros de BD`);
+        setCuentas(mapped);
+        saveLocal(mapped);
+        saveFullRows(data as JCuentaAhorroRow[]);
+        setBackendStatus('connected');
+        setLoading(false);
+        return;
+      }
+
+      console.warn(`${LOG} RPC error:`, error?.message || 'respuesta no-array');
+    } catch (e) {
+      console.warn(`${LOG} RPC excepción:`, e);
     }
 
     // ── Intento 3: sessionStorage fallback ──

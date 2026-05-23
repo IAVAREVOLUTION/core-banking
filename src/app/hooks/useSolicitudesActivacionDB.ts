@@ -12,7 +12,10 @@
  *   INSERT/UPDATE: supabase.rpc('insert/update_solicitud_activacion')
  */
 import { useState, useEffect, useCallback } from 'react';
-import { supabase } from '../lib/supabaseClient';
+import { supabase, SUPABASE_URL } from '../lib/supabaseClient';
+import { publicAnonKey } from '/utils/supabase/info';
+
+const API_BASE = `${SUPABASE_URL}/functions/v1/make-server-7e2d13d9`;
 import type {
   SolicitudActivacionListItem,
   SolicitudActivacionFormData,
@@ -201,7 +204,7 @@ function formToDBPayload(form: SolicitudActivacionFormData) {
     fecha_compromiso: form.fechaCompromiso ? parseDisplayToISO(form.fechaCompromiso) : null,
     estatus:          form.estatus || 'Pendiente',
     data: {
-      estatus:  form.estatus || 'Pendiente',
+      estatus:  form.estatus || null,
       header: {
         cliente:               form.cliente,
         numeroDocumento:       form.numeroDocumento,
@@ -270,7 +273,7 @@ async function trySchemaSelect(): Promise<{ ok: boolean; items: SolicitudActivac
       .schema('EFINANCIANET_DB')
       .from('J_SOLICITUDES_ACTIVACION')
       .select('id, cliente_id, solicitud_id, type, created_at, fecha_compromiso, estatus, data')
-      .order('fecha_solicitud', { ascending: false });
+      .order('created_at', { ascending: false });
 
     if (error) {
       console.log('[useSolicitudesActivacionDB] INTENTO 2 FALLÓ:', error.message);
@@ -390,7 +393,7 @@ export function useSolicitudesActivacionDB(enabled: boolean) {
         solicitud_id:     payload.solicitud_id      ?? null,
         type:             payload.type              ?? null,
         fecha_compromiso: payload.fecha_compromiso  ?? null,
-        estatus:          payload.estatus           || 'Pendiente',
+        estatus:          payload.estatus           || null,
         data:             payload.data              ?? null,
       };
 
@@ -436,27 +439,64 @@ export function useSolicitudesActivacionDB(enabled: boolean) {
             return { ok: false, error: `ID de registro inválido (${dbId}) — no se puede actualizar` };
           }
 
-          // ── Intento 1: RPC update_solicitud_activacion ──────────────────
+          // ── Intento 1: Edge Function PUT /solicitudes-activacion/:id ──────
+          let edgeFnOk = false;
           try {
-            const { data: updData, error: updErr } = await supabase.rpc('update_solicitud_activacion', {
-              p_id:      dbId,
-              p_payload: payload,
+            const efRes = await fetch(`${API_BASE}/solicitudes-activacion/${dbId}`, {
+              method: 'PUT',
+              headers: { 'Authorization': `Bearer ${publicAnonKey}`, 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                estatus:          payload.estatus,
+                fecha_compromiso: payload.fecha_compromiso,
+                type:             payload.type,
+                data:             payload.data,
+              }),
             });
-            console.log('[DIAG UPDATE] RPC call result:', { data: updData, error: updErr });
-            console.log('[DIAG UPDATE] payload sent to RPC:', JSON.stringify(payload));
-            if (updErr) throw new Error(updErr.message);
-          } catch (rpcEx: unknown) {
-            // ── Fallback: Supabase schema directo ──────────────────────────
-            console.warn('[DIAG UPDATE] RPC falló, intentando schema directo:', (rpcEx as Error).message);
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const { error: directErr } = await (supabase as any)
-              .schema('EFINANCIANET_DB')
-              .from('J_SOLICITUDES_ACTIVACION')
-              .update({ estatus: directCols.estatus, fecha_compromiso: directCols.fecha_compromiso, data: directCols.data })
-              .eq('id', dbId);
-            console.log('[DIAG UPDATE] schema directo result:', { error: directErr, dbId, estatus: directCols.estatus });
-            if (directErr) throw new Error(directErr.message);
+            if (efRes.ok) {
+              console.log('[DIAG UPDATE] Edge Function OK — estatus:', payload.estatus);
+              edgeFnOk = true;
+            } else {
+              console.warn('[DIAG UPDATE] Edge Function status:', efRes.status);
+            }
+          } catch (efEx: unknown) {
+            console.warn('[DIAG UPDATE] Edge Function excepción:', (efEx as Error).message);
           }
+
+          if (!edgeFnOk) {
+            // ── Intento 2: RPC update_solicitud_activacion ────────────────
+            try {
+              const { data: updData, error: updErr } = await supabase.rpc('update_solicitud_activacion', {
+                p_id:      dbId,
+                p_payload: payload,
+              });
+              console.log('[DIAG UPDATE] RPC result:', { data: updData, error: updErr, estatus: payload.estatus });
+              if (updErr) throw new Error(updErr.message);
+            } catch (rpcEx: unknown) {
+              // ── Intento 3: Supabase schema directo ──────────────────────
+              console.warn('[DIAG UPDATE] RPC falló, intentando schema directo:', (rpcEx as Error).message);
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              const { error: directErr } = await (supabase as any)
+                .schema('EFINANCIANET_DB')
+                .from('J_SOLICITUDES_ACTIVACION')
+                .update({ estatus: directCols.estatus, fecha_compromiso: directCols.fecha_compromiso, data: directCols.data })
+                .eq('id', dbId);
+              console.log('[DIAG UPDATE] schema directo result:', { error: directErr, dbId, estatus: directCols.estatus });
+              if (directErr) throw new Error(directErr.message);
+            }
+          }
+
+          // Patch session immediately so refetch fallback uses fresh estatus
+          try {
+            const cached = sessionStorage.getItem(SS_KEY);
+            if (cached) {
+              const items = JSON.parse(cached);
+              const idx = items.findIndex((i: Record<string, unknown>) => i._dbId === dbId || i.id === dbId);
+              if (idx >= 0) {
+                items[idx] = { ...items[idx], estatus: payload.estatus };
+                sessionStorage.setItem(SS_KEY, JSON.stringify(items));
+              }
+            }
+          } catch { /* ignore */ }
 
           await refetch();
           return { ok: true, id: dbId };

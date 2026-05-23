@@ -3,7 +3,7 @@ import { toast } from 'sonner';
 import { SolicitudCreditoForm } from './SolicitudCreditoForm';
 import {
   SolicitudListItem, SOLICITUDES_LISTA,
-  clearSession, migrateSavedStore, saveToSavedStore, saveToSession, formatCurrency as fmtCur,
+  clearSession, migrateSavedStore, deleteSavedStore, saveToSavedStore, saveToSession, formatCurrency as fmtCur,
   EMPTY_FORM, EMPTY_TERMINOS, consumeNoSol, getFechaSolicitudNow,
 } from './solicitudCreditoStore';
 import { createCreditoFromSolicitud } from '../creditos/creditoStore';
@@ -90,7 +90,7 @@ export function buildFormDataFromListItem(s: SolicitudListItem): Record<string, 
     descripcion: hdr.descripcion || d.descripcion || joinDescripcion || '',
     faseId: hdr.fase_id || d.faseId || joinFases || '1',
     descripcionFase: s.faseDescripcion || hdr.descripcion_fase || d.descripcionFase || '',
-    estatusSolicitud: s.estatusSolicitud || hdr.estatus || d.estatusSolicitud || 'Pendiente',
+    estatusSolicitud: s.estatusSolicitud || d.estatusSolicitud || 'Pendiente',
     sucursal: s.sucursal || hdr.sucursal || d.sucursal || joinSucursal || '',
     montoSolicitado: hdr.monto_solicitado
       || (typeof s.montoSolicitado === 'number' && s.montoSolicitado > 0 ? s.montoSolicitado.toFixed(2) : null)
@@ -103,6 +103,7 @@ export function buildFormDataFromListItem(s: SolicitudListItem): Record<string, 
     _clienteId: extra._clienteId || hdr.cliente_id || d._clienteId || '',
     _curp: extra._clienteCurp || hdr.curp || d._curp || d.curp || '',
     _rfc: extra._clienteRfc || hdr.rfc || d._rfc || d.rfc || '',
+    _gobierno: extra._gobierno || hdr._gobierno || d._gobierno || '',
     // Calendario de aportaciones heredado de Cotización — persistido en data.solicitud.simulacion
     _calendarioAportaciones: (() => {
       const cal = sol.simulacion?.calendario_aportaciones;
@@ -115,15 +116,22 @@ export function buildFormDataFromListItem(s: SolicitudListItem): Record<string, 
  * Pre-carga subtabs en sessionStorage desde JSONB _data.
  * Exportada para uso en OriginacionModule.
  */
-export function preloadSubtabsFromDBData(storageId: number | string, d: Record<string, any>) {
+export function preloadSubtabsFromDBData(
+  storageId: number | string,
+  d: Record<string, any>,
+  rowExtras?: { montoCubrirGarantia?: number | null; porcentajeAforo?: number | null },
+) {
   // Preserve original JSONB so that on UPDATE we can merge instead of overwrite
+  // Guardar en AMBOS: session (acceso rápido) y savedStore (persiste tras commitAndClearSession)
   saveToSession(storageId, '_originalData', d);
+  saveToSavedStore(storageId, '_originalData', d);
 
   const sol = d.solicitud || {};
   const tc = sol.terminos_condiciones || {};
   const ps = tc.parametros_simulacion || {};
   const rawTerminos = tc._raw || {};
-  if (Object.keys(tc).length > 0) {
+  const hasRowExtras = rowExtras?.montoCubrirGarantia != null || rowExtras?.porcentajeAforo != null;
+  if (Object.keys(tc).length > 0 || hasRowExtras) {
     saveToSession(storageId, 'terminos', {
       montoSolicitado: ps.monto_solicitado || rawTerminos.montoSolicitado || '',
       fechaPrimerPago: ps.fecha_primer_pago || rawTerminos.fechaPrimerPago || '',
@@ -137,6 +145,13 @@ export function preloadSubtabsFromDBData(storageId: number | string, d: Record<s
       montoGarantia: rawTerminos.montoGarantia || '',
       seguroFinanciado: rawTerminos.seguroFinanciado ?? false,
       montoSeguro: rawTerminos.montoSeguro || '',
+      // Crédito / Línea de Crédito — columnas top-level de J_CUENTAS_CORP_CLIENTES
+      montoCubrirGarantia: rowExtras?.montoCubrirGarantia != null
+        ? Number(rowExtras.montoCubrirGarantia)
+        : (rawTerminos.montoCubrirGarantia != null ? Number(rawTerminos.montoCubrirGarantia) : undefined),
+      porcentajeAforo: rowExtras?.porcentajeAforo != null
+        ? Number(rowExtras.porcentajeAforo)
+        : (rawTerminos.porcentajeAforo != null ? Number(rawTerminos.porcentajeAforo) : undefined),
       // Captación — Rendimientos
       rendimientos: rawTerminos.rendimientos || [],
       // Captación — Perfil del Inversionista
@@ -144,16 +159,48 @@ export function preloadSubtabsFromDBData(storageId: number | string, d: Record<s
       riesgoInversionista: rawTerminos.riesgoInversionista || '',
       horizonteInversion: rawTerminos.horizonteInversion || '',
       experienciaInversion: rawTerminos.experienciaInversion || '',
+      // Inversión — Método de pago de intereses
+      metodoIntereses: rawTerminos.metodoIntereses || rawTerminos.metodoPagoIntereses || '',
     });
   }
   const sim = sol.simulacion || {};
   if (sim.resultado_simulacion?.length > 0) {
-    saveToSession(storageId, 'simulacion', sim.resultado_simulacion.map((r: any) => ({
-      noPago: r.no_pago, fechaPago: r.fecha_pago, saldoInsoluto: r.saldo_insoluto,
-      pagoCapital: r.pago_capital, pagoInteres: r.pago_interes, ivaInteres: r.iva_interes,
-      pagoPeriodo: r.pago_periodo, pagoSeguro: r.pago_seguro, pagoTotal: r.pago_total,
-    })));
+    // Detectar inversión: las filas tienen capital_inicial (exclusivo de FlujInversionRow)
+    const firstRow = sim.resultado_simulacion[0];
+    const esInversion = firstRow.capital_inicial !== undefined;
+
+    if (esInversion) {
+      const invRows = sim.resultado_simulacion.map((r: any) => ({
+        periodo:       r.no_pago,
+        fechaInversion: r.fecha_pago,
+        capitalInicial: r.capital_inicial,
+        interesBruto:   r.interes_bruto,
+        retencionISR:   r.retencion_isr,
+        interesNeto:    r.interes_neto,
+        capitalFinal:   r.capital_final,
+      }));
+      saveToSession(storageId, 'simulacion_inv', invRows);
+      saveToSavedStore(storageId, 'simulacion_inv', invRows);
+      saveToSavedStore(storageId, 'simulacion', []);
+    } else {
+      const simRows = sim.resultado_simulacion.map((r: any) => ({
+        noPago: r.no_pago, fechaPago: r.fecha_pago, saldoInsoluto: r.saldo_insoluto,
+        pagoCapital: r.pago_capital, pagoInteres: r.pago_interes, ivaInteres: r.iva_interes,
+        pagoPeriodo: r.pago_periodo, pagoSeguro: r.pago_seguro, pagoTotal: r.pago_total,
+      }));
+      saveToSession(storageId, 'simulacion', simRows);
+      saveToSavedStore(storageId, 'simulacion', simRows);
+    }
+  } else {
+    saveToSavedStore(storageId, 'simulacion', []);
   }
+  // Always overwrite SAVED_DATA for simulacion_cal so loadFromSavedStore never returns stale data
+  const calFromDB = sim.calendario_aportaciones?.length > 0 ? sim.calendario_aportaciones : null;
+  console.log('[preloadSubtabs] storageId:', storageId, '| sim keys:', Object.keys(sim),
+    '| calendario_aportaciones:', calFromDB ? `${calFromDB.length} rows` : 'null/vacío',
+    '| first row sample:', calFromDB?.[0]);
+  saveToSession(storageId, 'simulacion_cal', calFromDB);
+  saveToSavedStore(storageId, 'simulacion_cal', calFromDB);
   const exp = sol.expediente_electronico || {};
   // Claves de documentos auto-generados por el sistema que ya no deben aparecer
   // (fueron creados por una versión anterior del código y guardados en BD por error).
@@ -207,6 +254,8 @@ export function preloadSubtabsFromDBData(storageId: number | string, d: Record<s
     saveToSession(storageId, 'garantias', sol.garantias.map((g: any, i: number) => ({
       id: i + 1, fecha: '', usuario: '', tipo: g.tipo_garantia || '', subtipo: g.subtipo || '',
       descripcion: g.descripcion || '', valorNominal: g.valor_garantia || 0,
+      montoCubrirGarantia: g.monto_cubrir_garantia != null ? Number(g.monto_cubrir_garantia) : undefined,
+      porcentajeAforo: g.porcentaje_aforo != null ? Number(g.porcentaje_aforo) : undefined,
       ubicacion: g.ubicacion || '', estatus: g.estatus || '', nota: g.observaciones || '',
       fase: g.fase || '', faseId: g.fase_id || 0, area: g.area || '',
     })));
@@ -518,7 +567,7 @@ export function SolicitudCreditoList({
       descripcion: hdr.descripcion || d.descripcion || joinDescripcion || '',
       faseId: hdr.fase_id || d.faseId || joinFases || '1',
       descripcionFase: s.faseDescripcion || hdr.descripcion_fase || d.descripcionFase || '',
-      estatusSolicitud: s.estatusSolicitud || hdr.estatus || d.estatusSolicitud || 'Pendiente',
+estatusSolicitud: s.estatusSolicitud || d.estatusSolicitud || 'Pendiente',
       sucursal: s.sucursal || hdr.sucursal || d.sucursal || joinSucursal || '',
       montoSolicitado: hdr.monto_solicitado
         || (typeof s.montoSolicitado === 'number' && s.montoSolicitado > 0 ? s.montoSolicitado.toFixed(2) : null)
@@ -527,6 +576,13 @@ export function SolicitudCreditoList({
         || (typeof s.montoAutorizado === 'number' && s.montoAutorizado > 0 ? s.montoAutorizado.toFixed(2) : null)
         || d.montoAutorizado || '0.00',
       _clienteId: extra._clienteId || hdr.cliente_id || d._clienteId || '',
+      _gobierno: extra._gobierno || hdr._gobierno || d._gobierno || '',
+      _calendarioAportaciones: (d.solicitud?.simulacion?.calendario_aportaciones || []).map((r: any) => ({
+        noAportacion: r.no_aportacion ?? r.noAportacion,
+        fecha: r.fecha,
+        monto: r.monto,
+        moneda: r.moneda || 'MXN',
+      })),
     };
   };
 
@@ -565,6 +621,16 @@ export function SolicitudCreditoList({
         pagoCapital: r.pago_capital, pagoInteres: r.pago_interes, ivaInteres: r.iva_interes,
         pagoPeriodo: r.pago_periodo, pagoSeguro: r.pago_seguro, pagoTotal: r.pago_total,
       })));
+    }
+    if (sim.calendario_aportaciones?.length > 0) {
+      saveToSession(storageId, 'simulacion_cal', sim.calendario_aportaciones.map((r: any) => ({
+        noAportacion: r.no_aportacion ?? r.noAportacion,
+        fecha: r.fecha,
+        monto: r.monto,
+        moneda: r.moneda || 'MXN',
+      })));
+    } else {
+      saveToSession(storageId, 'simulacion_cal', null);
     }
 
     // ── Expediente Electrónico ──
@@ -636,7 +702,10 @@ export function SolicitudCreditoList({
     saveToSession(sid, 'form', formData);
     const dbData = (s as any)._data;
     if (dbData && typeof dbData === 'object') {
-      preloadSubtabsFromDBData(sid, dbData);
+      preloadSubtabsFromDBData(sid, dbData, {
+        montoCubrirGarantia: (s as any)._montoCubrirGarantia,
+        porcentajeAforo: (s as any)._porcentajeAforo,
+      });
     }
     setView({ type: 'form', mode: 'editar', solicitudId: sid, dbId: (s as any)._dbId || String(s.id) });
   };
@@ -648,7 +717,10 @@ export function SolicitudCreditoList({
     saveToSession(sid, 'form', formData);
     const dbData = (s as any)._data;
     if (dbData && typeof dbData === 'object') {
-      preloadSubtabsFromDBData(sid, dbData);
+      preloadSubtabsFromDBData(sid, dbData, {
+        montoCubrirGarantia: (s as any)._montoCubrirGarantia,
+        porcentajeAforo: (s as any)._porcentajeAforo,
+      });
     }
     setView({ type: 'form', mode: 'ver', solicitudId: sid, dbId: (s as any)._dbId || String(s.id) });
   };
@@ -685,6 +757,8 @@ export function SolicitudCreditoList({
       const result = await saveSolicitud(cleanData, dbId, allSubtabs);
       if (result.ok) {
         console.log('[SolicList] DB persist OK — id:', result.id);
+        // Limpiar SAVED_DATA['new'] para que no contamine la próxima solicitud nueva
+        if (isNew) deleteSavedStore('new');
         toast.success(isNew ? 'Solicitud creada exitosamente' : 'Solicitud actualizada exitosamente', {
           description: `N° ${data.noSol} — Sincronizado con BD (ID: ${result.id?.substring(0, 8)}...)`,
           duration: 3000,

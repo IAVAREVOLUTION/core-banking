@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import {
   CoTitular, saveToSession, loadFromSession, generateId,
@@ -66,7 +66,7 @@ export function CoTitularesTab({ mode, accountId }: CoTitularesTabProps) {
 
   return (
     <div className="bg-white">
-      <div className="bg-blue-50 border-l-4 border-primary-theme px-3 py-2 mb-3 flex items-center justify-between">
+      <div className="bg-[#D9E2F3] border-l-4 border-[#4A6FA5] px-3 py-2 mb-3 flex items-center justify-between">
         <span className="text-sm font-medium text-gray-800">CO-TITULARES</span>
         {!isReadOnly && (
           <div className="flex items-center gap-2">
@@ -79,23 +79,28 @@ export function CoTitularesTab({ mode, accountId }: CoTitularesTabProps) {
       <div className="border border-gray-300 bg-white overflow-x-auto">
         <table className="w-full border-collapse min-w-[1000px]">
           <thead>
-            <tr className="bg-gray-100 border-b border-gray-300">
-              <th className="px-2 py-2 text-xs font-medium text-gray-700 text-left border-r border-gray-300 w-[100px]">Id Cliente *</th>
-              <th className="px-2 py-2 text-xs font-medium text-gray-700 text-left border-r border-gray-300 w-[100px]">Nombre</th>
-              <th className="px-2 py-2 text-xs font-medium text-gray-700 text-left border-r border-gray-300 w-[120px]">Ap. Paterno</th>
-              <th className="px-2 py-2 text-xs font-medium text-gray-700 text-left border-r border-gray-300 w-[120px]">Ap. Materno</th>
-              <th className="px-2 py-2 text-xs font-medium text-gray-700 text-left border-r border-gray-300 w-[130px]">Fecha Nac.</th>
-              <th className="px-2 py-2 text-xs font-medium text-gray-700 text-left border-r border-gray-300 w-[120px]">Parentesco *</th>
-              <th className="px-2 py-2 text-xs font-medium text-gray-700 text-left border-r border-gray-300 w-[90px]">Porcentaje *</th>
-              <th className="px-2 py-2 text-xs font-medium text-gray-700 text-left border-r border-gray-300">Notas</th>
-              <th className="px-2 py-2 text-xs font-medium text-gray-700 text-center w-[70px]">Validado</th>
+            <tr className="bg-[#D0D0D0] border-b border-gray-300">
+              <th className="px-2 py-2 text-xs font-normal text-gray-700 text-left border-r border-gray-300 w-[100px]">Id Cliente *</th>
+              <th className="px-2 py-2 text-xs font-normal text-gray-700 text-left border-r border-gray-300 w-[100px]">Nombre</th>
+              <th className="px-2 py-2 text-xs font-normal text-gray-700 text-left border-r border-gray-300 w-[120px]">Ap. Paterno</th>
+              <th className="px-2 py-2 text-xs font-normal text-gray-700 text-left border-r border-gray-300 w-[120px]">Ap. Materno</th>
+              <th className="px-2 py-2 text-xs font-normal text-gray-700 text-left border-r border-gray-300 w-[130px]">Fecha Nac.</th>
+              <th className="px-2 py-2 text-xs font-normal text-gray-700 text-left border-r border-gray-300 w-[120px]">Parentesco *</th>
+              <th className="px-2 py-2 text-xs font-normal text-gray-700 text-left border-r border-gray-300 w-[90px]">Porcentaje *</th>
+              <th className="px-2 py-2 text-xs font-normal text-gray-700 text-left border-r border-gray-300">Notas</th>
+              <th className="px-2 py-2 text-xs font-normal text-gray-700 text-center w-[70px]">Validado</th>
             </tr>
           </thead>
           <tbody>
             {cotitulares.length === 0 ? (
               <tr><td colSpan={9} className="px-3 py-6 text-center text-xs text-gray-400">{mode === 'nuevo' ? 'Agregue co-titulares con el boton Nuevo' : 'Sin co-titulares registrados'}</td></tr>
             ) : cotitulares.map((c, idx) => (
-              <tr key={c.id} className={`border-b border-gray-300 cursor-pointer ${selectedIndex === idx ? 'bg-blue-50' : 'hover:bg-gray-50'}`} onClick={() => !isReadOnly && setSelectedIndex(idx)}>
+              <tr key={c.id}
+                className="border-b border-gray-200 cursor-pointer transition-colors"
+                style={{ backgroundColor: selectedIndex === idx ? '#DBEAFE' : idx % 2 === 1 ? '#EEEEEE' : '#FFFFFF' }}
+                onMouseEnter={e => { if (selectedIndex !== idx) e.currentTarget.style.backgroundColor = '#E8F4F8'; }}
+                onMouseLeave={e => { if (selectedIndex !== idx) e.currentTarget.style.backgroundColor = idx % 2 === 1 ? '#EEEEEE' : '#FFFFFF'; }}
+                onClick={() => !isReadOnly && setSelectedIndex(idx)}>
                 <td className="px-2 py-1.5 border-r border-gray-300"><div className="px-1 py-1 text-xs text-gray-700 bg-gray-50 border border-gray-300 rounded truncate">{c.claveCliente}</div></td>
                 <td className="px-2 py-1.5 border-r border-gray-300"><div className="px-1 py-1 text-xs text-gray-700 bg-gray-50 border border-gray-300 rounded">{c.nombre}</div></td>
                 <td className="px-2 py-1.5 border-r border-gray-300"><div className="px-1 py-1 text-xs text-gray-700 bg-gray-50 border border-gray-300 rounded">{c.apellidoPaterno}</div></td>
@@ -134,7 +139,7 @@ export function CoTitularesTab({ mode, accountId }: CoTitularesTabProps) {
             <div className="p-3 flex-1 overflow-auto">
               <table className="w-full text-xs border border-gray-300">
                 <thead>
-                  <tr className="bg-gray-100 border-b border-gray-300">
+                  <tr className="bg-[#D0D0D0] border-b border-gray-300">
                     <th className="px-3 py-2 text-left font-medium text-gray-700">Clave</th>
                     <th className="px-3 py-2 text-left font-medium text-gray-700">RFC</th>
                     <th className="px-3 py-2 text-left font-medium text-gray-700">Nombre</th>
@@ -166,3 +171,4 @@ export function CoTitularesTab({ mode, accountId }: CoTitularesTabProps) {
     </div>
   );
 }
+

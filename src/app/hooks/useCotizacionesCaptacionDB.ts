@@ -419,7 +419,7 @@ export function useCotizacionesCaptacionDB(active: boolean) {
   }, []);
 
   // ── SAVE (Insert o Update) — RPC + fallback local ──
-  const saveCotizacion = useCallback(async (c: CotizacionCaptacion): Promise<{ ok: boolean; error?: string }> => {
+  const saveCotizacion = useCallback(async (c: CotizacionCaptacion): Promise<{ ok: boolean; id?: string; error?: string }> => {
     setSaving(true);
     try {
       // ── Detección INSERT vs UPDATE ──
@@ -444,7 +444,7 @@ export function useCotizacionesCaptacionDB(active: boolean) {
               saveToSession(next);
               return next;
             });
-            return { ok: true };
+            return { ok: true, id: result.id };
           }
           // INSERT falló → log y caer a modo local
           console.warn('[CotizDB] INSERT falló, guardando localmente:', result.error);
@@ -456,7 +456,7 @@ export function useCotizacionesCaptacionDB(active: boolean) {
               saveToSession(next);
               return next;
             });
-            return { ok: true };
+            return { ok: true, id: c.id };
           }
           // UPDATE falló → log y caer a modo local
           console.warn('[CotizDB] UPDATE falló, guardando localmente:', result.error);
@@ -478,7 +478,7 @@ export function useCotizacionesCaptacionDB(active: boolean) {
         saveToSession(next);
         return next;
       });
-      return { ok: true };
+      return { ok: true, id: localId };
     } finally {
       setSaving(false);
     }

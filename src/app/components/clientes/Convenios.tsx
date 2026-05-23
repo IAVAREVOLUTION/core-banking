@@ -1,8 +1,9 @@
 import { useState, useEffect, useMemo } from 'react';
 import { toast } from 'sonner';
 import { X } from 'lucide-react';
-import { creditProducts, captacionProducts } from '../../data/mockData';
+import { mockProducts, captacionProducts } from '../../data/mockData';
 import { mockProductosLineaCredito } from '../../data/mockDataLineaCredito';
+import { useProductosCatalogoDB } from '../../hooks/useProductosCatalogoDB';
 
 // Interfaz unificada para el catálogo de productos (todos los tipos)
 interface CatalogoProducto {
@@ -33,42 +34,33 @@ export function Convenios({ clienteId, mode, isView }: ConveniosProps = {}) {
   const storageKey = `cliente_${clienteId || 'temp'}_convenios`;
   const readOnly = isView || mode === 'ver';
 
-  // Construir catálogo unificado de todos los productos
+  // Productos desde la DB (catálogo completo sin filtro de tipo)
+  const { productos: productosDB } = useProductosCatalogoDB(true);
+
+  // Construir catálogo unificado — DB primero, mock como fallback
   const catalogoProductos = useMemo<CatalogoProducto[]>(() => {
+    if (productosDB.length > 0) {
+      return productosDB.map((p, i) => ({
+        id: i + 1, // índice numérico para compatibilidad con el select
+        codigo: p.claveProducto || p.id.slice(0, 8),
+        nombre: p.nombreProducto,
+        lineaProducto: p.lineaProducto,
+      }));
+    }
+
+    // Fallback a mock si DB no responde
     const productos: CatalogoProducto[] = [];
-
-    // Productos de Crédito
-    creditProducts.forEach((p) => {
-      productos.push({
-        id: p.id,
-        codigo: p.claveEBS || p.clave?.toString() || `CR-${p.id}`,
-        nombre: p.nombre,
-        lineaProducto: p.lineaProducto,
-      });
+    mockProducts.forEach((p) => {
+      productos.push({ id: p.id, codigo: p.claveEBS || p.clave?.toString() || `CR-${p.id}`, nombre: p.nombre, lineaProducto: p.lineaProducto });
     });
-
-    // Productos de Captación
     captacionProducts.forEach((p) => {
-      productos.push({
-        id: 1000 + p.id, // offset para evitar colisión de IDs
-        codigo: (p as any).clave?.toString() || `CAP-${p.id}`,
-        nombre: p.nombre,
-        lineaProducto: p.lineaProducto,
-      });
+      productos.push({ id: 1000 + p.id, codigo: (p as any).clave?.toString() || `CAP-${p.id}`, nombre: p.nombre, lineaProducto: p.lineaProducto });
     });
-
-    // Productos de Línea de Crédito
     mockProductosLineaCredito.forEach((p) => {
-      productos.push({
-        id: 2000 + p.id, // offset para evitar colisión
-        codigo: p.clave || `LC-${p.id}`,
-        nombre: p.nombre,
-        lineaProducto: p.lineaProducto,
-      });
+      productos.push({ id: 2000 + p.id, codigo: p.clave || `LC-${p.id}`, nombre: p.nombre, lineaProducto: p.lineaProducto });
     });
-
     return productos;
-  }, []);
+  }, [productosDB]);
 
   // Función para cargar datos persistidos
   const loadPersistedData = (key: string, defaultValue: any) => {
@@ -579,33 +571,17 @@ export function Convenios({ clienteId, mode, isView }: ConveniosProps = {}) {
                   className="w-full px-3 py-2 border border-gray-300 text-xs rounded focus:outline-none focus:border-accent-theme"
                 >
                   <option value="">-- Seleccione un producto --</option>
-                  <optgroup label="Credito">
-                    {catalogoProductos
-                      .filter((p) => p.lineaProducto === 'Credito')
-                      .map((p) => (
-                        <option key={p.id} value={p.id.toString()}>
-                          {p.codigo} - {p.nombre}
-                        </option>
-                      ))}
-                  </optgroup>
-                  <optgroup label="Captacion">
-                    {catalogoProductos
-                      .filter((p) => p.lineaProducto === 'Captacion')
-                      .map((p) => (
-                        <option key={p.id} value={p.id.toString()}>
-                          {p.codigo} - {p.nombre}
-                        </option>
-                      ))}
-                  </optgroup>
-                  <optgroup label="Linea Credito">
-                    {catalogoProductos
-                      .filter((p) => p.lineaProducto === 'Linea Credito')
-                      .map((p) => (
-                        <option key={p.id} value={p.id.toString()}>
-                          {p.codigo} - {p.nombre}
-                        </option>
-                      ))}
-                  </optgroup>
+                  {Array.from(new Set(catalogoProductos.map((p) => p.lineaProducto))).map((linea) => (
+                    <optgroup key={linea} label={lineaLabel(linea)}>
+                      {catalogoProductos
+                        .filter((p) => p.lineaProducto === linea)
+                        .map((p) => (
+                          <option key={p.id} value={p.id.toString()}>
+                            {p.codigo} - {p.nombre}
+                          </option>
+                        ))}
+                    </optgroup>
+                  ))}
                 </select>
               </div>
 

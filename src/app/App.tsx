@@ -52,6 +52,9 @@ import { ConfiguracionModule } from './components/configuracion/ConfiguracionMod
 import { EjecReportesModule } from './components/reportes-regulatorios/EjecReportesModule';
 import { PagosReferenciadosModule } from './components/pagos-referenciados/PagosReferenciadosModule';
 import { CasosCobranzaModule } from './components/casos-cobranza/CasosCobranzaModule';
+import { CarteraList } from './components/cartera/CarteraList';
+import { AportacionesModule } from './components/cartera/AportacionesModule';
+import { CobranzaModule } from './components/cartera/CobranzaModule';
 import { CotizacionesModule } from './components/cotizaciones/CotizacionesModule';
 import { PolizasContablesModule } from './components/polizas-contables/PolizasContablesModule';
 import efinanciaLogo from '@/assets/7b6cb23c00b7817818c638af3eae0a416e1e9f57.png';
@@ -62,7 +65,7 @@ import { useProductosCaptacionDB } from './hooks/useProductosCaptacionDB';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 
 type View = 'list' | 'form' | 'direccion';
-type Module = 'dashboard' | 'configuracion' | 'productos' | 'garantias' | 'prospectos' | 'clientes' | 'cotizaciones' | 'cuentas-ahorro' | 'solicitudes-creditos' | 'solicitudes-activacion' | 'originacion' | 'creditos' | 'inversiones' | 'cartera-credito' | 'cartera-inversion' | 'cartera-ahorro' | 'avisos-vencimiento' | 'pld' | 'pagos-referenciados' | 'casos-cobranza' | 'ejec-reportes' | 'polizas-contables';
+type Module = 'dashboard' | 'configuracion' | 'productos' | 'garantias' | 'prospectos' | 'clientes' | 'cotizaciones' | 'cuentas-ahorro' | 'solicitudes-creditos' | 'solicitudes-activacion' | 'originacion' | 'creditos' | 'inversiones' | 'cartera-credito' | 'cartera-inversion' | 'cartera-ahorro' | 'avisos-vencimiento' | 'pld' | 'pagos-referenciados' | 'casos-cobranza' | 'cobranza' | 'ejec-reportes' | 'polizas-contables';
 type ClienteView = 'dashboard' | 'list' | 'form' | 'direccion';
 type ProspectoView = 'dashboard' | 'list' | 'form';
 type SolicitudView = 'dashboard' | 'list' | 'form';
@@ -71,6 +74,10 @@ type InversionView = 'list' | 'form';
 type ProductoTab = 'captacion' | 'credito' | 'producto-credito' | 'seguros';
 type PLDView = 'home' | 'kyc' | 'perfil-transaccional' | 'calificacion-riesgo' | 'alertas-pld' | 'alertas-internas' | 'parametros' | 'catalogos' | 'reportes-cnbv';
 type LineaCreditoView = 'list' | 'form';
+
+function CarteraModule() {
+  return <CarteraList />;
+}
 
 function App() {
   // rebuild-trigger-20260318
@@ -664,6 +671,7 @@ function App() {
     { id: 'pld', label: 'PLD' },
     { id: 'pagos-referenciados', label: 'Pagos Referenciados' },
     { id: 'casos-cobranza', label: 'Casos de Cobranza' },
+    { id: 'cobranza', label: 'Cobranza' },
     { id: 'avisos-vencimiento', label: 'Avisos de Vencimiento' },
     { id: 'cartera-credito', label: 'Cartera crédito' },
     { id: 'cartera-inversion', label: 'Cartera inversión' },
@@ -1400,6 +1408,14 @@ function App() {
           <PagosReferenciadosModule />
         ) : currentModule === 'casos-cobranza' ? (
           <CasosCobranzaModule />
+        ) : currentModule === 'cobranza' ? (
+          <CobranzaModule />
+        ) : currentModule === 'cartera-credito' ? (
+          <CarteraModule />
+        ) : currentModule === 'cartera-inversion' ? (
+          <AportacionesModule />
+        ) : currentModule === 'cartera-ahorro' ? (
+          <AportacionesModule />
         ) : currentModule === 'ejec-reportes' ? (
           <EjecReportesModule />
         ) : currentModule === 'polizas-contables' ? (

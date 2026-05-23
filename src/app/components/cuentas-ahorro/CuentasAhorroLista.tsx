@@ -102,6 +102,7 @@ export function CuentasAhorroLista({ onEdit, onView, onNew }: CuentasAhorroLista
       const s = searchTerm.toLowerCase();
       return (
         cuenta.noCuenta.toLowerCase().includes(s) ||
+        (cuenta.noReferenc1 || '').toLowerCase().includes(s) ||
         cuenta.clienteNombre.toLowerCase().includes(s) ||
         cuenta.productoNombre.toLowerCase().includes(s) ||
         cuenta.estatusCuen.toLowerCase().includes(s)
@@ -128,26 +129,10 @@ export function CuentasAhorroLista({ onEdit, onView, onNew }: CuentasAhorroLista
   return (
     <div className="bg-white min-h-screen">
       {/* ── Banner de advertencia cuando backend no está conectado ── */}
-      {backendStatus !== 'connected' && (
-        <div className="mx-4 mt-3 px-4 py-3 bg-amber-50 border border-amber-300 rounded-lg">
-          <div className="flex items-start gap-3">
-            <span className="text-amber-600 text-lg mt-0.5">⚠️</span>
-            <div>
-              <p className="text-sm font-medium text-amber-800">
-                Datos solo en memoria local (sessionStorage)
-              </p>
-              <p className="text-xs text-amber-700 mt-1">
-                Las cuentas que ves NO están en la BD <code className="bg-amber-100 px-1 rounded">J_CUENTAS_CORP_CLIENTES</code>.
-                {backendStatus === 'pending-deploy' && (
-                  <> La Edge Function v19.3 no está desplegada y el RPC <code className="bg-amber-100 px-1 rounded">insert_cuenta_ahorro</code> tiene overloads ambiguos (PGRST106).</>
-                )}
-                {' '}Al cerrar el navegador se perderán.
-              </p>
-              <p className="text-[10px] text-amber-600 mt-1">
-                Solución: (1) Desplegar Edge Function v19.3, o (2) En SQL Editor: <code className="bg-amber-100 px-1 rounded">DROP FUNCTION</code> los overloads extra de <code className="bg-amber-100 px-1 rounded">insert_cuenta_ahorro</code> dejando solo el de timestamptz.
-              </p>
-            </div>
-          </div>
+      {backendStatus === 'pending-deploy' && (
+        <div className="mx-4 mt-3 px-4 py-2 bg-amber-50 border border-amber-300 rounded text-xs text-amber-800 flex items-center gap-2">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="7" cy="7" r="6"/><path d="M7 4v3M7 10h.01" strokeLinecap="round"/></svg>
+          Cargando datos desde base de datos... Si el problema persiste, recarga la página.
         </div>
       )}
 
@@ -183,29 +168,20 @@ export function CuentasAhorroLista({ onEdit, onView, onNew }: CuentasAhorroLista
           <button onClick={onNew} className="px-5 py-1.5 btn-secondary-theme rounded text-sm font-medium">
             Nuevo
           </button>
-          {backendStatus !== 'connected' && (
-            <button
-              onClick={() => refetch()}
-              className="px-3 py-1.5 text-xs border border-blue-400 text-blue-700 rounded hover:bg-blue-50"
-              title="Reintentar conexión con Supabase"
-            >
-              ↻ Reintentar DB
-            </button>
-          )}
+          <button
+            onClick={() => refetch()}
+            className="px-3 py-1.5 text-xs border border-gray-400 text-gray-700 rounded hover:bg-gray-50 flex items-center gap-1"
+          >
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M1 6A5 5 0 0 0 10.5 8.5M11 6A5 5 0 0 0 1.5 3.5"/><path d="M11 3v3h-3M1 9V6h3" strokeLinecap="round"/></svg>
+            Refrescar
+          </button>
         </div>
       </div>
 
-      {/* Backend status banner */}
-      {backendStatus === 'pending-deploy' && (
-        <div className="mx-4 mt-2 px-3 py-2 bg-yellow-50 border border-yellow-300 rounded text-xs text-yellow-800">
-          ⚠️ RPCs no disponibles. Crear <code className="bg-yellow-100 px-1 rounded">get_cuentas_ahorro</code> en Supabase SQL Editor.
-          La lista mostrará datos de sessionStorage si existen.
-        </div>
-      )}
       {backendStatus === 'connected' && (
         <div className="mx-4 mt-2 px-3 py-1.5 bg-green-50 border border-green-300 rounded text-xs text-green-700 flex items-center gap-1">
           <span className="w-2 h-2 rounded-full bg-green-500 inline-block"></span>
-          Conectado a J_CUENTAS_CORP_CLIENTES — {filteredCuentas.length} cuenta{filteredCuentas.length !== 1 ? 's' : ''} de ahorro
+          {filteredCuentas.length} cuenta{filteredCuentas.length !== 1 ? 's' : ''} de ahorro
         </div>
       )}
 
@@ -297,6 +273,7 @@ export function CuentasAhorroLista({ onEdit, onView, onNew }: CuentasAhorroLista
               <tr className="border-b border-gray-300" style={{ backgroundColor: 'var(--theme-table-header)' }}>
                 <th className="px-3 py-2.5 text-left font-medium text-xs text-gray-700 whitespace-nowrap">Editar | Ver</th>
                 <th className="px-3 py-2.5 text-left font-medium text-xs text-gray-700 whitespace-nowrap">NO. CUENTA</th>
+                <th className="px-3 py-2.5 text-left font-medium text-xs text-gray-700 whitespace-nowrap">NO. REFERENCIA</th>
                 <th className="px-3 py-2.5 text-left font-medium text-xs text-gray-700 whitespace-nowrap">CLIENTE</th>
                 <th className="px-3 py-2.5 text-left font-medium text-xs text-gray-700 whitespace-nowrap">PRODUCTO</th>
                 <th className="px-3 py-2.5 text-left font-medium text-xs text-gray-700 whitespace-nowrap">FECHA SOLICITUD</th>
@@ -360,6 +337,8 @@ export function CuentasAhorroLista({ onEdit, onView, onNew }: CuentasAhorroLista
                     </td>
                     {/* No. Cuenta */}
                     <td className="px-3 py-2.5 text-xs text-gray-700 whitespace-nowrap">{cuenta.noCuenta || '—'}</td>
+                    {/* No. Referencia */}
+                    <td className="px-3 py-2.5 text-xs font-mono text-gray-500 whitespace-nowrap">{cuenta.noReferenc1 || '—'}</td>
                     {/* Cliente */}
                     <td className="px-3 py-2.5 text-xs text-gray-700 max-w-[180px] truncate" title={cuenta.clienteNombre}>
                       {cuenta.clienteNombre}

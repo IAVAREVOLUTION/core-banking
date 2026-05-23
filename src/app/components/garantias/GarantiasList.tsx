@@ -29,6 +29,8 @@ export function GarantiasList({ garantias, loading, backendStatus, onNew, onEdit
     subtipo: 120,
     ubicacion: 200,
     valorNominal: 140,
+    montoCubrir: 130,
+    porcentajeAforo: 100,
     fechaRegistro: 130,
     clienteId: 130,
   });
@@ -438,6 +440,20 @@ export function GarantiasList({ garantias, loading, backendStatus, onNew, onEdit
                     onMouseDown={(e) => handleResizeStart(e, 'valorNominal')}
                   />
                 </th>
+                <th className="relative px-3 py-2.5 text-left font-normal text-xs text-gray-700" style={{ width: `${columnWidths.montoCubrir}px` }}>
+                  MONTO A CUBRIR
+                  <div
+                    className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-[#0099CC] transition-colors"
+                    onMouseDown={(e) => handleResizeStart(e, 'montoCubrir')}
+                  />
+                </th>
+                <th className="relative px-3 py-2.5 text-left font-normal text-xs text-gray-700" style={{ width: `${columnWidths.porcentajeAforo}px` }}>
+                  % AFORO
+                  <div
+                    className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-[#0099CC] transition-colors"
+                    onMouseDown={(e) => handleResizeStart(e, 'porcentajeAforo')}
+                  />
+                </th>
                 <th className="relative px-3 py-2.5 text-left font-normal text-xs text-gray-700" style={{ width: `${columnWidths.fechaRegistro}px` }}>
                   FECHA REGISTRO
                   <div
@@ -453,7 +469,7 @@ export function GarantiasList({ garantias, loading, backendStatus, onNew, onEdit
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={9} className="px-3 py-12 text-center text-gray-500">
+                  <td colSpan={11} className="px-3 py-12 text-center text-gray-500">
                     <div className="flex flex-col items-center gap-2">
                       <svg className="animate-spin h-6 w-6 text-[#0099CC]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
@@ -465,7 +481,7 @@ export function GarantiasList({ garantias, loading, backendStatus, onNew, onEdit
                 </tr>
               ) : currentGarantias.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="px-3 py-12 text-center text-gray-500">
+                  <td colSpan={11} className="px-3 py-12 text-center text-gray-500">
                     <div className="flex flex-col items-center gap-2">
                       <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" strokeWidth="1.5">
                         <rect x="3" y="3" width="18" height="18" rx="2"/>
@@ -507,6 +523,8 @@ export function GarantiasList({ garantias, loading, backendStatus, onNew, onEdit
                     <td className="px-3 py-2.5 text-xs text-gray-700 overflow-hidden text-ellipsis whitespace-nowrap">{garantia.subtipo || '—'}</td>
                     <td className="px-3 py-2.5 text-xs text-gray-700 overflow-hidden text-ellipsis whitespace-nowrap" title={garantia.ubicacion || ''}>{garantia.ubicacion || '—'}</td>
                     <td className="px-3 py-2.5 text-xs text-gray-700 overflow-hidden text-ellipsis whitespace-nowrap">{garantia.valorNominal ? formatCurrency(garantia.valorNominal) : '—'}</td>
+                    <td className="px-3 py-2.5 text-xs text-gray-700 overflow-hidden text-ellipsis whitespace-nowrap">{garantia.montoCubrirGarantia != null ? formatCurrency(garantia.montoCubrirGarantia) : '—'}</td>
+                    <td className="px-3 py-2.5 text-xs text-gray-700 overflow-hidden text-ellipsis whitespace-nowrap">{garantia.porcentajeAforo != null ? `${garantia.porcentajeAforo}%` : '—'}</td>
                     <td className="px-3 py-2.5 text-xs text-gray-700 overflow-hidden text-ellipsis whitespace-nowrap">{formatDate(garantia.fechaRegistro)}</td>
                     <td className="px-3 py-2.5 overflow-hidden">
                       <div className="text-xs text-gray-700" title={garantia.cliente_id || ''}>

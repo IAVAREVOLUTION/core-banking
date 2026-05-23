@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import { DatePicker } from '@/app/components/ui/DatePicker';
 import {
@@ -51,7 +51,7 @@ export function CargosTab({ mode, accountId }: CargosTabProps) {
 
   return (
     <div className="bg-white">
-      <div className="bg-blue-50 border-l-4 border-primary-theme px-3 py-2 mb-3 flex items-center justify-between">
+      <div className="bg-[#D9E2F3] border-l-4 border-[#4A6FA5] px-3 py-2 mb-3 flex items-center justify-between">
         <span className="text-sm text-gray-800">CARGOS</span>
         {!isReadOnly && (
           <div className="flex items-center gap-2">
@@ -64,13 +64,13 @@ export function CargosTab({ mode, accountId }: CargosTabProps) {
       <div className="border border-gray-300 bg-white overflow-x-auto">
         <table className="w-full border-collapse min-w-[1100px]">
           <thead>
-            <tr className="bg-gray-100 border-b border-gray-300">
-              <th className="px-3 py-2 text-xs text-gray-700 text-left border-r border-gray-300 w-[180px]">Concepto <span className="text-red-600">*</span></th>
-              <th className="px-3 py-2 text-xs text-gray-700 text-left border-r border-gray-300">Descripción</th>
-              <th className="px-3 py-2 text-xs text-gray-700 text-right border-r border-gray-300 w-[120px]">Monto <span className="text-red-600">*</span></th>
-              <th className="px-3 py-2 text-xs text-gray-700 text-left border-r border-gray-300 w-[155px]">Fecha Cargo <span className="text-red-600">*</span></th>
-              <th className="px-3 py-2 text-xs text-gray-700 text-left border-r border-gray-300 w-[155px]">Fecha Aplicación</th>
-              <th className="px-3 py-2 text-xs text-gray-700 text-left border-r border-gray-300 w-[130px]">Periodicidad <span className="text-red-600">*</span></th>
+            <tr className="bg-[#D0D0D0] border-b border-gray-300">
+              <th className="px-3 py-2 text-xs font-normal text-gray-700 text-left border-r border-gray-300 w-[180px]">Concepto <span className="text-red-600">*</span></th>
+              <th className="px-3 py-2 text-xs font-normal text-gray-700 text-left border-r border-gray-300">Descripción</th>
+              <th className="px-3 py-2 text-xs font-normal text-gray-700 text-right border-r border-gray-300 w-[120px]">Monto <span className="text-red-600">*</span></th>
+              <th className="px-3 py-2 text-xs font-normal text-gray-700 text-left border-r border-gray-300 w-[155px]">Fecha Cargo <span className="text-red-600">*</span></th>
+              <th className="px-3 py-2 text-xs font-normal text-gray-700 text-left border-r border-gray-300 w-[155px]">Fecha Aplicación</th>
+              <th className="px-3 py-2 text-xs font-normal text-gray-700 text-left border-r border-gray-300 w-[130px]">Periodicidad <span className="text-red-600">*</span></th>
               <th className="px-3 py-2 text-xs text-gray-700 text-left w-[120px]">Estatus <span className="text-red-600">*</span></th>
             </tr>
           </thead>
@@ -78,7 +78,12 @@ export function CargosTab({ mode, accountId }: CargosTabProps) {
             {cargos.length === 0 ? (
               <tr><td colSpan={7} className="px-3 py-6 text-center text-xs text-gray-400">{mode === 'nuevo' ? 'Agregue cargos con el botón Nuevo' : 'Sin cargos registrados'}</td></tr>
             ) : cargos.map((c, idx) => (
-              <tr key={c.id} className={`border-b border-gray-300 cursor-pointer ${selectedIndex === idx ? 'bg-blue-50' : 'hover:bg-gray-50'}`} onClick={() => !isReadOnly && setSelectedIndex(idx)}>
+              <tr key={c.id}
+                className="border-b border-gray-200 cursor-pointer transition-colors"
+                style={{ backgroundColor: selectedIndex === idx ? '#DBEAFE' : idx % 2 === 1 ? '#EEEEEE' : '#FFFFFF' }}
+                onMouseEnter={e => { if (selectedIndex !== idx) e.currentTarget.style.backgroundColor = '#E8F4F8'; }}
+                onMouseLeave={e => { if (selectedIndex !== idx) e.currentTarget.style.backgroundColor = idx % 2 === 1 ? '#EEEEEE' : '#FFFFFF'; }}
+                onClick={() => !isReadOnly && setSelectedIndex(idx)}>
                 <td className="px-2 py-1.5 border-r border-gray-300">
                   <input type="text" value={c.concepto} disabled={isReadOnly} onChange={e => { e.stopPropagation(); update(idx, 'concepto', e.target.value); }} onClick={e => e.stopPropagation()} className="w-full px-1 py-1 text-xs border border-gray-300 rounded bg-white" placeholder="Concepto..." />
                 </td>
@@ -113,3 +118,4 @@ export function CargosTab({ mode, accountId }: CargosTabProps) {
     </div>
   );
 }
+

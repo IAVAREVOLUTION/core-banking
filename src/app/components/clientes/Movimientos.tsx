@@ -1,449 +1,297 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { toast } from 'sonner';
-import { useClienteSubtabList } from '@/app/hooks/useClientePersistence';
+import { projectId, publicAnonKey } from '/utils/supabase/info';
+
+const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-7e2d13d9`;
+const HDR = { 'Content-Type': 'application/json', Authorization: `Bearer ${publicAnonKey}` };
 
 interface MovimientosProps {
   onBack: () => void;
   mode: 'nuevo' | 'editar' | 'ver';
   clienteId?: string | number;
-  /** Saldo actual de la Cuenta Eje (desde formData del cliente) */
   saldoCuentaEje?: string;
-  /** Callback para actualizar el saldo de la Cuenta Eje en el padre */
   onSaldoChange?: (nuevoSaldo: string) => void;
 }
 
-interface MovimientoData {
-  id: number;
+interface Movimiento {
+  id: string | number;
   fechaHora: string;
-  saldoInicial: string;
-  tipoMovimiento: string;
+  fechaRegistro?: string;
+  tipo: string;
   concepto: string;
-  referencia: string;
-  montoMovimiento: string;
-  saldoFinal: string;
+  referencia?: string;
+  monto: number;
+  saldoInicial?: number;
+  saldoFinal?: number;
+  estatus?: string;
 }
 
-export function Movimientos({ onBack, mode, clienteId, saldoCuentaEje, onSaldoChange }: MovimientosProps) {
+function fmtMoney(n: number) {
+  return `$ ${n.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function parseMoney(val: string): number {
+  return parseFloat(String(val || '0').replace(/[^0-9.-]/g, '')) || 0;
+}
+
+function fmtDate(s: string) {
+  if (!s) return '—';
+  try { return new Date(s).toLocaleString('es-MX'); } catch { return s; }
+}
+
+export function Movimientos({ mode, clienteId, saldoCuentaEje, onSaldoChange }: MovimientosProps) {
   const isView = mode === 'ver';
-  const storageKey = `cliente_${clienteId || 'temp'}_movimientos`;
-  
-  const getCurrentDate = () => {
-    const today = new Date();
-    const day = String(today.getDate()).padStart(2, '0');
-    const month = String(today.getMonth() + 1).padStart(2, '0');
-    const year = today.getFullYear();
-    const hours = String(today.getHours()).padStart(2, '0');
-    const minutes = String(today.getMinutes()).padStart(2, '0');
-    const seconds = String(today.getSeconds()).padStart(2, '0');
-    return `${day}/${month}/${year} ${hours}:${minutes}:${seconds}`;
-  };
+  const cid = String(clienteId || '');
 
-  const parseMoney = (val: string): number => {
-    if (!val) return 0;
-    return parseFloat(String(val).replace(/[^0-9.-]/g, '')) || 0;
-  };
+  const [cuentaEjeId,  setCuentaEjeId]  = useState<string | null>(null);
+  const [movimientos,  setMovimientos]  = useState<Movimiento[]>([]);
+  const [saldoActual,  setSaldoActual]  = useState<number>(parseMoney(saldoCuentaEje || '0'));
+  const [loading,      setLoading]      = useState(false);
+  const [showModal,    setShowModal]    = useState(false);
+  const [enviando,     setEnviando]     = useState(false);
 
-  const formatMoney = (val: number): string => {
-    return `$ ${val.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-  };
+  const [tipo,         setTipo]         = useState('Abono');
+  const [concepto,     setConcepto]     = useState('');
+  const [referencia,   setReferencia]   = useState('');
+  const [monto,        setMonto]        = useState('');
 
-  // Estado con persistencia vinculada al clienteId
-  const [movimientos, setMovimientos] = useState<MovimientoData[]>(() => {
+  // 1. Buscar cuenta eje del cliente
+  const cargarCuentaEje = useCallback(async () => {
+    if (!cid) return;
     try {
-      const saved = sessionStorage.getItem(storageKey);
-      if (saved) return JSON.parse(saved);
-    } catch {}
-    return [];
-  });
+      const res = await fetch(`${API_BASE}/cuentas-ahorro`, { headers: HDR });
+      if (!res.ok) return;
+      const json = await res.json();
+      const rows: any[] = Array.isArray(json) ? json : (json.data || []);
+      const eje = rows.find(r => (r.cliente_id || r.cliente_id_eff) === cid && (r.cta_eje_chec === true || r.cta_eje_chec === 'true' || r.cta_eje_chec === 't'));
+      if (eje) setCuentaEjeId(eje.id);
+    } catch { /* silencioso */ }
+  }, [cid]);
 
-  const [selectedMovimientos, setSelectedMovimientos] = useState<number[]>([]);
-  const [showModal, setShowModal] = useState(false);
-  
-  // Catálogos
-  const tiposMovimiento = ['Cargo', 'Abono'];
-  
-  // Concepto fijo según spec
-  const CONCEPTO_FIJO = 'Cargo abierto';
-
-  const [formularioMovimiento, setFormularioMovimiento] = useState<MovimientoData>({
-    id: movimientos.length + 1,
-    fechaHora: getCurrentDate(),
-    saldoInicial: '',
-    tipoMovimiento: '',
-    concepto: CONCEPTO_FIJO,
-    referencia: '',
-    montoMovimiento: '',
-    saldoFinal: ''
-  });
-
-  // Persistir movimientos en sessionStorage
-  useEffect(() => {
-    sessionStorage.setItem(storageKey, JSON.stringify(movimientos));
-  }, [movimientos, storageKey]);
-
-  // Calcular saldo final automáticamente
-  useEffect(() => {
-    const saldoInicial = parseMoney(formularioMovimiento.saldoInicial);
-    const monto = parseMoney(formularioMovimiento.montoMovimiento);
-    
-    if (formularioMovimiento.tipoMovimiento && monto > 0) {
-      let saldoFinal = saldoInicial;
-      
-      if (formularioMovimiento.tipoMovimiento === 'Cargo') {
-        saldoFinal = saldoInicial - monto;
-      } else if (formularioMovimiento.tipoMovimiento === 'Abono') {
-        saldoFinal = saldoInicial + monto;
-      }
-      
-      setFormularioMovimiento(prev => ({
-        ...prev,
-        saldoFinal: formatMoney(saldoFinal)
+  // 2. Cargar movimientos de la cuenta eje
+  const cargar = useCallback(async (cuentaId: string) => {
+    setLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/cuentas-ahorro/${cuentaId}/movimientos`, { headers: HDR });
+      if (!res.ok) return;
+      const json = await res.json();
+      const movs: Movimiento[] = (json.data || []).map((m: any) => ({
+        id:          m.id || crypto.randomUUID(),
+        fechaHora:   m.fechaHora || m.fechaRegistro || m.created_at || '',
+        tipo:        m.tipo || m.tipoMovimiento || '—',
+        concepto:    m.concepto || m.origenCreacion || '—',
+        referencia:  m.referencia || '',
+        monto:       parseFloat(m.monto) || 0,
+        saldoInicial: parseFloat(m.saldoInicial) || 0,
+        saldoFinal:   parseFloat(m.saldoFinal) || 0,
+        estatus:     m.estatus || '',
       }));
+      setMovimientos(movs);
+      if (json.saldo_actual != null) setSaldoActual(parseFloat(json.saldo_actual) || 0);
+    } catch { /* silencioso */ } finally {
+      setLoading(false);
     }
-  }, [formularioMovimiento.saldoInicial, formularioMovimiento.montoMovimiento, formularioMovimiento.tipoMovimiento]);
+  }, []);
 
-  const handleFormFieldChange = (field: keyof MovimientoData, value: any) => {
-    setFormularioMovimiento(prev => ({
-      ...prev,
-      [field]: value
-    }));
-  };
+  useEffect(() => { cargarCuentaEje(); }, [cargarCuentaEje]);
+  useEffect(() => { if (cuentaEjeId) cargar(cuentaEjeId); }, [cuentaEjeId, cargar]);
 
-  const handleNuevo = () => {
-    // Saldo inicial: último saldoFinal de movimientos, o saldoCuentaEje del cliente, o $ 0.00
-    let ultimoSaldo = '$ 0.00';
-    if (movimientos.length > 0) {
-      ultimoSaldo = movimientos[movimientos.length - 1].saldoFinal;
-    } else if (saldoCuentaEje && parseMoney(saldoCuentaEje) > 0) {
-      ultimoSaldo = formatMoney(parseMoney(saldoCuentaEje));
-    }
-    
-    setFormularioMovimiento({
-      id: movimientos.length + 1,
-      fechaHora: getCurrentDate(),
-      saldoInicial: ultimoSaldo,
-      tipoMovimiento: '',
-      concepto: CONCEPTO_FIJO,
-      referencia: '',
-      montoMovimiento: '',
-      saldoFinal: ''
-    });
-    setShowModal(true);
-  };
+  const handleGuardar = async () => {
+    const montoNum = parseMoney(monto);
+    if (!concepto.trim()) { toast.error('El concepto es obligatorio'); return; }
+    if (montoNum <= 0)     { toast.error('El monto debe ser mayor a 0'); return; }
 
-  const handleEliminar = () => {
-    if (selectedMovimientos.length === 0) {
-      toast.error('Por favor seleccione al menos un movimiento para eliminar');
-      return;
-    }
+    setEnviando(true);
+    try {
+      const body: Record<string, unknown> = {
+        movimiento: { tipo, concepto, referencia, monto: montoNum, estatus: 'Aplicado' },
+        saldo_nuevo: tipo === 'Abono' ? saldoActual + montoNum : saldoActual - montoNum,
+      };
+      if (cuentaEjeId) body.cuenta_id = cuentaEjeId;
+      else             body.cliente_id = cid;
 
-    setMovimientos(prev => prev.filter(m => !selectedMovimientos.includes(m.id)));
-    const count = selectedMovimientos.length;
-    setSelectedMovimientos([]);
-    toast.success(`${count} movimiento${count > 1 ? 's' : ''} eliminado${count > 1 ? 's' : ''} exitosamente`);
-  };
-
-  const handleGuardar = () => {
-    // Validaciones
-    if (!formularioMovimiento.tipoMovimiento) {
-      toast.error('El Tipo de Movimiento es obligatorio');
-      return;
-    }
-
-    if (!formularioMovimiento.referencia || formularioMovimiento.referencia.trim() === '') {
-      toast.error('La Referencia es obligatoria');
-      return;
-    }
-
-    if (!formularioMovimiento.montoMovimiento) {
-      toast.error('El Monto del Movimiento es obligatorio');
-      return;
-    }
-
-    const monto = parseMoney(formularioMovimiento.montoMovimiento);
-    if (isNaN(monto) || monto <= 0) {
-      toast.error('El Monto del Movimiento debe ser un número mayor a 0');
-      return;
-    }
-
-    const saldoInicial = parseMoney(formularioMovimiento.saldoInicial);
-    const saldoFinal = formularioMovimiento.tipoMovimiento === 'Cargo'
-      ? saldoInicial - monto
-      : saldoInicial + monto;
-
-    // Validar que el saldo final no sea negativo
-    if (saldoFinal < 0) {
-      toast.error('Saldo insuficiente', {
-        description: `El saldo final sería negativo (${formatMoney(saldoFinal)}). No se puede realizar este cargo.`
+      const res = await fetch(`${API_BASE}/cuentas-ahorro/movimiento`, {
+        method: 'PATCH', headers: HDR, body: JSON.stringify(body),
       });
-      return;
-    }
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
 
-    // Construir el movimiento final con saldoFinal recalculado
-    const nuevoMovimiento: MovimientoData = {
-      ...formularioMovimiento,
-      concepto: CONCEPTO_FIJO,
-      saldoFinal: formatMoney(saldoFinal)
-    };
-
-    // Agregar el movimiento
-    const nuevosMovimientos = [...movimientos, nuevoMovimiento];
-    setMovimientos(nuevosMovimientos);
-
-    // Actualizar el saldo de la Cuenta Eje en el padre
-    if (onSaldoChange) {
-      onSaldoChange(formatMoney(saldoFinal));
-    }
-
-    setShowModal(false);
-    toast.success('Movimiento agregado exitosamente');
-  };
-
-  const handleCancelar = () => {
-    setShowModal(false);
-  };
-
-  const handleSelectAll = (checked: boolean) => {
-    if (checked) {
-      setSelectedMovimientos(movimientos.map(m => m.id));
-    } else {
-      setSelectedMovimientos([]);
+      const nuevoSaldo = tipo === 'Abono' ? saldoActual + montoNum : saldoActual - montoNum;
+      setSaldoActual(nuevoSaldo);
+      onSaldoChange?.(nuevoSaldo.toFixed(2));
+      setShowModal(false);
+      setMonto(''); setConcepto(''); setReferencia(''); setTipo('Abono');
+      toast.success('Movimiento registrado');
+      if (cuentaEjeId) cargar(cuentaEjeId);
+    } catch (e: any) {
+      toast.error('Error al registrar movimiento', { description: e.message });
+    } finally {
+      setEnviando(false);
     }
   };
 
-  const handleSelectMovimiento = (id: number, checked: boolean) => {
-    if (checked) {
-      setSelectedMovimientos(prev => [...prev, id]);
-    } else {
-      setSelectedMovimientos(prev => prev.filter(mid => mid !== id));
-    }
-  };
+  const saldoFinalPreview = tipo === 'Abono'
+    ? saldoActual + parseMoney(monto)
+    : saldoActual - parseMoney(monto);
 
   return (
     <div className="bg-white">
-      {/* Encabezado institucional */}
+      {/* Header */}
       <div className="bg-blue-50 border-l-4 border-primary-theme px-3 py-2 mb-3 flex items-center justify-between">
-        <span className="text-sm font-medium text-gray-800">MOVIMIENTOS</span>
-        {!isView && (
-          <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
+          <span className="text-sm font-medium text-gray-800">MOVIMIENTOS</span>
+          {cuentaEjeId && (
+            <span className="text-[10px] text-gray-400">Cuenta Eje: {cuentaEjeId.slice(0, 8)}…</span>
+          )}
+          {!cuentaEjeId && !loading && (
+            <span className="text-[10px] text-amber-600">Sin cuenta eje vinculada</span>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-[11px] font-semibold text-gray-700">
+            Saldo: <span className="text-[#2E5C91]">{fmtMoney(saldoActual)}</span>
+          </span>
+          <button
+            onClick={() => { if (cuentaEjeId) cargar(cuentaEjeId); else cargarCuentaEje(); }}
+            className="text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1"
+          >
+            <svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" strokeWidth="1.5">
+              <path d="M1.5 5.5A4 4 0 1 0 3 2"/><path d="M1.5 2v3h3" strokeLinecap="round"/>
+            </svg>
+          </button>
+          {!isView && (
             <button
-              onClick={handleNuevo}
+              onClick={() => setShowModal(true)}
               className="px-3 py-1 bg-primary-theme text-white text-xs hover:bg-[#3E5C91] border border-[#3E5C91]"
             >
               Nuevo
             </button>
-            <button
-              onClick={handleEliminar}
-              disabled={selectedMovimientos.length === 0}
-              className="px-3 py-1 bg-white border border-gray-400 text-gray-700 text-xs hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Eliminar
-            </button>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
-      {/* Tabla de Movimientos */}
+      {/* Tabla */}
       <div className="border border-gray-300">
         <table className="w-full text-xs border-collapse">
           <thead>
-            <tr className="border-b border-gray-400" style={{ backgroundColor: 'var(--theme-table-header)' }}>
-              <th className="px-3 py-2 text-center font-medium text-xs text-gray-800 border-r border-gray-300" style={{ width: '40px' }}>
-                <input
-                  type="checkbox"
-                  checked={movimientos.length > 0 && selectedMovimientos.length === movimientos.length}
-                  onChange={(e) => handleSelectAll(e.target.checked)}
-                  className="w-4 h-4"
-                  disabled={isView}
-                />
-              </th>
-              <th className="px-3 py-2 text-left font-medium text-xs text-gray-800 border-r border-gray-300">Fecha y Hora</th>
-              <th className="px-3 py-2 text-left font-medium text-xs text-gray-800 border-r border-gray-300">Saldo Inicial</th>
-              <th className="px-3 py-2 text-left font-medium text-xs text-gray-800 border-r border-gray-300">Tipo de Movimiento</th>
-              <th className="px-3 py-2 text-left font-medium text-xs text-gray-800 border-r border-gray-300">Concepto</th>
-              <th className="px-3 py-2 text-left font-medium text-xs text-gray-800 border-r border-gray-300">Referencia</th>
-              <th className="px-3 py-2 text-left font-medium text-xs text-gray-800 border-r border-gray-300">Monto del Movimiento</th>
-              <th className="px-3 py-2 text-left font-medium text-xs text-gray-800">Saldo Final</th>
+            <tr className="border-b border-gray-400 bg-[#D9E2F3]">
+              <th className="px-3 py-2 text-left font-medium text-gray-800 border-r border-gray-300">Fecha y Hora</th>
+              <th className="px-3 py-2 text-left font-medium text-gray-800 border-r border-gray-300">Tipo</th>
+              <th className="px-3 py-2 text-left font-medium text-gray-800 border-r border-gray-300">Concepto</th>
+              <th className="px-3 py-2 text-left font-medium text-gray-800 border-r border-gray-300">Referencia</th>
+              <th className="px-3 py-2 text-right font-medium text-gray-800 border-r border-gray-300">Monto</th>
+              <th className="px-3 py-2 text-right font-medium text-gray-800 border-r border-gray-300">Saldo Inicial</th>
+              <th className="px-3 py-2 text-right font-medium text-gray-800">Saldo Final</th>
             </tr>
           </thead>
           <tbody className="bg-white">
-            {movimientos.length === 0 ? (
+            {loading ? (
               <tr>
-                <td colSpan={8} className="px-3 py-8 text-center text-xs text-gray-500">
-                  No hay movimientos registrados. Haga clic en "Nuevo" para agregar uno.
+                <td colSpan={7} className="px-3 py-8 text-center text-xs text-gray-400">
+                  <svg className="animate-spin h-4 w-4 mx-auto mb-1 text-[#4A6FA5]" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2">
+                    <circle cx="6" cy="6" r="5" strokeOpacity="0.25"/><path d="M6 1a5 5 0 0 1 5 5" strokeLinecap="round"/>
+                  </svg>
+                  Cargando movimientos...
                 </td>
               </tr>
-            ) : (
-              movimientos.map((movimiento) => (
-                <tr 
-                  key={movimiento.id} 
-                  className={`border-b border-gray-300 hover:bg-gray-50 ${selectedMovimientos.includes(movimiento.id) ? 'bg-blue-50' : ''}`}
-                >
-                  <td className="px-3 py-2 text-center border-r border-gray-300">
-                    <input
-                      type="checkbox"
-                      checked={selectedMovimientos.includes(movimiento.id)}
-                      onChange={(e) => handleSelectMovimiento(movimiento.id, e.target.checked)}
-                      className="w-4 h-4"
-                      onClick={(e) => e.stopPropagation()}
-                      disabled={isView}
-                    />
-                  </td>
-                  <td className="px-3 py-2 text-xs text-gray-700 border-r border-gray-300">{movimiento.fechaHora}</td>
-                  <td className="px-3 py-2 text-xs text-gray-700 border-r border-gray-300">{movimiento.saldoInicial}</td>
-                  <td className="px-3 py-2 text-xs text-gray-700 border-r border-gray-300">{movimiento.tipoMovimiento}</td>
-                  <td className="px-3 py-2 text-xs text-gray-700 border-r border-gray-300">{movimiento.concepto}</td>
-                  <td className="px-3 py-2 text-xs text-gray-700 border-r border-gray-300">{movimiento.referencia}</td>
-                  <td className="px-3 py-2 text-xs text-gray-700 border-r border-gray-300">{movimiento.montoMovimiento}</td>
-                  <td className="px-3 py-2 text-xs text-gray-700">{movimiento.saldoFinal}</td>
-                </tr>
-              ))
-            )}
+            ) : movimientos.length === 0 ? (
+              <tr>
+                <td colSpan={7} className="px-3 py-8 text-center text-xs text-gray-500">
+                  {cuentaEjeId
+                    ? 'Sin movimientos registrados en esta cuenta.'
+                    : 'No se encontró cuenta eje para este cliente.'}
+                </td>
+              </tr>
+            ) : movimientos.map((m, idx) => (
+              <tr key={m.id} className={`border-b border-gray-200 ${idx % 2 === 1 ? 'bg-gray-50' : ''}`}>
+                <td className="px-3 py-2 border-r border-gray-200 whitespace-nowrap">{fmtDate(m.fechaHora)}</td>
+                <td className="px-3 py-2 border-r border-gray-200">
+                  <span className={`inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                    m.tipo === 'Abono' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
+                  }`}>{m.tipo}</span>
+                </td>
+                <td className="px-3 py-2 border-r border-gray-200 text-gray-700">{m.concepto}</td>
+                <td className="px-3 py-2 border-r border-gray-200 text-gray-500">{m.referencia || '—'}</td>
+                <td className={`px-3 py-2 border-r border-gray-200 text-right font-medium ${
+                  m.tipo === 'Abono' ? 'text-green-700' : 'text-red-700'
+                }`}>{fmtMoney(m.monto)}</td>
+                <td className="px-3 py-2 border-r border-gray-200 text-right text-gray-600">{fmtMoney(m.saldoInicial ?? 0)}</td>
+                <td className="px-3 py-2 text-right font-medium text-gray-800">{fmtMoney(m.saldoFinal ?? 0)}</td>
+              </tr>
+            ))}
           </tbody>
         </table>
       </div>
 
-      {/* Modal institucional para agregar nuevo movimiento */}
+      {/* Modal nuevo movimiento */}
       {showModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-white rounded shadow-xl w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col">
-            {/* Header azul institucional */}
-            <div className="bg-primary-theme px-6 py-4 flex items-center justify-between">
-              <h3 className="text-base font-medium text-white">Nuevo Movimiento</h3>
-              <button
-                onClick={() => setShowModal(false)}
-                className="text-white hover:text-gray-200"
-              >
-                <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
-                  <path d="M10 8.586L2.929 1.515 1.515 2.929 8.586 10l-7.071 7.071 1.414 1.414L10 11.414l7.071 7.071 1.414-1.414L11.414 10l7.071-7.071-1.414-1.414L10 8.586z"/>
-                </svg>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setShowModal(false)}>
+          <div className="bg-white rounded shadow-xl w-full max-w-md flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="bg-primary-theme px-5 py-3.5 flex items-center justify-between rounded-t">
+              <h3 className="text-sm font-medium text-white">Nuevo Movimiento</h3>
+              <button onClick={() => setShowModal(false)} className="text-white/70 hover:text-white">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 3l8 8M11 3l-8 8"/></svg>
               </button>
             </div>
 
-            {/* Contenido del formulario */}
-            <div className="flex-1 overflow-y-auto p-6">
-              <div className="py-4">
-                <div className="bg-[#E8E8E8] px-3 py-2 mb-4">
-                  <h3 className="text-xs font-semibold text-gray-700">INFORMACIÓN DEL MOVIMIENTO</h3>
+            <div className="p-5 space-y-3">
+              {/* Saldo actual */}
+              <div className="bg-gray-50 border border-gray-200 rounded p-3 flex justify-between text-xs">
+                <span className="text-gray-500">Saldo actual cuenta eje</span>
+                <span className="font-semibold text-[#2E5C91]">{fmtMoney(saldoActual)}</span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10px] font-medium text-gray-600 mb-1 uppercase tracking-wide">Tipo *</label>
+                  <select value={tipo} onChange={e => setTipo(e.target.value)}
+                    className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded">
+                    <option>Abono</option>
+                    <option>Cargo</option>
+                  </select>
                 </div>
-
-                <div className="space-y-4">
-                  {/* Fila 1: Fecha y Hora, Saldo Inicial */}
-                  <div className="grid grid-cols-2 gap-6">
-                    <div>
-                      <label className="block text-xs text-gray-700 mb-1 font-medium">
-                        Fecha y Hora
-                      </label>
-                      <input
-                        type="text"
-                        className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded bg-gray-100 text-gray-600"
-                        value={formularioMovimiento.fechaHora}
-                        readOnly
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-xs text-gray-700 mb-1 font-medium">
-                        Saldo Inicial
-                      </label>
-                      <input
-                        type="text"
-                        className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded bg-gray-100 text-gray-600"
-                        value={formularioMovimiento.saldoInicial}
-                        readOnly
-                      />
-                    </div>
-                  </div>
-
-                  {/* Fila 2: Tipo de Movimiento, Concepto */}
-                  <div className="grid grid-cols-2 gap-6">
-                    <div>
-                      <label className="block text-xs text-gray-700 mb-1 font-medium">
-                        Tipo de Movimiento <span className="text-red-600">*</span>
-                      </label>
-                      <select
-                        className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded bg-white"
-                        value={formularioMovimiento.tipoMovimiento}
-                        onChange={(e) => handleFormFieldChange('tipoMovimiento', e.target.value)}
-                      >
-                        <option value="">Seleccione...</option>
-                        {tiposMovimiento.map(tipo => (
-                          <option key={tipo} value={tipo}>{tipo}</option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs text-gray-700 mb-1 font-medium">
-                        Concepto
-                      </label>
-                      <input
-                        type="text"
-                        className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded bg-gray-100 text-gray-600"
-                        value={CONCEPTO_FIJO}
-                        readOnly
-                      />
-                    </div>
-                  </div>
-
-                  {/* Fila 3: Referencia, Monto del Movimiento */}
-                  <div className="grid grid-cols-2 gap-6">
-                    <div>
-                      <label className="block text-xs text-gray-700 mb-1 font-medium">
-                        Referencia <span className="text-red-600">*</span>
-                      </label>
-                      <input
-                        type="text"
-                        className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded bg-white"
-                        value={formularioMovimiento.referencia}
-                        onChange={(e) => handleFormFieldChange('referencia', e.target.value)}
-                        placeholder="Ej: REF-001, Transferencia..."
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-xs text-gray-700 mb-1 font-medium">
-                        Monto del Movimiento <span className="text-red-600">*</span>
-                      </label>
-                      <input
-                        type="text"
-                        className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded bg-white"
-                        value={formularioMovimiento.montoMovimiento}
-                        onChange={(e) => handleFormFieldChange('montoMovimiento', e.target.value)}
-                        placeholder="$ 0.00"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Fila 4: Saldo Final (calculado) */}
-                  <div>
-                    <label className="block text-xs text-gray-700 mb-1 font-medium">
-                      Saldo Final (Calculado automáticamente)
-                    </label>
-                    <input
-                      type="text"
-                      className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded bg-gray-100 text-gray-600"
-                      value={formularioMovimiento.saldoFinal || '—'}
-                      readOnly
-                    />
-                  </div>
+                <div>
+                  <label className="block text-[10px] font-medium text-gray-600 mb-1 uppercase tracking-wide">Monto *</label>
+                  <input type="text" value={monto} onChange={e => setMonto(e.target.value)}
+                    placeholder="$ 0.00"
+                    className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded" />
                 </div>
               </div>
+
+              <div>
+                <label className="block text-[10px] font-medium text-gray-600 mb-1 uppercase tracking-wide">Concepto *</label>
+                <input type="text" value={concepto} onChange={e => setConcepto(e.target.value)}
+                  placeholder="Ej: Apertura, Dispersión crédito..."
+                  className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded" />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-medium text-gray-600 mb-1 uppercase tracking-wide">Referencia</label>
+                <input type="text" value={referencia} onChange={e => setReferencia(e.target.value)}
+                  placeholder="No. solicitud, folio..."
+                  className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded" />
+              </div>
+
+              {/* Preview saldo final */}
+              {parseMoney(monto) > 0 && (
+                <div className="bg-blue-50 border border-blue-200 rounded p-2.5 flex justify-between text-xs">
+                  <span className="text-blue-600">Saldo resultante</span>
+                  <span className={`font-bold ${saldoFinalPreview < 0 ? 'text-red-600' : 'text-blue-800'}`}>
+                    {fmtMoney(saldoFinalPreview)}
+                  </span>
+                </div>
+              )}
             </div>
 
-            {/* Footer con botones */}
-            <div className="border-t border-gray-200 px-6 py-4 bg-gray-50 flex items-center justify-end gap-2">
-              <button
-                onClick={handleCancelar}
-                className="px-5 py-2 text-sm bg-gray-500 text-white rounded hover:bg-gray-600 font-medium"
-              >
+            <div className="border-t border-gray-200 px-5 py-3 bg-gray-50 flex justify-end gap-2 rounded-b">
+              <button onClick={() => setShowModal(false)}
+                className="px-4 py-1.5 text-xs border border-gray-200 rounded text-gray-600 hover:bg-gray-100">
                 Cancelar
               </button>
-              <button
-                onClick={handleGuardar}
-                className="px-5 py-2 text-sm bg-primary-theme text-white rounded hover:opacity-90 font-medium"
-              >
-                Guardar
+              <button onClick={handleGuardar} disabled={enviando}
+                className="px-5 py-1.5 text-xs bg-primary-theme text-white rounded hover:opacity-90 disabled:opacity-50 font-medium flex items-center gap-1.5">
+                {enviando && <svg className="animate-spin h-3 w-3" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="6" cy="6" r="5" strokeOpacity="0.25"/><path d="M6 1a5 5 0 0 1 5 5" strokeLinecap="round"/></svg>}
+                {enviando ? 'Guardando...' : 'Guardar'}
               </button>
             </div>
           </div>

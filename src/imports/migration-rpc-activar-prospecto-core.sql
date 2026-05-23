@@ -293,7 +293,7 @@ BEGIN
     0::MONEY,                      -- saldo_actual
     0::MONEY, 0::MONEY, 0::MONEY, -- monto_sol, monto_aut, monto_disp (MONEY NOT NULL safe)
     'No Aplica',                   -- estatus_disp (spec)
-    'Autorizado',                  -- estatus_sol (spec)
+    'Autorizada',                  -- estatus_sol (spec)
     'Activa',                      -- estatus_cart (spec)
     'Activa',                      -- estatus_cuen (spec)
     TRUE,                          -- cta_eje_chec

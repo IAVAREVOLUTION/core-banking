@@ -545,19 +545,24 @@ export function Calendario({ clienteId, mode, isView }: CalendarioProps = {}) {
         <ModalEvento
           mode={modalMode}
           evento={editingEvento}
-          onSave={(eventoData) => {
+          onSave={(eventosData) => {
             if (modalMode === 'create') {
-              const newEvento: Evento = {
-                id: eventos.length > 0 ? Math.max(...eventos.map(e => e.id)) + 1 : 1,
-                ...eventoData,
+              const baseId = eventos.length > 0 ? Math.max(...eventos.map(e => e.id)) + 1 : 1;
+              const newEventos: Evento[] = eventosData.map((data, i) => ({
+                id: baseId + i,
+                ...data,
                 completado: false,
-                seleccionado: false
-              };
-              setEventos([...eventos, newEvento]);
-              toast.success('Evento creado correctamente');
+                seleccionado: false,
+              }));
+              setEventos([...eventos, ...newEventos]);
+              toast.success(
+                newEventos.length > 1
+                  ? `${newEventos.length} eventos creados correctamente`
+                  : 'Evento creado correctamente'
+              );
             } else {
               setEventos(eventos.map(e =>
-                e.id === editingEvento?.id ? { ...e, ...eventoData } : e
+                e.id === editingEvento?.id ? { ...e, ...eventosData[0] } : e
               ));
               toast.success('Evento actualizado correctamente');
             }
@@ -574,20 +579,89 @@ export function Calendario({ clienteId, mode, isView }: CalendarioProps = {}) {
 interface ModalEventoProps {
   mode: 'create' | 'edit' | 'view';
   evento: Evento | null;
-  onSave: (data: any) => void;
+  onSave: (data: any[]) => void;
   onClose: () => void;
 }
 
+type Repeticion = 'Ninguna' | 'Diaria' | 'Semanal' | 'Quincenal' | 'Mensual';
+
+const DIAS_SEMANA = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
+const DIA_SEMANA_INDEX: Record<string, number> = {
+  Lunes: 1, Martes: 2, 'Miércoles': 3, Jueves: 4, Viernes: 5, Sábado: 6, Domingo: 0,
+};
+
+function isoToDisplay(iso: string): string {
+  if (!iso) return '';
+  const [y, m, d] = iso.split('-');
+  return `${d}/${m}/${y}`;
+}
+
+function displayToIso(display: string): string {
+  if (!display) return '';
+  const [d, m, y] = display.split('/');
+  return `${y}-${m}-${d}`;
+}
+
+function generarFechas(
+  repeticion: Repeticion,
+  fecha: string,
+  fechaInicio: string,
+  fechaFin: string,
+  diaSemana: string,
+  diaDelMes: number
+): string[] {
+  if (repeticion === 'Ninguna') return [fecha];
+
+  const inicio = new Date(fechaInicio + 'T00:00:00');
+  const fin = new Date(fechaFin + 'T00:00:00');
+  const fechas: string[] = [];
+
+  if (repeticion === 'Diaria') {
+    let cur = new Date(inicio);
+    while (cur <= fin) {
+      fechas.push(cur.toISOString().split('T')[0]);
+      cur.setDate(cur.getDate() + 1);
+    }
+  } else if (repeticion === 'Semanal') {
+    const targetDay = DIA_SEMANA_INDEX[diaSemana] ?? 1;
+    let cur = new Date(inicio);
+    while (cur.getDay() !== targetDay) cur.setDate(cur.getDate() + 1);
+    while (cur <= fin) {
+      fechas.push(cur.toISOString().split('T')[0]);
+      cur.setDate(cur.getDate() + 7);
+    }
+  } else if (repeticion === 'Quincenal') {
+    let cur = new Date(inicio);
+    while (cur <= fin) {
+      fechas.push(cur.toISOString().split('T')[0]);
+      cur.setDate(cur.getDate() + 15);
+    }
+  } else if (repeticion === 'Mensual') {
+    let cur = new Date(inicio.getFullYear(), inicio.getMonth(), diaDelMes);
+    if (cur < inicio) cur.setMonth(cur.getMonth() + 1);
+    while (cur <= fin) {
+      fechas.push(cur.toISOString().split('T')[0]);
+      cur.setMonth(cur.getMonth() + 1);
+    }
+  }
+
+  return fechas;
+}
+
 function ModalEvento({ mode, evento, onSave, onClose }: ModalEventoProps) {
+  const isEdit = mode === 'edit';
+
   const [formData, setFormData] = useState({
     titulo: evento?.titulo || '',
     descripcion: evento?.descripcion || '',
-    fecha: evento?.fecha ? (() => {
-      const parts = evento.fecha.split('-');
-      return `${parts[2]}/${parts[1]}/${parts[0]}`;
-    })() : '',
     hora: evento?.hora || '09:00',
-    tipo: evento?.tipo || 'Cita' as Evento['tipo']
+    tipo: (evento?.tipo || 'Cita') as Evento['tipo'],
+    repeticion: 'Ninguna' as Repeticion,
+    fecha: evento?.fecha ? isoToDisplay(evento.fecha) : '',
+    fechaInicio: '',
+    fechaFin: '',
+    diaSemana: 'Lunes',
+    diaDelMes: '1',
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -595,16 +669,30 @@ function ModalEvento({ mode, evento, onSave, onClose }: ModalEventoProps) {
   const tiposEvento = ['Cita', 'Recordatorio', 'Pago', 'Seguimiento', 'Vencimiento'];
 
   const handleChange = (field: string, value: any) => {
-    setFormData({ ...formData, [field]: value });
-    if (errors[field]) {
-      setErrors({ ...errors, [field]: '' });
-    }
+    setFormData(prev => ({ ...prev, [field]: value }));
+    if (errors[field]) setErrors(prev => ({ ...prev, [field]: '' }));
   };
 
   const validate = () => {
     const newErrors: Record<string, string> = {};
     if (!formData.titulo.trim()) newErrors.titulo = 'El título es requerido';
-    if (!formData.fecha.trim()) newErrors.fecha = 'La fecha es requerida';
+
+    if (formData.repeticion === 'Ninguna') {
+      if (!formData.fecha.trim()) newErrors.fecha = 'La fecha es requerida';
+    } else {
+      if (!formData.fechaInicio.trim()) newErrors.fechaInicio = 'La fecha de inicio es requerida';
+      if (!formData.fechaFin.trim()) newErrors.fechaFin = 'La fecha de fin es requerida';
+      if (formData.fechaInicio && formData.fechaFin) {
+        const ini = new Date(displayToIso(formData.fechaInicio));
+        const fin = new Date(displayToIso(formData.fechaFin));
+        if (fin < ini) newErrors.fechaFin = 'La fecha fin debe ser mayor o igual a la fecha inicio';
+      }
+      if (formData.repeticion === 'Mensual') {
+        const d = parseInt(formData.diaDelMes, 10);
+        if (isNaN(d) || d < 1 || d > 31) newErrors.diaDelMes = 'Ingrese un día entre 1 y 31';
+      }
+    }
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -612,51 +700,52 @@ function ModalEvento({ mode, evento, onSave, onClose }: ModalEventoProps) {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!validate()) {
-      toast.error('Formulario incompleto', {
-        description: 'Por favor complete todos los campos requeridos',
-      });
+      toast.error('Formulario incompleto', { description: 'Por favor complete todos los campos requeridos' });
       return;
     }
 
-    // Convertir fecha de DD/MM/YYYY a YYYY-MM-DD
-    const parts = formData.fecha.split('/');
-    const fechaISO = `${parts[2]}-${parts[1]}-${parts[0]}`;
+    const fechas = generarFechas(
+      formData.repeticion,
+      displayToIso(formData.fecha),
+      displayToIso(formData.fechaInicio),
+      displayToIso(formData.fechaFin),
+      formData.diaSemana,
+      parseInt(formData.diaDelMes, 10)
+    );
 
-    onSave({
-      ...formData,
-      fecha: fechaISO
-    });
+    const base = { titulo: formData.titulo, descripcion: formData.descripcion, hora: formData.hora, tipo: formData.tipo };
+    onSave(fechas.map(f => ({ ...base, fecha: f })));
   };
+
+  const horasOpciones = Array.from({ length: 48 }, (_, i) => {
+    const h = String(Math.floor(i / 2)).padStart(2, '0');
+    const m = i % 2 === 0 ? '00' : '30';
+    return `${h}:${m}`;
+  });
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
       <div className="bg-white rounded shadow-xl w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
-        {/* Header azul institucional */}
         <div className="bg-primary-theme px-6 py-4 flex items-center justify-between">
           <h3 className="text-base font-medium text-white">
             {mode === 'create' ? 'Nuevo Evento' : 'Editar Evento'}
           </h3>
-          <button
-            onClick={onClose}
-            className="text-white hover:text-gray-200"
-          >
+          <button onClick={onClose} className="text-white hover:text-gray-200">
             <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
               <path d="M10 8.586L2.929 1.515 1.515 2.929 8.586 10l-7.071 7.071 1.414 1.414L10 11.414l7.071 7.071 1.414-1.414L11.414 10l7.071-7.071-1.414-1.414L10 8.586z"/>
             </svg>
           </button>
         </div>
 
-        {/* Contenido del formulario */}
         <div className="flex-1 overflow-y-auto p-6">
           <div className="py-4">
-            {/* Barra de sección gris */}
             <div className="bg-[#E8E8E8] px-3 py-2 mb-4">
               <h3 className="text-xs font-semibold text-gray-700">INFORMACIÓN DEL EVENTO</h3>
             </div>
 
             <form onSubmit={handleSubmit}>
               <div className="space-y-4">
-                {/* Fila 1 */}
+                {/* Fila 1: Título + Tipo */}
                 <div className="grid grid-cols-2 gap-6">
                   <div>
                     <label className="block text-xs text-gray-700 mb-1 font-medium">Título <span className="text-red-600">*</span></label>
@@ -677,14 +766,12 @@ function ModalEvento({ mode, evento, onSave, onClose }: ModalEventoProps) {
                       onChange={(e) => handleChange('tipo', e.target.value)}
                       className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded bg-white"
                     >
-                      {tiposEvento.map(tipo => (
-                        <option key={tipo} value={tipo}>{tipo}</option>
-                      ))}
+                      {tiposEvento.map(t => <option key={t} value={t}>{t}</option>)}
                     </select>
                   </div>
                 </div>
 
-                {/* Fila 2 */}
+                {/* Fila 2: Hora + Repetición */}
                 <div className="grid grid-cols-2 gap-6">
                   <div>
                     <label className="block text-xs text-gray-700 mb-1 font-medium">Hora</label>
@@ -693,70 +780,105 @@ function ModalEvento({ mode, evento, onSave, onClose }: ModalEventoProps) {
                       onChange={(e) => handleChange('hora', e.target.value)}
                       className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded bg-white"
                     >
-                      <option value="00:00">00:00</option>
-                      <option value="00:30">00:30</option>
-                      <option value="01:00">01:00</option>
-                      <option value="01:30">01:30</option>
-                      <option value="02:00">02:00</option>
-                      <option value="02:30">02:30</option>
-                      <option value="03:00">03:00</option>
-                      <option value="03:30">03:30</option>
-                      <option value="04:00">04:00</option>
-                      <option value="04:30">04:30</option>
-                      <option value="05:00">05:00</option>
-                      <option value="05:30">05:30</option>
-                      <option value="06:00">06:00</option>
-                      <option value="06:30">06:30</option>
-                      <option value="07:00">07:00</option>
-                      <option value="07:30">07:30</option>
-                      <option value="08:00">08:00</option>
-                      <option value="08:30">08:30</option>
-                      <option value="09:00">09:00</option>
-                      <option value="09:30">09:30</option>
-                      <option value="10:00">10:00</option>
-                      <option value="10:30">10:30</option>
-                      <option value="11:00">11:00</option>
-                      <option value="11:30">11:30</option>
-                      <option value="12:00">12:00</option>
-                      <option value="12:30">12:30</option>
-                      <option value="13:00">13:00</option>
-                      <option value="13:30">13:30</option>
-                      <option value="14:00">14:00</option>
-                      <option value="14:30">14:30</option>
-                      <option value="15:00">15:00</option>
-                      <option value="15:30">15:30</option>
-                      <option value="16:00">16:00</option>
-                      <option value="16:30">16:30</option>
-                      <option value="17:00">17:00</option>
-                      <option value="17:30">17:30</option>
-                      <option value="18:00">18:00</option>
-                      <option value="18:30">18:30</option>
-                      <option value="19:00">19:00</option>
-                      <option value="19:30">19:30</option>
-                      <option value="20:00">20:00</option>
-                      <option value="20:30">20:30</option>
-                      <option value="21:00">21:00</option>
-                      <option value="21:30">21:30</option>
-                      <option value="22:00">22:00</option>
-                      <option value="22:30">22:30</option>
-                      <option value="23:00">23:00</option>
-                      <option value="23:30">23:30</option>
+                      {horasOpciones.map(h => <option key={h} value={h}>{h}</option>)}
                     </select>
                   </div>
 
-                  <div>
-                    <label className="block text-xs text-gray-700 mb-1 font-medium">Fecha <span className="text-red-600">*</span></label>
-                    <DatePicker
-                      value={formData.fecha}
-                      onChange={(date) => handleChange('fecha', date)}
-                      placeholder="DD/MM/YYYY"
-                      className="w-full"
-                    />
-                    {errors.fecha && <p className="text-red-600 text-[10px] mt-1">{errors.fecha}</p>}
-                  </div>
+                  {!isEdit && (
+                    <div>
+                      <label className="block text-xs text-gray-700 mb-1 font-medium">Repetición</label>
+                      <select
+                        value={formData.repeticion}
+                        onChange={(e) => handleChange('repeticion', e.target.value)}
+                        className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded bg-white"
+                      >
+                        <option value="Ninguna">Ninguna (fecha específica)</option>
+                        <option value="Diaria">Diaria</option>
+                        <option value="Semanal">Semanal</option>
+                        <option value="Quincenal">Quincenal (cada 15 días)</option>
+                        <option value="Mensual">Mensual</option>
+                      </select>
+                    </div>
+                  )}
                 </div>
 
-                {/* Fila 3 */}
+                {/* Campos de fecha según repetición */}
+                {formData.repeticion === 'Ninguna' || isEdit ? (
+                  <div className="grid grid-cols-2 gap-6">
+                    <div>
+                      <label className="block text-xs text-gray-700 mb-1 font-medium">Fecha <span className="text-red-600">*</span></label>
+                      <DatePicker
+                        value={formData.fecha}
+                        onChange={(date) => handleChange('fecha', date)}
+                        placeholder="DD/MM/YYYY"
+                        className="w-full"
+                      />
+                      {errors.fecha && <p className="text-red-600 text-[10px] mt-1">{errors.fecha}</p>}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-3 p-3 bg-blue-50 border border-blue-200 rounded">
+                    <p className="text-xs text-blue-700 font-medium">
+                      Configuración de repetición: <span className="font-bold">{formData.repeticion}</span>
+                    </p>
+
+                    {/* Día de semana (solo Semanal) */}
+                    {formData.repeticion === 'Semanal' && (
+                      <div>
+                        <label className="block text-xs text-gray-700 mb-1 font-medium">Día de la semana <span className="text-red-600">*</span></label>
+                        <select
+                          value={formData.diaSemana}
+                          onChange={(e) => handleChange('diaSemana', e.target.value)}
+                          className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded bg-white"
+                        >
+                          {DIAS_SEMANA.map(d => <option key={d} value={d}>{d}</option>)}
+                        </select>
+                      </div>
+                    )}
+
+                    {/* Día del mes (solo Mensual) */}
+                    {formData.repeticion === 'Mensual' && (
+                      <div>
+                        <label className="block text-xs text-gray-700 mb-1 font-medium">Día del mes <span className="text-red-600">*</span></label>
+                        <input
+                          type="number"
+                          min={1}
+                          max={31}
+                          value={formData.diaDelMes}
+                          onChange={(e) => handleChange('diaDelMes', e.target.value)}
+                          className="w-24 px-2 py-1.5 text-xs border border-gray-300 rounded bg-white"
+                        />
+                        {errors.diaDelMes && <p className="text-red-600 text-[10px] mt-1">{errors.diaDelMes}</p>}
+                      </div>
+                    )}
+
+                    {/* Rango de fechas */}
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs text-gray-700 mb-1 font-medium">Fecha inicio <span className="text-red-600">*</span></label>
+                        <DatePicker
+                          value={formData.fechaInicio}
+                          onChange={(date) => handleChange('fechaInicio', date)}
+                          placeholder="DD/MM/YYYY"
+                          className="w-full"
+                        />
+                        {errors.fechaInicio && <p className="text-red-600 text-[10px] mt-1">{errors.fechaInicio}</p>}
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-700 mb-1 font-medium">Fecha fin <span className="text-red-600">*</span></label>
+                        <DatePicker
+                          value={formData.fechaFin}
+                          onChange={(date) => handleChange('fechaFin', date)}
+                          placeholder="DD/MM/YYYY"
+                          className="w-full"
+                        />
+                        {errors.fechaFin && <p className="text-red-600 text-[10px] mt-1">{errors.fechaFin}</p>}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Descripción */}
                 <div>
                   <label className="block text-xs text-gray-700 mb-1 font-medium">Descripción</label>
                   <textarea
@@ -769,7 +891,6 @@ function ModalEvento({ mode, evento, onSave, onClose }: ModalEventoProps) {
                 </div>
               </div>
 
-              {/* Footer con botones */}
               <div className="border-t border-gray-200 px-0 py-4 mt-6 bg-gray-50 -mx-6 px-6 flex items-center justify-end gap-2">
                 <button
                   type="button"

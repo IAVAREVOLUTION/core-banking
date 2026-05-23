@@ -9,6 +9,7 @@ import { PerfilTransaccional } from './PerfilTransaccional';
 import { ArchivosAdjuntos } from './ArchivosAdjuntos';
 import { Garantias } from '@/app/components/clientes/Garantias';
 import { CuentaAhorro } from './CuentaAhorro';
+import { useCuentasAhorroDB } from '@/app/hooks/useCuentasAhorroDB';
 import { SolicitudesCredito } from './SolicitudesCredito';
 import { Creditos } from './Creditos';
 import { Inversiones } from './Inversiones';
@@ -459,6 +460,24 @@ export function AltaClienteDefault({ onBack, onSave, mode, cliente, onNavigateTo
 
   // Hook para el tab activo - persiste el tab seleccionado
   const [activeTab, setActiveTab] = useClienteTabs(storageKey, 'default');
+
+  // Cargar saldo_actual fresco de la cuenta eje sin depender del tab cuentas-ahorro
+  const { cuentas: _todasCuentas } = useCuentasAhorroDB();
+  useEffect(() => {
+    if (!clienteId || !_todasCuentas.length) return;
+    const norm = (s: string) => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
+    const cuentaEje = _todasCuentas.find(c =>
+      c.clienteId === clienteId &&
+      c.ctaEjeChec &&
+      norm(c.estatusCart) === 'activa'
+    );
+    if (cuentaEje) {
+      updateFormFields({
+        saldoCuentaEje: cuentaEje.saldoActual.toFixed(2),
+        cuentaEje: cuentaEje.noCuenta,
+      });
+    }
+  }, [_todasCuentas, clienteId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ========================================
   // PERSISTENCIA: Listas y subtabs

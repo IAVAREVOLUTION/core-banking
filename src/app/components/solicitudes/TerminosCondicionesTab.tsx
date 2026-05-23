@@ -575,20 +575,43 @@ export function TerminosCondicionesTab({ mode, solicitudId, lineaProducto, produ
 
   const isCaptacion = lineaProducto === 'Captación';
   const isLineaCredito = lineaProducto === 'Línea de Crédito';
+  const _tpRaw = (
+    productoSeleccionado?.tipoProducto ||
+    productoSeleccionado?.sublineaProducto ||
+    productoSeleccionado?.rawData?.tipoProducto ||
+    productoSeleccionado?.rawData?.default?.tipoProducto ||
+    productoSeleccionado?.nombreProducto ||
+    ''
+  ).toLowerCase();
+  const isInversion = isCaptacion && _tpRaw.includes('invers');
 
   return (
     <div className="border border-gray-200 bg-white p-5">
-      <div className="bg-blue-50 border border-blue-200 rounded px-3 py-2 mb-4">
-        <p className="text-xs text-blue-800">
-          <strong>Datos para simular — {lineaProducto || 'Crédito'}</strong>
-          {' '}| Modifique los campos y genere la simulación en el acordeón correspondiente.
-          {productoSeleccionado?.rawData && (
-            <span className="ml-2 text-blue-600">
-              ✓ Pre-llenado desde producto: <strong>{productoSeleccionado.nombreProducto}</strong>
-            </span>
-          )}
-        </p>
-      </div>
+      {isInversion ? (
+        <div className="bg-purple-50 border border-purple-300 rounded px-3 py-2 mb-4">
+          <p className="text-xs text-purple-800">
+            <strong>📈 Inversión a Plazo</strong>
+            {' '}— Configure monto, plazo, tasa y método de pago de intereses.
+            {productoSeleccionado?.rawData && (
+              <span className="ml-2 text-purple-600">
+                ✓ Producto: <strong>{productoSeleccionado.nombreProducto}</strong>
+              </span>
+            )}
+          </p>
+        </div>
+      ) : (
+        <div className="bg-blue-50 border border-blue-200 rounded px-3 py-2 mb-4">
+          <p className="text-xs text-blue-800">
+            <strong>Datos para simular — {lineaProducto || 'Crédito'}</strong>
+            {' '}| Modifique los campos y genere la simulación en el acordeón correspondiente.
+            {productoSeleccionado?.rawData && (
+              <span className="ml-2 text-blue-600">
+                ✓ Pre-llenado desde producto: <strong>{productoSeleccionado.nombreProducto}</strong>
+              </span>
+            )}
+          </p>
+        </div>
+      )}
 
       <div className="grid grid-cols-3 gap-x-6 gap-y-4">
         {/* Col 1 */}
@@ -629,8 +652,8 @@ export function TerminosCondicionesTab({ mode, solicitudId, lineaProducto, produ
           {isCaptacion && (
             <div>
               <label className="block text-xs text-gray-700 mb-1">
-                Fecha Primera Aportación
-                <span className="ml-1 text-gray-400 font-normal">(= Fecha Inicio)</span>
+                {isInversion ? 'Fecha de Inversión' : 'Fecha Primera Aportación'}
+                {!isInversion && <span className="ml-1 text-gray-400 font-normal">(= Fecha Inicio)</span>}
               </label>
               <DatePicker
                 value={data.fechaPrimeraAportacion}
@@ -713,7 +736,33 @@ export function TerminosCondicionesTab({ mode, solicitudId, lineaProducto, produ
             </select>
           </div>
 
-          {!isCaptacion && (
+          {isInversion && (
+            <div>
+              <label className="block text-xs text-gray-700 mb-1">Método de Pago de Intereses</label>
+              <select
+                value={data.metodoIntereses || 'Al vencimiento'}
+                onChange={e => set('metodoIntereses', e.target.value)}
+                disabled={isRO}
+                className={sc()}
+              >
+                <option value="Al vencimiento">Al vencimiento</option>
+                <option value="Capitalizable">Capitalizable</option>
+              </select>
+              <p className="text-[10px] text-gray-400 mt-0.5">
+                {(data.metodoIntereses || 'Al vencimiento') === 'Capitalizable'
+                  ? 'Compuesto: Monto × (1 + tasa_periodo)^plazo − Monto'
+                  : 'Simple: Monto × tasa × (plazo × días / 360)'}
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Fila de Garantía — solo Crédito y Línea de Crédito */}
+      {!isCaptacion && (
+        <div className="mt-4 pt-4 border-t border-gray-200">
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Garantía</p>
+          <div className="grid grid-cols-3 gap-x-6">
             <div>
               <label className="block text-xs text-gray-700 mb-1">Monto Garantía</label>
               <div className="relative">
@@ -728,9 +777,35 @@ export function TerminosCondicionesTab({ mode, solicitudId, lineaProducto, produ
                 />
               </div>
             </div>
-          )}
+            <div>
+              <label className="block text-xs text-gray-700 mb-1">Monto a Cubrir Garantía</label>
+              <div className="relative">
+                <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-500">$</span>
+                <input
+                  type="number" inputMode="decimal"
+                  value={data.montoCubrirGarantia ?? ''}
+                  onChange={e => set('montoCubrirGarantia', e.target.value === '' ? undefined : parseFloat(e.target.value) || 0)}
+                  disabled={isRO} placeholder="0.00" step="0.01"
+                  className={`${ic()} pl-5`}
+                />
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs text-gray-700 mb-1">% Aforo</label>
+              <div className="relative">
+                <input
+                  type="number" inputMode="decimal"
+                  value={data.porcentajeAforo ?? ''}
+                  onChange={e => set('porcentajeAforo', e.target.value === '' ? undefined : parseFloat(e.target.value) || 0)}
+                  disabled={isRO} placeholder="0" step="0.01" min="0" max="100"
+                  className={`${ic()} pr-6`}
+                />
+                <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-500">%</span>
+              </div>
+            </div>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Seguro financiado */}
       {!isCaptacion && (

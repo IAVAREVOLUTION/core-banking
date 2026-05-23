@@ -381,6 +381,83 @@ function compactData(data: Record<string, any>): Record<string, any> {
 }
 
 // ════════════════════════════════════════════════════════
+// PRODUCTO EJE — Buscar producto de captación con cuentaEje=true
+// ════════════════════════════════════════════════════════
+
+/**
+ * Busca en J_PRODUCTOS el primer producto de captación cuyo data.cuentaEje = true.
+ * Retorna { id, nombre } o null si no se encuentra.
+ */
+async function buscarProductoEje(): Promise<{ id: string; nombre: string } | null> {
+  const LOG_PE = '[CORE:ProductoEje]';
+  try {
+    // Usar Edge Function — tiene SQL directo, sin restricciones de PostgREST/RLS
+    const res = await fetch(`${BASE_URL}/productos-captacion`, {
+      headers: { 'Authorization': `Bearer ${publicAnonKey}` },
+    });
+    if (!res.ok) {
+      console.warn(`${LOG_PE} Edge /productos-captacion HTTP ${res.status}`);
+      return null;
+    }
+    const json = await res.json();
+    const rows: any[] = Array.isArray(json) ? json : (json.data || []);
+
+    console.log(`${LOG_PE} Total productos via Edge: ${rows.length}`);
+
+    const conEje = rows.filter((r: any) => {
+      const d = typeof r.data === 'string' ? JSON.parse(r.data) : (r.data || {});
+      return d.cuentaEje === true || d.cuentaEje === 'true';
+    });
+
+    console.log(`${LOG_PE} Con cuentaEje=true: ${conEje.length}`);
+
+    if (conEje.length === 0) {
+      console.warn(`${LOG_PE} Ningún producto tiene cuentaEje=true`);
+      return null;
+    }
+
+    const elegido = conEje.find((r: any) => (r.type || '').toLowerCase().includes('captaci')) || conEje[0];
+    const d = typeof elegido.data === 'string' ? JSON.parse(elegido.data) : (elegido.data || {});
+    const nombre = d.nombre || d.nombreProducto || d.producto || 'Cuenta Eje';
+    console.log(`${LOG_PE} ✓ id=${elegido.id} type=${elegido.type} nombre=${nombre}`);
+    return { id: elegido.id, nombre };
+  } catch (e: any) {
+    console.warn(`${LOG_PE} Excepción:`, e?.message || e);
+    return null;
+  }
+}
+
+/**
+ * Fuerza estatus_sol='Autorizada' y producto_eje/producto_id en la cuenta eje.
+ * Se llama DESPUÉS de cualquier path que cree la cuenta, para garantizar los valores.
+ */
+async function patchCuentaEjeEstatus(
+  cuentaEjeId: string,
+  productoEje: { id: string; nombre: string } | null,
+): Promise<void> {
+  const LOG = '[CORE:PatchCuentaEje]';
+  try {
+    const updatePayload: Record<string, any> = { estatus_sol: 'Autorizada' };
+    if (productoEje?.id) {
+      updatePayload.producto_id  = productoEje.id;
+      updatePayload.producto_eje = productoEje.id;
+    }
+    const { error } = await supabase
+      .schema('EFINANCIANET_DB')
+      .from('J_CUENTAS_CORP_CLIENTES')
+      .update(updatePayload)
+      .eq('id', cuentaEjeId);
+    if (error) {
+      console.warn(`${LOG} UPDATE directo falló: ${error.message}`);
+    } else {
+      console.log(`${LOG} ✓ estatus_sol=Autorizada producto_eje=${productoEje?.id || 'null'} guardados en id=${cuentaEjeId}`);
+    }
+  } catch (e: any) {
+    console.warn(`${LOG} Excepción:`, e?.message || e);
+  }
+}
+
+// ════════════════════════════════════════════════════════
 // PERSISTENCIA — CUENTA EJE
 // ════════════════════════════════════════════════════════
 
@@ -444,12 +521,11 @@ async function generarCuentaEje(prospectoUuid: string, nombreProspecto: string):
   const noSol = generateNoSol();
   const noCuenta = generateNoCuenta(prospectoUuid);
   const noRef = generateNoReferencia();
-  // Usar formato ISO 8601 completo (timestamptz) para que PostgREST
-  // resuelva sin ambigüedad al overload con parámetros timestamp with time zone.
-  // El formato YYYY-MM-DD es ambiguo entre DATE y TIMESTAMPTZ cuando hay
-  // dos overloads de la RPC — "Could not choose the best candidate function".
   const now = new Date();
-  const fechaHoyISO = now.toISOString(); // YYYY-MM-DDTHH:MM:SS.sssZ → resuelve a timestamptz
+  const fechaHoyISO = now.toISOString();
+
+  // Buscar producto eje antes de construir el payload
+  const productoEje = await buscarProductoEje();
 
   const payload: InsertCuentaAhorroPayload = {
     p_no_sol: noSol,
@@ -464,14 +540,17 @@ async function generarCuentaEje(prospectoUuid: string, nombreProspecto: string):
     p_descripcion: `Cuenta Eje generada automáticamente al activar prospecto ${nombreProspecto}`,
     p_linea_produc: 'CAPTACION',
     p_tipo_produc: 'Ahorro',
-    p_producto_id: null,
-    p_producto_eje: null,
+    p_producto_id: productoEje?.id || null,
+    p_producto_eje: productoEje?.id || null,
     p_cliente_id: prospectoUuid,
     p_monto_sol: 0,
     p_monto_aut: 0,
     p_monto_disp: 0,
     p_cta_eje_chec: true,
     p_fases: 'Activa',
+    p_estatus_sol: 'Autorizada',
+    p_estatus_cuen: 'Activa',
+    p_estatus_cart: 'Activa',
     p_data: {
       metadatos: {
         noSol: noSol,
@@ -480,10 +559,11 @@ async function generarCuentaEje(prospectoUuid: string, nombreProspecto: string):
         origenCreacion: 'ActivacionProspecto',
         titular: nombreProspecto,
         moneda: 'MXN',
+        productoEjeNombre: productoEje?.nombre || null,
       },
       estatusCuenta: 'Activa',
-      estatusSolicitud: 'Aprobada',
-      estatusCartera: 'Vigente',
+      estatusSolicitud: 'Autorizada',
+      estatusCartera: 'Activa',
       saldoActual: 0,
       fechaApertura: fechaHoyISO,
     },
@@ -579,14 +659,14 @@ function saveCuentaEjeToSessionStorage(
       noCuenta: payload.p_no_cuenta,
       clienteId: payload.p_cliente_id || '',
       clienteNombre: titular,
-      productoId: '',
-      productoNombre: '—',
+      productoId: payload.p_producto_id || '',
+      productoNombre: (payload.p_data as any)?.metadatos?.productoEjeNombre || '—',
       fechaSol: payload.p_fecha_sol,
       fechaAutori: payload.p_fecha_autori || '',
       saldoActual: 0,
       estatusCuen: 'Activa',
-      estatusCart: 'Vigente',
-      estatusSol: 'Aprobada',
+      estatusCart: 'Activa',
+      estatusSol: 'Autorizada',
       estatusDisp: '—',
       ctaEjeChec: true,
       lineaProduc: 'CAPTACION',
@@ -614,9 +694,9 @@ function saveCuentaEjeToSessionStorage(
       fecha_inicio: payload.p_fecha_inicio,
       fecha_fin_cu: null,
       descripcion: payload.p_descripcion,
-      producto_id: null,
-      producto_nombre: null,
-      producto_eje: null,
+      producto_id: payload.p_producto_id || null,
+      producto_nombre: (payload.p_data as any)?.metadatos?.productoEjeNombre || null,
+      producto_eje: payload.p_producto_eje || null,
       cliente_id: payload.p_cliente_id,
       cliente_nombre: titular,
       monto_sol: 0,
@@ -624,8 +704,8 @@ function saveCuentaEjeToSessionStorage(
       monto_disp: 0,
       saldo_actual: 0,
       estatus_cuen: 'Activa',
-      estatus_cart: 'Vigente',
-      estatus_sol: 'Aprobada',
+      estatus_cart: 'Activa',
+      estatus_sol: 'Autorizada',
       estatus_disp: null,
       cta_eje_chec: true,
       linea_produc: 'CAPTACION',
@@ -806,9 +886,70 @@ export async function activarProspectoCORE(
   }
 
   // ════════════════════════════════════════════════════════
-  // INTENTO 0 — RPC ATÓMICA activar_prospecto_core
-  // (Transacción única: valida cuenta eje duplicada, busca producto,
-  //  UPDATE J_CLIENTES, INSERT cuenta eje — todo en un solo call)
+  // INTENTO 0 — Edge Function /activar-prospecto (SQL directo)
+  // Busca producto eje (cuentaEje=true), inserta cuenta con
+  // estatus_sol='Autorizada' y producto_eje, actualiza J_CLIENTES
+  // ════════════════════════════════════════════════════════
+  const nombreCompleto0 = `${datosProspecto.nombre || ''} ${datosProspecto.apellidoPaterno || ''} ${datosProspecto.apellidoMaterno || ''}`.trim() || 'Sin nombre';
+  try {
+    console.log('[CORE:ActivarProspecto] ═══════ INTENTO 0 — Edge Function /activar-prospecto ═══════');
+    const res0 = await fetch(`${BASE_URL}/activar-prospecto`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${publicAnonKey}` },
+      body: JSON.stringify({ cliente_id: idProspecto, nombre_prospecto: nombreCompleto0 }),
+    });
+    if (res0.ok) {
+      const json0 = await res0.json();
+      if (json0.ok) {
+        console.log(`[CORE:ActivarProspecto] ✓ Edge /activar-prospecto OK — cuentaEjeId: ${json0.cuentaEjeId} estatus_sol: ${json0.estatus_sol}`);
+        // Patch de seguridad vía Supabase directo (por si el Edge no pudo escribir)
+        if (json0.cuentaEjeId) {
+          const peEdge = await buscarProductoEje();
+          await patchCuentaEjeEstatus(json0.cuentaEjeId, peEdge);
+        }
+        saveCuentaEjeToSessionStorage(json0.cuentaEjeId, {
+          p_no_sol: `AUTO-${idProspecto.substring(0, 8)}`,
+          p_no_cuenta: json0.noCuenta || '',
+          p_fecha_sol: new Date().toISOString(),
+          p_fecha_autori: new Date().toISOString(),
+          p_fecha_inicio: new Date().toISOString(),
+          p_descripcion: 'Cuenta eje generada automáticamente al activar prospecto',
+          p_linea_produc: 'CAPTACION',
+          p_tipo_produc: 'Ahorro',
+          p_producto_id: json0.producto_eje || null,
+          p_producto_eje: json0.producto_eje || null,
+          p_cliente_id: idProspecto,
+          p_monto_sol: 0, p_monto_aut: 0, p_monto_disp: 0,
+          p_cta_eje_chec: true,
+          p_fases: 'Activa',
+          p_estatus_sol: 'Autorizada',
+          p_data: { metadatos: { productoEjeNombre: json0.productoEjeNombre } },
+        } as InsertCuentaAhorroPayload, nombreCompleto0);
+        await crearNotificacion({
+          dirigidoA: 'Empleados', tipoCobertura: 'Empresa',
+          mensaje: `El prospecto ${nombreCompleto0} ha sido activado.`,
+          idReferencia: idProspecto, fecha: new Date().toISOString(),
+          estatusNotificacion: 'Pendiente',
+        });
+        return {
+          estatusOperacion: 'OK',
+          mensaje: `El prospecto ${nombreCompleto0} ha sido activado exitosamente.`,
+          cuentaEjeId: json0.cuentaEjeId,
+          numeroCuenta: json0.noCuenta,
+        };
+      } else if (json0.ya_tiene_cuenta_eje) {
+        return { estatusOperacion: 'OK', mensaje: 'El prospecto ya fue activado previamente (ya tiene cuenta eje).', errores: [json0.error] };
+      }
+      console.warn('[CORE:ActivarProspecto] Edge /activar-prospecto retornó ok=false:', json0.error);
+    } else {
+      console.warn(`[CORE:ActivarProspecto] Edge /activar-prospecto HTTP ${res0.status}`);
+    }
+  } catch (e0: any) {
+    console.warn('[CORE:ActivarProspecto] Edge /activar-prospecto excepción:', e0?.message || e0);
+  }
+
+  // ════════════════════════════════════════════════════════
+  // INTENTO 1 — RPC ATÓMICA activar_prospecto_core (fallback)
   // ════════════════════════════════════════════════════════
   // ═══════════════════════════════════════════════════════
   // PRE-SANITIZACIÓN: Limpiar datos numéricos vacíos ("") en J_CLIENTES.data
@@ -871,6 +1012,12 @@ export async function activarProspectoCORE(
             p_fases: 'Inicial',
             p_data: null,
           } as InsertCuentaAhorroPayload, nombreCompleto);
+        }
+
+        // Parchear estatus_sol y producto_eje que el RPC puede haber dejado nulos
+        if (cuentaEje?.id) {
+          const productoEjeRpc = await buscarProductoEje();
+          await patchCuentaEjeEstatus(cuentaEje.id, productoEjeRpc);
         }
 
         // Crear notificaciones (no bloquean)
@@ -1098,6 +1245,12 @@ export async function activarProspectoCORE(
   const nombreCompleto = `${datosProspecto.nombre || ''} ${datosProspecto.apellidoPaterno || ''} ${datosProspecto.apellidoMaterno || ''}`.trim() || 'Sin nombre';
   const cuentaEjeId = await generarCuentaEje(idProspecto, nombreCompleto);
   console.log('[CORE:ActivarProspecto] Cuenta Eje generada:', cuentaEjeId);
+
+  // Parchear estatus_sol y producto_eje sin importar qué path creó la cuenta
+  if (cuentaEjeId?.id) {
+    const productoEjeFallback = await buscarProductoEje();
+    await patchCuentaEjeEstatus(cuentaEjeId.id, productoEjeFallback);
+  }
 
   // ════════════════════════════════════════════════════════
   // 5. — Notificacion institucional en J_NOTIFICACIONES

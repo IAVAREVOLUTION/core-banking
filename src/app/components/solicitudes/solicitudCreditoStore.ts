@@ -57,6 +57,11 @@ export interface TerminosCondiciones {
   montoGarantia: string;
   seguroFinanciado: boolean;
   montoSeguro: string;
+  // Inversión / Captación
+  metodoIntereses?: string;      // 'Al vencimiento' | 'Capitalizable'
+  // Crédito / Línea de Crédito — columnas top-level en J_CUENTAS_CORP_CLIENTES
+  montoCubrirGarantia?: number;  // monto_cubrir_garantia
+  porcentajeAforo?: number;      // porcentaje_aforo (ej: 70 = 70%)
   // Captación — Rendimientos (tabla de tasas por plazo)
   rendimientos?: RendimientoRow[];
   // Captación — perfil del inversionista
@@ -139,6 +144,8 @@ export interface Garantia {
   subtipo: string;
   descripcion: string;
   valorNominal: number;
+  montoCubrirGarantia?: number;  // monto_cubrir_garantia en BD
+  porcentajeAforo?: number;       // porcentaje_aforo en BD (ej: 70 = 70%)
   ubicacion: string;
   estatus: string;
   nota: string;
@@ -279,6 +286,18 @@ export function loadFromSavedStore<T>(solId: SolId, subtab: string): T | null {
   const key = String(solId);
   const data = SAVED_DATA[key]?.[subtab];
   return data ? structuredClone(data) as T : null;
+}
+
+/** Elimina todos los datos de un ID del saved store (in-memory + sessionStorage) */
+export function deleteSavedStore(solId: SolId): void {
+  delete SAVED_DATA[String(solId)];
+  const prefix = `sol_credito_${solId}_`;
+  const keys: string[] = [];
+  for (let i = 0; i < sessionStorage.length; i++) {
+    const k = sessionStorage.key(i);
+    if (k?.startsWith(prefix)) keys.push(k);
+  }
+  keys.forEach(k => sessionStorage.removeItem(k));
 }
 
 /** Migra TODOS los datos de un ID a otro en el saved store */
@@ -431,6 +450,7 @@ export const CAT_ESTATUS_SOLICITUD = [
   { value: 'En proceso', label: 'En proceso' },
   { value: 'En Análisis', label: 'En Análisis' },
   { value: 'Aprobado', label: 'Aprobado' },
+  { value: 'Autorizada', label: 'Autorizada' },
   { value: 'Rechazado', label: 'Rechazado' },
   { value: 'Cancelado', label: 'Cancelado' },
 ];
@@ -612,10 +632,10 @@ export const EMPTY_TERMINOS: TerminosCondiciones = {
   seguroFinanciado: false,
   montoSeguro: '',
   rendimientos: [],
-  perfilInversionista: '',
-  riesgoInversionista: '',
-  horizonteInversion: '',
-  experienciaInversion: '',
+  perfilInversionista: 'Conservador',
+  riesgoInversionista: 'Bajo',
+  horizonteInversion: 'Corto plazo',
+  experienciaInversion: 'Básica',
 };
 
 // ---- Mock de requisitos del producto ----

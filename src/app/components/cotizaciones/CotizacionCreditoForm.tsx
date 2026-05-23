@@ -37,10 +37,7 @@ import {
   TIPOS_CALCULO_AMORTIZACION,
   TIPOS_TASA,
   FRECUENCIAS_PAGO,
-  MOCK_MATRIZ_TASA_FIJA,
-  MOCK_GARANTIAS,
-  MOCK_SEGUROS,
-} from './cotizacionCreditoTypes';
+  } from './cotizacionCreditoTypes';
 import { useClientesDB } from '../../hooks/useClientesDB';
 import { useProductosCredito } from '../../hooks/useProductosCredito';
 import { useProductosLineaCreditoDB } from '../../hooks/useProductosLineaCreditoDB';
@@ -59,6 +56,8 @@ interface Props {
   onBack: () => void;
   /** Callback para crear Solicitud desde esta Cotización — spec solicitudes-financieras §1 */
   onCrearSolicitud?: (c: CotizacionCredito) => void;
+  /** true solo cuando la cotización fue confirmada en BD (ID existe en J_COTIZACIONES) */
+  existeEnBD?: boolean;
 }
 
 const formatMoney = (v: number) => `$${v.toLocaleString('es-MX', { minimumFractionDigits: 2 })}`;
@@ -86,30 +85,7 @@ interface ProductoPickerItem {
   amortizaciones?: { metodo: string; predeterminado: boolean }[];
 }
 
-/** Mock convenios — asocian instituciones gobierno con productos */
-const MOCK_CONVENIOS_CREDITO: Record<string, ConvenioProducto[]> = {
-  'PCRE-001': [
-    { institucionNombre: 'Secretaría de Educación Pública (SEP)', lineaProducto: 'Crédito' },
-    { institucionNombre: 'Secretaría de Hacienda (SHCP)', lineaProducto: 'Crédito' },
-    { institucionNombre: 'Instituto de Seguridad y Servicios Sociales (ISSSTE)', lineaProducto: 'Crédito' },
-  ],
-  'PCRE-002': [
-    { institucionNombre: 'Instituto de Seguridad y Servicios Sociales (ISSSTE)', lineaProducto: 'Crédito' },
-    { institucionNombre: 'Comisión Federal de Electricidad (CFE)', lineaProducto: 'Crédito' },
-  ],
-  'PCRE-003': [
-    { institucionNombre: 'Comisión Federal de Electricidad (CFE)', lineaProducto: 'Crédito' },
-    { institucionNombre: 'Secretaría de Educación Pública (SEP)', lineaProducto: 'Crédito' },
-  ],
-  'PLDC-001': [
-    { institucionNombre: 'Secretaría de Educación Pública (SEP)', lineaProducto: 'Línea de Crédito' },
-  ],
-  'PLDC-002': [
-    { institucionNombre: 'Secretaría de Gobernación (SEGOB)', lineaProducto: 'Línea de Crédito' },
-  ],
-};
-
-export function CotizacionCreditoForm({ mode, lineaProducto, cotizacion, onSave, onBack, onCrearSolicitud }: Props) {
+export function CotizacionCreditoForm({ mode, lineaProducto, cotizacion, onSave, onBack, onCrearSolicitud, existeEnBD }: Props) {
   const isView = mode === 'view';
   const isCreate = mode === 'create';
   const isLineaCredito = lineaProducto === 'Línea de Crédito';
@@ -180,7 +156,7 @@ export function CotizacionCreditoForm({ mode, lineaProducto, cotizacion, onSave,
                 tasaMaxima: m.tasaMaxima || m.tasa || 0,
                 tasaDefault: m.tasaDefault || m.tasa || 0,
               }))
-            : MOCK_MATRIZ_TASA_FIJA,
+: [],
           garantias: Array.isArray(p.garantias) && p.garantias.length > 0
             ? p.garantias.map((g: any, idx: number) => ({
                 id: g.id ?? idx + 1,
@@ -254,10 +230,10 @@ export function CotizacionCreditoForm({ mode, lineaProducto, cotizacion, onSave,
             console.log('[CotizCredito] Producto paquetes raw:', paquetes.length, '→ seguros filtrados:', seguros.length, seguros);
             return seguros;
           })(),
-          // Convenios — leer del producto real o fallback a mock
+          // Convenios — de BD
           convenios: Array.isArray(p.convenios) && p.convenios.length > 0
             ? p.convenios
-            : (MOCK_CONVENIOS_CREDITO[clave] || []),
+            : [],
           // Amortizaciones — leer del JSONB del producto
           amortizaciones: Array.isArray(p.amortizaciones) && p.amortizaciones.length > 0
             ? p.amortizaciones.map((a: any) => ({
@@ -266,19 +242,9 @@ export function CotizacionCreditoForm({ mode, lineaProducto, cotizacion, onSave,
               }))
             : undefined,
         };
-      });
+});
     }
-    // Fallback mock
-    const mockCre: ProductoPickerItem[] = [
-      { id: 'PC-001', claveProducto: 'PCRE-001', nombreProducto: 'Crédito Personal', tipoProducto: 'Crédito Individual', lineaProducto: 'Crédito', tasaBase: 18, matrizTasaFija: MOCK_MATRIZ_TASA_FIJA, garantias: MOCK_GARANTIAS, seguros: MOCK_SEGUROS, convenios: MOCK_CONVENIOS_CREDITO['PCRE-001'] || [] },
-      { id: 'PC-002', claveProducto: 'PCRE-002', nombreProducto: 'Crédito Hipotecario', tipoProducto: 'Crédito Hipotecario', lineaProducto: 'Crédito', tasaBase: 12, matrizTasaFija: MOCK_MATRIZ_TASA_FIJA, garantias: MOCK_GARANTIAS, seguros: MOCK_SEGUROS, convenios: MOCK_CONVENIOS_CREDITO['PCRE-002'] || [] },
-      { id: 'PC-003', claveProducto: 'PCRE-003', nombreProducto: 'Crédito Automotriz', tipoProducto: 'Crédito Consumo', lineaProducto: 'Crédito', tasaBase: 15.5, matrizTasaFija: MOCK_MATRIZ_TASA_FIJA, garantias: MOCK_GARANTIAS, seguros: MOCK_SEGUROS, convenios: MOCK_CONVENIOS_CREDITO['PCRE-003'] || [] },
-    ];
-    const mockLC: ProductoPickerItem[] = [
-      { id: 'PL-001', claveProducto: 'PLDC-001', nombreProducto: 'Línea Revolvente Empresarial', tipoProducto: 'Línea Revolvente', lineaProducto: 'Línea de Crédito', tasaBase: 16, matrizTasaFija: MOCK_MATRIZ_TASA_FIJA, garantias: MOCK_GARANTIAS, seguros: MOCK_SEGUROS, convenios: MOCK_CONVENIOS_CREDITO['PLDC-001'] || [] },
-      { id: 'PL-002', claveProducto: 'PLDC-002', nombreProducto: 'Línea Simple PyME', tipoProducto: 'Línea Simple', lineaProducto: 'Línea de Crédito', tasaBase: 14, matrizTasaFija: MOCK_MATRIZ_TASA_FIJA, garantias: MOCK_GARANTIAS, seguros: MOCK_SEGUROS, convenios: MOCK_CONVENIOS_CREDITO['PLDC-002'] || [] },
-    ];
-    return lineaProducto === 'Crédito' ? mockCre : mockLC;
+    return [];
   }, [isLineaCredito, productosCredito, productosLC, lineaProducto, productosSegurosDB]);
 
   /**
@@ -304,6 +270,7 @@ export function CotizacionCreditoForm({ mode, lineaProducto, cotizacion, onSave,
   const [showClienteModal, setShowClienteModal] = useState(false);
   const [clienteSearch, setClienteSearch] = useState('');
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
+  const [savedLocally, setSavedLocally] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const datePickerRef = useRef<HTMLDivElement>(null);
 
@@ -554,6 +521,7 @@ export function CotizacionCreditoForm({ mode, lineaProducto, cotizacion, onSave,
     }
     setValidationErrors([]);
     onSave(form);
+    setSavedLocally(true);
   };
 
   // ── Classes ──
@@ -619,8 +587,8 @@ export function CotizacionCreditoForm({ mode, lineaProducto, cotizacion, onSave,
                 </button>
               </>
             )}
-            {/* Botón "Crear Solicitud" — spec solicitudes-financieras §1, R1 */}
-            {onCrearSolicitud && cotizacion && (
+            {/* Botón "Crear Solicitud" — visible cuando mode cambia a edit/view o savedLocally */}
+            {onCrearSolicitud && (!isCreate || savedLocally) && cotizacion && (
               <button
                 onClick={() => onCrearSolicitud(cotizacion)}
                 disabled={cotizacion.estatus_cotiza === 'Aceptada'}

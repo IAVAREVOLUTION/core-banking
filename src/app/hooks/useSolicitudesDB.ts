@@ -116,6 +116,8 @@ export interface SolicitudDBRow {
   cta_eje_chec: boolean | null;
   fases: string | null;
   data: Record<string, any> | null;
+  monto_cubrir_garantia: number | null;
+  porcentaje_aforo: number | null;
   // ── JOIN fields from J_CLIENTES ──
   cliente_nombre?: string | null;
   cliente_ap_paterno?: string | null;
@@ -124,6 +126,7 @@ export interface SolicitudDBRow {
   cliente_curp?: string | null;
   cliente_tipo?: string | null;
   cliente_subtipo?: string | null;
+  institucion_gobierno?: string | null;
   // ── JOIN fields from J_PRODUCTOS ──
   producto_nombre?: string | null;
   producto_clave?: string | null;
@@ -180,6 +183,25 @@ function mapRowToListItem(row: SolicitudDBRow): SolicitudListItem {
   // ── Sucursal ──
   const sucursal = hdr.sucursal || d.sucursal || row.producto_sucursal || '';
 
+  // ── Inyectar monto_cubrir_garantia y porcentaje_aforo (columnas top-level) en _data ──
+  // Esto permite que preloadSubtabsFromDBData los lea desde data.solicitud.garantias[0]
+  const montoCubrir = row.monto_cubrir_garantia;
+  const porcentajeAf = row.porcentaje_aforo;
+  if (montoCubrir != null || porcentajeAf != null) {
+    const garantiasOrig: any[] = Array.isArray(d.solicitud?.garantias) ? d.solicitud.garantias : [];
+    let garantiasActualizadas: any[];
+    if (garantiasOrig.length === 0) {
+      // Sin garantías en JSONB — crear entrada mínima para transportar los valores
+      garantiasActualizadas = [{ monto_cubrir_garantia: montoCubrir, porcentaje_aforo: porcentajeAf }];
+    } else {
+      // Inyectar en la primera garantía sin mutar el array original
+      garantiasActualizadas = garantiasOrig.map((g: any, i: number) =>
+        i === 0 ? { ...g, monto_cubrir_garantia: montoCubrir ?? g.monto_cubrir_garantia, porcentaje_aforo: porcentajeAf ?? g.porcentaje_aforo } : g
+      );
+    }
+    d = { ...d, solicitud: { ...d.solicitud, garantias: garantiasActualizadas } };
+  }
+
   return {
     id: row.id as any, // UUID string
     noSol: row.no_sol || hdr.no_sol || d.noSol || '',
@@ -191,7 +213,7 @@ function mapRowToListItem(row: SolicitudDBRow): SolicitudListItem {
     montoAutorizado: parseMoney(row.monto_aut),
     sucursal,
     faseDescripcion: hdr.descripcion_fase || d.descripcionFase || getFaseDescripcion(row.fases) || '',
-    estatusSolicitud: row.estatus_sol || hdr.estatus || d.estatusSolicitud || 'Pendiente',
+    estatusSolicitud: row.estatus_sol || d.estatusSolicitud || 'Pendiente',
     // Extra fields for form reconstruction
     _dbId: row.id,
     _clienteId: row.cliente_id,
@@ -205,6 +227,7 @@ function mapRowToListItem(row: SolicitudDBRow): SolicitudListItem {
     _clienteCurp: row.cliente_curp || null,
     _clienteRfc: row.cliente_rfc || null,
     _clienteTipo: row.cliente_tipo || null,
+    _gobierno: row.institucion_gobierno || null,
     _tipoPersona: hdr.tipo_persona || d.tipoPersona || row.cliente_tipo || null,
     _productoNombre: row.producto_nombre || null,
     _productoClave: row.producto_clave || null,
@@ -215,6 +238,8 @@ function mapRowToListItem(row: SolicitudDBRow): SolicitudListItem {
     _fases: row.fases || null,
     _fechaInicio: row.fecha_inicio || null,
     _fechaFin: row.fecha_fin_cu || null,
+    _montoCubrirGarantia: row.monto_cubrir_garantia ?? null,
+    _porcentajeAforo: row.porcentaje_aforo ?? null,
   } as SolicitudListItem & Record<string, any>;
 }
 
@@ -354,17 +379,51 @@ function formToDBPayload(form: SolicitudFormData, allSubtabs?: Record<string, an
   const coreSolicitud: Record<string, any> = {
     header: mergedHeader,
     terminos_condiciones: mergedTc,
-    simulacion: {
-      tipo_tabla: terminos.tipoCalculo || origSol.simulacion?.tipo_tabla || null,
-      resultado_simulacion: simulacion.map((r: any) => ({
-        no_pago: r.noPago, fecha_pago: r.fechaPago, saldo_insoluto: r.saldoInsoluto,
-        pago_capital: r.pagoCapital, pago_interes: r.pagoInteres, iva_interes: r.ivaInteres,
-        pago_periodo: r.pagoPeriodo, pago_seguro: r.pagoSeguro, pago_total: r.pagoTotal,
-      })),
-      calendario_aportaciones: Array.isArray((form as any)._calendarioAportaciones)
-        ? (form as any)._calendarioAportaciones
-        : (origSol.simulacion?.calendario_aportaciones || []),
-    },
+    simulacion: (() => {
+      const invRows: any[] = allSubtabs?.simulacion_inv || [];
+      const isInversion = invRows.length > 0 || !!(terminos as any).metodoIntereses;
+
+      if (isInversion && invRows.length > 0) {
+        // Tabla de flujo de inversión
+        return {
+          tipo_tabla: (terminos as any).metodoIntereses || terminos.tipoCalculo || origSol.simulacion?.tipo_tabla || null,
+          resultado_simulacion: invRows.map((r: any) => ({
+            no_pago: r.periodo,
+            fecha_pago: r.fechaInversion,
+            capital_inicial: r.capitalInicial,
+            interes_bruto: r.interesBruto,
+            retencion_isr: r.retencionISR,
+            iva_interes: r.retencionISR,
+            interes_neto: r.interesNeto,
+            pago_interes: r.interesNeto,
+            pago_periodo: r.interesBruto,
+            pago_capital: 0,
+            pago_seguro: 0,
+            capital_final: r.capitalFinal,
+            saldo_insoluto: r.capitalFinal,
+            pago_total: r.capitalFinal,
+          })),
+          calendario_aportaciones: [],
+        };
+      }
+
+      // Crédito / Captación
+      return {
+        tipo_tabla: terminos.tipoCalculo || origSol.simulacion?.tipo_tabla || null,
+        resultado_simulacion: simulacion.map((r: any) => ({
+          no_pago: r.noPago, fecha_pago: r.fechaPago, saldo_insoluto: r.saldoInsoluto,
+          pago_capital: r.pagoCapital, pago_interes: r.pagoInteres, iva_interes: r.ivaInteres,
+          pago_periodo: r.pagoPeriodo, pago_seguro: r.pagoSeguro, pago_total: r.pagoTotal,
+        })),
+        calendario_aportaciones: (() => {
+          const fromSession = allSubtabs?.simulacion_cal;
+          if (Array.isArray(fromSession) && fromSession.length > 0) return fromSession;
+          if (Array.isArray((form as any)._calendarioAportaciones) && (form as any)._calendarioAportaciones.length > 0)
+            return (form as any)._calendarioAportaciones;
+          return origSol.simulacion?.calendario_aportaciones || [];
+        })(),
+      };
+    })(),
     expediente_electronico: {
       documentos: documentos.map((doc: any) => ({
         id: doc.id || null,
@@ -391,6 +450,8 @@ function formToDBPayload(form: SolicitudFormData, allSubtabs?: Record<string, an
     garantias: garantias.map((g: any) => ({
       tipo_garantia: g.tipo || null, subtipo: g.subtipo || null,
       descripcion: g.descripcion || null, valor_garantia: g.valorNominal || null,
+      monto_cubrir_garantia: g.montoCubrirGarantia ?? null,
+      porcentaje_aforo: g.porcentajeAforo ?? null,
       ubicacion: g.ubicacion || null, estatus: g.estatus || null,
       observaciones: g.nota || null, fase: g.fase || null,
       fase_id: g.faseId || null, area: g.area || null,
@@ -442,6 +503,10 @@ function formToDBPayload(form: SolicitudFormData, allSubtabs?: Record<string, an
     ? form.cotizacionId
     : null;
 
+  // Leer monto_cubrir_garantia y porcentaje_aforo desde terminos (columnas top-level de J_CUENTAS_CORP_CLIENTES)
+  const montoCubrirGarantia = terminos.montoCubrirGarantia != null ? Number(terminos.montoCubrirGarantia) : null;
+  const porcentajeAforo = terminos.porcentajeAforo != null ? Number(terminos.porcentajeAforo) : null;
+
   return {
     type: 'Solicitudes',
     no_sol: form.noSol || '',
@@ -457,6 +522,8 @@ function formToDBPayload(form: SolicitudFormData, allSubtabs?: Record<string, an
     monto_aut: isNaN(montoAutNum) ? 0 : montoAutNum,
     estatus_sol: form.estatusSolicitud || 'Pendiente',
     fases: form.faseId || '1',
+    monto_cubrir_garantia: montoCubrirGarantia,
+    porcentaje_aforo: porcentajeAforo,
     data: mergedData,
   };
 }
@@ -661,23 +728,39 @@ async function updateSolicitud(id: string, payload: Partial<ReturnType<typeof fo
 // ══════════════════════════════════════════════════════════════════
 // DELETE
 // ═══════════════════════════════════════════════════════════════════
-async function deleteSolicitudDB(id: string): Promise<{ ok: boolean; error?: string }> {
+async function deleteSolicitudDB(id: string): Promise<{ ok: boolean; error?: string; activaciones_vinculadas?: number }> {
   if (!DB_AVAILABLE) return { ok: false, error: 'DB no disponible' };
 
-  try {
-    const { error } = await supabase.rpc('delete_solicitud_credito', { p_id: id });
-    if (!error) return { ok: true };
-    console.warn('[SolicDB] DELETE RPC FALLÓ:', error.message);
-  } catch { /* */ }
-
+  // Intento 1: Edge Function (verifica activaciones vinculadas antes de DELETE)
   try {
     const res = await fetch(`${API_BASE}/solicitudes-credito/${id}`, {
       method: 'DELETE',
       headers: { 'Authorization': `Bearer ${publicAnonKey}` },
     });
+    const json = await res.json().catch(() => ({}));
     if (res.ok) return { ok: true };
-    const json = await res.json();
-    return { ok: false, error: json.error };
+    // HTTP 409 = bloqueado por activaciones vinculadas
+    if (res.status === 409) {
+      console.warn('[SolicDB] DELETE bloqueado por FK:', json.error);
+      return { ok: false, error: json.error, activaciones_vinculadas: json.activaciones_vinculadas };
+    }
+    console.warn('[SolicDB] DELETE Edge FALLÓ:', json.error || `HTTP ${res.status}`);
+  } catch (err: any) {
+    console.warn('[SolicDB] DELETE Edge EXCEPCIÓN:', err?.message);
+  }
+
+  // Intento 2: RPC (también tiene guard contra activaciones vinculadas)
+  try {
+    const { error } = await supabase.rpc('delete_solicitud_credito', { p_id: id });
+    if (!error) return { ok: true };
+    const msg = error.message || '';
+    // Detectar FK violation o el mensaje del guard del RPC
+    if (msg.includes('activación') || msg.includes('foreign key') || msg.includes('violates')) {
+      console.warn('[SolicDB] DELETE RPC bloqueado por FK/guard:', msg);
+      return { ok: false, error: msg };
+    }
+    console.warn('[SolicDB] DELETE RPC FALLÓ:', msg);
+    return { ok: false, error: msg };
   } catch (err: any) {
     return { ok: false, error: err?.message || String(err) };
   }
@@ -992,11 +1075,184 @@ export async function crearCuentaPorCobrarDB(
  *   EstatusCuenta    = "Activa"
  *   EstatusPago      = "Pagado"
  *   EstatusCartera   = "Activa"
+ * 
+ * Validaciones por Línea de Producto:
+ * - Crédito/Captación: requiere que datos.estatus='Pagado' para activar
+ * - Línea de Crédito: permite activación sin validación de estatus
  */
+// ─── Generador de número de cuenta (mismo formato que CuentasAhorroForm) ────
+function generateNoCuentaInterno(): string {
+  const now = new Date();
+  const y = String(now.getFullYear()).slice(-2);
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const rand = String(Math.floor(Math.random() * 900000) + 100000);
+  return `01${y}${m}${rand}`;
+}
+
+/**
+ * Crea una cuenta nueva en J_CUENTAS_CORP_CLIENTES para una solicitud autorizada.
+ * Debe llamarse inmediatamente después de que la solicitud cambia a 'Autorizada'.
+ * Soporta: Crédito, Captación, Aportación, Inversión, Línea de Crédito.
+ */
+export async function crearCuentaDesdeSolicitudDB(params: {
+  solicitudId: string;
+  clienteId: string;
+  productoId: string;
+  noSol: string;
+  lineaProducto: string;
+  tipoProducto: string;
+  montoSolicitado?: number;
+  montoAutorizado?: number;
+  data?: Record<string, unknown>;
+}): Promise<{ ok: boolean; noCuenta?: string; error?: string }> {
+  const PRODUCTOS_CON_CUENTA = ['crédito', 'captacion', 'captación', 'aportacion', 'aportación', 'inversion', 'inversión', 'linea', 'línea'];
+  const lineaNorm = (params.lineaProducto || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  const debeCrear = PRODUCTOS_CON_CUENTA.some(p => lineaNorm.includes(p));
+  if (!debeCrear) {
+    console.log('[SolicDB] crearCuentaDesdeSolicitud — línea no genera cuenta:', params.lineaProducto);
+    return { ok: true };
+  }
+
+  // Si clienteId no viene o no es UUID, obtenerlo directamente de la solicitud en BD
+  let clienteIdFinal = UUID_RE.test(params.clienteId || '') ? params.clienteId : '';
+  let noSolFinal = params.noSol || '';
+  let lineaFinal = params.lineaProducto || '';
+  let tipoFinal = params.tipoProducto || '';
+
+  if ((!clienteIdFinal || !noSolFinal) && UUID_RE.test(params.solicitudId)) {
+    try {
+      const res = await fetch(`${API_BASE}/solicitudes-credito/${params.solicitudId}`, {
+        headers: { Authorization: `Bearer ${publicAnonKey}` },
+      });
+      if (res.ok) {
+        const row = await res.json();
+        if (!clienteIdFinal && UUID_RE.test(row.cliente_id || '')) clienteIdFinal = row.cliente_id;
+        if (!noSolFinal) noSolFinal = row.no_sol || '';
+        if (!lineaFinal) lineaFinal = row.linea_produc || row.tipo_produc || '';
+        if (!tipoFinal)  tipoFinal  = row.tipo_produc || '';
+        console.log('[SolicDB] crearCuentaDesdeSolicitud — datos resueltos desde BD: clienteId=', clienteIdFinal, 'noSol=', noSolFinal);
+      }
+    } catch (e: any) {
+      console.warn('[SolicDB] crearCuentaDesdeSolicitud — no se pudo resolver datos desde BD:', e?.message);
+    }
+  }
+
+  if (!clienteIdFinal) {
+    return { ok: false, error: 'cliente_id requerido y no disponible — asegura que la solicitud tiene cliente asignado' };
+  }
+  if (!noSolFinal) {
+    return { ok: false, error: 'no_sol requerido y no disponible' };
+  }
+
+  const noCuenta = generateNoCuentaInterno();
+  const hoy = new Date().toISOString().split('T')[0];
+
+  const payload = {
+    p_no_sol:       noSolFinal,
+    p_no_cuenta:    noCuenta,
+    p_fecha_sol:    hoy,
+    p_fecha_autori: hoy,
+    p_linea_produc: lineaFinal || params.lineaProducto,
+    p_tipo_produc:  tipoFinal  || params.tipoProducto,
+    p_producto_id:  UUID_RE.test(params.productoId || '') ? params.productoId : null,
+    p_cliente_id:   clienteIdFinal,
+    p_monto_sol:    params.montoSolicitado  || null,
+    p_monto_aut:    params.montoAutorizado  || null,
+    p_estatus_sol:  'Autorizada',
+    p_estatus_cuen: 'Activa',
+    p_estatus_cart: 'Activa',
+    p_estatus_disp: 'Aplicado',
+    p_cta_eje_chec: false,
+    p_fases:        '7',
+    p_data: {
+      ...(params.data || {}),
+      metadatos: {
+        solicitudId: params.solicitudId,
+        origenActivacion: true,
+      },
+      estatus:        'Autorizada',
+      movimientoInicial: {
+        tipo:       'Abono Inicial',
+        referencia: `Apertura de Cuenta / Solicitud ${noSolFinal}`,
+        estatus:    'Aplicado',
+      },
+    },
+  };
+
+  // Intento 1: Edge Function POST /cuentas-ahorro
+  try {
+    const res = await fetch(`${API_BASE}/cuentas-ahorro`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${publicAnonKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (res.ok) {
+      const json = await res.json().catch(() => ({}));
+      console.log('[SolicDB] crearCuentaDesdeSolicitud Edge OK — noCuenta:', noCuenta, '| id:', json?.id);
+      window.dispatchEvent(new Event('cuentaAhorroRefetch'));
+      return { ok: true, noCuenta };
+    }
+    const errText = await res.text().catch(() => '');
+    console.warn('[SolicDB] crearCuentaDesdeSolicitud Edge HTTP', res.status, errText);
+  } catch (e: any) {
+    console.warn('[SolicDB] crearCuentaDesdeSolicitud Edge excepción:', e?.message);
+  }
+
+  // Intento 2: RPC insert_cuenta_ahorro
+  try {
+    const rpcPayload = {
+      ...payload,
+      p_fecha_sol:    `${hoy}T00:00:00.000Z`,
+      p_fecha_autori: `${hoy}T00:00:00.000Z`,
+      p_data:         JSON.stringify(payload.p_data),
+    };
+    const { data, error } = await supabase.rpc('insert_cuenta_ahorro', rpcPayload as any);
+    if (!error && data) {
+      console.log('[SolicDB] crearCuentaDesdeSolicitud RPC OK — noCuenta:', noCuenta);
+      window.dispatchEvent(new Event('cuentaAhorroRefetch'));
+      return { ok: true, noCuenta };
+    }
+    if (error) console.warn('[SolicDB] crearCuentaDesdeSolicitud RPC error:', error.message);
+  } catch (e: any) {
+    console.warn('[SolicDB] crearCuentaDesdeSolicitud RPC excepción:', e?.message);
+  }
+
+  return { ok: false, error: 'No se pudo crear la cuenta en BD (Edge + RPC fallaron)' };
+}
+
+// Crea la cuenta eje para el cliente si no existe — llama a /activar-prospecto (idempotente)
+export async function crearCuentaEjeDB(
+  clienteId: string,
+  nombreCliente?: string,
+  solicitudId?: string,
+  lineaProduc?: string,
+  tipoProduc?: string,
+  montoInicial?: number,
+): Promise<void> {
+  if (!clienteId || !UUID_RE.test(clienteId)) return;
+  try {
+    const body: Record<string, unknown> = { cliente_id: clienteId, nombre_prospecto: nombreCliente || '' };
+    if (solicitudId && UUID_RE.test(solicitudId)) body.solicitud_id = solicitudId;
+    if (lineaProduc) body.linea_produc = lineaProduc;
+    if (tipoProduc)  body.tipo_produc  = tipoProduc;
+    if (montoInicial !== undefined && montoInicial > 0) body.monto_inicial = montoInicial;
+    const res = await fetch(`${API_BASE}/activar-prospecto`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${publicAnonKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const json = await res.json().catch(() => ({}));
+    console.log('[SolicDB] crearCuentaEje OK — clienteId:', clienteId, '| solicitudId:', solicitudId, '| linea:', lineaProduc, '| tipo:', tipoProduc, '| resp:', json);
+  } catch (e: any) {
+    console.warn('[SolicDB] crearCuentaEje error (no bloquea):', e?.message);
+  }
+}
+
 export async function activarCuentaDB(
   id: string,
   datos: Record<string, any>,
-): Promise<{ ok: boolean; error?: string }> {
+  lineaProducto?: string,
+): Promise<{ ok: boolean; error?: string; clienteId?: string }> {
   if (!DB_AVAILABLE) return { ok: false, error: 'DB no disponible' };
   if (!UUID_RE.test(id)) return { ok: false, error: 'ID inválido (no UUID)' };
 
@@ -1005,20 +1261,28 @@ export async function activarCuentaDB(
     const res = await fetch(`${API_BASE}/solicitudes-credito/${id}/activarCuenta`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${publicAnonKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify(datos),
+      body: JSON.stringify({ ...datos, lineaProducto }),
     });
-    if (res.ok) {
-      console.log('[SolicDB] activarCuenta POST OK');
-      return { ok: true };
+    const json = await res.json().catch(() => ({}));
+    if (res.ok && json.ok !== false) {
+      console.log('[SolicDB] activarCuenta POST OK', json.clienteId);
+      return { ok: true, clienteId: json.clienteId };
     }
+    // HTTP 2xx pero el handler reportó divergencia o fallo lógico
+    if (json.ok === false) {
+      console.warn('[SolicDB] activarCuenta POST — BD reportó error:', json.error);
+      return { ok: false, error: json.error || 'Error en BD al activar cuenta' };
+    }
+    console.warn('[SolicDB] activarCuenta POST HTTP', res.status, json);
+    // fallthrough a fallback si HTTP error
   } catch {
     // fallthrough a fallback
   }
 
-  // Fallback: actualizar estatus vía Edge Function PUT
+  // Fallback 1: actualizar estatus vía Edge Function PUT
   try {
     const payload: Record<string, any> = {
-      estatus_sol: 'Autorizada',
+      estatus_sol: 'Aprobado',
       estatus_cuen: 'Activa',
       estatus_disp: 'Pagado',
       estatus_cart: 'Activa',
@@ -1033,8 +1297,74 @@ export async function activarCuentaDB(
       console.log('[SolicDB] activarCuenta fallback PUT OK');
       return { ok: true };
     }
+    console.warn('[SolicDB] activarCuenta PUT falló, intentando Supabase directo…');
+  } catch {
+    console.warn('[SolicDB] activarCuenta PUT excepción, intentando Supabase directo…');
+  }
+
+  // Fallback 2: Supabase directo con schema EFINANCIANET_DB
+  try {
+    const campos: Record<string, any> = {
+      estatus_sol:  'Aprobado',
+      estatus_cuen: 'Activa',
+      estatus_disp: 'Pagado',
+      estatus_cart: 'Activa',
+      ...datos,
+    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error } = await (supabase as any).schema('EFINANCIANET_DB')
+      .from('J_CUENTAS_CORP_CLIENTES')
+      .update(campos)
+      .eq('id', id);
+    if (!error) {
+      console.log('[SolicDB] activarCuenta Supabase directo OK');
+      return { ok: true };
+    }
+    return { ok: false, error: error.message };
+  } catch (err: any) {
+    return { ok: false, error: err?.message || String(err) };
+  }
+}
+
+/**
+ * Actualiza únicamente el estatus de una solicitud (estatus_sol).
+ */
+export async function actualizarEstatusSolicitudDB(
+  id: string,
+  nuevoEstatus: string,
+): Promise<{ ok: boolean; error?: string }> {
+  if (!DB_AVAILABLE) return { ok: false, error: 'DB no disponible' };
+  if (!UUID_RE.test(id)) return { ok: false, error: 'ID inválido (no UUID)' };
+
+  // Intento 1: Edge Function PUT
+  try {
+    const res = await fetch(`${API_BASE}/solicitudes-credito/${id}`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${publicAnonKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ estatus_sol: nuevoEstatus }),
+    });
+    if (res.ok) {
+      console.log('[SolicDB] actualizarEstatus Edge OK —', nuevoEstatus);
+      return { ok: true };
+    }
     const json = await res.json().catch(() => ({}));
-    return { ok: false, error: json.error || `HTTP ${res.status}` };
+    console.warn('[SolicDB] actualizarEstatus Edge FALLÓ:', json.error || `HTTP ${res.status}`);
+  } catch (err: any) {
+    console.warn('[SolicDB] actualizarEstatus Edge EXCEPCIÓN:', err?.message);
+  }
+
+  // Intento 2: Supabase directo
+  try {
+    const { error } = await supabase
+      .from('J_CUENTAS_CORP_CLIENTES')
+      .update({ estatus_sol: nuevoEstatus })
+      .eq('id', id);
+    if (!error) {
+      console.log('[SolicDB] actualizarEstatus Supabase directo OK —', nuevoEstatus);
+      return { ok: true };
+    }
+    console.warn('[SolicDB] actualizarEstatus Supabase directo FALLÓ:', error.message);
+    return { ok: false, error: error.message };
   } catch (err: any) {
     return { ok: false, error: err?.message || String(err) };
   }
@@ -1134,8 +1464,34 @@ export function useSolicitudesDB(active: boolean) {
   ): Promise<{ ok: boolean; id?: string; error?: string }> => {
     setSaving(true);
     try {
-      const payload = formToDBPayload(form, allSubtabs);
       const isNew = !existingDbId;
+
+      // ── FIX CRÍTICO: Guardia de _originalData ──
+      // Si estamos en modo edición y falta _originalData, el deepMerge en formToDBPayload
+      // producirá un objeto parcial (solo campos Core) que sobreescribirá datos de banca móvil.
+      // Solución: recuperar data actual de la BD antes de construir el payload.
+      let subtabsWithOriginal = allSubtabs;
+      if (!isNew && !(allSubtabs?._originalData) && existingDbId) {
+        console.warn('[SolicDB] SAVE — _originalData faltante en modo edición, recuperando de BD...');
+        try {
+          const { data: row } = await supabase
+            .from('J_CUENTAS_CORP_CLIENTES')
+            .select('data')
+            .eq('id', existingDbId)
+            .single();
+          if (row?.data) {
+            const fetchedData = typeof row.data === 'string' ? JSON.parse(row.data) : row.data;
+            subtabsWithOriginal = { ...(allSubtabs || {}), _originalData: fetchedData };
+            console.log('[SolicDB] SAVE — _originalData recuperado de BD, keys:', Object.keys(fetchedData).length);
+          } else {
+            console.warn('[SolicDB] SAVE — BD devolvió data vacío para id:', existingDbId);
+          }
+        } catch (fetchErr: any) {
+          console.warn('[SolicDB] SAVE — no se pudo recuperar _originalData de BD:', fetchErr?.message);
+        }
+      }
+
+      const payload = formToDBPayload(form, subtabsWithOriginal);
 
       console.log('[SolicDB] SAVE — isNew:', isNew, '| dbId:', existingDbId,
         '| payload columns: no_sol=', payload.no_sol, '| tipo_produc=', payload.tipo_produc,
@@ -1170,7 +1526,7 @@ export function useSolicitudesDB(active: boolean) {
   }, [fetchSolicitudes]);
 
   // ── DELETE ──
-  const deleteSolicitud = useCallback(async (id: string): Promise<{ ok: boolean; error?: string }> => {
+  const deleteSolicitud = useCallback(async (id: string): Promise<{ ok: boolean; error?: string; activaciones_vinculadas?: number }> => {
     if (DB_AVAILABLE) {
       const result = await deleteSolicitudDB(id);
       if (!result.ok) {

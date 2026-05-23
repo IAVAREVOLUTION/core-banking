@@ -68,9 +68,11 @@ export function AgregarDocumentoModal({ isOpen, onClose, solicitudId, faseIdActu
   const [uploading, setUploading] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [tipoDocumento, setTipoDocumento] = useState('');
+  const [tipoCustom, setTipoCustom] = useState('');
   const [nota, setNota] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const requisitosFaseActual = requisitos.filter(r => r.faseId <= faseIdActual);
+  const tipoFinal = tipoDocumento === '__custom__' ? tipoCustom : tipoDocumento;
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -78,14 +80,14 @@ export function AgregarDocumentoModal({ isOpen, onClose, solicitudId, faseIdActu
   };
 
   const handleSubmit = async () => {
-    if (!tipoDocumento || !selectedFile) {
+    if (!tipoFinal || !selectedFile) {
       toast.error('Completa tipo de documento y archivo');
       return;
     }
     setUploading(true);
     try {
       const uploadResult = await uploadFileToStorage(selectedFile, String(solicitudId));
-      const req = requisitos.find(r => r.tipoDocumento === tipoDocumento);
+      const req = requisitos.find(r => r.tipoDocumento === tipoFinal);
       const now = new Date();
       const fechaStr = `${now.getDate().toString().padStart(2, '0')}/${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getFullYear()}`;
       const horaStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
@@ -93,7 +95,7 @@ export function AgregarDocumentoModal({ isOpen, onClose, solicitudId, faseIdActu
         id: generateId(),
         fecha: `${fechaStr} ${horaStr}`,
         usuario: '(sesión pendiente)',
-        tipoDocumento,
+        tipoDocumento: tipoFinal,
         archivo: uploadResult.nombre,
         tipoArchivo: uploadResult.mime.split('/')[1]?.toUpperCase() || 'FILE',
         nota,
@@ -110,6 +112,7 @@ export function AgregarDocumentoModal({ isOpen, onClose, solicitudId, faseIdActu
       onAdd(nuevo);
       onClose();
       setTipoDocumento('');
+      setTipoCustom('');
       setNota('');
       setSelectedFile(null);
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -144,13 +147,32 @@ export function AgregarDocumentoModal({ isOpen, onClose, solicitudId, faseIdActu
             <label className="block text-[11px] font-medium text-gray-600 mb-1.5">
               Tipo de Documento <span className="text-red-400">*</span>
             </label>
-            <select value={tipoDocumento} onChange={e => setTipoDocumento(e.target.value)}
-              className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg bg-white focus:ring-2 focus:ring-[#4A6FA5]/30 focus:border-[#4A6FA5]">
-              <option value="">Seleccionar tipo...</option>
-              {requisitosFaseActual.map(req => (
-                <option key={req.id} value={req.tipoDocumento}>{req.tipoDocumento}</option>
-              ))}
-            </select>
+            {requisitosFaseActual.length > 0 ? (
+              <>
+                <select value={tipoDocumento} onChange={e => setTipoDocumento(e.target.value)}
+                  className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg bg-white focus:ring-2 focus:ring-[#4A6FA5]/30 focus:border-[#4A6FA5]">
+                  <option value="">Seleccionar tipo...</option>
+                  {requisitosFaseActual.map(req => (
+                    <option key={req.id} value={req.tipoDocumento}>{req.tipoDocumento}</option>
+                  ))}
+                  <option value="__custom__">Otro (especificar)...</option>
+                </select>
+                {tipoDocumento === '__custom__' && (
+                  <input
+                    type="text" value={tipoCustom} onChange={e => setTipoCustom(e.target.value)}
+                    placeholder="Escribe el tipo de documento..."
+                    className="mt-2 w-full px-3 py-2 text-xs border border-gray-200 rounded-lg bg-white focus:ring-2 focus:ring-[#4A6FA5]/30 focus:border-[#4A6FA5]"
+                    autoFocus
+                  />
+                )}
+              </>
+            ) : (
+              <input
+                type="text" value={tipoCustom} onChange={e => setTipoCustom(e.target.value)}
+                placeholder="Ej. INE, Comprobante de domicilio, CURP..."
+                className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg bg-white focus:ring-2 focus:ring-[#4A6FA5]/30 focus:border-[#4A6FA5]"
+              />
+            )}
           </div>
           <div>
             <label className="block text-[11px] font-medium text-gray-600 mb-1.5">

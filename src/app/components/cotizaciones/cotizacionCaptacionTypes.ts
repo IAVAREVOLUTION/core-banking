@@ -52,6 +52,11 @@ export interface CotizacionCaptacionData {
   plazoCumplirMontoMinimo: number;
   fechaPrimeraAportacion: string;
   calendarioAportaciones: AportacionCalendario[];
+  // ── Inversión ──
+  metodoIntereses?: string;         // 'Al vencimiento' | 'Capitalizable'
+  renovacionAutomatica?: boolean;   // checkbox S/N
+  numeroRenovaciones?: number;      // entero >= 0
+  tablaFlujoInversion?: FlujInversionRow[];
   // ── Crédito / Línea de Crédito fields (opcionales) ──
   plazo?: string;
   periodo?: string;
@@ -67,6 +72,16 @@ export interface CotizacionCaptacionData {
   tipoLinea?: string;
   /** Index signature para campos adicionales del JSONB */
   [key: string]: any;
+}
+
+export interface FlujInversionRow {
+  periodo: number;
+  fechaInversion: string;
+  capitalInicial: number;
+  interesBruto: number;
+  retencionISR: number;
+  interesNeto: number;
+  capitalFinal: number;
 }
 
 export interface AportacionCalendario {
@@ -264,9 +279,9 @@ export function deepMergeJsonb<T extends Record<string, any>>(base: T, partial: 
       !Array.isArray(baseVal)
     ) {
       // Merge recursivo para objetos anidados (cliente, producto)
-      result[key] = deepMergeJsonb(baseVal, partialVal);
+      result[key] = deepMergeJsonb(baseVal, partialVal) as T[keyof T];
     } else if (partialVal !== undefined) {
-      result[key] = partialVal;
+      result[key] = partialVal as T[keyof T];
     }
   }
   return result;
@@ -319,4 +334,108 @@ export function computePartialData(
   }
 
   return partial as Partial<CotizacionCaptacionData>;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// TABLA DE FLUJO DE INVERSIÓN
+// ═══════════════════════════════════════════════════════════════════
+
+/** Tasa ISR anual SAT 2024 — 1.04% sobre el capital */
+export const TASA_ISR_ANUAL = 0.0104;
+
+const DIAS_FRECUENCIA: Record<string, number> = {
+  'Diario': 1, 'Semanal': 7, 'Catorcenal': 14, 'Quincenal': 15,
+  'Mensual': 30, 'Trimestral': 90, 'Semestral': 180, 'Anual': 360,
+};
+
+export function getDiasFrecuencia(freq: string): number {
+  return DIAS_FRECUENCIA[freq] || 30;
+}
+
+/**
+ * Genera la Tabla de Flujo de Inversión.
+ *
+ * Capitalizable : interés se reinvierte → capitalInicial[i+1] = capitalFinal[i]
+ * Al vencimiento: capital constante, última fila acumula totales
+ *
+ * Fórmulas (imagen referencia):
+ *   tasaPeriodo  = tasaAnual% / 360 * diasPeriodo
+ *   interesBruto = capitalInicial * tasaPeriodo
+ *   retencionISR = capitalInicial * (TASA_ISR_ANUAL / 360 * diasPeriodo)
+ *   interesNeto  = interesBruto - retencionISR
+ */
+/** Parsea fecha en YYYY-MM-DD o DD/MM/YYYY → Date local sin problemas de TZ */
+function parseFechaLocal(f: string): Date {
+  const slash = f.split('/');
+  if (slash.length === 3 && slash[0].length === 2) {
+    // DD/MM/YYYY
+    return new Date(parseInt(slash[2]), parseInt(slash[1]) - 1, parseInt(slash[0]));
+  }
+  const dash = f.split('-');
+  if (dash.length === 3 && dash[0].length === 4) {
+    // YYYY-MM-DD
+    return new Date(parseInt(dash[0]), parseInt(dash[1]) - 1, parseInt(dash[2]));
+  }
+  return new Date(f); // fallback
+}
+
+export function calcularFlujInversion(
+  monto: number,
+  tasaAnual: number,
+  plazo: number,
+  frecuencia: string,
+  fechaInicio: string,
+  metodo: string,
+  tasaISRAnual: number = TASA_ISR_ANUAL,
+): FlujInversionRow[] {
+  if (!monto || !tasaAnual || !plazo || !fechaInicio) return [];
+
+  const dias = getDiasFrecuencia(frecuencia);
+  const tasaPeriodo    = (tasaAnual / 100) / 360 * dias;
+  const tasaISRPeriodo = tasaISRAnual / 360 * dias;
+  const esCapitalizable = (metodo || '').toLowerCase().includes('capitaliz');
+  const r2 = (n: number) => Math.round(n * 100) / 100;
+
+  const toISO = (d: Date): string => {
+    const yy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${yy}-${mm}-${dd}`;
+  };
+
+  // ── Al vencimiento: UNA sola fila con interés compuesto al vencimiento ──
+  if (!esCapitalizable) {
+    const totalDias = plazo * dias;
+    const base = parseFechaLocal(fechaInicio);
+    const fechaVencimiento = new Date(base.getFullYear(), base.getMonth(), base.getDate() + totalDias);
+    const interesBruto = r2(monto * (Math.pow(1 + tasaPeriodo, plazo) - 1)); // compuesto
+    const retencionISR = r2(monto * (tasaISRAnual / 360) * totalDias);
+    const interesNeto  = r2(interesBruto - retencionISR);
+    return [{
+      periodo: 1,
+      fechaInversion: toISO(fechaVencimiento),
+      capitalInicial: monto,
+      interesBruto,
+      retencionISR,
+      interesNeto,
+      capitalFinal: r2(monto + interesNeto),
+    }];
+  }
+
+  // ── Capitalizable: una fila por período con reinversión ──
+  const rows: FlujInversionRow[] = [];
+  let fecha = parseFechaLocal(fechaInicio);
+  let capitalActual = monto;
+
+  for (let i = 1; i <= plazo; i++) {
+    const interesBruto = r2(capitalActual * tasaPeriodo);
+    const retencionISR = r2(capitalActual * tasaISRPeriodo);
+    const interesNeto  = r2(interesBruto - retencionISR);
+    const capitalFinal = r2(capitalActual + interesNeto);
+    rows.push({ periodo: i, fechaInversion: toISO(fecha), capitalInicial: capitalActual, interesBruto, retencionISR, interesNeto, capitalFinal });
+    capitalActual = capitalFinal;
+    fecha = new Date(fecha.getFullYear(), fecha.getMonth(), fecha.getDate() + dias);
+  }
+
+  return rows;
 }

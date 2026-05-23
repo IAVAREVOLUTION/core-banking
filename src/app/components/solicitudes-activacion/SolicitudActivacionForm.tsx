@@ -35,6 +35,7 @@ import {
 const supabase = createClient(`https://${projectId}.supabase.co`, publicAnonKey);
 import { SolicitudActivacionDetailTab } from './SolicitudActivacionDetailTab';
 import { descargarDetallePDF } from './solicitudActivacionPDF';
+import { GeneracionContableTab } from '../cartera/GeneracionContableTab';
 
 type FormMode = 'nuevo' | 'editar' | 'ver';
 
@@ -50,8 +51,9 @@ interface SolicitudActivacionFormProps {
 }
 
 const TABS = [
-  { id: 'default', label: 'Default' },
-  { id: 'detail',  label: 'Detail'  },
+  { id: 'default',  label: 'Default' },
+  { id: 'detail',   label: 'Detail'  },
+  { id: 'contable', label: 'Generación Contable' },
 ];
 
 // ─── Field component — Clientes exact pattern ─────────────────────────────────
@@ -126,11 +128,13 @@ function SectionTitle({ label }: { label: string }) {
 // ─── Reusable field grid for both master and Default tab ──────────────────────
 
 const CAT_ESTATUS = [
-  { value: 'Pendiente', label: 'Pendiente' },
-  { value: 'Enviada',   label: 'Enviada'   },
-  { value: 'Pagado',    label: 'Pagado'    },
-  { value: 'Activo',    label: 'Activo'    },
-  { value: 'Rechazada', label: 'Rechazada' },
+  { value: 'Pendiente',  label: 'Pendiente'  },
+  { value: 'Enviada',    label: 'Enviada'    },
+  { value: 'Pagado',     label: 'Pagado'     },
+  { value: 'Autorizada', label: 'Autorizada' },
+  { value: 'Activo',     label: 'Activo'     },
+  { value: 'Activada',   label: 'Activada'   },
+  { value: 'Rechazada',  label: 'Rechazada'  },
 ];
 
 interface FieldGridProps {
@@ -320,8 +324,8 @@ export function SolicitudActivacionForm({
   /** Enviar = guardar con estatus "Enviada". Registra fecha de envío en data. */
   const handleEnviarSolicitud = () => {
     if (!validate()) { toast.error('Faltan campos requeridos'); return; }
-    if (formData.estatus === 'Enviada') {
-      toast.info('La solicitud ya fue enviada anteriormente.'); return;
+    if (['Enviada', 'Pagado', 'Activo', 'Autorizada', 'Activada'].includes(formData.estatus)) {
+      toast.info(`La solicitud ya tiene estatus: ${formData.estatus}.`); return;
     }
     const dataEnviada: SolicitudActivacionFormData = {
       ...formData,
@@ -357,7 +361,7 @@ export function SolicitudActivacionForm({
     // Guardar primero en la tabla de activación
     const dataActivar: SolicitudActivacionFormData = {
       ...formData,
-      estatus: 'Aprobado',
+      estatus: 'Pagado',
       _fromActivar: true,
     };
     clearSession(storageId);
@@ -393,7 +397,8 @@ export function SolicitudActivacionForm({
   const esLineaCredito = (formData.lineaProducto || '')
     .toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').includes('linea');
   const puedeActivar  = esPagado || esLineaCredito;
-  const yaEnviada  = formData.estatus === 'Enviada' || formData.estatus === 'Activo';
+  // Cualquier estatus "post-enviado" que no sea Pagado: no mostrar bot\u00f3n Enviar
+  const yaEnviada = ['Enviada', 'Activo', 'Autorizada', 'Activada'].includes(formData.estatus);
 
   const montoNum = parseCurrency(formData.montoTransaccion);
 
@@ -573,6 +578,20 @@ export function SolicitudActivacionForm({
                 moneda={formData.detailMoneda}
                 cantidad={formData.detailCantidad}
                 onCantidadChange={n => handleChange('detailCantidad', n)}
+              />
+            </div>
+          )}
+
+          {/* GENERACIÓN CONTABLE tab */}
+          {activeTab === 'contable' && (
+            <div className="p-4">
+              <GeneracionContableTab
+                solicitudId={typeof solicitudId === 'string' ? solicitudId : String(solicitudId ?? '')}
+                credito={{
+                  noSol:    formData.numeroDocumento || formData.solicitudId || '',
+                  cliente:  formData.cliente || '',
+                  montoAut: parseCurrency(formData.montoTransaccion),
+                }}
               />
             </div>
           )}

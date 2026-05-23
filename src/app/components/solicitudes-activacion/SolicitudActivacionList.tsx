@@ -16,7 +16,7 @@ import {
   parsePct,
   lineaProdToTipo,
 } from '../../hooks/useSolicitudesActivacionDB';
-import { activarCuentaDB } from '../../hooks/useSolicitudesDB';
+import { activarCuentaDB, crearCuentaEjeDB } from '../../hooks/useSolicitudesDB';
 
 type ViewState =
   | { type: 'list' }
@@ -70,7 +70,7 @@ export function SolicitudActivacionList({
         clienteId:             String(raw.cliente_id || ''),
         type:                  initialEditItem.tipo || String(raw.type || ''),
         fechaSolicitud:        initialEditItem.fechaSolicitud || '',
-        estatus:               initialEditItem.estatus || 'Pendiente',
+estatus:               initialEditItem.estatus || d.estatus || 'Pendiente',
         cliente:               initialEditItem.cliente || String(header.cliente || ''),
         numeroDocumento:       initialEditItem.numeroDocumento || String(header.numeroDocumento || raw.cliente_curp || ''),
         cuentaBancaria:        String(raw.solicitud_no_cuenta || header.cuentaBancaria || ''),
@@ -348,11 +348,14 @@ export function SolicitudActivacionList({
           setSolicitudes(prev => [savedItem!, ...prev]);
           toast.info('Guardado localmente (sin BD)', { duration: 3000 });
         }
+        // On edit failure stay on the form
+        return;
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       toast.error('Error inesperado al guardar', { description: msg, duration: 5000 });
       if (onSavedFromOriginacion) return;
+      return; // Stay on form
     }
 
     // Notificar a Originación si aplica
@@ -361,7 +364,21 @@ export function SolicitudActivacionList({
       return;
     }
 
+    // Standalone: update local list immediately, then sync from DB
+    if (savedItem) {
+      setSolicitudes(prev => {
+        const matchId = String(savedItem!._dbId || savedItem!.id);
+        const idx = matchId ? prev.findIndex(s => String(s._dbId || s.id) === matchId) : -1;
+        if (idx >= 0) {
+          const upd = [...prev];
+          upd[idx] = { ...upd[idx], ...savedItem! };
+          return upd;
+        }
+        return isNew ? [savedItem!, ...prev] : prev;
+      });
+    }
     setView({ type: 'list' });
+    refetch();
   };
 
   // ─── FORM VIEW ───────────────────────────────────────────────────
@@ -391,53 +408,121 @@ export function SolicitudActivacionList({
             isNew2,
             dbIdForEnviar,
           });
-          const result = await saveSolicitudActivacion(data, isNew2 ? undefined : dbIdForEnviar);
-          console.log('[PROMPT_IA] saveSolicitudActivacion result:', result);
-          if (!result.ok) {
-            toast.error('Error al enviar la solicitud', { description: result.error });
-            return;
-          }
+          // Activar la cuenta y crear cuenta eje
+          const UUID_RE_ACT = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+          if (data._fromActivar) {
+            const solIdValido = !!(data.solicitudId && UUID_RE_ACT.test(data.solicitudId));
+            let clienteIdFinal = data.clienteId || '';
 
-          // Si es activar (_fromActivar), finalizar la solicitud principal via activarCuentaDB
-          if (data._fromActivar && data.solicitudId) {
-            const UUID_RE_ACT = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-            if (UUID_RE_ACT.test(data.solicitudId)) {
+            // Paso 1: actualizar el registro de crédito/captación si hay solicitudId válido
+            if (solIdValido) {
               try {
+                const noCuenta = String(Math.floor(Math.random() * 9000000000000000) + 1000000000000000);
+                const montoNum = parseFloat((data.montoTransaccion || '0').replace(/[^0-9.-]/g, '')) || 0;
+                const linea = (data.lineaProducto || '').toLowerCase();
+                const esCaptacion = linea.includes('captacion') || linea.includes('ahorro') || linea.includes('aportacion') || linea.includes('inversion');
+                console.log('[onEnviar] activarCuentaDB →', data.solicitudId, 'clienteId actual:', clienteIdFinal);
                 const activResult = await activarCuentaDB(data.solicitudId, {
-                  estatus_sol:  'Autorizada',
-                  estatus_cuen: 'Activa',
-                  estatus_disp: 'Pagado',
-                  estatus_cart: 'Activa',
-                });
+                  estatus_sol:       'Autorizada',
+                  estatus_cuen:      'Activa',
+                  estatus_disp:      'Pagado',
+                  estatus_cart:      'Activa',
+                  no_cuenta:         noCuenta,
+                  cta_eje_chec:      esCaptacion,
+                  monto_transaccion: montoNum,
+                  lineaProducto:     data.lineaProducto || '',
+                }, data.lineaProducto);
+                // Usar clienteId del backend (más confiable que el del form)
+                if (activResult.clienteId) clienteIdFinal = activResult.clienteId;
                 if (activResult.ok) {
                   toast.success('¡Solicitud completada!', { description: 'Cuenta activada — Estatus: Autorizada' });
                 } else {
-                  toast.warning('No se pudo finalizar la solicitud', { description: activResult.error || 'Revise la consola' });
+                  console.warn('[onEnviar] activarCuentaDB falló:', activResult.error);
+                  toast.warning('No se pudo actualizar el registro de crédito', { description: activResult.error || 'Revise la consola' });
                 }
               } catch (err) {
-                console.error('Error al activar cuenta desde módulo standalone:', err);
+                console.error('[onEnviar] Error en activarCuentaDB:', err);
               }
+            } else {
+              console.warn('[onEnviar] solicitudId no es UUID válido — omitiendo activarCuentaDB. solicitudId:', data.solicitudId);
+            }
+
+            // Marcar como Autorizada en el registro de activación (siempre)
+            data.estatus = 'Autorizada';
+            data._estatusFromDB = 'Autorizada';
+
+            // Paso 2: crear cuenta eje — SIEMPRE, independiente de si activarCuentaDB OK
+            console.log('[onEnviar] clienteIdFinal para cuenta:', clienteIdFinal, '| solicitudId:', data.solicitudId);
+            if (clienteIdFinal && UUID_RE_ACT.test(clienteIdFinal)) {
+              const montoNum2 = parseFloat((data.montoTransaccion || '0').replace(/[^0-9.-]/g, '')) || 0;
+              console.log('[onEnviar] Creando cuenta — solicitudId:', data.solicitudId, 'linea:', data.lineaProducto, 'tipo:', data.type, 'monto:', montoNum2);
+              crearCuentaEjeDB(clienteIdFinal, data.cliente, data.solicitudId || undefined, data.lineaProducto || undefined, data.type || undefined, montoNum2)
+                .then(() => console.log('[onEnviar] Cuenta por solicitud creada OK'))
+                .catch(err => console.error('[onEnviar] Error creando cuenta:', err));
+            } else {
+              console.warn('[onEnviar] SIN clienteId para cuenta eje — solicitudId:', data.solicitudId, 'clienteId form:', data.clienteId);
+              // Último recurso: intentar con solicitudId si es el mismo cliente
             }
           }
 
-          toast.success('Solicitud de Activación enviada', { description: `Estatus: ${data.estatus}` });
+          // Guardar el registro de activación (separado de la activación de la cuenta)
+          const result = await saveSolicitudActivacion(data, isNew2 ? undefined : dbIdForEnviar);
+          console.log('[PROMPT_IA] saveSolicitudActivacion result:', result);
+          if (!result.ok) {
+            toast.error('Error al guardar la solicitud de activación', { description: result.error });
+            // En modo originación notificar igual para que la fase pueda avanzar
+            if (onSavedFromOriginacion) {
+              const errItem: SolicitudActivacionListItem = {
+                id:              dbIdForEnviar || String(Date.now()),
+                solicitudId:     data.solicitudId,
+                cliente:         data.cliente,
+                numeroDocumento: data.numeroDocumento,
+                tipo:            data.type,
+                fechaSolicitud:  data.fechaSolicitud.split(' ')[0],
+                estatus:         data.estatus || 'Enviada',
+                montoTransaccion: data.montoTransaccion,
+                moneda:           data.moneda,
+                _dbId:           dbIdForEnviar,
+                _fromDB:         false,
+                _fromActivar:    !!data._fromActivar,
+              };
+              onSavedFromOriginacion(errItem);
+            }
+            // Standalone: stay on form on save error
+            return;
+          }
+
           const sentItem: SolicitudActivacionListItem = {
-            id:              result.id || String(Date.now()),
+            id:              result.id || (dbIdForEnviar ?? String(Date.now())),
             solicitudId:     data.solicitudId,
             cliente:         data.cliente,
             numeroDocumento: data.numeroDocumento,
             tipo:            data.type,
             fechaSolicitud:  data.fechaSolicitud.split(' ')[0],
-            estatus:         data.estatus || 'Enviada',
+            estatus:         data._estatusFromDB || 'Enviada',
             montoTransaccion: data.montoTransaccion,
             moneda:           data.moneda,
-            _dbId:           result.id,
+            _dbId:           result.id || dbIdForEnviar,
             _fromDB:         true,
             _fromActivar:    !!data._fromActivar,
           };
           console.log('[PROMPT_IA] sentItem a onSavedFromOriginacion:', sentItem);
           if (onSavedFromOriginacion) { onSavedFromOriginacion(sentItem); return; }
+
+          // Standalone: update local list immediately + sync from DB
+          toast.success('Solicitud de Activación enviada', { description: `Estatus: ${data._estatusFromDB || data.estatus}` });
+          setSolicitudes(prev => {
+            const matchId = String(sentItem._dbId || sentItem.id);
+            const idx = matchId ? prev.findIndex(s => String(s._dbId || s.id) === matchId) : -1;
+            if (idx >= 0) {
+              const upd = [...prev];
+              upd[idx] = { ...upd[idx], ...sentItem };
+              return upd;
+            }
+            return isNew2 ? [sentItem, ...prev] : prev;
+          });
           setView({ type: 'list' });
+          refetch();
         }}
       />
     );
@@ -478,9 +563,11 @@ export function SolicitudActivacionList({
   const handleEstatusChange = (v: string) => { setFilterEstatus(v); setCurrentPage(1); };
 
   const statusClass = (estatus: string) => {
-    if (estatus === 'Activada')    return 'text-green-700 bg-green-50 border-green-200';
+    if (['Activada', 'Autorizada', 'Activo', 'Pagado'].includes(estatus))
+      return 'text-green-700 bg-green-50 border-green-200';
     if (estatus === 'Rechazada')   return 'text-red-700 bg-red-50 border-red-200';
     if (estatus === 'En Revisión') return 'text-blue-700 bg-blue-50 border-blue-200';
+    if (estatus === 'Enviada')     return 'text-blue-700 bg-blue-50 border-blue-200';
     if (estatus === 'Aprobada')    return 'text-purple-700 bg-purple-50 border-purple-200';
     return 'text-amber-700 bg-amber-50 border-amber-200';
   };
@@ -599,6 +686,9 @@ export function SolicitudActivacionList({
               >
                 <option value="">Todos</option>
                 <option value="Pendiente">Pendiente</option>
+                <option value="Enviada">Enviada</option>
+                <option value="Pagado">Pagado</option>
+                <option value="Autorizada">Autorizada</option>
                 <option value="En Revisión">En Revisión</option>
                 <option value="Aprobada">Aprobada</option>
                 <option value="Activada">Activada</option>
