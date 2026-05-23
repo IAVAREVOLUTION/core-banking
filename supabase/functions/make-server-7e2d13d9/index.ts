@@ -9,7 +9,7 @@ import * as kv from "./kv_store.tsx";
 // ─── Boot log ───────────────────────────────────────────────────────
 // TODOS los endpoints de J_CLIENTES devuelven TODOS los registros SIN WHERE
 // useClientesDB v11.0 → /clientes-lista-todos | useProspectosDB → /clientes-prospectos
-const EDGE_VERSION = "v42.6-ACTIVAR-SIMPLE-EJE-FRONTEND";
+const EDGE_VERSION = "v46.0-MOVIMIENTOS-REPLICA-CUENTA-EJE";
 console.log(`[SERVER BOOT] Edge function loaded — ${EDGE_VERSION}`);
 console.log(`[SERVER BOOT] Routes: TODOS los endpoints de J_CLIENTES sin filtros WHERE`);
 console.log(`[SERVER BOOT] Auto-bootstrap: public.get_clientes() + public.get_all_jclientes() RPCs`);
@@ -2397,12 +2397,8 @@ const getCuentasAhorroHandler = async (c: any) => {
         )
       )
       OR s.cta_eje_chec = true
-      -- Cuentas creadas por activación de solicitud específica (cualquier línea de producto)
-      OR (
-        s.type = 'CuentaAhorro'
-        AND s.estatus_cuen = 'Activa'
-        AND (s.data->'metadatos'->>'solicitudId') IS NOT NULL
-      )
+      -- Todas las CuentaAhorro con cliente asignado (créditos, captación, activaciones, etc.)
+      OR (s.type = 'CuentaAhorro' AND s.cliente_id IS NOT NULL)
       ORDER BY s.fecha_sol DESC NULLS LAST
     `;
     console.log(`[CUENTAS-AHORRO] OK — ${rows.length} registros`);
@@ -2493,6 +2489,49 @@ const escribirMovimientoEnCuenta = async (cuentaId: string, movimiento: Record<s
   return { cuentaId: String(cuenta.id), saldo_anterior: saldoActual, saldoNuevo: nuevoSaldo };
 };
 
+// Replica un movimiento en la cuenta eje del cliente (fire-and-forget — nunca lanza).
+// Se llama después de escribirMovimientoEnCuenta para que el tab Movimientos en Clientes
+// refleje todos los flujos: aperturas, pagos, dispersiones, etc.
+const replicarEnCuentaEje = async (
+  clienteId: string | null,
+  cuentaOrigenId: string,
+  movimiento: Record<string, any>,
+) => {
+  if (!clienteId) return;
+  try {
+    const [ejeRow] = await sql`
+      SELECT id, saldo_actual, data
+      FROM "EFINANCIANET_DB"."J_CUENTAS_CORP_CLIENTES"
+      WHERE cliente_id = ${clienteId}::uuid AND cta_eje_chec = true LIMIT 1
+    `;
+    // No replicar si la cuenta eje ES la misma cuenta origen
+    if (!ejeRow || String(ejeRow.id) === cuentaOrigenId) return;
+
+    const saldoEje = parseFloat(String(ejeRow.saldo_actual || '0').replace(/[^0-9.-]/g, '')) || 0;
+    const monto    = parseFloat(movimiento.monto) || 0;
+    const nuevoSaldoEje = movimiento.tipo === 'Abono' ? saldoEje + monto : saldoEje - monto;
+
+    const dataEje  = parseJsonbData(ejeRow.data);
+    const movsEje  = Array.isArray(dataEje.movimientos) ? dataEje.movimientos : [];
+    movsEje.push({
+      ...movimiento,
+      id:            `eje-${Date.now()}`,
+      fechaRegistro: new Date().toISOString(),
+      saldoInicial:  saldoEje,
+      saldoFinal:    nuevoSaldoEje,
+      origenCuenta:  cuentaOrigenId,
+    });
+    await sql`
+      UPDATE "EFINANCIANET_DB"."J_CUENTAS_CORP_CLIENTES"
+      SET saldo_actual = ${nuevoSaldoEje}::numeric, data = ${JSON.stringify({ ...dataEje, movimientos: movsEje })}::jsonb
+      WHERE id = ${ejeRow.id}::uuid
+    `;
+    console.log(`[REPLICA-EJE] clienteId=${clienteId} saldo eje: ${saldoEje} → ${nuevoSaldoEje}`);
+  } catch (e: any) {
+    console.warn(`[REPLICA-EJE] falló (no bloquea): ${e?.message}`);
+  }
+};
+
 // GET /cuentas-ahorro/:id/movimientos — Leer movimientos de una cuenta (+ cuenta eje del cliente)
 const getMovimientosCuentaHandler = async (c: any) => {
   const id = c.req.param('id');
@@ -2509,30 +2548,15 @@ const getMovimientosCuentaHandler = async (c: any) => {
       return Array.isArray(parsed.movimientos) ? parsed.movimientos : [];
     };
 
-    let movs = parseMov(cuenta.data);
-
-    // Si la cuenta tiene cliente_id, también leer movimientos de la cuenta eje del cliente
-    if (cuenta.cliente_id) {
-      try {
-        const [cuentaEje] = await sql`
-          SELECT id, data FROM "EFINANCIANET_DB"."J_CUENTAS_CORP_CLIENTES"
-          WHERE cliente_id = ${cuenta.cliente_id}::uuid AND cta_eje_chec = true AND id != ${id}::uuid
-          LIMIT 1
-        `;
-        if (cuentaEje) {
-          const ejeMovs = parseMov(cuentaEje.data);
-          const idsExistentes = new Set(movs.map((m: any) => String(m.id)));
-          movs = [...movs, ...ejeMovs.filter((m: any) => !idsExistentes.has(String(m.id)))];
-        }
-      } catch { /* no bloquea */ }
-    }
+    // Movimientos propios de esta cuenta (no mezclar con cuenta eje)
+    const movs = parseMov(cuenta.data);
 
     movs.sort((a: any, b: any) =>
       new Date(b.fechaHora || b.fechaRegistro || 0).getTime() -
       new Date(a.fechaHora || a.fechaRegistro || 0).getTime()
     );
 
-    return c.json({ data: movs });
+    return c.json({ data: movs, saldo_actual: cuenta.saldo_actual });
   } catch (err: any) {
     return c.json({ error: err.message }, 500);
   }
@@ -2632,6 +2656,34 @@ const postCuentasAhorroHandler = async (c: any) => {
 
     const inserted = rows[0];
     console.log(`[CUENTAS-AHORRO] Insert OK — id: ${inserted?.id}`);
+
+    // Registrar movimiento inicial automáticamente después del INSERT
+    // Crédito / Línea de Crédito → Cargo Inicial; Captación / Aportación / Inversión → Abono Inicial
+    const montoInicial = monto_aut ?? monto_sol ?? 0;
+    if (inserted?.id && montoInicial && montoInicial > 0) {
+      try {
+        const lineaNorm = (linea_produc || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+        const esCredito = lineaNorm.includes('cred') || lineaNorm.includes('linea');
+        const tipoMov   = esCredito ? 'Cargo' : 'Abono';
+        const conceptoMov = esCredito ? 'Saldo Inicial del Crédito' : 'Abono Inicial';
+        const referenciaMov = `Apertura de Cuenta / Solicitud ${no_sol}`;
+        const movApertura = {
+          tipo:      tipoMov,
+          concepto:  conceptoMov,
+          referencia: referenciaMov,
+          monto:     montoInicial,
+          estatus:   'Aplicado',
+          origenCreacion: 'AperturaAutomatica',
+        };
+        await escribirMovimientoEnCuenta(String(inserted.id), movApertura, montoInicial);
+        console.log(`[CUENTAS-AHORRO] Movimiento inicial registrado — tipo: ${tipoMov}, monto: ${montoInicial}`);
+        // Replicar en cuenta eje del cliente
+        await replicarEnCuentaEje(cliente_id, String(inserted.id), movApertura);
+      } catch (movErr: any) {
+        console.warn(`[CUENTAS-AHORRO] Movimiento inicial fallido (no bloquea): ${movErr?.message}`);
+      }
+    }
+
     return c.json(inserted, 201);
   } catch (err: any) {
     const msg = err?.message || String(err);
@@ -3123,25 +3175,47 @@ async function crearCuentaAhorroParaSolicitud(
 ): Promise<string | null> {
   const LOG = '[CREAR-CUENTA-AHORRO]';
   try {
-    // Idempotencia via JSONB — no_referenc1 no puede almacenar UUID (VARCHAR 30)
+    // Leer no_sol real del registro origen (para guardarlo en metadatos, no como PK)
+    let noSolReal = '';
+    try {
+      const [solRow] = await sql`SELECT no_sol FROM "EFINANCIANET_DB"."J_CUENTAS_CORP_CLIENTES" WHERE id = ${solicitudId}::uuid LIMIT 1`;
+      noSolReal = solRow?.no_sol || '';
+    } catch { /* no bloquea */ }
+
+    const noSolCEJE = `CEJE-${solicitudId.substring(0, 8)}`;
+
+    // Idempotencia: buscar por solicitudId en metadatos O por no_sol CEJE- (registros legacy sin metadatos)
     const existe = await sql`
       SELECT id FROM "EFINANCIANET_DB"."J_CUENTAS_CORP_CLIENTES"
       WHERE type = 'CuentaAhorro'
-        AND data->'metadatos'->>'solicitudId' = ${solicitudId}
         AND cliente_id = ${clienteId}::uuid
+        AND (
+          data->'metadatos'->>'solicitudId' = ${solicitudId}
+          OR no_sol = ${noSolCEJE}
+        )
       LIMIT 1
     `;
     if (existe.length > 0) {
+      // Actualizar metadatos si faltan (registros legacy sin data o sin solicitudId)
+      try {
+        const metaNueva = JSON.stringify({ solicitudId, noSol: noSolReal || noSolCEJE, origenCreacion: 'ActivacionSolicitud' });
+        await sql`
+          UPDATE "EFINANCIANET_DB"."J_CUENTAS_CORP_CLIENTES"
+          SET data = COALESCE(data, '{}'::jsonb) || jsonb_build_object('metadatos', ${metaNueva}::jsonb)
+          WHERE id = ${existe[0].id}::uuid AND (data IS NULL OR (data->'metadatos'->>'solicitudId') IS NULL)
+        `;
+      } catch { /* no bloquea */ }
       console.log(`${LOG} Ya existe para solicitud ${solicitudId}: ${existe[0].id}`);
       return existe[0].id;
     }
+
     const lineaNorm = lineaProd.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
     const esCaptacion = lineaNorm.includes('captacion') || lineaNorm.includes('ahorro')
       || lineaNorm.includes('inversion') || lineaNorm.includes('aportacion');
     const tipoMov  = esCaptacion ? 'Abono Inicial' : 'Cargo Inicial';
     const saldoFin = esCaptacion ? montoTransaccion : 0;
-    // noSolC = 13 chars máximo — cabe en VARCHAR(30)
-    const noSolC   = `CEJE-${solicitudId.substring(0, 8)}`;
+    // no_sol de la CuentaAhorro: prefijo CEJE + uuid corto (evita duplicate key con la solicitud)
+    const noSolC   = noSolCEJE;
     const noCuenta = `0147${String(Math.floor(Math.random() * 99999999)).padStart(8, '0')}`;
     const now      = new Date().toISOString();
     const movInicial = {
@@ -3154,7 +3228,7 @@ async function crearCuentaAhorroParaSolicitud(
       origenCreacion: 'ActivacionSolicitud',
     };
     const dataJson = JSON.stringify({
-      metadatos: { noSol: noSolC, noCuenta, solicitudId, origenCreacion: 'ActivacionSolicitud', titular: nombreCliente },
+      metadatos: { noSol: noSolReal || noSolC, noCuenta, solicitudId, origenCreacion: 'ActivacionSolicitud', titular: nombreCliente },
       estatusCuenta: 'Activa', estatusSolicitud: 'Autorizada', estatusCartera: 'Activa',
       saldoActual: saldoFin, fechaApertura: now,
       movimientos: [movInicial],
@@ -3179,6 +3253,15 @@ async function crearCuentaAhorroParaSolicitud(
       RETURNING id, no_cuenta
     `;
     console.log(`${LOG} ✅ CuentaAhorro id=${ins.id} noCuenta=${ins.no_cuenta} solicitudId=${solicitudId}`);
+    // Replicar movimiento de apertura en cuenta eje del cliente
+    await replicarEnCuentaEje(clienteId, String(ins.id), {
+      tipo:    tipoMov,
+      concepto: 'Apertura de Cuenta',
+      referencia: `Solicitud ${solicitudId.substring(0, 8)}`,
+      monto:   montoTransaccion,
+      estatus: 'Aplicado',
+      origenCreacion: 'ActivacionSolicitud',
+    });
     return ins.id;
   } catch (e: any) {
     console.warn(`${LOG} Error:`, e?.message);
@@ -3635,7 +3718,8 @@ const carteraAmortizacionesHandler = async (c: any) => {
 
     // 2. Fallback: leer simulacion desde data JSONB de J_CUENTAS_CORP_CLIENTES
     const [solicitud] = await sql`
-      SELECT data FROM "EFINANCIANET_DB"."J_CUENTAS_CORP_CLIENTES"
+      SELECT type, monto_aut, fecha_inicio, fecha_fin_cu, data
+      FROM "EFINANCIANET_DB"."J_CUENTAS_CORP_CLIENTES"
       WHERE id = ${solicitudId}::uuid
     `;
     if (!solicitud) return c.json({ data: [], fuente: 'sin_datos' });
@@ -3694,6 +3778,47 @@ const carteraAmortizacionesHandler = async (c: any) => {
       jsonData?.simulacion?.calendario_aportaciones ||
       jsonData?.calendario_aportaciones ||
       [];
+
+    // Path 2c: CuentaAhorro sin simulacion → generar calendario mensual desde campos de la fila
+    if (simRows.length === 0 && calAportaciones.length === 0 && solicitud.type === 'CuentaAhorro') {
+      const montoAut = parseFloat(solicitud.monto_aut) || 0;
+      const tasa = parseFloat(jsonData?.producto?.tasa) || 0;
+      const fechaIni = solicitud.fecha_inicio ? new Date(solicitud.fecha_inicio) : null;
+      const fechaFin = solicitud.fecha_fin_cu  ? new Date(solicitud.fecha_fin_cu)  : null;
+
+      if (montoAut > 0 && fechaIni && fechaFin && fechaFin > fechaIni) {
+        const msPerMonth = 30.4375 * 24 * 3600 * 1000;
+        const meses = Math.round((fechaFin.getTime() - fechaIni.getTime()) / msPerMonth);
+        const montoMensual = montoAut / (meses || 1);
+        const tasaMensual  = tasa / 100 / 12;
+
+        const calRows: any[] = [];
+        let saldo = 0;
+        for (let i = 1; i <= meses; i++) {
+          const fechaPago = new Date(fechaIni.getTime() + i * msPerMonth);
+          const fechaStr  = fechaPago.toISOString().split('T')[0];
+          saldo += montoMensual;
+          const interes = saldo * tasaMensual;
+          calRows.push({
+            id:            `gen-${i}`,
+            solicitud_id:  solicitudId,
+            no_pago:       i,
+            fecha_pago:    fechaStr,
+            saldo_insoluto: Math.round(saldo * 100) / 100,
+            pago_capital:  Math.round(montoMensual * 100) / 100,
+            pago_interes:  Math.round(interes * 100) / 100,
+            iva_interes:   Math.round(interes * 0.16 * 100) / 100,
+            pago_seguro:   0,
+            iva_seguro:    0,
+            pago_total:    Math.round(montoMensual * 100) / 100,
+            moneda:        'MXN',
+            estatus:       fechaStatusMap[fechaStr] || 'Pendiente',
+          });
+        }
+        return c.json({ data: calRows, fuente: 'generado_cuenta_ahorro' });
+      }
+      return c.json({ data: [], fuente: 'cuenta_ahorro_sin_fechas' });
+    }
 
     // Si no hay resultado_simulacion pero sí calendario_aportaciones, mapear al mismo shape
     if (simRows.length === 0 && calAportaciones.length > 0) {
@@ -4057,31 +4182,30 @@ const carteraMarcarPagadoHandler = async (c: any) => {
         console.warn(`${LOG} monto_aut update fallido (no bloquea): ${montoErr?.message}`);
       }
 
-      // Req 16: registrar movimiento en data.movimientos
+      // Req 16: registrar movimiento en data.movimientos usando escribirMovimientoEnCuenta
       try {
         const [cuentaRow] = await sql`
-          SELECT data FROM "EFINANCIANET_DB"."J_CUENTAS_CORP_CLIENTES" WHERE id = ${solicitudId}::uuid
+          SELECT saldo_actual, monto_aut, cliente_id FROM "EFINANCIANET_DB"."J_CUENTAS_CORP_CLIENTES"
+          WHERE id = ${solicitudId}::uuid
         `;
         if (cuentaRow) {
-          const existingData = parseJsonbData(cuentaRow.data);
-          const movimientos = Array.isArray(existingData.movimientos) ? existingData.movimientos : [];
-          movimientos.push({
-            id: `mov-${Date.now()}`,
-            tipo: 'Cargo',
-            concepto: 'Cargo de Crédito',
+          const montoAutStr = String(cuentaRow.monto_aut || '0').replace(/[^0-9.-]/g, '');
+          const saldoActual = parseFloat(String(cuentaRow.saldo_actual || '0').replace(/[^0-9.-]/g, '')) || 0;
+          const saldoAntes  = saldoActual;
+          const nuevoSaldo  = Math.max(0, parseFloat(montoAutStr) || 0);
+          const movPago = {
+            tipo:          'Abono',
+            concepto:      'Pago de Crédito',
             referencia,
             monto,
-            saldoFinal: 0,
-            fechaRegistro: new Date().toISOString(),
+            saldoInicial:  saldoAntes,
+            estatus:       'Aplicado',
             origenCreacion: 'Cobranza',
-          });
-          const newData = { ...existingData, movimientos };
-          await sql`
-            UPDATE "EFINANCIANET_DB"."J_CUENTAS_CORP_CLIENTES"
-            SET data = ${JSON.stringify(newData)}::jsonb
-            WHERE id = ${solicitudId}::uuid
-          `;
-          console.log(`${LOG} Movimiento registrado en data.movimientos`);
+          };
+          await escribirMovimientoEnCuenta(String(solicitudId), movPago, nuevoSaldo);
+          // Replicar en cuenta eje del cliente para que aparezca en tab Movimientos
+          await replicarEnCuentaEje(cuentaRow.cliente_id ? String(cuentaRow.cliente_id) : null, String(solicitudId), movPago);
+          console.log(`${LOG} Movimiento registrado — saldo: ${saldoAntes} → ${nuevoSaldo}`);
         }
       } catch (movErr: any) {
         console.warn(`${LOG} data.movimientos update fallido (no bloquea): ${movErr?.message}`);
@@ -4509,13 +4633,299 @@ app.get(`/cartera/schema`, carteraSchemaHandler);
 // Cobranza global
 app.get(`${PREFIX}/cartera/cobranza`, carteraCobranzaHandler);
 app.get(`/cartera/cobranza`, carteraCobranzaHandler);
-// Generación Contable
+// Generación Contable (legacy — mantener compatibilidad)
 app.get(`${PREFIX}/cartera/contable/:solicitudId`, carteraContableGetHandler);
 app.post(`${PREFIX}/cartera/contable`, carteraContableCreateHandler);
 app.post(`${PREFIX}/cartera/contable/:eventoId/ejecutar`, carteraContableEjecutarHandler);
 app.get(`/cartera/contable/:solicitudId`, carteraContableGetHandler);
 app.post(`/cartera/contable`, carteraContableCreateHandler);
 app.post(`/cartera/contable/:eventoId/ejecutar`, carteraContableEjecutarHandler);
+
+// ── Generación Contable v2 (tablas GL reales) ──────────────────────────────
+
+// GET /contable/catalogo — Lee J_CATALOGO_EVENTOS_CONTABLES
+app.get(`${PREFIX}/contable/catalogo`, async (c: any) => {
+  try {
+    const rows = await sql`SELECT id, codigo, evento, prompt_ia FROM "EFINANCIANET_DB"."J_CATALOGO_EVENTOS_CONTABLES" ORDER BY codigo`;
+    return c.json({ data: rows });
+  } catch (e: any) { return c.json({ error: e.message }, 500); }
+});
+app.get(`/contable/catalogo`, async (c: any) => {
+  try {
+    const rows = await sql`SELECT id, codigo, evento, prompt_ia FROM "EFINANCIANET_DB"."J_CATALOGO_EVENTOS_CONTABLES" ORDER BY codigo`;
+    return c.json({ data: rows });
+  } catch (e: any) { return c.json({ error: e.message }, 500); }
+});
+
+// GET /contable/eventos/:solicitudId — busca por account_id O data->>'solicitud_id'
+const contableEventosGetHandler = async (c: any) => {
+  try {
+    const sid = c.req.param('solicitudId');
+    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sid || '');
+    const rows = isUUID
+      ? await sql`
+          SELECT j.id, j.event_code as codigo, j.status as estatus,
+                 j.journal_date as fecha, j.total_debit, j.total_credit, j.data
+          FROM "EFINANCIANET_DB"."J_GL_JOURNAL_ENCABEZADO" j
+          WHERE j.account_id = ${sid}::uuid
+             OR j.data->>'solicitud_id' = ${sid}
+          ORDER BY j.created_at DESC
+        `
+      : await sql`
+          SELECT j.id, j.event_code as codigo, j.status as estatus,
+                 j.journal_date as fecha, j.total_debit, j.total_credit, j.data
+          FROM "EFINANCIANET_DB"."J_GL_JOURNAL_ENCABEZADO" j
+          WHERE j.data->>'solicitud_id' = ${sid}
+          ORDER BY j.created_at DESC
+        `;
+    const data = rows.map((r: any) => {
+      const d = parseJsonbData(r.data);
+      return {
+        id:          r.id,
+        codigo:      d.codigo    || r.codigo,
+        evento:      d.evento    || r.codigo,
+        prompt_ia:   d.prompt_ia || '',
+        estatus:     r.estatus === 'creada' ? 'Creado' : r.estatus === 'procesada' ? 'Procesado' : (r.estatus || 'Creado'),
+        poliza:      d.poliza    || null,
+        fecha:       r.fecha,
+        total_debit:  r.total_debit,
+        total_credit: r.total_credit,
+      };
+    });
+    return c.json({ data });
+  } catch (e: any) { return c.json({ error: e.message }, 500); }
+};
+app.get(`${PREFIX}/contable/eventos/:solicitudId`, contableEventosGetHandler);
+app.get(`/contable/eventos/:solicitudId`, contableEventosGetHandler);
+
+// POST /contable/eventos — Crea encabezado en J_GL_JOURNAL_ENCABEZADO con estatus=creada
+app.post(`${PREFIX}/contable/eventos`, async (c: any) => {
+  try {
+    const b = await c.req.json();
+    const { solicitud_id, catalogo_id, codigo, evento, prompt_ia } = b;
+    if (!solicitud_id || !codigo) return c.json({ error: 'solicitud_id y codigo requeridos' }, 400);
+
+    // Leer producto y montos de la cuenta financiera
+    const [cuenta] = await sql`
+      SELECT producto_id, monto_aut, monto_sol, cliente_id FROM "EFINANCIANET_DB"."J_CUENTAS_CORP_CLIENTES"
+      WHERE id = ${solicitud_id}::uuid LIMIT 1
+    `;
+    const monto = parseFloat(String(cuenta?.monto_aut || cuenta?.monto_sol || '0').replace(/[^0-9.-]/g, '')) || 0;
+    const productoId = cuenta?.producto_id || null;
+    // Si el registro no existe en J_CUENTAS_CORP_CLIENTES, no usar como FK (evita constraint error)
+    const accountId = cuenta ? solicitud_id : null;
+    const dataJson = JSON.stringify({ solicitud_id, catalogo_id: catalogo_id || null, codigo, evento: evento || codigo, prompt_ia: prompt_ia || '' });
+
+    const [ins] = await sql`
+      INSERT INTO "EFINANCIANET_DB"."J_GL_JOURNAL_ENCABEZADO"
+        (journal_date, producto_id, event_code, account_id, currency, total_debit, total_credit, status, created_at, data)
+      VALUES (
+        CURRENT_DATE,
+        ${productoId}::uuid,
+        ${codigo},
+        ${accountId}::uuid,
+        'MXN',
+        ${monto}::numeric,
+        ${monto}::numeric,
+        'creada',
+        NOW(),
+        ${sql.json({ solicitud_id, catalogo_id: catalogo_id || null, codigo, evento: evento || codigo, prompt_ia: prompt_ia || '' })}
+      )
+      RETURNING id
+    `;
+    return c.json({ ok: true, id: ins.id });
+  } catch (e: any) { return c.json({ error: e.message }, 500); }
+});
+app.post(`/contable/eventos`, async (c: any) => {
+  try {
+    const b = await c.req.json();
+    const { solicitud_id, catalogo_id, codigo, evento, prompt_ia } = b;
+    if (!solicitud_id || !codigo) return c.json({ error: 'solicitud_id y codigo requeridos' }, 400);
+    const [cuenta] = await sql`SELECT producto_id, monto_aut, monto_sol FROM "EFINANCIANET_DB"."J_CUENTAS_CORP_CLIENTES" WHERE id = ${solicitud_id}::uuid LIMIT 1`;
+    const monto = parseFloat(String(cuenta?.monto_aut || cuenta?.monto_sol || '0').replace(/[^0-9.-]/g, '')) || 0;
+    const pId2 = cuenta?.producto_id || null;
+    const aId2 = cuenta ? solicitud_id : null;
+    const [ins] = await sql`
+      INSERT INTO "EFINANCIANET_DB"."J_GL_JOURNAL_ENCABEZADO"
+        (journal_date, producto_id, event_code, account_id, currency, total_debit, total_credit, status, created_at, data)
+      VALUES (CURRENT_DATE, ${pId2}::uuid, ${codigo}, ${aId2}::uuid, 'MXN', ${monto}::numeric, ${monto}::numeric, 'creada', NOW(), ${sql.json({ solicitud_id, catalogo_id: catalogo_id || null, codigo, evento: evento || codigo, prompt_ia: prompt_ia || '' })})
+      RETURNING id`;
+    return c.json({ ok: true, id: ins.id });
+  } catch (e: any) { return c.json({ error: e.message }, 500); }
+});
+
+// POST /contable/eventos/:id/ejecutar — Lee motor contable, genera póliza con IA, inserta DETALLE
+app.post(`${PREFIX}/contable/eventos/:id/ejecutar`, async (c: any) => {
+  const LOG = '[CONTABLE-EJECUTAR]';
+  try {
+    const journalId = c.req.param('id');
+    const b = await c.req.json();
+    const { solicitud_id, contexto, prompt_ia } = b;
+
+    // 1. Leer encabezado y cuenta financiera
+    const [header] = await sql`
+      SELECT j.*, cc.producto_id as prod_id, cc.cliente_id as cli_id,
+             cc.monto_aut, cc.monto_sol
+      FROM "EFINANCIANET_DB"."J_GL_JOURNAL_ENCABEZADO" j
+      LEFT JOIN "EFINANCIANET_DB"."J_CUENTAS_CORP_CLIENTES" cc ON cc.id = j.account_id
+      WHERE j.id = ${journalId}::uuid LIMIT 1
+    `;
+    if (!header) return c.json({ error: 'Encabezado no encontrado' }, 404);
+
+    // 2. Leer motor contable del producto
+    let motorContable: any[] = [];
+    if (header.prod_id) {
+      try {
+        const [prod] = await sql`SELECT data FROM "EFINANCIANET_DB"."J_PRODUCTOS" WHERE id = ${header.prod_id}::uuid LIMIT 1`;
+        const pd = parseJsonbData(prod?.data);
+        motorContable = Array.isArray(pd.motorContable) ? pd.motorContable : [];
+      } catch { /* sin motor */ }
+    }
+
+    // 3. Filtrar entradas del motor contable para este evento
+    const lineasMotor = motorContable.filter((m: any) => m.evento?.codigo === header.event_code);
+    const monto = parseFloat(String(header.monto_aut || header.monto_sol || '0').replace(/[^0-9.-]/g, '')) || 0;
+
+    // 4. Insertar líneas de detalle basadas en motor contable
+    let totalDebito = 0; let totalCredito = 0;
+    if (lineasMotor.length > 0) {
+      for (const linea of lineasMotor) {
+        const montoLinea = monto;
+        await sql`
+          INSERT INTO "EFINANCIANET_DB"."J_GL_JOURNAL_DETALLE"
+            (journal_id, gl_account, debit_amount, credit_amount, currency, customer_id, account_id, product_id, descripcion)
+          VALUES (
+            ${journalId}::uuid,
+            ${linea.debito?.cuenta_gl || linea.debito?.id || '—'},
+            ${montoLinea}::numeric,
+            0,
+            'MXN',
+            ${header.cli_id || null}::uuid,
+            ${header.account_id}::uuid,
+            ${header.prod_id || null}::uuid,
+            ${`DÉBITO: ${linea.debito?.nombre || ''} | Componente: ${linea.componente?.nombre || ''}`}
+          )
+        `;
+        await sql`
+          INSERT INTO "EFINANCIANET_DB"."J_GL_JOURNAL_DETALLE"
+            (journal_id, gl_account, debit_amount, credit_amount, currency, customer_id, account_id, product_id, descripcion)
+          VALUES (
+            ${journalId}::uuid,
+            ${linea.credito?.cuenta_gl || linea.credito?.id || '—'},
+            0,
+            ${montoLinea}::numeric,
+            'MXN',
+            ${header.cli_id || null}::uuid,
+            ${header.account_id}::uuid,
+            ${header.prod_id || null}::uuid,
+            ${`CRÉDITO: ${linea.credito?.nombre || ''} | Componente: ${linea.componente?.nombre || ''}`}
+          )
+        `;
+        totalDebito  += montoLinea;
+        totalCredito += montoLinea;
+      }
+    }
+
+    // 5. Generar texto de póliza con IA (Groq)
+    const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
+    const GROQ_KEY = Deno.env.get("GROQ_API_KEY") || "";
+    let polizaTexto = lineasMotor.length > 0
+      ? lineasMotor.map((l: any) =>
+          `DÉBITO  ${(l.debito?.cuenta_gl || '').padEnd(15)} ${l.debito?.nombre || ''} $${monto.toLocaleString('es-MX', { minimumFractionDigits: 2 })}\n` +
+          `CRÉDITO ${(l.credito?.cuenta_gl || '').padEnd(15)} ${l.credito?.nombre || ''} $${monto.toLocaleString('es-MX', { minimumFractionDigits: 2 })}`
+        ).join('\n\n') + `\n\n${'─'.repeat(60)}\nTOTAL DÉBITO:  $${totalDebito.toLocaleString('es-MX', { minimumFractionDigits: 2 })}\nTOTAL CRÉDITO: $${totalCredito.toLocaleString('es-MX', { minimumFractionDigits: 2 })}`
+      : `[Sin configuración de motor contable para ${header.event_code}]\n\n${prompt_ia || ''}\n\nContexto: ${contexto || ''}`;
+
+    try {
+      if (GROQ_KEY) {
+        const motorResumen = lineasMotor.map((l: any) =>
+          `${l.evento?.codigo}: DEBE ${l.debito?.cuenta_gl} ${l.debito?.nombre} / HABER ${l.credito?.cuenta_gl} ${l.credito?.nombre} (${l.componente?.nombre})`
+        ).join('\n');
+        const iaRes = await fetch(GROQ_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${GROQ_KEY}` },
+          body: JSON.stringify({
+            model: 'meta-llama/llama-4-scout-17b-16e-instruct',
+            messages: [
+              { role: 'system', content: 'Eres un experto en contabilidad bancaria. Genera pólizas contables claras en formato: CUENTA | DESCRIPCIÓN | DEBE | HABER. Totales al final. Siempre cuadrada (DEBE = HABER).' },
+              { role: 'user', content: `${prompt_ia || ''}\n\nContexto: ${contexto || ''}\nMotor contable configurado:\n${motorResumen}\nMonto: $${monto.toLocaleString('es-MX')}` },
+            ],
+            max_tokens: 1024, temperature: 0.2,
+          }),
+        });
+        if (iaRes.ok) {
+          const iaJ = await iaRes.json();
+          polizaTexto = iaJ.choices?.[0]?.message?.content || polizaTexto;
+        }
+      }
+    } catch { /* usar texto generado localmente */ }
+
+    // 6. Actualizar encabezado: status=procesada, total_debit/credit reales, póliza en data
+    const existData = parseJsonbData(header.data);
+    existData.poliza = polizaTexto;
+    await sql`
+      UPDATE "EFINANCIANET_DB"."J_GL_JOURNAL_ENCABEZADO"
+      SET status = 'procesada',
+          total_debit  = ${totalDebito  || monto}::numeric,
+          total_credit = ${totalCredito || monto}::numeric,
+          data = ${JSON.stringify(existData)}::jsonb
+      WHERE id = ${journalId}::uuid
+    `;
+
+    console.log(`${LOG} ✅ journal=${journalId} event=${header.event_code} lineas=${lineasMotor.length} débito=${totalDebito}`);
+    return c.json({ ok: true, poliza: polizaTexto, lineas: lineasMotor.length });
+  } catch (e: any) {
+    console.error(`${LOG} Error:`, e?.message);
+    return c.json({ error: e.message }, 500);
+  }
+});
+app.post(`/contable/eventos/:id/ejecutar`, async (c: any) => {
+  const LOG = '[CONTABLE-EJECUTAR-v2]';
+  try {
+    const journalId = c.req.param('id');
+    const b = await c.req.json();
+    const { solicitud_id, contexto, prompt_ia } = b;
+    const [header] = await sql`
+      SELECT j.*, cc.producto_id as prod_id, cc.cliente_id as cli_id, cc.monto_aut, cc.monto_sol
+      FROM "EFINANCIANET_DB"."J_GL_JOURNAL_ENCABEZADO" j
+      LEFT JOIN "EFINANCIANET_DB"."J_CUENTAS_CORP_CLIENTES" cc ON cc.id = j.account_id
+      WHERE j.id = ${journalId}::uuid LIMIT 1
+    `;
+    if (!header) return c.json({ error: 'Encabezado no encontrado' }, 404);
+    let motorContable: any[] = [];
+    if (header.prod_id) {
+      try {
+        const [prod] = await sql`SELECT data FROM "EFINANCIANET_DB"."J_PRODUCTOS" WHERE id = ${header.prod_id}::uuid LIMIT 1`;
+        const pd = parseJsonbData(prod?.data);
+        motorContable = Array.isArray(pd.motorContable) ? pd.motorContable : [];
+      } catch { /* sin motor */ }
+    }
+    const lineasMotor = motorContable.filter((m: any) => m.evento?.codigo === header.event_code);
+    const monto = parseFloat(String(header.monto_aut || header.monto_sol || '0').replace(/[^0-9.-]/g, '')) || 0;
+    let totalDebito = 0; let totalCredito = 0;
+    for (const linea of lineasMotor) {
+      await sql`INSERT INTO "EFINANCIANET_DB"."J_GL_JOURNAL_DETALLE" (journal_id, gl_account, debit_amount, credit_amount, currency, customer_id, account_id, product_id, descripcion) VALUES (${journalId}::uuid, ${linea.debito?.cuenta_gl || '—'}, ${monto}::numeric, 0, 'MXN', ${header.cli_id || null}::uuid, ${header.account_id}::uuid, ${header.prod_id || null}::uuid, ${`DÉBITO: ${linea.debito?.nombre || ''}`})`;
+      await sql`INSERT INTO "EFINANCIANET_DB"."J_GL_JOURNAL_DETALLE" (journal_id, gl_account, debit_amount, credit_amount, currency, customer_id, account_id, product_id, descripcion) VALUES (${journalId}::uuid, ${linea.credito?.cuenta_gl || '—'}, 0, ${monto}::numeric, 'MXN', ${header.cli_id || null}::uuid, ${header.account_id}::uuid, ${header.prod_id || null}::uuid, ${`CRÉDITO: ${linea.credito?.nombre || ''}`})`;
+      totalDebito += monto; totalCredito += monto;
+    }
+    let polizaTexto = lineasMotor.length > 0
+      ? lineasMotor.map((l: any) => `DÉBITO  ${(l.debito?.cuenta_gl||'').padEnd(15)} ${l.debito?.nombre||''} $${monto.toLocaleString('es-MX',{minimumFractionDigits:2})}\nCRÉDITO ${(l.credito?.cuenta_gl||'').padEnd(15)} ${l.credito?.nombre||''} $${monto.toLocaleString('es-MX',{minimumFractionDigits:2})}`).join('\n\n') + `\n\n${'─'.repeat(50)}\nTOTAL DÉBITO:  $${totalDebito.toLocaleString('es-MX',{minimumFractionDigits:2})}\nTOTAL CRÉDITO: $${totalCredito.toLocaleString('es-MX',{minimumFractionDigits:2})}`
+      : `[Sin motor contable para ${header.event_code}]\n${contexto||''}`;
+    try {
+      const GROQ_KEY = Deno.env.get("GROQ_API_KEY") || "";
+      if (GROQ_KEY) {
+        const motorRes = lineasMotor.map((l: any) => `${l.evento?.codigo}: DEBE ${l.debito?.cuenta_gl} ${l.debito?.nombre} / HABER ${l.credito?.cuenta_gl} ${l.credito?.nombre} (${l.componente?.nombre})`).join('\n');
+        const iaRes = await fetch("https://api.groq.com/openai/v1/chat/completions", { method:'POST', headers:{'Content-Type':'application/json',Authorization:`Bearer ${GROQ_KEY}`}, body: JSON.stringify({ model:'meta-llama/llama-4-scout-17b-16e-instruct', messages:[{role:'system',content:'Experto contable. Genera pólizas formato: CUENTA | DESCRIPCIÓN | DEBE | HABER. Siempre cuadrada.'},{role:'user',content:`${prompt_ia||''}\n\nContexto: ${contexto||''}\nMotor:\n${motorRes}\nMonto: $${monto.toLocaleString('es-MX')}`}], max_tokens:1024, temperature:0.2 }) });
+        if (iaRes.ok) { const iaJ = await iaRes.json(); polizaTexto = iaJ.choices?.[0]?.message?.content || polizaTexto; }
+      }
+    } catch { /* usar texto local */ }
+    const existData = parseJsonbData(header.data);
+    existData.poliza = polizaTexto;
+    await sql`UPDATE "EFINANCIANET_DB"."J_GL_JOURNAL_ENCABEZADO" SET status='procesada', total_debit=${totalDebito||monto}::numeric, total_credit=${totalCredito||monto}::numeric, data=${JSON.stringify(existData)}::jsonb WHERE id=${journalId}::uuid`;
+    console.log(`${LOG} ✅ journal=${journalId} lineas=${lineasMotor.length}`);
+    return c.json({ ok: true, poliza: polizaTexto, lineas: lineasMotor.length });
+  } catch (e: any) { return c.json({ error: e.message }, 500); }
+});
 
 // Monto actualizado del crédito (disminuye con cada pago)
 const carteraCreditoMontoHandler = async (c: any) => {
@@ -5354,7 +5764,7 @@ app.post(`/admin/run-migration`, async (c: any) => {
 // ═══════════════════════════════════════════════════════════════════
 // SERVE — FORCE REDEPLOY 2026-02-25T12:00:00Z
 // ═══════════════════════════════════════════════════════════════════
-const DEPLOY_TIMESTAMP = "2026-05-19T10:00:00Z-v40.0-PRIMER-MOVIMIENTO";
+const DEPLOY_TIMESTAMP = "2026-05-22T18:00:00Z-v43.0-CONTABLE-GL-FIX";
 console.log(`[SERVER BOOT] Routes registered — deploy=${DEPLOY_TIMESTAMP}, starting Deno.serve...`);
 
 // ── Headers CORS universales (reutilizados en preflight y errores fatales) ──

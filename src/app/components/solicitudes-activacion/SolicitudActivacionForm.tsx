@@ -35,6 +35,7 @@ import {
 const supabase = createClient(`https://${projectId}.supabase.co`, publicAnonKey);
 import { SolicitudActivacionDetailTab } from './SolicitudActivacionDetailTab';
 import { descargarDetallePDF } from './solicitudActivacionPDF';
+import { GeneracionContableTab } from '../cartera/GeneracionContableTab';
 
 type FormMode = 'nuevo' | 'editar' | 'ver';
 
@@ -50,8 +51,9 @@ interface SolicitudActivacionFormProps {
 }
 
 const TABS = [
-  { id: 'default', label: 'Default' },
-  { id: 'detail',  label: 'Detail'  },
+  { id: 'default',  label: 'Default' },
+  { id: 'detail',   label: 'Detail'  },
+  { id: 'contable', label: 'Generación Contable' },
 ];
 
 // ─── Field component — Clientes exact pattern ─────────────────────────────────
@@ -576,6 +578,20 @@ export function SolicitudActivacionForm({
                 moneda={formData.detailMoneda}
                 cantidad={formData.detailCantidad}
                 onCantidadChange={n => handleChange('detailCantidad', n)}
+              />
+            </div>
+          )}
+
+          {/* GENERACIÓN CONTABLE tab */}
+          {activeTab === 'contable' && (
+            <div className="p-4">
+              <GeneracionContableTab
+                solicitudId={typeof solicitudId === 'string' ? solicitudId : String(solicitudId ?? '')}
+                credito={{
+                  noSol:    formData.numeroDocumento || formData.solicitudId || '',
+                  cliente:  formData.cliente || '',
+                  montoAut: parseCurrency(formData.montoTransaccion),
+                }}
               />
             </div>
           )}

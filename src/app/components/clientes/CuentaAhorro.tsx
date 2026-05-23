@@ -1,4 +1,4 @@
-/**
+﻿/**
  * CuentaAhorro.tsx — Subtab de Cuentas de Ahorro dentro del módulo Clientes
  *
  * Muestra las cuentas de ahorro reales de J_CUENTAS_CORP_CLIENTES
@@ -45,8 +45,6 @@ export function CuentaAhorro({ onBack, mode, clienteId, onCuentaEjeChange }: Cue
 
   const cid = String(clienteId || '');
 
-  const norm = (s: string) =>
-    (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
 
   // ═══════════════════════════════════════════════════════════════════
   // FILTRAR CUENTAS POR CLIENTE_ID
@@ -56,11 +54,7 @@ export function CuentaAhorro({ onBack, mode, clienteId, onCuentaEjeChange }: Cue
     const result: CuentaAhorroListItem[] = [];
     for (const c of allCuentas) {
       if (c.clienteId !== cid) continue;
-      const estatus = norm(c.estatusCart);
-      const tipo = norm(c.tipoProduc);
-      const pass = (estatus === 'activa') && (tipo.includes('ahorro') || tipo.includes('aportacion'));
-      console.log(`${LOG} cuenta ${c.id.slice(0,8)} clienteId=${c.clienteId.slice(0,8)} cid=${cid.slice(0,8)} estatus="${c.estatusCart}"→"${estatus}" tipo="${c.tipoProduc}"→"${tipo}" pass=${pass}`);
-      if (pass) result.push(c);
+      result.push(c);
     }
     console.log(`${LOG} cuentasCliente: total=${allCuentas.length} del cliente=${result.length}`);
     return result;

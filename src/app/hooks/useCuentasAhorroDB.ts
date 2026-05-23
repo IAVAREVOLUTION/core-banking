@@ -191,9 +191,12 @@ export interface UpdateCuentaAhorroPayload {
 // ═══════════════════════════════════════════════════════════════════
 function mapRow(row: JCuentaAhorroRow): CuentaAhorroListItem {
   const r = row as any;
+  // Para CuentaAhorro creada por activación, el no_sol real está en data.metadatos.noSol
+  const dataMeta = typeof row.data === 'object' && row.data ? (row.data as any).metadatos : null;
+  const noSolDisplay = (row.type === 'CuentaAhorro' && dataMeta?.noSol) ? dataMeta.noSol : (row.no_sol || '');
   return {
     id: row.id,
-    noSol: row.no_sol || '',
+    noSol: noSolDisplay,
     noCuenta: row.no_cuenta || '',
     noReferenc1: row.no_referenc1 || '',
     clienteId: row.cliente_id || r.cliente_id_eff || '',

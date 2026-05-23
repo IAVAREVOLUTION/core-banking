@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
+import { GeneracionContableTab } from './GeneracionContableTab';
 import { toast } from 'sonner';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 
@@ -345,7 +346,11 @@ function AvisoForm({ aviso: inicial, mode, onBack, onPagado }: {
   const puedeAplicarPago = !isRO && aviso.estatus === 'Pendiente';
   const yaPagado = aviso.estatus === 'Pagado';
 
-  const TABS = [{ id: 'default', label: 'Default' }, { id: 'detail', label: 'Detail' }];
+  const TABS = [
+    { id: 'default',   label: 'Default' },
+    { id: 'detail',    label: 'Detail' },
+    { id: 'contable',  label: 'Generación Contable' },
+  ];
 
   return (
     <div className="bg-white min-h-screen">
@@ -462,6 +467,30 @@ function AvisoForm({ aviso: inicial, mode, onBack, onPagado }: {
                 detalle={detalle}
                 loading={loadingDetalle}
               />
+            </div>
+          )}
+
+          {/* Generación Contable tab */}
+          {activeTab === 'contable' && (
+            <div className="p-4">
+              {aviso.solicitud_id ? (
+                <GeneracionContableTab
+                  solicitudId={aviso.solicitud_id}
+                  credito={{
+                    noSol:    aviso.no_docto || aviso.id,
+                    cliente:  aviso.cliente  || '',
+                    montoAut: aviso.monto_transaccion || 0,
+                  }}
+                />
+              ) : (
+                <div className="py-8 text-center text-xs text-gray-400">
+                  <svg width="32" height="32" viewBox="0 0 32 32" fill="none" stroke="#CBD5E1" strokeWidth="1.5" className="mx-auto mb-2">
+                    <circle cx="16" cy="16" r="12"/><path d="M16 10v6M16 20v2" strokeLinecap="round"/>
+                  </svg>
+                  <p>Este aviso no tiene un crédito vinculado.</p>
+                  <p className="mt-1 text-gray-300">La Generación Contable requiere una solicitud de crédito asociada.</p>
+                </div>
+              )}
             </div>
           )}
 

@@ -30,15 +30,14 @@ function parseJsonbField(raw: unknown): Record<string, any> {
 }
 
 function fmtMoney(val: number | string): string {
-  const n = typeof val === 'number' ? val : parseFloat(String(val).replace(/[^0-9.-]/g, '')) || 0;
+  const n = typeof val === 'number' ? val : Number.parseFloat(String(val).replace(/[^0-9.-]/g, '')) || 0;
   return `$ ${n.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 function fmtFecha(val: string): string {
   if (!val) return '—';
-  // ISO timestamp → dd/mm/yyyy hh:mm
   const d = new Date(val);
-  if (!isNaN(d.getTime())) {
+  if (!Number.isNaN(d.getTime())) {
     const dd = String(d.getDate()).padStart(2, '0');
     const mm = String(d.getMonth() + 1).padStart(2, '0');
     const yy = d.getFullYear();
@@ -50,12 +49,13 @@ function fmtFecha(val: string): string {
 }
 
 interface MovimientosTabProps {
-  mode: 'nuevo' | 'editar' | 'ver';
-  accountId: number | string | 'new';
+  readonly mode: 'nuevo' | 'editar' | 'ver';
+  readonly accountId: number | string;
 }
 
 export function MovimientosTab({ mode, accountId }: MovimientosTabProps) {
   const [movimientos, setMovimientos] = useState<MovimientoData[]>([]);
+  const [saldoActual, setSaldoActual] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -69,6 +69,10 @@ export function MovimientosTab({ mode, accountId }: MovimientosTabProps) {
       const json = await res.json();
       const movs: MovimientoData[] = Array.isArray(json.data) ? json.data : [];
       setMovimientos(movs);
+      // saldo_actual viene ahora directamente de la columna física
+      if (json.saldo_actual !== undefined) {
+        setSaldoActual(Number.parseFloat(String(json.saldo_actual).replace(/[^0-9.-]/g, '')) || 0);
+      }
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -77,6 +81,8 @@ export function MovimientosTab({ mode, accountId }: MovimientosTabProps) {
   }, [accountId, mode]);
 
   useEffect(() => { cargar(); }, [cargar]);
+
+  const emptyMsg = mode === 'nuevo' ? 'Los movimientos se registrarán automáticamente' : 'Sin movimientos registrados';
 
   return (
     <div className="bg-white">
@@ -123,7 +129,7 @@ export function MovimientosTab({ mode, accountId }: MovimientosTabProps) {
             ) : movimientos.length === 0 ? (
               <tr>
                 <td colSpan={7} className="px-3 py-6 text-center text-xs text-gray-400">
-                  {mode === 'nuevo' ? 'Los movimientos se registrarán automáticamente' : 'Sin movimientos registrados'}
+                  {emptyMsg}
                 </td>
               </tr>
             ) : movimientos.map((m, idx) => (
@@ -152,10 +158,10 @@ export function MovimientosTab({ mode, accountId }: MovimientosTabProps) {
             <tfoot>
               <tr className="bg-gray-100 border-t-2 border-gray-300">
                 <td colSpan={4} className="px-3 py-2 text-xs text-gray-500">
-                  {movimientos.length} movimiento{movimientos.length !== 1 ? 's' : ''}
+                  {movimientos.length} movimiento{movimientos.length === 1 ? '' : 's'}
                 </td>
                 <td className="px-3 py-2 text-xs text-right font-semibold text-gray-700 border-l border-gray-300" colSpan={3}>
-                  Saldo actual: {fmtMoney(movimientos[0]?.saldoFinal ?? 0)}
+                  Saldo actual: {fmtMoney(saldoActual ?? movimientos[0]?.saldoFinal ?? 0)}
                 </td>
               </tr>
             </tfoot>
