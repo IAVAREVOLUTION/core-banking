@@ -167,6 +167,7 @@ function mapRowToProduct(row: ProductoCaptacionRow, index: number): Product {
 
     // ── Plantillas institucionales ──
     plantillas: Array.isArray(d.plantillas) ? d.plantillas : undefined,
+    motorContable: Array.isArray(d.motorContable) ? d.motorContable : undefined,
   } as Product;
 }
 

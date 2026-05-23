@@ -42,6 +42,7 @@ import { PlantillasTab } from './tabs/PlantillasTab';
 import { useProductoPersistence, useProductoTabs } from '../../hooks/useProductoPersistence';
 import { syncToJProducts } from '../../hooks/useSyncJProducts';
 import { usePuestosTrabajoDB } from '../../hooks/usePuestosTrabajoDB';
+import { MotorContableTab } from './tabs/MotorContableTab';
 
 // ═══════════════════════════════════════════════════════════════════
 // Datos estáticos de subtabs → se usan en render Y en save para J_PRODUCTOS
@@ -65,18 +66,6 @@ const AUTORIZACION_DATA = [
   { nivel: 6, puesto: 'Consejo de Administración', desde: '$25,000,001.00', hasta: '$999,999,999.00', firma: true, activo: true },
 ];
 
-const EVENTO_CONTABLE_DATA = [
-  { clave: 'EC-001', evento: 'Desembolso de Crédito', cuenta: '1203-01-001', naturaleza: 'Cargo', descripcion: 'Registro de préstamo otorgado al acreditado', automatico: true },
-  { clave: 'EC-002', evento: 'Cobro de Capital', cuenta: '1203-01-001', naturaleza: 'Abono', descripcion: 'Aplicación de pago a capital del crédito', automatico: true },
-  { clave: 'EC-003', evento: 'Devengamiento de Interés Ordinario', cuenta: '5101-01-001', naturaleza: 'Cargo', descripcion: 'Reconocimiento diario de intereses devengados', automatico: true },
-  { clave: 'EC-004', evento: 'Cobro de Interés Ordinario', cuenta: '2101-01-003', naturaleza: 'Abono', descripcion: 'Aplicación de pago de intereses ordinarios', automatico: true },
-  { clave: 'EC-005', evento: 'Devengamiento de Interés Moratorio', cuenta: '5102-01-001', naturaleza: 'Cargo', descripcion: 'Reconocimiento de intereses por mora', automatico: true },
-  { clave: 'EC-006', evento: 'Cobro de IVA', cuenta: '2105-01-001', naturaleza: 'Abono', descripcion: 'IVA trasladado sobre intereses cobrados', automatico: true },
-  { clave: 'EC-007', evento: 'Constitución de Reserva', cuenta: '5201-01-001', naturaleza: 'Cargo', descripcion: 'Provisión de reserva preventiva por calificación', automatico: true },
-  { clave: 'EC-008', evento: 'Castigo de Cartera', cuenta: '1203-01-001', naturaleza: 'Abono', descripcion: 'Baja de crédito irrecuperable contra reservas', automatico: false },
-  { clave: 'EC-009', evento: 'Cobro de Comisión por Apertura', cuenta: '4201-01-001', naturaleza: 'Abono', descripcion: 'Ingreso por comisión de apertura del crédito', automatico: true },
-  { clave: 'EC-010', evento: 'Traspaso a Cartera Vencida', cuenta: '1204-01-001', naturaleza: 'Cargo', descripcion: 'Reclasificación a cartera vencida por días de atraso', automatico: true },
-];
 
 interface PeriodoItem {
   id: number;
@@ -380,7 +369,7 @@ export function ProductoForm({
         amortizaciones: efectivoAmortizaciones,
         expedientesElectronicos: expedientesRef.current?.getData() || [],
         autorizacion: efectivoAutorizacion,
-        eventoContable: efectivoEventoContable,
+        motorContable: motorContable,
         plantillas: plantillasRef.current?.getData() || [],
       };
 
@@ -532,7 +521,7 @@ export function ProductoForm({
     // === Tabs específicos de Crédito ===
     { id: 'amortizaciones', label: 'Amortizaciones' },
     { id: 'autorizacion', label: 'Autorización' },
-    { id: 'evento-contable', label: 'Evento Contable' },
+    { id: 'motor-contable', label: 'Motor Contable' },
     { id: 'garantias', label: 'Garantías' },
     { id: 'impuestos', label: 'Impuestos' },
     { id: 'paquetes', label: 'Paquetes' },
@@ -563,7 +552,7 @@ export function ProductoForm({
     { id: 'comision', label: 'Comisiones' },
     { id: 'expedientes-electronicos', label: 'Requisitos OK' },
     { id: 'autorizacion', label: 'Autorizaciones' },
-    { id: 'evento-contable', label: 'Eventos Contables' },
+    { id: 'motor-contable', label: 'Motor Contable' },
     { id: 'plantillas', label: 'Plantillas' },
   ];
 
@@ -621,11 +610,11 @@ export function ProductoForm({
   });
   const efectivoAutorizacion = autorizacionState;
 
-  const [eventoContableState, setEventoContableState] = useState<any[]>(() => {
+  const [motorContable, setMotorContable] = useState<any[]>(() => {
     if (isCreate) return [];
-    return product?.eventoContable && product.eventoContable.length > 0 ? product.eventoContable : [];
+    const saved = product?.motorContable ?? (product as any)?.eventoContable;
+    return Array.isArray(saved) && saved.length > 0 ? saved : [];
   });
-  const efectivoEventoContable = eventoContableState;
 
   // Cargar puestos de trabajo desde J_Catalogos (type=PuestoTrabajo)
   const { puestos, loading: loadingPuestos } = usePuestosTrabajoDB();
@@ -1126,51 +1115,12 @@ export function ProductoForm({
               </div>
             )}
 
-            {activeTab === 'evento-contable' && (
-              <div>
-                <div className="bg-[#E8E8E8] px-3 py-1.5 mb-3 text-xs font-medium text-gray-700 flex items-center justify-between">
-                  <span>EVENTOS CONTABLES — Configuración de pólizas automáticas del producto</span>
-                  {!isView && efectivoEventoContable.length === 0 && (
-                    <button
-                      onClick={() => setEventoContableState(EVENTO_CONTABLE_DATA.map(r => ({ ...r })))}
-                      className="px-3 py-1 bg-[#4A6FA5] text-white text-[10px] hover:bg-[#3E5C91] rounded font-medium transition-colors"
-                    >
-                      Cargar Plantilla
-                    </button>
-                  )}
-                </div>
-                <div className="border border-gray-300">
-                  <table className="w-full text-xs">
-                    <thead className="bg-[#E8E8E8]">
-                      <tr>
-                        <th className="text-left px-3 py-1.5 font-medium text-gray-700 border-b border-gray-300">Clave</th>
-                        <th className="text-left px-3 py-1.5 font-medium text-gray-700 border-b border-gray-300">Evento</th>
-                        <th className="text-left px-3 py-1.5 font-medium text-gray-700 border-b border-gray-300">Cuenta Contable</th>
-                        <th className="text-left px-3 py-1.5 font-medium text-gray-700 border-b border-gray-300">Naturaleza</th>
-                        <th className="text-left px-3 py-1.5 font-medium text-gray-700 border-b border-gray-300">Descripción Póliza</th>
-                        <th className="text-center px-3 py-1.5 font-medium text-gray-700 border-b border-gray-300">Automático</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {efectivoEventoContable.length === 0 ? (
-                        <tr><td colSpan={6} className="px-3 py-6 text-center text-gray-500 text-xs">
-                          No hay eventos contables configurados.
-                          {!isView && <span className="block mt-1 text-blue-600">Use el botón "Cargar Plantilla" para inicializar los eventos estándar.</span>}
-                        </td></tr>
-                      ) : efectivoEventoContable.map((row: any, i: number) => (
-                        <tr key={row.clave ?? i} className={`${i % 2 === 0 ? 'bg-white' : 'bg-gray-50'} hover:bg-blue-50`}>
-                          <td className="px-3 py-1.5 border-b border-gray-200 font-medium text-blue-700">{row.clave}</td>
-                          <td className="px-3 py-1.5 border-b border-gray-200 font-medium">{row.evento}</td>
-                          <td className="px-3 py-1.5 border-b border-gray-200 font-mono">{row.cuenta}</td>
-                          <td className="px-3 py-1.5 border-b border-gray-200"><span className={`px-2 py-0.5 rounded text-[10px] ${row.naturaleza === 'Cargo' ? 'bg-orange-100 text-orange-800' : 'bg-blue-100 text-blue-800'}`}>{row.naturaleza}</span></td>
-                          <td className="px-3 py-1.5 border-b border-gray-200">{row.descripcion}</td>
-                          <td className="px-3 py-1.5 border-b border-gray-200 text-center">{row.automatico ? '✓' : '—'}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
+            {activeTab === 'motor-contable' && (
+              <MotorContableTab
+                value={motorContable}
+                onChange={setMotorContable}
+                readOnly={isView}
+              />
             )}
 
             {activeTab === 'amortizaciones' && (
