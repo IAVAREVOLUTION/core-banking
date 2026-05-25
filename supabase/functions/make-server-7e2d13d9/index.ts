@@ -5472,13 +5472,57 @@ const validarDocumentoIAHandler = async (c: any) => {
     const textoPrincipal = systemPrompt + "\n\n" + userMessage;
 
     // ── Helper: parsear JSON de respuesta IA ──
-    // ── Helper: llamar a OpenRouter con un modelo dado ──
-    const OR_KEY   = Deno.env.get("OPENROUTER_API_KEY") || "";
-    const GROQ_KEY = Deno.env.get("GROQ_API_KEY") || "";
-    const OR_URL   = "https://openrouter.ai/api/v1/chat/completions";
-    const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
-    const OR_HDR   = { "HTTP-Referer": "https://pvzrjmsynzgfsowntywf.supabase.co", "X-Title": "CORE Bancario" };
+    const OR_KEY      = Deno.env.get("OPENROUTER_API_KEY") || "";
+    const GROQ_KEY    = Deno.env.get("GROQ_API_KEY") || "";
+    const CLAUDE_KEY  = Deno.env.get("ANTHROPIC_API_KEY") || "";
+    const OR_URL      = "https://openrouter.ai/api/v1/chat/completions";
+    const GROQ_URL    = "https://api.groq.com/openai/v1/chat/completions";
+    const CLAUDE_URL  = "https://api.anthropic.com/v1/messages";
+    const OR_HDR      = { "HTTP-Referer": "https://pvzrjmsynzgfsowntywf.supabase.co", "X-Title": "CORE Bancario" };
 
+    // ── Claude (Anthropic) — soporta visión nativa ──
+    const tryClaudeModel = async (model: string): Promise<{raw: string; err?: string} | null> => {
+      if (!CLAUDE_KEY) return null;
+      try {
+        let content: any[];
+        if (imageDataUrl) {
+          // Extraer base64 puro del data URL
+          const b64Match = imageDataUrl.match(/^data:(image\/[^;]+);base64,(.+)$/);
+          const mediaType = b64Match ? b64Match[1] : "image/png";
+          const b64Data   = b64Match ? b64Match[2] : imageDataUrl;
+          content = [
+            { type: "image", source: { type: "base64", media_type: mediaType, data: b64Data } },
+            { type: "text", text: textoPrincipal },
+          ];
+        } else {
+          content = [{ type: "text", text: textoPrincipal }];
+        }
+        const res = await fetch(CLAUDE_URL, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": CLAUDE_KEY,
+            "anthropic-version": "2023-06-01",
+          },
+          body: JSON.stringify({ model, max_tokens: 1024, messages: [{ role: "user", content }] }),
+        });
+        const body = await res.text();
+        if (!res.ok) {
+          console.log(`${LOG_IA} [claude:${model}] HTTP ${res.status}: ${body.substring(0, 300)}`);
+          return { raw: "", err: `claude:${model} HTTP ${res.status}: ${body.substring(0, 200)}` };
+        }
+        const j = JSON.parse(body);
+        const text = j.content?.[0]?.text || "";
+        if (!text) return { raw: "", err: `claude:${model} devolvió contenido vacío` };
+        console.log(`${LOG_IA} [claude:${model}] OK (${text.length} chars)`);
+        return { raw: text };
+      } catch (e: any) {
+        console.log(`${LOG_IA} [claude:${model}] excepción: ${e.message}`);
+        return { raw: "", err: `claude:${model} excepción: ${e.message}` };
+      }
+    };
+
+    // ── Modelos OpenAI-compatibles (Groq / OpenRouter) ──
     const tryModel = async (url: string, auth: string, model: string, extra: Record<string,string> = {}): Promise<{raw: string; err?: string} | null> => {
       const messages = imageDataUrl
         ? [{ role: "user", content: [{ type: "text", text: textoPrincipal }, { type: "image_url", image_url: { url: imageDataUrl } }] }]
@@ -5506,7 +5550,11 @@ const validarDocumentoIAHandler = async (c: any) => {
     };
 
     const intentos: Array<() => Promise<{raw:string;err?:string}|null>> = [
-      // Gemini Flash 1.5 vía OpenRouter — más barato, ~$0.000075/1K tokens
+      // 1. Claude Haiku — rápido, económico, excelente visión
+      () => tryClaudeModel("claude-haiku-4-5-20251001"),
+      // 2. Claude Sonnet — más capaz, fallback si Haiku falla
+      () => tryClaudeModel("claude-sonnet-4-6"),
+      // 3. Groq Llama — fallback gratuito
       () => GROQ_KEY ? tryModel(GROQ_URL, GROQ_KEY, "meta-llama/llama-4-scout-17b-16e-instruct") : null,
     ];
 

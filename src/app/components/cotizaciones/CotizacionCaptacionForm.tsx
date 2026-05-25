@@ -293,6 +293,10 @@ export function CotizacionCaptacionForm({ mode, cotizacion, onSave, onBack, onCr
     }
   };
 
+  // ── Tipo de producto ──
+  const isInversion = data.producto.tipoProducto.toLowerCase() === 'inversión' || data.producto.tipoProducto.toLowerCase() === 'inversion';
+  const isAportacion = data.producto.tipoProducto.toLowerCase().includes('aportaci');
+
   // ── Cliente selection handler — spec §3.3 ──
   const handleSelectCliente = (cl: ClientePickerItem) => {
     const nombreCompleto = [cl.nombre, cl.apellidoPaterno, cl.apellidoMaterno].filter(Boolean).join(' ');
@@ -384,8 +388,6 @@ export function CotizacionCaptacionForm({ mode, cotizacion, onSave, onBack, onCr
   // ══════════════════════════════════════════════════════════════
   // INVERSIÓN — Spec cotizacion-inversion-validation §1–§7
   // ══════════════════════════════════════════════════════════════
-  const isInversion = data.producto.tipoProducto.toLowerCase() === 'inversión' || data.producto.tipoProducto.toLowerCase() === 'inversion';
-  const isAportacion = data.producto.tipoProducto.toLowerCase().includes('aportaci');
 
   // Current selected product (full picker item with matrizTasaFija)
   const selectedProducto = useMemo(() => {
