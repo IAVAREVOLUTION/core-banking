@@ -481,6 +481,10 @@ function AvisoForm({ aviso: inicial, mode, onBack, onPagado }: {
                     cliente:  aviso.cliente  || '',
                     montoAut: aviso.monto_transaccion || 0,
                   }}
+                  componentes={detalle.filter(r => Number(r.monto) > 0).map(r => ({
+                    id_componente: r.descripcion_subproducto || r.cve_subproducto,
+                    monto:         Number(r.monto),
+                  }))}
                 />
               ) : (
                 <div className="py-8 text-center text-xs text-gray-400">

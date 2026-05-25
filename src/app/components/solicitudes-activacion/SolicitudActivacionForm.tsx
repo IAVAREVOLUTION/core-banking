@@ -586,12 +586,16 @@ export function SolicitudActivacionForm({
           {activeTab === 'contable' && (
             <div className="p-4">
               <GeneracionContableTab
-                solicitudId={typeof solicitudId === 'string' ? solicitudId : String(solicitudId ?? '')}
+                solicitudId={formData.solicitudId || (typeof solicitudId === 'string' ? solicitudId : String(solicitudId ?? ''))}
                 credito={{
                   noSol:    formData.numeroDocumento || formData.solicitudId || '',
                   cliente:  formData.cliente || '',
                   montoAut: parseCurrency(formData.montoTransaccion),
                 }}
+                componentes={formData.detailMonto > 0
+                  ? [{ id_componente: 'CAPITAL', monto: formData.detailMonto }]
+                  : undefined
+                }
               />
             </div>
           )}

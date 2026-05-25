@@ -4615,6 +4615,22 @@ app.get(`${PREFIX}/cartera/debug-gobierno/:solicitudId`, async (c: any) => {
     });
   } catch (err: any) { return c.json({ error: err.message }, 500); }
 });
+app.get(`${PREFIX}/debug-sol/:solId`, async (c: any) => {
+  const sid2 = c.req.param('solId');
+  try {
+    const [sa2] = await sql`SELECT * FROM "EFINANCIANET_DB"."J_SOLICITUDES_ACTIVACION" WHERE id = ${sid2}::uuid OR solicitud_id = ${sid2}::uuid LIMIT 1`;
+    const saCols2 = await sql`SELECT column_name FROM information_schema.columns WHERE table_schema='EFINANCIANET_DB' AND table_name='J_SOLICITUDES_ACTIVACION' ORDER BY ordinal_position`;
+    return c.json({ sa_cols: saCols2.map((r:any)=>r.column_name), sa_row: sa2 ? Object.fromEntries(Object.entries(sa2).map(([k,v])=>k==='data'?[k,typeof v==='string'?JSON.parse(v):v]:[k,v])) : null });
+  } catch(e:any) { return c.json({ error: e.message }, 500); }
+});
+app.get(`/debug-sol/:solId`, async (c: any) => {
+  const sid = c.req.param('solId');
+  try {
+    const [sa] = await sql`SELECT * FROM "EFINANCIANET_DB"."J_SOLICITUDES_ACTIVACION" WHERE solicitud_id = ${sid}::uuid LIMIT 1`;
+    const saCols = await sql`SELECT column_name FROM information_schema.columns WHERE table_schema='EFINANCIANET_DB' AND table_name='J_SOLICITUDES_ACTIVACION' ORDER BY ordinal_position`;
+    return c.json({ sa_cols: saCols.map((r:any)=>r.column_name), sa_row: sa ? Object.fromEntries(Object.entries(sa).map(([k,v])=>k==='data'?[k,typeof v==='string'?JSON.parse(v):v]:[k,v])) : null });
+  } catch(e:any) { return c.json({ error: e.message }, 500); }
+});
 app.get(`/cartera/debug-gobierno/:solicitudId`, async (c: any) => {
   const sid = c.req.param('solicitudId');
   try {
@@ -4754,13 +4770,16 @@ app.post(`/contable/eventos`, async (c: any) => {
   } catch (e: any) { return c.json({ error: e.message }, 500); }
 });
 
-// POST /contable/eventos/:id/ejecutar — Lee motor contable, genera póliza con IA, inserta DETALLE
+// POST /contable/eventos/:id/ejecutar — Lee motor contable, genera pares D/C por componente
+// Body: { solicitud_id?, contexto?, prompt_ia?, componentes?: [{id_componente, monto}] }
+// Si se envían `componentes`, itera por cada uno buscando su entrada en el motor contable.
+// Si no se envían, usa el monto de la cuenta financiera contra todas las líneas del motor.
 app.post(`${PREFIX}/contable/eventos/:id/ejecutar`, async (c: any) => {
   const LOG = '[CONTABLE-EJECUTAR]';
   try {
     const journalId = c.req.param('id');
     const b = await c.req.json();
-    const { solicitud_id, contexto, prompt_ia } = b;
+    const { solicitud_id, contexto, prompt_ia, componentes } = b;
 
     // 1. Leer encabezado y cuenta financiera
     const [header] = await sql`
@@ -4772,37 +4791,169 @@ app.post(`${PREFIX}/contable/eventos/:id/ejecutar`, async (c: any) => {
     `;
     if (!header) return c.json({ error: 'Encabezado no encontrado' }, 404);
 
+    // Si account_id o prod_id son null, intentar resolverlos desde data.solicitud_id
+    let resolvedProdId = header.prod_id;
+    let resolvedAccountId = header.account_id;
+    let resolvedCliId = header.cli_id;
+    if (!resolvedProdId || !resolvedAccountId) {
+      const headerData = parseJsonbData(header.data);
+      const solId = headerData?.solicitud_id || solicitud_id;
+      if (solId) {
+        try {
+          // 1. Buscar directo por id en J_CUENTAS_CORP_CLIENTES
+          const [cc1] = await sql`
+            SELECT id, producto_id, cliente_id FROM "EFINANCIANET_DB"."J_CUENTAS_CORP_CLIENTES"
+            WHERE id = ${solId}::uuid LIMIT 1
+          `;
+          if (cc1?.producto_id) {
+            resolvedAccountId = resolvedAccountId || cc1.id;
+            resolvedProdId    = cc1.producto_id;
+            resolvedCliId     = resolvedCliId     || cc1.cliente_id;
+          } else {
+            // 2. Buscar cuenta que tenga ese solicitud_id en data JSONB
+            const [cc2] = await sql`
+              SELECT id, producto_id, cliente_id FROM "EFINANCIANET_DB"."J_CUENTAS_CORP_CLIENTES"
+              WHERE data->>'solicitud_id' = ${solId} AND producto_id IS NOT NULL LIMIT 1
+            `;
+            if (cc2?.producto_id) {
+              resolvedAccountId = resolvedAccountId || cc2.id;
+              resolvedProdId    = cc2.producto_id;
+              resolvedCliId     = resolvedCliId     || cc2.cliente_id;
+            } else {
+              // 3. Buscar en J_SOLICITUDES_ACTIVACION por id O solicitud_id
+              const [sa] = await sql`
+                SELECT sa.solicitud_id, sa.cliente_id, sa.data
+                FROM "EFINANCIANET_DB"."J_SOLICITUDES_ACTIVACION" sa
+                WHERE sa.id = ${solId}::uuid OR sa.solicitud_id = ${solId}::uuid LIMIT 1
+              `;
+              if (sa) {
+                resolvedCliId = resolvedCliId || sa.cliente_id;
+                // Buscar cuenta directamente por solicitud_id (FK de J_SOLICITUDES_ACTIVACION → J_CUENTAS_CORP_CLIENTES)
+                const [cc3] = await sql`
+                  SELECT id, producto_id, cliente_id FROM "EFINANCIANET_DB"."J_CUENTAS_CORP_CLIENTES"
+                  WHERE id = ${sa.solicitud_id}::uuid AND producto_id IS NOT NULL LIMIT 1
+                `;
+                if (cc3?.producto_id) {
+                  resolvedAccountId = resolvedAccountId || cc3.id;
+                  resolvedProdId    = cc3.producto_id;
+                  resolvedCliId     = resolvedCliId     || cc3.cliente_id;
+                } else {
+                  // 4. Último recurso: cualquier cuenta del mismo cliente con producto
+                  if (resolvedCliId) {
+                    const [cc4] = await sql`
+                      SELECT id, producto_id FROM "EFINANCIANET_DB"."J_CUENTAS_CORP_CLIENTES"
+                      WHERE cliente_id = ${resolvedCliId}::uuid AND producto_id IS NOT NULL LIMIT 1
+                    `;
+                    if (cc4?.producto_id) {
+                      resolvedAccountId = resolvedAccountId || cc4.id;
+                      resolvedProdId    = cc4.producto_id;
+                    }
+                  }
+                }
+              }
+            }
+          }
+        } catch (e: any) { console.log(`${LOG} resolve error: ${e.message}`); }
+      }
+    }
+    console.log(`${LOG} prod_id=${resolvedProdId} account_id=${resolvedAccountId}`);
+
     // 2. Leer motor contable del producto
     let motorContable: any[] = [];
-    if (header.prod_id) {
+    if (resolvedProdId) {
       try {
-        const [prod] = await sql`SELECT data FROM "EFINANCIANET_DB"."J_PRODUCTOS" WHERE id = ${header.prod_id}::uuid LIMIT 1`;
+        const [prod] = await sql`SELECT data FROM "EFINANCIANET_DB"."J_PRODUCTOS" WHERE id = ${resolvedProdId}::uuid LIMIT 1`;
         const pd = parseJsonbData(prod?.data);
         motorContable = Array.isArray(pd.motorContable) ? pd.motorContable : [];
       } catch { /* sin motor */ }
     }
 
-    // 3. Filtrar entradas del motor contable para este evento
-    const lineasMotor = motorContable.filter((m: any) => m.evento?.codigo === header.event_code);
-    const monto = parseFloat(String(header.monto_aut || header.monto_sol || '0').replace(/[^0-9.-]/g, '')) || 0;
+    // 3. Filtrar motor por evento — tolerante a distintas estructuras de almacenamiento
+    const evCode = String(header.event_code || '').toLowerCase();
+    const lineasMotor = motorContable.filter((m: any) => {
+      const mEvCod  = String(m.evento?.codigo || m.evento?.code || m.evento || '').toLowerCase();
+      const mEvNom  = String(m.evento?.nombre || m.evento?.name || '').toLowerCase();
+      const mEvId   = String(m.evento?.id || '').toLowerCase();
+      return mEvCod === evCode || mEvNom === evCode || mEvId === evCode ||
+             mEvCod.includes(evCode) || evCode.includes(mEvCod);
+    });
+    console.log(`${LOG} event_code=${header.event_code} lineasMotor=${lineasMotor.length} motorTotal=${motorContable.length}`);
+    if (motorContable.length > 0) {
+      console.log(`${LOG} motorSample=`, JSON.stringify(motorContable[0]).substring(0, 300));
+    }
+    const montoBase = parseFloat(String(header.monto_aut || header.monto_sol || '0').replace(/[^0-9.-]/g, '')) || 0;
 
-    // 4. Insertar líneas de detalle basadas en motor contable
+    // 4. Construir pares a insertar
+    // Si llegan componentes explícitos: buscar cada uno en el motor por nombre/código de componente
+    // Si no: usar todas las líneas del motor con el monto de la cuenta (comportamiento original)
     let totalDebito = 0; let totalCredito = 0;
-    if (lineasMotor.length > 0) {
+
+    const compActivos: { id_componente: string; monto: number }[] =
+      Array.isArray(componentes) && componentes.length > 0
+        ? componentes.filter((x: any) => Number(x.monto) > 0)
+        : [];
+
+    if (compActivos.length > 0) {
+      // Si no hay líneas del motor para este evento, error
+      if (lineasMotor.length === 0) {
+        return c.json({
+          error: `Sin configuración en Motor Contable para el evento [${header.event_code}]. Configure el Motor Contable del producto.`,
+          debug: { event_code: header.event_code, motorContable_count: motorContable.length, motorSample: motorContable.slice(0, 3) },
+        }, 422);
+      }
+      for (const comp of compActivos) {
+        const cid = String(comp.id_componente).toLowerCase().trim();
+        // Buscar por nombre O código del componente; fallback a primera línea del motor
+        const entrada = lineasMotor.find((m: any) => {
+          const nombre = String(m.componente?.nombre || '').toLowerCase().trim();
+          const codigo = String(m.componente?.codigo || '').toLowerCase().trim();
+          return nombre === cid || codigo === cid ||
+                 nombre.includes(cid) || cid.includes(nombre) ||
+                 codigo.includes(cid) || cid.includes(codigo);
+        }) || lineasMotor[0];
+        const montoLinea = Number(comp.monto);
+        await sql`
+          INSERT INTO "EFINANCIANET_DB"."J_GL_JOURNAL_DETALLE"
+            (journal_id, gl_account, debit_amount, credit_amount, currency, customer_id, account_id, product_id, descripcion)
+          VALUES (
+            ${journalId}::uuid,
+            ${entrada.debito?.cuenta_gl || entrada.debito?.id || '—'},
+            ${montoLinea}::numeric, 0, 'MXN',
+            ${resolvedCliId || null}::uuid,
+            ${resolvedAccountId || null}::uuid,
+            ${resolvedProdId || null}::uuid,
+            ${`DÉBITO | ${comp.id_componente} | ${entrada.debito?.nombre || ''}`}
+          )
+        `;
+        await sql`
+          INSERT INTO "EFINANCIANET_DB"."J_GL_JOURNAL_DETALLE"
+            (journal_id, gl_account, debit_amount, credit_amount, currency, customer_id, account_id, product_id, descripcion)
+          VALUES (
+            ${journalId}::uuid,
+            ${entrada.credito?.cuenta_gl || entrada.credito?.id || '—'},
+            0, ${montoLinea}::numeric, 'MXN',
+            ${resolvedCliId || null}::uuid,
+            ${resolvedAccountId || null}::uuid,
+            ${resolvedProdId || null}::uuid,
+            ${`CRÉDITO | ${comp.id_componente} | ${entrada.credito?.nombre || ''}`}
+          )
+        `;
+        totalDebito  += montoLinea;
+        totalCredito += montoLinea;
+      }
+    } else if (lineasMotor.length > 0) {
+      // Modo original: todas las líneas del motor con monto de la cuenta
       for (const linea of lineasMotor) {
-        const montoLinea = monto;
         await sql`
           INSERT INTO "EFINANCIANET_DB"."J_GL_JOURNAL_DETALLE"
             (journal_id, gl_account, debit_amount, credit_amount, currency, customer_id, account_id, product_id, descripcion)
           VALUES (
             ${journalId}::uuid,
             ${linea.debito?.cuenta_gl || linea.debito?.id || '—'},
-            ${montoLinea}::numeric,
-            0,
-            'MXN',
-            ${header.cli_id || null}::uuid,
-            ${header.account_id}::uuid,
-            ${header.prod_id || null}::uuid,
+            ${montoBase}::numeric, 0, 'MXN',
+            ${resolvedCliId || null}::uuid,
+            ${resolvedAccountId || null}::uuid,
+            ${resolvedProdId || null}::uuid,
             ${`DÉBITO: ${linea.debito?.nombre || ''} | Componente: ${linea.componente?.nombre || ''}`}
           )
         `;
@@ -4812,68 +4963,44 @@ app.post(`${PREFIX}/contable/eventos/:id/ejecutar`, async (c: any) => {
           VALUES (
             ${journalId}::uuid,
             ${linea.credito?.cuenta_gl || linea.credito?.id || '—'},
-            0,
-            ${montoLinea}::numeric,
-            'MXN',
-            ${header.cli_id || null}::uuid,
-            ${header.account_id}::uuid,
-            ${header.prod_id || null}::uuid,
+            0, ${montoBase}::numeric, 'MXN',
+            ${resolvedCliId || null}::uuid,
+            ${resolvedAccountId || null}::uuid,
+            ${resolvedProdId || null}::uuid,
             ${`CRÉDITO: ${linea.credito?.nombre || ''} | Componente: ${linea.componente?.nombre || ''}`}
           )
         `;
-        totalDebito  += montoLinea;
-        totalCredito += montoLinea;
+        totalDebito  += montoBase;
+        totalCredito += montoBase;
       }
     }
 
-    // 5. Generar texto de póliza con IA (Groq)
-    const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
-    const GROQ_KEY = Deno.env.get("GROQ_API_KEY") || "";
-    let polizaTexto = lineasMotor.length > 0
-      ? lineasMotor.map((l: any) =>
-          `DÉBITO  ${(l.debito?.cuenta_gl || '').padEnd(15)} ${l.debito?.nombre || ''} $${monto.toLocaleString('es-MX', { minimumFractionDigits: 2 })}\n` +
-          `CRÉDITO ${(l.credito?.cuenta_gl || '').padEnd(15)} ${l.credito?.nombre || ''} $${monto.toLocaleString('es-MX', { minimumFractionDigits: 2 })}`
-        ).join('\n\n') + `\n\n${'─'.repeat(60)}\nTOTAL DÉBITO:  $${totalDebito.toLocaleString('es-MX', { minimumFractionDigits: 2 })}\nTOTAL CRÉDITO: $${totalCredito.toLocaleString('es-MX', { minimumFractionDigits: 2 })}`
-      : `[Sin configuración de motor contable para ${header.event_code}]\n\n${prompt_ia || ''}\n\nContexto: ${contexto || ''}`;
+    // 5. Validar cuadre
+    if (Math.abs(totalDebito - totalCredito) > 0.001) {
+      return c.json({
+        error: `La póliza no cuadra. Débito: ${totalDebito} — Crédito: ${totalCredito}`,
+      }, 422);
+    }
 
-    try {
-      if (GROQ_KEY) {
-        const motorResumen = lineasMotor.map((l: any) =>
-          `${l.evento?.codigo}: DEBE ${l.debito?.cuenta_gl} ${l.debito?.nombre} / HABER ${l.credito?.cuenta_gl} ${l.credito?.nombre} (${l.componente?.nombre})`
-        ).join('\n');
-        const iaRes = await fetch(GROQ_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${GROQ_KEY}` },
-          body: JSON.stringify({
-            model: 'meta-llama/llama-4-scout-17b-16e-instruct',
-            messages: [
-              { role: 'system', content: 'Eres un experto en contabilidad bancaria. Genera pólizas contables claras en formato: CUENTA | DESCRIPCIÓN | DEBE | HABER. Totales al final. Siempre cuadrada (DEBE = HABER).' },
-              { role: 'user', content: `${prompt_ia || ''}\n\nContexto: ${contexto || ''}\nMotor contable configurado:\n${motorResumen}\nMonto: $${monto.toLocaleString('es-MX')}` },
-            ],
-            max_tokens: 1024, temperature: 0.2,
-          }),
-        });
-        if (iaRes.ok) {
-          const iaJ = await iaRes.json();
-          polizaTexto = iaJ.choices?.[0]?.message?.content || polizaTexto;
-        }
-      }
-    } catch { /* usar texto generado localmente */ }
-
-    // 6. Actualizar encabezado: status=procesada, total_debit/credit reales, póliza en data
+    // 6. Actualizar encabezado: status=Procesado, totales reales
     const existData = parseJsonbData(header.data);
-    existData.poliza = polizaTexto;
     await sql`
       UPDATE "EFINANCIANET_DB"."J_GL_JOURNAL_ENCABEZADO"
-      SET status = 'procesada',
-          total_debit  = ${totalDebito  || monto}::numeric,
-          total_credit = ${totalCredito || monto}::numeric,
-          data = ${JSON.stringify(existData)}::jsonb
+      SET status       = 'Procesado',
+          total_debit  = ${totalDebito  || montoBase}::numeric,
+          total_credit = ${totalCredito || montoBase}::numeric,
+          data         = ${JSON.stringify(existData)}::jsonb
       WHERE id = ${journalId}::uuid
     `;
 
-    console.log(`${LOG} ✅ journal=${journalId} event=${header.event_code} lineas=${lineasMotor.length} débito=${totalDebito}`);
-    return c.json({ ok: true, poliza: polizaTexto, lineas: lineasMotor.length });
+    console.log(`${LOG} ✅ journal=${journalId} event=${header.event_code} lineas=${(compActivos.length || lineasMotor.length) * 2} débito=${totalDebito}`);
+    return c.json({
+      ok:           true,
+      journal_id:   journalId,
+      total_debit:  totalDebito,
+      total_credit: totalCredito,
+      lineas:       (compActivos.length || lineasMotor.length) * 2,
+    });
   } catch (e: any) {
     console.error(`${LOG} Error:`, e?.message);
     return c.json({ error: e.message }, 500);
@@ -6299,17 +6426,32 @@ const getGlJournalHandler = async (c: any) => {
 const postGlJournalHandler = async (c: any) => {
   try {
     const body = await c.req.json();
-    const { journal_date, producto_id, event_code, account_id, currency, total_debit, total_credit, status, data } = body;
-    if (!journal_date || !producto_id || !event_code || !account_id || !currency) {
-      return c.json({ error: "Campos requeridos: journal_date, producto_id, event_code, account_id, currency" }, 400);
+    let { journal_date, producto_id, event_code, account_id, currency, total_debit, total_credit, status, data } = body;
+    if (!journal_date || !event_code || !account_id) {
+      return c.json({ error: "Campos requeridos: journal_date, event_code, account_id" }, 400);
     }
+    // Resolver producto_id y currency desde la cuenta financiera si no se enviaron
+    if (!producto_id || !currency) {
+      try {
+        const [cc] = await sql`
+          SELECT producto_id, COALESCE(data->>'moneda', 'MXN') AS moneda
+          FROM "EFINANCIANET_DB"."J_CUENTAS_CORP_CLIENTES"
+          WHERE id = ${account_id}::uuid LIMIT 1
+        `;
+        if (cc) {
+          if (!producto_id) producto_id = cc.producto_id ?? null;
+          if (!currency)    currency    = cc.moneda || 'MXN';
+        }
+      } catch { /* usar valores del body */ }
+    }
+    currency = currency || 'MXN';
     const inserted = await sql`
       INSERT INTO "EFINANCIANET_DB"."J_GL_JOURNAL_ENCABEZADO"
         (journal_date, producto_id, event_code, account_id, currency,
          total_debit, total_credit, status, created_at, data)
       VALUES (
         ${journal_date}::date,
-        ${producto_id}::uuid,
+        ${producto_id ?? null}::uuid,
         ${event_code},
         ${account_id}::uuid,
         ${currency},
@@ -6370,6 +6512,429 @@ const deleteGlJournalHandler = async (c: any) => {
   }
 };
 
+const getGlJournalByIdHandler = async (c: any) => {
+  try {
+    const id = c.req.param("id");
+    if (!id) return c.json({ error: "Se requiere id" }, 400);
+    const [enc] = await sql`
+      SELECT e.id, e.journal_date, e.producto_id, e.event_code, e.account_id,
+             e.transaction_id, e.currency, e.total_debit, e.total_credit,
+             e.status, e.created_at, e.data,
+             cc.no_cuenta
+      FROM "EFINANCIANET_DB"."J_GL_JOURNAL_ENCABEZADO" e
+      LEFT JOIN "EFINANCIANET_DB"."J_CUENTAS_CORP_CLIENTES" cc ON cc.id = e.account_id
+      WHERE e.id = ${id}::uuid
+      LIMIT 1
+    `;
+    if (!enc) return c.json({ error: `No se encontró póliza con id=${id}` }, 404);
+    const detalle = await sql`
+      SELECT id, journal_id, gl_account, debit_amount, credit_amount,
+             currency, descripcion, customer_id, account_id, product_id
+      FROM "EFINANCIANET_DB"."J_GL_JOURNAL_DETALLE"
+      WHERE journal_id = ${id}::uuid
+      ORDER BY id
+    `;
+    return c.json({ success: true, data: { ...enc, detalle_rows: detalle } });
+  } catch (err: any) {
+    return c.json({ error: `Error al consultar póliza: ${err.message ?? err}` }, 500);
+  }
+};
+
+
+// ── POST /contable/generar-poliza ──────────────────────────────────────────────
+// Genera una Póliza Contable completa (Header + Detail) a partir de:
+//   account_id   : UUID de J_CUENTAS_CORP_CLIENTES
+//   evento_id    : UUID del evento en J_CATALOGO_EVENTOS_CONTABLES
+//   componentes  : [{ id_componente: string, monto: number }] — desde el Detail de la entidad
+//
+// Flujo:
+//   1. Leer cuenta financiera → producto_id, cliente_id, moneda
+//   2. Leer producto → motorContable (array en data.motorContable)
+//   3. Para cada componente: buscar en motorContable donde componente+evento coincidan
+//      → si falta alguno, retornar error 422 con lista de componentes sin configuración
+//   4. Crear Header en J_GL_JOURNAL_ENCABEZADO  (status = 'Creado')
+//   5. Por cada componente: insertar par DÉBITO / CRÉDITO en J_GL_JOURNAL_DETALLE
+//   6. Actualizar total_debit / total_credit en Header
+//   7. Validar cuadre — si no cuadra retornar error 422
+const generarPolizaContableHandler = async (c: any) => {
+  const LOG = '[GENERAR-POLIZA]';
+  try {
+    const body = await c.req.json();
+    const { account_id, evento_id, componentes } = body;
+
+    if (!account_id || !evento_id || !Array.isArray(componentes) || componentes.length === 0) {
+      return c.json({ error: 'Campos requeridos: account_id, evento_id, componentes (array no vacío)' }, 400);
+    }
+
+    // Filtrar componentes con monto > 0
+    const compActivos: { id_componente: string; monto: number }[] =
+      componentes.filter((c: any) => Number(c.monto) > 0);
+
+    if (compActivos.length === 0) {
+      return c.json({ error: 'Todos los componentes tienen monto 0. Nada que contabilizar.' }, 422);
+    }
+
+    // 1. Leer cuenta financiera
+    const [cuenta] = await sql`
+      SELECT cc.id, cc.producto_id, cc.cliente_id,
+             COALESCE(cc.data->>'moneda', 'MXN') AS moneda,
+             cc.no_cuenta
+      FROM "EFINANCIANET_DB"."J_CUENTAS_CORP_CLIENTES" cc
+      WHERE cc.id = ${account_id}::uuid
+      LIMIT 1
+    `;
+    if (!cuenta) return c.json({ error: `Cuenta financiera no encontrada: ${account_id}` }, 404);
+
+    const productoId = cuenta.producto_id;
+    const clienteId  = cuenta.cliente_id;
+    const moneda     = cuenta.moneda || 'MXN';
+    if (!productoId) return c.json({ error: 'La cuenta financiera no tiene producto asignado' }, 422);
+
+    // Leer evento contable
+    const [evento] = await sql`
+      SELECT id, codigo, evento
+      FROM "EFINANCIANET_DB"."J_CATALOGO_EVENTOS_CONTABLES"
+      WHERE id = ${evento_id}::uuid
+      LIMIT 1
+    `;
+    if (!evento) return c.json({ error: `Evento contable no encontrado: ${evento_id}` }, 404);
+
+    // 2. Leer motor contable del producto
+    const [prod] = await sql`
+      SELECT data FROM "EFINANCIANET_DB"."J_PRODUCTOS" WHERE id = ${productoId}::uuid LIMIT 1
+    `;
+    if (!prod) return c.json({ error: `Producto no encontrado: ${productoId}` }, 404);
+
+    const prodData: any = parseJsonbData(prod.data);
+    const motorContable: any[] = Array.isArray(prodData.motorContable) ? prodData.motorContable : [];
+
+    // 3. Mapear cada componente activo contra el motor contable
+    const sinConfig: string[] = [];
+    const lineas: { id_componente: string; monto: number; cuentaDebito: string; cuentaCredito: string; nombreDebito: string; nombreCredito: string }[] = [];
+
+    for (const comp of compActivos) {
+      const cid = String(comp.id_componente).toLowerCase();
+      // El motor contable filtra por evento Y componente
+      const entrada = motorContable.find((m: any) => {
+        const evCod = String(m.evento?.codigo || m.evento || '').toLowerCase();
+        const evId  = String(m.evento?.id || '').toLowerCase();
+        const compNom = String(m.componente?.nombre || m.componente?.codigo || m.componente || '').toLowerCase();
+        const evMatch  = evCod === evento.codigo.toLowerCase() || evId === evento_id.toLowerCase();
+        const compMatch = compNom === cid || compNom === String(comp.id_componente);
+        return evMatch && compMatch;
+      });
+
+      if (!entrada) {
+        sinConfig.push(comp.id_componente);
+      } else {
+        lineas.push({
+          id_componente: comp.id_componente,
+          monto:         Number(comp.monto),
+          cuentaDebito:  entrada.debito?.cuenta_gl  || entrada.debito?.id  || '',
+          cuentaCredito: entrada.credito?.cuenta_gl || entrada.credito?.id || '',
+          nombreDebito:  entrada.debito?.nombre  || '',
+          nombreCredito: entrada.credito?.nombre || '',
+        });
+      }
+    }
+
+    if (sinConfig.length > 0) {
+      return c.json({
+        error: `Sin configuración en Motor Contable para: ${sinConfig.map(s => `[${s}] + [${evento.codigo}]`).join(', ')}. Configure el Motor Contable del producto antes de generar la póliza.`,
+        sin_configuracion: sinConfig,
+      }, 422);
+    }
+
+    // 4. Crear HEADER
+    const today = new Date().toISOString().split('T')[0];
+    const [header] = await sql`
+      INSERT INTO "EFINANCIANET_DB"."J_GL_JOURNAL_ENCABEZADO"
+        (journal_date, producto_id, event_code, account_id, currency,
+         total_debit, total_credit, status, created_at, data)
+      VALUES (
+        ${today}::date,
+        ${productoId}::uuid,
+        ${evento.codigo},
+        ${account_id}::uuid,
+        ${moneda},
+        0, 0,
+        ${'Creado'},
+        now(),
+        ${JSON.stringify({
+          evento_id,
+          evento_nombre: evento.evento,
+          origen: 'generacion-automatica',
+          account_id,
+        })}::jsonb
+      )
+      RETURNING id, journal_date, product_id, event_code, account_id,
+                transaction_id, currency, status, created_at
+    `;
+    const journalId = header.id;
+
+    // 5. Insertar pares DÉBITO / CRÉDITO
+    let totalDebito  = 0;
+    let totalCredito = 0;
+
+    for (const linea of lineas) {
+      await sql`
+        INSERT INTO "EFINANCIANET_DB"."J_GL_JOURNAL_DETALLE"
+          (journal_id, gl_account, debit_amount, credit_amount,
+           currency, customer_id, account_id, product_id, descripcion)
+        VALUES (
+          ${journalId}::uuid,
+          ${linea.cuentaDebito},
+          ${linea.monto}::numeric, 0,
+          ${moneda},
+          ${clienteId || null}::uuid,
+          ${account_id}::uuid,
+          ${productoId}::uuid,
+          ${`DÉBITO | ${linea.id_componente} | ${linea.nombreDebito}`}
+        )
+      `;
+      await sql`
+        INSERT INTO "EFINANCIANET_DB"."J_GL_JOURNAL_DETALLE"
+          (journal_id, gl_account, debit_amount, credit_amount,
+           currency, customer_id, account_id, product_id, descripcion)
+        VALUES (
+          ${journalId}::uuid,
+          ${linea.cuentaCredito},
+          0, ${linea.monto}::numeric,
+          ${moneda},
+          ${clienteId || null}::uuid,
+          ${account_id}::uuid,
+          ${productoId}::uuid,
+          ${`CRÉDITO | ${linea.id_componente} | ${linea.nombreCredito}`}
+        )
+      `;
+      totalDebito  += linea.monto;
+      totalCredito += linea.monto;
+    }
+
+    // 6. Actualizar totales
+    await sql`
+      UPDATE "EFINANCIANET_DB"."J_GL_JOURNAL_ENCABEZADO"
+      SET total_debit  = ${totalDebito}::numeric,
+          total_credit = ${totalCredito}::numeric
+      WHERE id = ${journalId}::uuid
+    `;
+
+    // 7. Validar cuadre
+    if (Math.abs(totalDebito - totalCredito) > 0.001) {
+      console.error(`${LOG} NO CUADRA journal=${journalId} débito=${totalDebito} crédito=${totalCredito}`);
+      return c.json({
+        error: `La póliza no cuadra. Débito: ${totalDebito} — Crédito: ${totalCredito}`,
+        journal_id: journalId,
+      }, 422);
+    }
+
+    console.log(`${LOG} ✅ journal=${journalId} evento=${evento.codigo} lineas=${lineas.length * 2} total=${totalDebito} moneda=${moneda}`);
+    return c.json({
+      success:      true,
+      journal_id:   journalId,
+      journal_date: today,
+      event_code:   evento.codigo,
+      evento:       evento.evento,
+      currency:     moneda,
+      total_debit:  totalDebito,
+      total_credit: totalCredito,
+      status:        'Creado',
+      lineas:        lineas.length * 2,
+    }, 201);
+  } catch (e: any) {
+    console.error(`[GENERAR-POLIZA] Error:`, e?.message);
+    return c.json({ error: e.message ?? String(e) }, 500);
+  }
+};
+
+// ── POST /contable/encabezados — actualizar estatus de un evento en el encabezado
+const patchGlJournalStatusHandler = async (c: any) => {
+  try {
+    const id   = c.req.param('id');
+    const body = await c.req.json();
+    const { status } = body;
+    if (!id || !status) return c.json({ error: 'id y status requeridos' }, 400);
+    const [updated] = await sql`
+      UPDATE "EFINANCIANET_DB"."J_GL_JOURNAL_ENCABEZADO"
+      SET status = ${status}
+      WHERE id = ${id}::uuid
+      RETURNING id, status
+    `;
+    if (!updated) return c.json({ error: `No encontrado: ${id}` }, 404);
+    return c.json({ success: true, data: updated });
+  } catch (e: any) {
+    return c.json({ error: e.message ?? String(e) }, 500);
+  }
+};
+
+// ── Generación automática: Desembolso - Crédito ────────────────────────────────
+// POST /contable/generar-desembolso
+// Body: { account_id: string (UUID de J_CUENTAS_CORP_CLIENTES) }
+// Flujo:
+//   1. Leer cuenta financiera → obtener producto_id, cliente_id, moneda, monto, no_cuenta
+//   2. Leer motor contable del producto → filtrar por evento "Desembolso-Crédito"
+//   3. Crear HEADER en J_GL_JOURNAL_ENCABEZADO
+//   4. Por cada línea del motor → insertar par DÉBITO / CRÉDITO en J_GL_JOURNAL_DETALLE
+//   5. Actualizar totales del header
+//   6. Validar que total_debit == total_credit
+const generarDesembolsoCreditoHandler = async (c: any) => {
+  const LOG = '[DESEMBOLSO-CREDITO]';
+  try {
+    const body = await c.req.json();
+    const { account_id } = body;
+    if (!account_id) return c.json({ error: 'account_id es requerido' }, 400);
+
+    // 1. Leer cuenta financiera
+    const [cuenta] = await sql`
+      SELECT cc.id, cc.producto_id, cc.cliente_id, cc.no_cuenta,
+             cc.monto_aut, cc.monto_sol,
+             cc.data->>'moneda' AS moneda
+      FROM "EFINANCIANET_DB"."J_CUENTAS_CORP_CLIENTES" cc
+      WHERE cc.id = ${account_id}::uuid
+      LIMIT 1
+    `;
+    if (!cuenta) return c.json({ error: `Cuenta financiera no encontrada: ${account_id}` }, 404);
+
+    const productoId = cuenta.producto_id;
+    const clienteId  = cuenta.cliente_id;
+    const moneda     = cuenta.moneda || 'MXN';
+    const monto      = parseFloat(String(cuenta.monto_aut || cuenta.monto_sol || '0').replace(/[^0-9.-]/g, '')) || 0;
+
+    if (!productoId) return c.json({ error: 'La cuenta financiera no tiene producto asignado' }, 422);
+
+    // 2. Leer motor contable del producto
+    const [prod] = await sql`
+      SELECT data FROM "EFINANCIANET_DB"."J_PRODUCTOS" WHERE id = ${productoId}::uuid LIMIT 1
+    `;
+    if (!prod) return c.json({ error: `Producto no encontrado: ${productoId}` }, 404);
+
+    const prodData     = parseJsonbData(prod.data);
+    const motorContable: any[] = Array.isArray(prodData.motorContable) ? prodData.motorContable : [];
+
+    // Filtrar líneas para el evento "Desembolso-Crédito" (varios formatos posibles)
+    const EVENTO_CODIGO = 'Desembolso-Crédito';
+    const lineasMotor = motorContable.filter((m: any) => {
+      const cod = m.evento?.codigo || m.evento || '';
+      return cod === EVENTO_CODIGO ||
+             cod.toLowerCase().replace(/\s/g, '-') === 'desembolso-crédito' ||
+             cod.toLowerCase().includes('desembolso') && cod.toLowerCase().includes('cr');
+    });
+
+    if (lineasMotor.length === 0) {
+      return c.json({
+        error: `El motor contable del producto no tiene configuración para el evento "${EVENTO_CODIGO}". Configure el motor contable en el módulo de Productos antes de generar la póliza.`,
+      }, 422);
+    }
+
+    // 3. Crear HEADER de la póliza
+    const today = new Date().toISOString().split('T')[0];
+    const [header] = await sql`
+      INSERT INTO "EFINANCIANET_DB"."J_GL_JOURNAL_ENCABEZADO"
+        (journal_date, producto_id, event_code, account_id, currency,
+         total_debit, total_credit, status, created_at, data)
+      VALUES (
+        ${today}::date,
+        ${productoId}::uuid,
+        ${'Desembolso-Crédito'},
+        ${account_id}::uuid,
+        ${moneda},
+        0, 0,
+        ${'Creado'},
+        now(),
+        ${JSON.stringify({ evento: 'Desembolso - Crédito', origen: 'generacion-automatica', account_id })}::jsonb
+      )
+      RETURNING id, journal_date, producto_id, event_code, account_id,
+                transaction_id, currency, total_debit, total_credit,
+                status, created_at, data
+    `;
+
+    const journalId = header.id;
+
+    // 4. Insertar pares DÉBITO / CRÉDITO por cada línea del motor
+    let totalDebito  = 0;
+    let totalCredito = 0;
+
+    for (const linea of lineasMotor) {
+      const componenteNombre = linea.componente?.nombre || linea.componente || 'CAPITAL';
+      const cuentaDebito     = linea.debito?.cuenta_gl  || linea.debito?.id  || '';
+      const cuentaCredito    = linea.credito?.cuenta_gl || linea.credito?.id || '';
+
+      // Registro DÉBITO
+      await sql`
+        INSERT INTO "EFINANCIANET_DB"."J_GL_JOURNAL_DETALLE"
+          (journal_id, gl_account, debit_amount, credit_amount,
+           currency, customer_id, account_id, product_id, descripcion)
+        VALUES (
+          ${journalId}::uuid,
+          ${cuentaDebito},
+          ${monto}::numeric,
+          0,
+          ${moneda},
+          ${clienteId || null}::uuid,
+          ${account_id}::uuid,
+          ${productoId}::uuid,
+          ${`DÉBITO | Componente: ${componenteNombre} | ${linea.debito?.nombre || cuentaDebito}`}
+        )
+      `;
+
+      // Registro CRÉDITO
+      await sql`
+        INSERT INTO "EFINANCIANET_DB"."J_GL_JOURNAL_DETALLE"
+          (journal_id, gl_account, debit_amount, credit_amount,
+           currency, customer_id, account_id, product_id, descripcion)
+        VALUES (
+          ${journalId}::uuid,
+          ${cuentaCredito},
+          0,
+          ${monto}::numeric,
+          ${moneda},
+          ${clienteId || null}::uuid,
+          ${account_id}::uuid,
+          ${productoId}::uuid,
+          ${`CRÉDITO | Componente: ${componenteNombre} | ${linea.credito?.nombre || cuentaCredito}`}
+        )
+      `;
+
+      totalDebito  += monto;
+      totalCredito += monto;
+    }
+
+    // 5. Actualizar totales en el header
+    await sql`
+      UPDATE "EFINANCIANET_DB"."J_GL_JOURNAL_ENCABEZADO"
+      SET total_debit  = ${totalDebito}::numeric,
+          total_credit = ${totalCredito}::numeric
+      WHERE id = ${journalId}::uuid
+    `;
+
+    // 6. Validar que la póliza cuadra
+    if (Math.abs(totalDebito - totalCredito) > 0.001) {
+      console.error(`${LOG} PÓLIZA NO CUADRA journal=${journalId} débito=${totalDebito} crédito=${totalCredito}`);
+      return c.json({
+        error: `La póliza no cuadra: Total Débito=${totalDebito} ≠ Total Crédito=${totalCredito}`,
+        journal_id: journalId,
+      }, 422);
+    }
+
+    console.log(`${LOG} ✅ journal=${journalId} lineas=${lineasMotor.length} total=${totalDebito} moneda=${moneda}`);
+    return c.json({
+      success: true,
+      journal_id: journalId,
+      journal_date: today,
+      event_code:   'Desembolso-Crédito',
+      account_id,
+      producto_id:  productoId,
+      currency:     moneda,
+      total_debit:  totalDebito,
+      total_credit: totalCredito,
+      status:       'Creado',
+      lineas:       lineasMotor.length * 2,
+    }, 201);
+  } catch (e: any) {
+    console.error(`[DESEMBOLSO-CREDITO] Error:`, e?.message);
+    return c.json({ error: e.message ?? String(e) }, 500);
+  }
+};
 
 // ── Rutas nuevas de master ──
 app.post(`${PREFIX}/ejecutar-reporte-ia`, ejecutarReporteIAHandler);
@@ -6396,8 +6961,14 @@ app.delete(`${PREFIX}/reportes-ejecuciones/:id`, deleteReporteEjecucionHandler);
 app.post(`${PREFIX}/storage/reportes-regulatorios/upload`, uploadReporteHandler);
 app.get(`${PREFIX}/gl-journal`, getGlJournalHandler);
 app.post(`${PREFIX}/gl-journal`, postGlJournalHandler);
+app.get(`${PREFIX}/gl-journal/:id`, getGlJournalByIdHandler);
 app.put(`${PREFIX}/gl-journal/:id`, putGlJournalHandler);
 app.delete(`${PREFIX}/gl-journal/:id`, deleteGlJournalHandler);
+app.post(`${PREFIX}/contable/generar-desembolso`, generarDesembolsoCreditoHandler);
+app.post(`${PREFIX}/contable/generar-poliza`, generarPolizaContableHandler);
+app.patch(`${PREFIX}/gl-journal/:id/status`, patchGlJournalStatusHandler);
+app.post("/contable/generar-poliza", generarPolizaContableHandler);
+app.patch("/gl-journal/:id/status", patchGlJournalStatusHandler);
 app.post("/ejecutar-reporte-ia", ejecutarReporteIAHandler);
 app.get("/reportes-regulatorios", getReportesRegulariosHandler);
 app.post("/reportes-regulatorios", postReporteRegulatorioHandler);
@@ -6422,6 +6993,7 @@ app.delete("/reportes-ejecuciones/:id", deleteReporteEjecucionHandler);
 app.post("/storage/reportes-regulatorios/upload", uploadReporteHandler);
 app.get("/gl-journal", getGlJournalHandler);
 app.post("/gl-journal", postGlJournalHandler);
+app.get("/gl-journal/:id", getGlJournalByIdHandler);
 app.put("/gl-journal/:id", putGlJournalHandler);
 app.delete("/gl-journal/:id", deleteGlJournalHandler);
 console.log("[ROUTE] Master-only: reportes-regulatorios, catalogos/eventos/componentes-contables, ejecuciones, gl-journal, upload OK");
