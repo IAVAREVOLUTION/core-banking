@@ -29,6 +29,7 @@ export interface CarteraCredito {
   moneda?: string;
   usuario?: string;
   gobierno?: string;
+  fechaSol?: string;
 }
 
 interface Props {
@@ -145,7 +146,7 @@ export function CarteraForm({ credito, mode, onBack }: Props) {
         )}
         {activeTab === 'amortizaciones' && (
           <div className="bg-white border border-gray-300 p-4">
-            <AmortizacionesTab solicitudId={credito.id} cliente={credito.cliente} noSol={credito.noSol} noCuenta={credito.noCuenta} moneda={credito.moneda} />
+            <AmortizacionesTab solicitudId={credito.id} cliente={credito.cliente} noSol={credito.noSol} noCuenta={credito.noCuenta} moneda={credito.moneda} tipoProducto={credito.tipoProducto} />
           </div>
         )}
         {activeTab === 'avisos' && (

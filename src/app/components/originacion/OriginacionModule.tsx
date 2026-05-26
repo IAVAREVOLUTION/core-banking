@@ -231,7 +231,6 @@ export function OriginacionModule() {
       // de banca móvil que no son gestionados por CORE
       await saveSolicitud(formForSave, dbId, { _originalData: solItem._data || {} });
     } catch (err) {
-      console.warn('[Originación] FASE 7 DB update falló:', err);
     }
   }, [solicitudesDB, saveSolicitud]);
 
@@ -324,12 +323,22 @@ function OriginacionDashboard({ items, onGoToList }: {
     { estatus: 'Cancelado', cantidad: items.filter(i => i.estatus === 'Cancelado').length, color: '#6B7280' },
   ];
 
-  const distribucionSubEstatus = [
-    { fase: 'Integración', cantidad: items.filter(i => i.subEstatus === 'Integración del Expediente').length, color: '#3B82F6' },
-    { fase: 'Análisis', cantidad: items.filter(i => i.subEstatus === 'Análisis de Crédito').length, color: '#F59E0B' },
-    { fase: 'Jurídico', cantidad: items.filter(i => i.subEstatus === 'Jurídico').length, color: '#7C3AED' },
-    { fase: 'Liberación', cantidad: items.filter(i => i.subEstatus === 'Liberación').length, color: '#10B981' },
-  ];
+  const distribucionSubEstatus = (() => {
+    const counts = { integracion: 0, analisis: 0, juridico: 0, liberacion: 0 };
+    items.forEach(i => {
+      const faseId = parseInt(getFaseIdFromSubEstatus(i.subEstatus));
+      if (faseId === 1) counts.integracion++;
+      else if (faseId === 2) counts.analisis++;
+      else if (faseId === 3) counts.juridico++;
+      else if (faseId >= 4) counts.liberacion++;
+    });
+    return [
+      { fase: 'Integración',  cantidad: counts.integracion, color: '#3B82F6' },
+      { fase: 'Análisis Op.', cantidad: counts.analisis,    color: '#F59E0B' },
+      { fase: 'Jurídico',     cantidad: counts.juridico,    color: '#7C3AED' },
+      { fase: 'Liberación',   cantidad: counts.liberacion,  color: '#10B981' },
+    ];
+  })();
 
   const evolucion = [
     { mes: 'Ago', solicitudes: 12 }, { mes: 'Sep', solicitudes: 18 },
@@ -451,14 +460,20 @@ function OriginacionDashboard({ items, onGoToList }: {
           </div>
           <div className="p-4 flex items-center justify-center">
             <div className="w-full">
-              <ResponsiveContainer width="100%" height={240}>
-                <PieChart id="orig-pie-subestatus">
-                  <Pie data={distribucionSubEstatus} cx="50%" cy="50%" labelLine={false} label={({ fase, cantidad }) => `${fase}: ${cantidad}`} outerRadius={80} fill="#8884d8" dataKey="cantidad" nameKey="fase">
-                    {distribucionSubEstatus.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
-                  </Pie>
-                  <Tooltip />
-                </PieChart>
-              </ResponsiveContainer>
+              {distribucionSubEstatus.every(d => d.cantidad === 0) ? (
+                <div className="flex flex-col items-center justify-center h-[240px] text-gray-400 text-xs">
+                  Sin datos de fases disponibles
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height={240}>
+                  <PieChart id="orig-pie-subestatus">
+                    <Pie data={distribucionSubEstatus} cx="50%" cy="50%" labelLine={false} label={false} outerRadius={90} fill="#8884d8" dataKey="cantidad" nameKey="fase">
+                      {distribucionSubEstatus.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
+                    </Pie>
+                    <Tooltip />
+                  </PieChart>
+                </ResponsiveContainer>
+              )}
               <div className="mt-4 grid grid-cols-2 gap-2">
                 {distribucionSubEstatus.map(item => (
                   <div key={item.fase} className="flex items-center gap-2">
@@ -957,7 +972,6 @@ function OriginacionForm({ mode, originacionId, onCancel, onSave, onActivarCuent
     const fase = fasesDelProducto[faseIndex] || fasesDelProducto[0];
     
     if (fase && fase.fase) {
-      console.log('[OrigForm] Syncing fase from product:', fase);
       setFd(prev => ({
         ...prev,
         area: fase.area || prev.area,

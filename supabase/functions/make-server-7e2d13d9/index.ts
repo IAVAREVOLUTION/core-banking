@@ -3347,10 +3347,10 @@ const putSolicitudesHandler = async (c: any) => {
     `;
     console.log(`[SOLICITUDES] UPDATE OK — id: ${id}`);
 
-    // Si el estatus cambia a Autorizada/Aprobado → crear CuentaAhorro por solicitud
+    // Si el estatus cambia a Autorizada/Aprobado → crear CuentaAhorro solo para crédito
+    // Para captación/ahorro/inversión/aportación la cuenta ya existe — no duplicar.
     const estatusAutoriza = estatus_sol && ['Autorizada', 'Aprobado'].includes(estatus_sol);
     if (estatusAutoriza) {
-      // Leer el registro completo para tener cliente_id, linea, tipo, monto aunque no vengan en el body
       try {
         const [solRow] = await sql`
           SELECT cliente_id, linea_produc, tipo_produc,
@@ -3358,22 +3358,33 @@ const putSolicitudesHandler = async (c: any) => {
           FROM "EFINANCIANET_DB"."J_CUENTAS_CORP_CLIENTES"
           WHERE id = ${id}::uuid LIMIT 1
         `;
-        const clienteIdFin = (cliente_id || solRow?.cliente_id)?.toString() || null;
-        if (clienteIdFin && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(clienteIdFin)) {
-          let nombreCl = 'Sin nombre';
-          try {
-            const [clRow] = await sql`SELECT data FROM "EFINANCIANET_DB"."J_CLIENTES" WHERE id = ${clienteIdFin}::uuid LIMIT 1`;
-            if (clRow?.data) {
-              const cd = parseJsonbData(clRow.data);
-              nombreCl = [cd.nombre, cd.apellidoPaterno, cd.apellidoMaterno].filter(Boolean).join(' ') || 'Sin nombre';
-            }
-          } catch { /* sin nombre */ }
-          const lineaFin  = linea_produc || solRow?.linea_produc || 'CAPTACION';
-          const tipoFin   = tipo_produc  || solRow?.tipo_produc  || 'Ahorro';
-          const montoFin  = monto_aut != null ? monto_aut : (parseFloat(String(solRow?.monto_num || '0')) || 0);
-          crearCuentaAhorroParaSolicitud(id, clienteIdFin, lineaFin, tipoFin, montoFin, nombreCl);
+        const lineaFin = (linea_produc || solRow?.linea_produc || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+        const tipoFin  = (tipo_produc  || solRow?.tipo_produc  || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+        const esCaptacionRow = lineaFin.includes('captacion') || lineaFin.includes('ahorro')
+          || lineaFin.includes('inversion') || lineaFin.includes('aportacion')
+          || tipoFin.includes('captacion')  || tipoFin.includes('ahorro')
+          || tipoFin.includes('inversion')  || tipoFin.includes('aportacion');
+
+        if (!esCaptacionRow) {
+          const clienteIdFin = (cliente_id || solRow?.cliente_id)?.toString() || null;
+          if (clienteIdFin && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(clienteIdFin)) {
+            let nombreCl = 'Sin nombre';
+            try {
+              const [clRow] = await sql`SELECT data FROM "EFINANCIANET_DB"."J_CLIENTES" WHERE id = ${clienteIdFin}::uuid LIMIT 1`;
+              if (clRow?.data) {
+                const cd = parseJsonbData(clRow.data);
+                nombreCl = [cd.nombre, cd.apellidoPaterno, cd.apellidoMaterno].filter(Boolean).join(' ') || 'Sin nombre';
+              }
+            } catch { /* sin nombre */ }
+            const lineaReal = linea_produc || solRow?.linea_produc || 'CAPTACION';
+            const tipoReal  = tipo_produc  || solRow?.tipo_produc  || 'Ahorro';
+            const montoFin  = monto_aut != null ? monto_aut : (parseFloat(String(solRow?.monto_num || '0')) || 0);
+            crearCuentaAhorroParaSolicitud(id, clienteIdFin, lineaReal, tipoReal, montoFin, nombreCl);
+          } else {
+            console.warn(`[SOLICITUDES] Autorizada pero sin cliente_id válido — id: ${id} clienteId: ${clienteIdFin}`);
+          }
         } else {
-          console.warn(`[SOLICITUDES] Autorizada pero sin cliente_id válido — id: ${id} clienteId: ${clienteIdFin}`);
+          console.log(`[SOLICITUDES] Captación — no se crea CuentaAhorro adicional para solicitud ${id}`);
         }
       } catch (e: any) {
         console.warn(`[SOLICITUDES] Error al crear CuentaAhorro tras autorización:`, e?.message);
@@ -3640,9 +3651,10 @@ const activarCuentaSolicitudHandler = async (c: any) => {
       console.warn(`${LOG} No se pudo actualizar J_SOLICITUDES_ACTIVACION: ${saErr?.message}`);
     }
 
-    // ── Crear CuentaAhorro dedicada por solicitud (idempotente via helper) ──────
+    // Para captación la cuenta ya existe (J_CUENTAS_CORP_CLIENTES que se acaba de actualizar).
+    // Solo crear CuentaAhorro adicional para productos de crédito.
     let cuentaAhorroId: string | null = null;
-    if (clienteIdFinal) {
+    if (!esCaptacion && clienteIdFinal) {
       let nombreCliente = 'Sin nombre';
       try {
         const [clRow] = await sql`SELECT data FROM "EFINANCIANET_DB"."J_CLIENTES" WHERE id = ${clienteIdFinal}::uuid LIMIT 1`;
@@ -3660,7 +3672,7 @@ const activarCuentaSolicitudHandler = async (c: any) => {
       );
     }
 
-    console.log(`${LOG} ✅ cuenta=${id} tipo=${tipoMovimiento} monto=${montoTransaccion} saldoFinal=${saldoFinal} clienteId=${clienteIdFinal} cuentaAhorroId=${cuentaAhorroId}`);
+    console.log(`${LOG} ✅ cuenta=${id} esCaptacion=${esCaptacion} tipo=${tipoMovimiento} monto=${montoTransaccion} saldoFinal=${saldoFinal} clienteId=${clienteIdFinal} cuentaAhorroId=${cuentaAhorroId}`);
     return c.json({ ok: true, tipoMovimiento, montoTransaccion, saldoFinal, clienteId: clienteIdFinal, cuentaAhorroId });
   } catch (err: any) {
     console.error(`${LOG} Error:`, err?.message);

@@ -178,10 +178,6 @@ export function CalendarioPagosTab({ accountId, cliente = '', noSol, noCuenta, m
               <th className="px-2 py-2 text-left font-medium">Fecha</th>
               <th className="px-2 py-2 text-right font-medium">Saldo</th>
               <th className="px-2 py-2 text-right font-medium">Aportación</th>
-              <th className="px-2 py-2 text-right font-medium">Interés</th>
-              <th className="px-2 py-2 text-right font-medium">IVA Int.</th>
-              <th className="px-2 py-2 text-right font-medium">Seguro</th>
-              <th className="px-2 py-2 text-right font-medium">IVA Seg.</th>
               <th className="px-2 py-2 text-right font-medium">Total Pago</th>
               <th className="px-2 py-2 text-center font-medium">Estatus</th>
             </tr>
@@ -189,7 +185,7 @@ export function CalendarioPagosTab({ accountId, cliente = '', noSol, noCuenta, m
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={11} className="px-3 py-8 text-center text-gray-400 text-xs">
+                <td colSpan={7} className="px-3 py-8 text-center text-gray-400 text-xs">
                   <svg className="animate-spin h-5 w-5 mx-auto mb-1 text-[#4A6FA5]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <circle cx="12" cy="12" r="10" strokeOpacity="0.25"/><path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round"/>
                   </svg>
@@ -198,7 +194,7 @@ export function CalendarioPagosTab({ accountId, cliente = '', noSol, noCuenta, m
               </tr>
             ) : rows.length === 0 ? (
               <tr>
-                <td colSpan={11} className="px-3 py-10 text-center">
+                <td colSpan={7} className="px-3 py-10 text-center">
                   <svg width="32" height="32" viewBox="0 0 32 32" fill="none" stroke="#CBD5E1" strokeWidth="1.5" className="mx-auto mb-2">
                     <rect x="4" y="4" width="24" height="24" rx="3"/>
                     <path d="M10 16h12M16 10v12" strokeLinecap="round"/>
@@ -232,10 +228,6 @@ export function CalendarioPagosTab({ accountId, cliente = '', noSol, noCuenta, m
                   <td className="px-2 py-2 text-gray-700 whitespace-nowrap">{fmtDate(r.fecha_pago)}</td>
                   <td className="px-2 py-2 text-right text-gray-700">{formatMoney(r.saldo_insoluto)}</td>
                   <td className="px-2 py-2 text-right text-gray-700">{formatMoney(r.pago_capital)}</td>
-                  <td className="px-2 py-2 text-right text-gray-700">{formatMoney(r.pago_interes)}</td>
-                  <td className="px-2 py-2 text-right text-gray-700">{formatMoney(r.iva_interes)}</td>
-                  <td className="px-2 py-2 text-right text-gray-700">{formatMoney(r.pago_seguro)}</td>
-                  <td className="px-2 py-2 text-right text-gray-700">{formatMoney(r.iva_seguro)}</td>
                   <td className="px-2 py-2 text-right font-medium text-gray-800">{formatMoney(r.pago_total)}</td>
                   <td className="px-2 py-2 text-center">
                     <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-medium border ${ESTATUS_COLOR[r.estatus] || 'bg-gray-50 text-gray-600 border-gray-200'}`}>
@@ -253,10 +245,6 @@ export function CalendarioPagosTab({ accountId, cliente = '', noSol, noCuenta, m
                 <tr className="bg-blue-100 border-t border-blue-200 font-medium text-blue-900">
                   <td colSpan={4} className="px-2 py-2 text-right text-[10px] uppercase tracking-wide">Selección:</td>
                   <td className="px-2 py-2 text-right">{formatMoney(totals.capital)}</td>
-                  <td className="px-2 py-2 text-right">{formatMoney(totals.interes)}</td>
-                  <td className="px-2 py-2 text-right">{formatMoney(totals.iva)}</td>
-                  <td className="px-2 py-2 text-right">{formatMoney(totals.seguro)}</td>
-                  <td className="px-2 py-2 text-right">{formatMoney(totals.ivaSeg)}</td>
                   <td className="px-2 py-2 text-right font-bold">{formatMoney(totals.total)}</td>
                   <td />
                 </tr>
@@ -264,10 +252,6 @@ export function CalendarioPagosTab({ accountId, cliente = '', noSol, noCuenta, m
               <tr className="bg-gray-100 border-t-2 border-gray-300 font-medium text-gray-800">
                 <td colSpan={4} className="px-2 py-2 text-right text-[10px] uppercase tracking-wide">Total General:</td>
                 <td className="px-2 py-2 text-right">{formatMoney(allTotals.capital)}</td>
-                <td className="px-2 py-2 text-right">{formatMoney(allTotals.interes)}</td>
-                <td className="px-2 py-2 text-right">{formatMoney(allTotals.iva)}</td>
-                <td className="px-2 py-2 text-right">{formatMoney(allTotals.seguro)}</td>
-                <td className="px-2 py-2 text-right">{formatMoney(allTotals.ivaSeg)}</td>
                 <td className="px-2 py-2 text-right font-bold">{formatMoney(allTotals.total)}</td>
                 <td />
               </tr>

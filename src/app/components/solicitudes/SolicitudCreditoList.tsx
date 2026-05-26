@@ -196,9 +196,6 @@ export function preloadSubtabsFromDBData(
   }
   // Always overwrite SAVED_DATA for simulacion_cal so loadFromSavedStore never returns stale data
   const calFromDB = sim.calendario_aportaciones?.length > 0 ? sim.calendario_aportaciones : null;
-  console.log('[preloadSubtabs] storageId:', storageId, '| sim keys:', Object.keys(sim),
-    '| calendario_aportaciones:', calFromDB ? `${calFromDB.length} rows` : 'null/vacío',
-    '| first row sample:', calFromDB?.[0]);
   saveToSession(storageId, 'simulacion_cal', calFromDB);
   saveToSavedStore(storageId, 'simulacion_cal', calFromDB);
   const exp = sol.expediente_electronico || {};
@@ -354,10 +351,8 @@ export function SolicitudCreditoList({
           catch { return 0; }
         });
         setSolicitudes(sorted);
-        console.log(`[SolicList] Synced ${solicitudesDB.length} rows from DB`);
       } else {
         setSolicitudes([]);
-        console.log('[SolicList] DB returned 0 rows');
       }
     }
   }, [solicitudesDB, backendStatus]);
@@ -373,7 +368,6 @@ export function SolicitudCreditoList({
     const targetDbId = solicitudDeepLink.dbId;
     const targetNoSol = solicitudDeepLink.noSol;
     const fromCli = solicitudDeepLink.fromClienteId || null;
-    console.log(`[SolicList] DeepLink → dbId=${targetDbId}, noSol=${targetNoSol}, fromClienteId=${fromCli}, buscando en ${solicitudesDB.length} solicitudes...`);
     
     // Guardar el clienteId para saber si venimos del módulo Clientes
     if (fromCli) {
@@ -384,14 +378,12 @@ export function SolicitudCreditoList({
     const found = solicitudesDB.find(s => (s as any)._dbId === targetDbId || s.noSol === targetNoSol);
     
     if (found) {
-      console.log(`[SolicList] DeepLink → ENCONTRADA: ${found.noSol}`);
       // Abrir en modo 'ver'
       const sid = found.id;
       setView({ type: 'form', mode: 'ver', solicitudId: sid, dbId: (found as any)._dbId || String(sid) });
       // Limpiar deep link
       onSolicitudDeepLinkConsumed?.();
     } else {
-      console.warn(`[SolicList] DeepLink → NO ENCONTRADA: dbId=${targetDbId}`);
       // Limpiar de todas formas para evitar loop
       onSolicitudDeepLinkConsumed?.();
     }
@@ -547,10 +539,6 @@ export function SolicitudCreditoList({
     const joinDescripcion = extra._descripcion || '';
     const joinFases = extra._fases || '';
 
-    console.log('[buildFormData] sources → hdr:', JSON.stringify(hdr).substring(0, 200),
-      '| flat d keys:', Object.keys(d).filter(k => k !== 'solicitud').join(','),
-      '| JOIN nombre:', joinNombre, '| JOIN tipo:', joinTipoPersona);
-
     return {
       id: extra._dbId || String(s.id) || '',
       noSol: s.noSol || hdr.no_sol || d.noSol || '',
@@ -666,14 +654,12 @@ estatusSolicitud: s.estatusSolicitud || d.estatusSolicitud || 'Pendiente',
 
     // ── Comisiones ──
     if (sol.comisiones?.length > 0) {
-      console.log(`[preloadSubtabs] storageId=${storageId} — comisiones de BD (${sol.comisiones.length}):`, JSON.stringify(sol.comisiones).substring(0, 300));
       saveToSession(storageId, 'comisiones', sol.comisiones.map((c: any, i: number) => ({
         id: i + 1, tipoComision: c.tipo_comision || '', descripcion: c.descripcion || '',
         base: c.base || '', porcentaje: c.porcentaje || 0, montoCalculado: c.monto || 0,
         estatus: c.estatus || 'Pendiente',
       })));
     } else {
-      console.log(`[preloadSubtabs] storageId=${storageId} — SIN comisiones en BD (sol.comisiones es vacío o undefined)`);
     }
 
     // ── Autorizaciones ──
@@ -698,7 +684,6 @@ estatusSolicitud: s.estatusSolicitud || d.estatusSolicitud || 'Pendiente',
     const sid = resolveStorageId(s);
     clearSession(sid);
     const formData = buildFormDataFromListItem(s);
-    console.log('[SolicList] handleEditar → storageId:', sid, '| noSol:', formData.noSol, '| nombre:', formData.nombrePersona);
     saveToSession(sid, 'form', formData);
     const dbData = (s as any)._data;
     if (dbData && typeof dbData === 'object') {
@@ -713,7 +698,6 @@ estatusSolicitud: s.estatusSolicitud || d.estatusSolicitud || 'Pendiente',
     const sid = resolveStorageId(s);
     clearSession(sid);
     const formData = buildFormDataFromListItem(s);
-    console.log('[SolicList] handleVer → storageId:', sid, '| noSol:', formData.noSol);
     saveToSession(sid, 'form', formData);
     const dbData = (s as any)._data;
     if (dbData && typeof dbData === 'object') {
@@ -756,7 +740,6 @@ estatusSolicitud: s.estatusSolicitud || d.estatusSolicitud || 'Pendiente',
     try {
       const result = await saveSolicitud(cleanData, dbId, allSubtabs);
       if (result.ok) {
-        console.log('[SolicList] DB persist OK — id:', result.id);
         // Limpiar SAVED_DATA['new'] para que no contamine la próxima solicitud nueva
         if (isNew) deleteSavedStore('new');
         toast.success(isNew ? 'Solicitud creada exitosamente' : 'Solicitud actualizada exitosamente', {
@@ -767,7 +750,6 @@ estatusSolicitud: s.estatusSolicitud || d.estatusSolicitud || 'Pendiente',
         // y el useEffect ya sincronizó solicitudesDB → solicitudes locales.
         // NO agregar manualmente el item local — la BD es la fuente de verdad.
       } else {
-        console.warn('[SolicList] DB persist FAILED:', result.error);
         toast.error('Error al guardar en BD', { description: result.error || 'Revise la consola', duration: 5000 });
 
         // ── Fallback: agregar localmente si la BD falló ──
@@ -812,7 +794,6 @@ estatusSolicitud: s.estatusSolicitud || d.estatusSolicitud || 'Pendiente',
         }
       }
     } catch (err: any) {
-      console.error('[SolicList] DB persist EXCEPTION:', err);
       toast.error('Error inesperado al guardar', { description: err?.message || String(err), duration: 5000 });
     }
 

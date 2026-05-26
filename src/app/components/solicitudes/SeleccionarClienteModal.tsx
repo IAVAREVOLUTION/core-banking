@@ -106,22 +106,17 @@ export function SeleccionarClienteModal({ isOpen, onClose, onSelect }: Props) {
       headers: { 'Authorization': `Bearer ${publicAnonKey}` },
     })
       .then(res => {
-        console.log(`[SeleccionarCliente] HTTP ${res.status} ${res.statusText}`);
         return res.json();
       })
       .then(json => {
         const rows: JClienteRow[] = json.data || [];
-        console.log(`[SeleccionarCliente] ${rows.length} registros crudos`);
         const mapped = rows.map(mapRow).filter(c => c.nombre);
-        console.log(`[SeleccionarCliente] ${mapped.length} clientes mapeados con nombre`);
         if (mapped.length > 0) {
-          console.log('[SeleccionarCliente] Ejemplo:', { id: mapped[0].idCliente, nombre: mapped[0].nombreCompleto, personalidad: mapped[0].personalidad });
         }
         setClientes(mapped);
       })
       .catch(err => {
         toast.error('Error al cargar clientes');
-        console.error(err);
       })
       .finally(() => setLoading(false));
   }, [isOpen]);
