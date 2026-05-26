@@ -132,7 +132,7 @@ interface SolicitudCreditoFormProps {
   modo?: 'solicitudes' | 'originacion';
 }
 
-export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, cotizacionData, modo: modoProp = 'solicitudes' }: SolicitudCreditoFormProps) {
+export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, cotizacionData, modo: modoProp = 'solicitudes' }: SolicitudCreditoFormProps): JSX.Element {
   const storageId: number | string | 'new' = mode === 'nuevo' ? 'new' : (solicitudId ?? 1);
   const initialRender = useRef(true);
   /** Tracks the formData snapshot at mount time — used to detect user-driven changes */
@@ -140,9 +140,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
   const loadedTipoProducto = useRef<string>('');
 
   const getInitial = useCallback((): SolicitudFormData => {
-    console.log('[SolicForm] getInitial → mode:', mode, '| solicitudId:', solicitudId, '| storageId:', storageId);
     const session = loadFromSession<SolicitudFormData>(storageId, 'form');
-    console.log('[SolicForm] getInitial → loadFromSession result:', session ? `OK (noSol: ${session.noSol}, nombre: ${(session as any).nombrePersona}, tipoProducto: ${(session as any).tipoProducto}, productoId: ${(session as any).productoId})` : 'NULL');
     if (session) return { ...EMPTY_FORM, ...session };
     if (mode === 'nuevo') {
       const base = {
@@ -205,7 +203,6 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
     loadedTipoProducto.current = fresh.tipoProducto;
     setFormData(fresh);
     initialRender.current = true;
-    console.log('[SolicForm] Safety re-init fired → solicitudId:', solicitudId, '| storageId:', storageId);
   }, [solicitudId, mode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Auto-persist formData en sessionStorage ──
@@ -243,7 +240,6 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
     if (!formData.productoId || productosDB.length === 0) return;
     const dbProd = productosDB.find(p => p.id === formData.productoId);
     if (dbProd?.sublineaProducto && dbProd.sublineaProducto !== formData.tipoProducto) {
-      console.log('[SolicForm] Auto-resolve tipoProducto from product:', dbProd.sublineaProducto);
       setFormData(prev => ({ ...prev, tipoProducto: dbProd.sublineaProducto }));
     }
   }, [formData.productoId, productosDB]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -257,7 +253,6 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
     if (formData.productoId && productosFiltrados.length > 0) {
       const stillValid = productosFiltrados.some(p => p.id === formData.productoId);
       if (!stillValid) {
-        console.log('[SolicForm] CASCADE RESET productoId:', formData.productoId, '→ cleared (not in filtrados)');
         setFormData(prev => ({ ...prev, productoId: '', nombreProducto: '' }));
       }
     }
@@ -269,7 +264,6 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
       // Wait one animation frame so the render with loaded products has settled
       const raf = requestAnimationFrame(() => {
         initialRender.current = false;
-        console.log('[SolicForm] initialRender → false (productos loaded, settling complete)');
       });
       return () => cancelAnimationFrame(raf);
     }
@@ -384,7 +378,6 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
     const needsTipoProducto = !formData.tipoProducto && !!productoSeleccionado.sublineaProducto;
 
     if (faseIdMismatch || needsFaseSync || needsNombreProducto || needsTipoProducto) {
-      console.log('[SolicForm] Syncing from product:', { faseData, faseIdMismatch, needsFaseSync, needsNombreProducto, needsTipoProducto });
       setFormData(prev => ({
         ...prev,
         ...(faseIdMismatch || needsFaseSync ? {
@@ -475,7 +468,6 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
       const lpLower = (formData.lineaProducto || '').toLowerCase();
       const esLineaCredito = lpLower.includes('nea') && lpLower.includes('cr');
       const esActivacionCuentaFinanciera = esLineaCredito && faseNombre.toLowerCase().includes('activac');
-      console.log(`[ACF] lineaProducto="${formData.lineaProducto}" fase="${faseNombre}" esActivacion=${esActivacionCuentaFinanciera}`);
 
       // ── Activación Cuenta Financiera: manejo completo aquí, sin IA ──────
       if (esActivacionCuentaFinanciera) {
@@ -487,7 +479,6 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
           : UUID_R.test(String(storageId))
             ? String(storageId)
             : '';
-        console.log(`[ACF] dbIdAct=${dbIdAct} formData.id=${formData.id} storageId=${storageId}`);
         const API_ACT = `https://${projectId}.supabase.co/functions/v1/make-server-7e2d13d9`;
         const sigFaseAct = fasesDelProducto.find(f => f.seq === seqActual + 1);
         let activadoEnBD = false;
@@ -507,19 +498,14 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
           if (res.ok) {
             const data = await res.json();
             activadoEnBD = data.valido !== false;
-            console.log('[ActCuentaFin] Backend OK:', data);
           } else {
-            console.warn('[ActCuentaFin] Backend HTTP', res.status, '— usando fallback frontend');
           }
         } catch (e: any) {
-          console.warn('[ActCuentaFin] Backend excepción:', e.message, '— usando fallback frontend');
         }
 
         // Intento 2 (fallback): actualizar estatus directo desde frontend
         if (!activadoEnBD && UUID_R.test(dbIdAct)) {
-          await actualizarEstatusSolicitudDB(dbIdAct, 'Autorizada').catch(e =>
-            console.warn('[ActCuentaFin] Fallback también falló:', e)
-          );
+          await actualizarEstatusSolicitudDB(dbIdAct, 'Autorizada').catch(() => {});
         }
 
         // Crear cuenta nueva en J_CUENTAS_CORP_CLIENTES para esta solicitud autorizada
@@ -539,7 +525,6 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
                 description: `No. Cuenta: ${r.noCuenta} — ${formData.lineaProducto}`,
               });
             } else if (!r.ok) {
-              console.warn('[ActCuentaFin] crearCuentaDesdeSolicitud falló:', r.error);
             }
           });
         }
@@ -555,8 +540,6 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
 
       // ── 3. Validar documentos obligatorios de la fase actual (Sección B) ──
       if (!esActivacionCuentaFinanciera) {
-        console.log(`[handleEnviarFase] tipoPersona="${formData.tipoPersona}"`);
-        console.log(`[handleEnviarFase] requisitos:`, requisitosProducto.map(r => `"${r.tipoDocumento}" → faseId=${r.faseId} oblig=${r.obligatorio} persona=${(r as any).tipoPersona || (r as any).persona || 'N/A'}`));
         const valFase = validarDocumentosPorFase(
           seqActual, faseNombre, requisitosProducto, documentos, formData.tipoPersona,
         );
@@ -567,7 +550,6 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
             description: `Documentos faltantes: ${desc}`,
             duration: 8000,
           });
-          console.log(`[Fase ${seqActual}] Validación por fase:`, valFase);
           return;
         }
         // Advertencia no bloqueante: docs cargados pero pendientes de validación IA
@@ -577,7 +559,6 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
             duration: 5000,
           });
         }
-        console.log(`[Fase ${seqActual}] ✅ Documentos validados:`, valFase.documentosValidados.join(', '));
       }
 
       // ── 3a. Validación IA con el prompt de la fase ──
@@ -754,7 +735,6 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
                 toast.loading(`Reintentando validación IA (${intento}/${MAX_REINTENTOS})...`);
                 await new Promise(r => setTimeout(r, 2000));
               }
-              console.log(`[Fase ${seqActual}] Enviando → /validar-documento-ia (intento ${intento}/${MAX_REINTENTOS})`);
               resFaseIA = await fetch(`${API_BASE_FASE}/validar-documento-ia`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${publicAnonKey}` },
@@ -763,10 +743,8 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
               // Solo reintentar en errores de servidor (5xx) o red — no en 4xx
               if (resFaseIA.ok || resFaseIA.status < 500) break;
               ultimoError = `HTTP ${resFaseIA.status}`;
-              console.warn(`[Fase ${seqActual}] Intento ${intento} falló: ${ultimoError}`);
             } catch (netErr: any) {
               ultimoError = netErr.message;
-              console.warn(`[Fase ${seqActual}] Intento ${intento} error de red: ${ultimoError}`);
               if (intento === MAX_REINTENTOS) resFaseIA = null;
             }
           }
@@ -776,7 +754,6 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
           if (resFaseIA?.ok) {
             const resultadoFaseIA = await resFaseIA.json();
             setIaFaseDebug(prev => prev ? { ...prev, status: 'ok', httpStatus: resFaseIA!.status, resultado: resultadoFaseIA } : null);
-            console.log(`[Fase ${seqActual}] IA resultado:`, resultadoFaseIA);
 
             if (resultadoFaseIA.valido === false) {
               toast.error(`IA: Fase "${faseNombre}" no cumple criterios`, {
@@ -796,15 +773,12 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
             const httpStatus = resFaseIA?.status ?? 0;
             const errText = resFaseIA ? await resFaseIA.text().catch(() => ultimoError) : ultimoError;
             setIaFaseDebug(prev => prev ? { ...prev, status: 'error', httpStatus, errorMsg: errText } : null);
-            console.warn(`[Fase ${seqActual}] IA falló tras ${MAX_REINTENTOS} intentos: ${errText.substring(0, 200)}`);
             // No bloquear — continuar avance de fase
           }
         } catch (errFaseIA: any) {
           toast.dismiss(toastIA);
-          console.warn(`[Fase ${seqActual}] Error inesperado en validación IA:`, errFaseIA.message);
         }
       } else if (todosValidados) {
-        console.log(`[Fase ${seqActual}] Todos los docs requeridos ya validados por IA — omitiendo validación de fase.`);
       } else {
         setIaFaseDebug({
           faseSeq: seqActual,
@@ -816,7 +790,6 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
           errorMsg: 'La fase no tiene promptIA configurado en el subtab Fases del producto.',
           timestamp: new Date().toLocaleTimeString('es-MX'),
         });
-        console.log(`[Fase ${seqActual}] Sin promptIA configurado — omitiendo validacion IA de fase.`);
       }
 
       // ── 3b. Fase 4: validar Términos, Garantías, Comités y contratos/pagarés formalizados ──
@@ -913,7 +886,6 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
           };
           await onSave?.({ ...formDataConFase, _allSubtabs: subtabsAutoSave });
         } catch (autoSaveErr) {
-          console.warn('[handleEnviarFase] Auto-guardado falló (no bloquea):', autoSaveErr);
         }
       } else {
         toast.success('Fase avanzada', { description: `${faseActualReal?.fase || formData.descripcionFase} → ${sigFase.fase}. Guarda para persistir.` });
@@ -996,7 +968,6 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
       nombreDB:        '',
     };
     const clienteUUID = fd._clienteId || '';
-    console.log('[obtenerDatosCliente] clienteUUID:', clienteUUID, '| rfc:', extra.rfc, '| curp:', extra.curp, '| domicilio:', extra.domicilio);
     if (clienteUUID) {
       try {
         const _API   = `https://${projectId}.supabase.co/functions/v1/make-server-7e2d13d9`;
@@ -1012,7 +983,6 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
             }
           } catch (_) { /* intentar siguiente endpoint */ }
         }
-        console.log('[obtenerDatosCliente] rowC encontrado:', !!rowC, rowC ? { id: rowC.id, dataKeys: Object.keys(rowC.data || {}).slice(0, 10) } : null);
         if (rowC) {
           const d   = rowC.data || {};
           const g   = (k: string) => String(d[k] || d.default?.[k] || '');
@@ -1039,10 +1009,8 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
             gobierno:        g('institucionGobierno') || extra.gobierno,
             nombreDB,
           };
-          console.log('[obtenerDatosCliente] resultado:', { rfc: extra.rfc, curp: extra.curp, domicilio: extra.domicilio?.slice(0, 40), nombreDB });
         }
       } catch (err) {
-        console.warn('[obtenerDatosCliente] fetch falló:', err);
       }
     }
     return extra;
@@ -1220,7 +1188,6 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
           duration: 8000,
         });
       } catch (err) {
-        console.error('[SolicForm] handleGenerarSolicitud error:', err);
         toast.error('Error al generar la solicitud');
       } finally {
         setEnviandoFase(false);
@@ -1309,15 +1276,6 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
         sucursal:  formData.sucursal    || '',
         finalidad: formData.descripcion || '',
       };
-      console.log('[Contrato] datosSolicitud para plantilla:', {
-        noSol: datosSolicitud.noSol,
-        cliente: datosSolicitud.cliente,
-        rfc: datosSolicitud.rfc,
-        curp: datosSolicitud.curp,
-        domicilio: datosSolicitud.domicilio?.slice(0, 40),
-        productoNombre: datosSolicitud.productoNombre,
-        fechaNacimiento: datosSolicitud.fechaNacimiento,
-      });
 
       // Usar plantilla configurada en el producto si tiene archivoData; fallback a PDF genérico
       const plantillaContrato = plantillasProducto.find(
@@ -1342,7 +1300,6 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
             const html = sustituirPlaceholders(decodificarArchivoData(plantilla.archivoData), datosSolicitud);
             return await htmlToPdfBlobUrl(html);
           } catch (e) {
-            console.warn('[Contrato] Error convirtiendo plantilla a PDF, usando fallback:', e);
           }
         }
         return toObjectURL(fallbackFn());
@@ -1356,7 +1313,6 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
         ''
       ).toLowerCase();
       const esInversionFormal = tpNormFormal.includes('invers');
-      console.log('[Formalizar] tipoProducto raw:', formData.tipoProducto, '| tpNorm:', tpNormFormal, '| esInversion:', esInversionFormal);
 
       // Para Inversión: ignorar la plantilla de contrato (es de crédito) y usar PDF de inversión.
       // Pasar null como plantilla fuerza el fallback → generarSolicitudPDF detecta isInversion.
@@ -1406,7 +1362,6 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
           toast.success('Contrato formalizado (local) — documentos generados', {
             description: `Contrato y Pagaré descargados. No. Solicitud: ${formData.noSol}`,
           });
-          console.warn('[SolicForm] formalizarContrato BD FALLÓ (guardado local):', res.error);
         }
       } else {
         toast.success('Contrato formalizado — documentos generados', {
@@ -1429,7 +1384,6 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
     const UUID_REGEX_SOL = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     const storageIdStr   = String(storageId);
     if (!UUID_REGEX_SOL.test(storageIdStr)) {
-      console.warn('[PROMPT_IA] handleSolicitudActivacion: storageId no es UUID →', storageIdStr);
       toast.error('Guarda la solicitud primero', {
         description: 'La solicitud de crédito debe estar guardada en BD antes de crear una Solicitud de Activación.',
       });
@@ -1443,7 +1397,6 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
     const esSoloVer = nombre.includes('completada')
       || formData.faseId?.includes('_completada')
       || formData.estatusSolicitud === 'Aprobado';
-    console.log('[PROMPT_IA] handleSolicitudActivacion: abriendo modal', { storageId: storageIdStr, esSoloVer, faseActual: faseActual?.fase, nombre });
     setActivacionModalRO(esSoloVer);
     setShowActivacionModal(true);
   };
@@ -1454,7 +1407,6 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
    * Para Línea de Crédito: avanza automáticamente.
    */
   const handleActivacionSaved = useCallback(async (savedItem: SolicitudActivacionListItem) => {
-    console.log('[DIAG] handleActivacionSaved llamado, savedItem:', savedItem);
     setShowActivacionModal(false);
 
     // Refrescar la lista de solicitudes de activación para que canActivarCuenta se actualice
@@ -1490,7 +1442,6 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
     const esPagado    = estatusNorm === 'pagado' || estatusNorm === 'aprobado' || estatusNorm === 'activada';
     const fromActivar = !!savedItem._fromActivar;
 
-    console.log('[PROMPT_IA] handleActivacionSaved - estatus:', savedItem.estatus, '| esPagado:', esPagado, '| fromActivar:', fromActivar);
 
     const faseDebugBefore = formData.faseId;
 
@@ -1500,13 +1451,11 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
       try {
         // ── GUARD: fases deben estar cargadas ──────────────────────────────
         if (fasesDelProducto.length === 0) {
-          console.warn('[PROMPT_IA] avancerFase: fasesDelProducto vacío — no se puede avanzar fase. faseId actual:', formData.faseId);
           toast.warning('No se pudo avanzar fase', { description: 'Las fases del producto no están cargadas. Guarda y recarga la solicitud.' });
           setEnviandoFase(false);
           return;
         }
 
-        console.log('[PROMPT_IA] avanceFase - formData.faseId:', formData.faseId, '| fasesDelProducto:', fasesDelProducto.map(f => ({ faseId: f.faseId, seq: f.seq, fase: f.fase })));
 
         const faseActualReal2 = fasesDelProducto.find(f => String(f.faseId) === String(formData.faseId));
         const seqActual2      = parseInt(String(faseActualReal2?.seq || '1'), 10);
@@ -1521,7 +1470,6 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
         // Para activaciones, usar 'Aprobado' como estatus final del flujo
         const estatusFinal         = esFasesFinal ? 'Aprobado' : nuevoEstatusLocal;
 
-        console.log('[PROMPT_IA] avanzarFase calc:', { esFasesFinal, nuevaFaseId, nuevaDescripcionFase, estatusFinal });
 
         setFormData(prev => ({
           ...prev,
@@ -1535,32 +1483,15 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
         const dbId2       = String(storageId);
         const esUUID2     = storageId !== 'new' && UUID_REGEX2.test(dbId2);
 
-        console.log('[PROMPT_IA] avanzarFase: BD update →', { dbId2, esUUID2, nuevaFaseId, estatusFinal });
 
         if (esUUID2) {
           const resultFase = await avanzarFaseSolicitudDB(dbId2, nuevaFaseId, nuevaDescripcionFase, nuevaArea, estatusFinal);
           if (!resultFase.ok) {
-            console.error('[PROMPT_IA] avanzarFaseSolicitudDB FALLÓ:', resultFase.error);
             toast.warning('Fase actualizada localmente (sin BD)', { description: resultFase.error || 'Sincronización pendiente' });
           }
         } else {
-          console.warn('[PROMPT_IA] avanzarFase: storageId no es UUID, se omite avanzarFaseSolicitudDB →', dbId2);
         }
 
-        // ── DEBUG PROMPT_IA ──────────────────────────────────────────────
-        console.log('[PROMPT_IA] DEBUG:', {
-          solicitud_id_recibido:          String(storageId),
-          solicitud_id_generado:          savedItem._dbId || '(ver consola onEnviar)',
-          estatus_recibido_en_backend:    savedItem.estatus,
-          estatus_guardado_en_bd:         estatusFinal,
-          accionEjecutada:                logAccion,
-          faseAntes:                      faseDebugBefore,
-          faseDespues:                    nuevaFaseId,
-          descripcionFase:                nuevaDescripcionFase,
-          esFasesFinal,
-          origenLogica:                   'PROMPT_IA',
-          validacionesSistemaEjecutadas:  false,
-        });
 
         if (esFasesFinal) {
           toast.success('¡Flujo completado!', {
@@ -1583,7 +1514,6 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
 
     if (esPagado && fromActivar) {
       // ── "Activar" → finalizar fase actual, estatusSolicitud: 'Autorizada' ──
-      console.log('[PROMPT_IA] accion=activar_solicitud | faseAntes=', faseDebugBefore);
       await avanzarFase('Autorizada', 'activar_solicitud');
 
       // Actualizar J_CUENTAS_CORP_CLIENTES con los 4 estatus de activación
@@ -1594,7 +1524,6 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
         : UUID_RE_ACT.test(String(storageId))
           ? String(storageId)
           : '';
-      console.log('[PROMPT_IA] actDbId resuelto:', actDbId, '| formData.id:', formData.id, '| storageId:', storageId);
 
       if (actDbId) {
         try {
@@ -1607,7 +1536,6 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
           if (actResult.ok) {
             setFormData(prev => ({ ...prev, estatusSolicitud: 'Aprobado', faseId: '7', descripcionFase: 'Completada' }));
           } else {
-            console.warn('[PROMPT_IA] activarCuentaDB (modal path) falló:', actResult.error);
           }
 
           // Crear cuenta nueva en J_CUENTAS_CORP_CLIENTES para esta solicitud autorizada
@@ -1626,37 +1554,22 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
               description: `No. Cuenta: ${cuentaResult.noCuenta} — ${formData.lineaProducto}`,
             });
           } else if (!cuentaResult.ok) {
-            console.warn('[PROMPT_IA] crearCuentaDesdeSolicitud falló:', cuentaResult.error);
             toast.warning('Cuenta activada pero no se pudo crear el registro de cuenta', {
               description: cuentaResult.error,
             });
           }
         } catch (err) {
-          console.error('[PROMPT_IA] Error en activarCuentaDB (modal path):', err);
         }
       } else {
-        console.warn('[PROMPT_IA] No se pudo resolver UUID de solicitud — formData.id:', formData.id, 'storageId:', storageId);
         toast.warning('No se pudo crear la cuenta — ID de solicitud no disponible');
       }
 
     } else if (estatusNorm === 'enviada' && !fromActivar) {
       // ── "Enviar Solicitud" → avanzar a siguiente fase, estatusSolicitud: 'En proceso' ──
-      console.log('[PROMPT_IA] accion=enviar_solicitud | faseAntes=', faseDebugBefore);
       await avanzarFase('En proceso', 'enviar_solicitud');
 
     } else {
       // ── Guardar (Pendiente / Pagado) → NO avanzar fase ──
-      console.log('[PROMPT_IA] DEBUG:', {
-        solicitud_id_recibido:         String(storageId),
-        solicitud_id_generado:         savedItem._dbId || '(local)',
-        estatus_recibido_en_backend:   savedItem.estatus,
-        estatus_guardado_en_bd:        savedItem.estatus,
-        accionEjecutada:               'guardar_solicitud',
-        faseAntes:                     faseDebugBefore,
-        faseDespues:                   faseDebugBefore,
-        origenLogica:                  'PROMPT_IA',
-        validacionesSistemaEjecutadas: false,
-      });
       if (estatusNorm === 'pagado') {
         toast.info('Solicitud marcada como Pagado. Presione "Activar" para finalizar la fase.');
       }
@@ -1688,7 +1601,6 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
         : UUID_REGEX.test(String(storageId))
           ? String(storageId)
           : null;
-      console.log('[handleActivarCuenta] dbId resuelto:', dbId, '| formData.id:', formData.id, '| storageId:', storageId);
 
       const datosActivacion = {
         estatusSolicitud: 'Aprobado',
@@ -1726,7 +1638,6 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
             description: `No. Cuenta: ${cuentaResult.noCuenta} — ${formData.lineaProducto}`,
           });
         } else if (!cuentaResult.ok) {
-          console.warn('[handleActivarCuenta] crearCuentaDesdeSolicitud falló:', cuentaResult.error);
           toast.warning('No se pudo crear el registro de cuenta', { description: cuentaResult.error });
         }
       } else {
@@ -1845,9 +1756,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
       try {
         const nextNoSol = await fetchNextNoSol();
         d.noSol = nextNoSol;
-        console.log('[SolicForm] handleSave → NO_SOL from backend:', nextNoSol);
       } catch (err) {
-        console.warn('[SolicForm] handleSave → fetchNextNoSol falló, usando consumeNoSol:', err);
         d.noSol = consumeNoSol();
       } finally {
         setSavingNoSol(false);
@@ -1864,25 +1773,6 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
       if (data) allSubtabs[key] = data;
     }
 
-    console.log('[SolicForm] handleSave → formData fields:',
-      Object.entries(d).filter(([, v]) => v).map(([k, v]) => `${k}=${String(v).substring(0, 30)}`).join(' | '));
-    console.log('[SolicForm] handleSave → subtabs collected:', Object.keys(allSubtabs).join(', ') || '(none)');
-    if (allSubtabs.simulacion_cal) {
-      console.log('[SolicForm] handleSave → simulacion_cal count:', Array.isArray(allSubtabs.simulacion_cal) ? allSubtabs.simulacion_cal.length : 'NOT-ARRAY');
-    } else {
-      console.log('[SolicForm] handleSave → SIN simulacion_cal en subtabs (puede ser normal para Crédito)');
-    }
-    if (allSubtabs.simulacion_inv) {
-      console.log('[SolicForm] handleSave → simulacion_inv count:', Array.isArray(allSubtabs.simulacion_inv) ? allSubtabs.simulacion_inv.length : 'NOT-ARRAY');
-    } else {
-      console.log('[SolicForm] handleSave → SIN simulacion_inv (cotizar primero en tab Simulación)');
-    }
-    if (allSubtabs.comisiones) {
-      console.log('[SolicForm] handleSave → comisiones count:', Array.isArray(allSubtabs.comisiones) ? allSubtabs.comisiones.length : 'NOT-ARRAY', '| data:', JSON.stringify(allSubtabs.comisiones).substring(0, 300));
-    } else {
-      console.log('[SolicForm] handleSave → SIN comisiones en session para storageId:', storageId);
-    }
-
     // ── Guardar en BD (await — blocking) ──
     setSavingToDB(true);
     try {
@@ -1897,7 +1787,6 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
       commitAndClearSession(storageId);
       saveToSavedStore(storageId, 'form', d);
     } catch (err) {
-      console.error('[SolicForm] handleSave → onSave error:', err);
     } finally {
       setSavingToDB(false);
     }
@@ -2381,7 +2270,6 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
                 )}
                 {(() => {
                   try {
-                    console.log(`[DIAG Producto] DB total=${productosDB.length} | filtrados=${productosFiltrados.length} | línea="${formData.lineaProducto}" | tipo="${formData.tipoProducto}"`);
                     if (productosDB.length > 0) console.log('[DIAG Producto] Todos los productos DB:', productosDB.map(p => ({ id: (p.id ?? '').slice(0,8), nombre: p.nombreProducto, linea: p.lineaProducto, tipo: p.tipoProducto, type: p.type, source: p.source })));
                   } catch (e) { console.warn('[DIAG Producto] error logging:', e); }
                   return null;
@@ -2698,10 +2586,6 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
       {/* ── Modal Solicitud de Activación (Fase 6) — módulo externo ── */}
       {showActivacionModal ? (
         <>
-          {console.log('[DIAG] Renderizando SolicitudActivacionModal, storageId=', storageId)}
-          {console.log('[DIAG] activacionForThisSol passed to modal:', activacionForThisSol)}
-          {console.log('[DIAG] activacionForThisSol.montoTransaccion:', activacionForThisSol?.montoTransaccion)}
-          {console.log('[DIAG] activacionForThisSol._raw:', activacionForThisSol?._raw)}
           <SolicitudActivacionModal
             originacionSolicitudId={String(storageId)}
             seed={(() => {
@@ -2774,6 +2658,8 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
                 productoId: formData.productoId || '',
                 fechaCompromiso,
                 periodicidad: frecuencia,
+                numeroDocumento: (formData as any)._curp || (formData as any)._rfc || '',
+                institucionFinanciera: (formData as any)._gobierno || '',
               };
             })()}
             existingActivacion={activacionForThisSol}
@@ -2782,9 +2668,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
             onSaved={handleActivacionSaved}
           />
         </>
-      ) : (
-        console.log('[DIAG] showActivacionModal es false, NO se renderiza modal')
-      )}
+      ) : null}
 
       {/* ── Modal Selección de Cliente ── */}
       <SeleccionarClienteModal

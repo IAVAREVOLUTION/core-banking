@@ -481,6 +481,10 @@ function AvisoForm({ aviso: inicial, mode, onBack, onPagado }: {
                     cliente:  aviso.cliente  || '',
                     montoAut: aviso.monto_transaccion || 0,
                   }}
+                  componentes={detalle.filter(r => Number(r.monto) > 0).map(r => ({
+                    id_componente: r.descripcion_subproducto || r.cve_subproducto,
+                    monto:         Number(r.monto),
+                  }))}
                 />
               ) : (
                 <div className="py-8 text-center text-xs text-gray-400">
@@ -556,19 +560,81 @@ function AvisosVencimientoPanel({ subTipoFijo, titulo }: { subTipoFijo?: string;
   const totalPages   = Math.max(1, Math.ceil(filtered.length / ITEMS_PER_PAGE));
   const currentItems = filtered.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
 
+  const buildTableHTML = (titulo: string) => {
+    const rows = filtered.map(r => `
+      <tr>
+        <td>${r.no_docto || '—'}</td>
+        <td>${fmtDate(r.fecha_compromiso)}</td>
+        <td>${r.sub_tipo || r.tipo || '—'}</td>
+        <td>${r.gobierno || '—'}</td>
+        <td>${r.cliente || '—'}</td>
+        <td>${r.referencia || '—'}</td>
+        <td style="text-align:right">${fmtMoney(r.monto_transaccion)}</td>
+        <td>${r.moneda || 'MXN'}</td>
+        <td>${r.estatus}</td>
+      </tr>`).join('');
+    return `<!DOCTYPE html><html><head><meta charset="utf-8">
+      <title>${titulo}</title>
+      <style>
+        body { font-family: Arial, sans-serif; font-size: 10px; margin: 20px; }
+        h2 { font-size: 13px; margin-bottom: 4px; }
+        p.meta { font-size: 9px; color: #666; margin-bottom: 12px; }
+        table { border-collapse: collapse; width: 100%; }
+        th { background: #374151; color: #fff; padding: 5px 8px; text-align: left; font-size: 9px; }
+        td { padding: 4px 8px; border-bottom: 1px solid #e5e7eb; }
+        tr:nth-child(even) td { background: #f9fafb; }
+        @media print { body { margin: 10mm; } }
+      </style></head><body>
+      <h2>${titulo}</h2>
+      <p class="meta">Generado: ${new Date().toLocaleDateString('es-MX', { dateStyle: 'long' })} — ${filtered.length} registro(s)</p>
+      <table>
+        <thead><tr>
+          <th>NO. DOCUMENTO</th><th>F. COMPROMISO</th><th>TIPO</th>
+          <th>INST. GOBIERNO</th><th>CLIENTE</th><th>REFERENCIA</th>
+          <th>MONTO</th><th>MONEDA</th><th>ESTATUS</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </body></html>`;
+  };
+
+  const exportPDF = () => {
+    const html = buildTableHTML(titulo);
+    const win = window.open('', '_blank', 'width=900,height=700');
+    if (!win) return;
+    win.document.write(html);
+    win.document.close();
+    win.focus();
+    setTimeout(() => { win.print(); win.close(); }, 500);
+  };
+
+  const handleImprimir = () => {
+    const html = buildTableHTML(titulo);
+    const win = window.open('', '_blank', 'width=900,height=700');
+    if (!win) return;
+    win.document.write(html);
+    win.document.close();
+    win.focus();
+    setTimeout(() => win.print(), 500);
+  };
+
   const exportCSV = () => {
     const headers = ['No. Documento','F. Compromiso','Tipo','Inst. Gobierno','Cliente','Referencia','Monto','Moneda','Estatus'];
     const lines = filtered.map(r => [
       r.no_docto, fmtDate(r.fecha_compromiso), r.sub_tipo || r.tipo,
       r.gobierno || '', r.cliente || '', r.referencia || '',
       r.monto_transaccion, r.moneda, r.estatus,
-    ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(','));
-    const csv  = [headers.join(','), ...lines].join('\n');
-    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+    ].map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(','));
+    const csv  = '﻿' + [headers.join(','), ...lines].join('\r\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement('a');
-    a.href = url; a.download = `cobranza_${new Date().toISOString().split('T')[0]}.csv`;
-    a.click(); URL.revokeObjectURL(url);
+    a.href = url;
+    a.download = `cobranza_export_${new Date().toISOString().split('T')[0]}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
 
   // ── Form view ──────────────────────────────────────────────────────
@@ -601,7 +667,12 @@ function AvisosVencimientoPanel({ subTipoFijo, titulo }: { subTipoFijo?: string;
             </svg>
             <h2 className="text-lg font-normal text-gray-800">{titulo}</h2>
           </div>
-          <div className="flex items-center gap-4 text-sm text-gray-700">
+          <div className="flex items-center gap-3 text-sm text-gray-700">
+            <button onClick={exportCSV}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-gray-400 rounded text-sm hover:bg-gray-50 text-gray-700 transition-colors">
+              <svg width="14" height="14" viewBox="0 0 20 20" fill="none"><rect x="2" y="2" width="16" height="16" rx="2" fill="#6B7280"/><text x="10" y="13" fontSize="7" fontWeight="bold" textAnchor="middle" fill="white">CSV</text></svg>
+              Generar CSV
+            </button>
             <span onClick={() => tableRef.current?.scrollIntoView({ behavior: 'smooth' })}
               className="cursor-pointer hover:text-secondary-theme transition-colors">Lista</span>
             <span onClick={() => searchRef.current?.focus()}
@@ -674,10 +745,10 @@ function AvisosVencimientoPanel({ subTipoFijo, titulo }: { subTipoFijo?: string;
             <button className="p-1.5 hover:bg-green-100 rounded transition-colors" title="Excel" onClick={exportCSV}>
               <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="3" y="3" width="14" height="14" rx="2" fill="#1D9F5B"/><path d="M6 3v14M10 3v14M14 3v14M3 7h14M3 11h14M3 15h14" stroke="white" strokeWidth="1.2"/></svg>
             </button>
-            <button className="p-1.5 hover:bg-red-100 rounded transition-colors" title="PDF" onClick={() => {}}>
+            <button className="p-1.5 hover:bg-red-100 rounded transition-colors" title="PDF" onClick={exportPDF}>
               <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M5 3h8l4 4v10a1 1 0 01-1 1H5a1 1 0 01-1-1V4a1 1 0 011-1z" fill="#D32F2F"/><path d="M13 3v4h4" stroke="white" strokeWidth="1.2" fill="none"/><path d="M7 10h6M7 13h4" stroke="white" strokeWidth="1.2"/></svg>
             </button>
-            <button className="p-1.5 hover:bg-blue-100 rounded transition-colors" title="Imprimir">
+            <button className="p-1.5 hover:bg-blue-100 rounded transition-colors" title="Imprimir" onClick={handleImprimir}>
               <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="5" y="3" width="10" height="3" rx="0.5" fill="#1976D2"/><rect x="3" y="6" width="14" height="7" rx="1" stroke="#1976D2" strokeWidth="1.5" fill="none"/><rect x="5" y="11" width="10" height="6" rx="0.5" fill="#1976D2"/><circle cx="5" cy="8" r="0.8" fill="#1976D2"/></svg>
             </button>
           </div>

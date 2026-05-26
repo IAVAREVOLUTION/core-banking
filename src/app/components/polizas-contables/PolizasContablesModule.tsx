@@ -14,7 +14,7 @@ export interface PolizaContable {
   currency: string;
   total_debit: number;
   total_credit: number;
-  status: 'Creada' | 'Validada' | 'Posteada';
+  status: 'Creada' | 'Creado' | 'Validada' | 'Posteada' | 'Procesado' | 'Error';
   created_at?: string;
   // JSONB data — estructura oficial
   data: {

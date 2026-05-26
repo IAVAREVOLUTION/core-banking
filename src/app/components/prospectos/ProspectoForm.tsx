@@ -220,9 +220,16 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
         institucionGobierno: '',
         institucionGobiernoId: '',
         clasificacionCliente: 'Persona',
+        // Persona Moral
+        fechaConstitucion: '',
+        giroEmpresa: '',
+        representanteLegalNombre: '',
+        representanteLegalCurp: '',
+        representanteLegalRfc: '',
+        representanteLegalIdentificacion: '',
       };
     }
-    
+
     // Modo editar/ver: cargar datos del prospecto desde J_CLIENTES
     // Usar campos individuales del JSONB (nombrePila, apellidoPaterno, etc.)
     // en vez de dividir el nombre completo por espacios
@@ -250,6 +257,13 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
       institucionGobierno: (prospecto as any)?.institucionGobierno || '',
       institucionGobiernoId: (prospecto as any)?.institucionGobiernoId || '',
       clasificacionCliente: (prospecto as any)?.clasificacionCliente || 'Persona',
+      // Persona Moral
+      fechaConstitucion: (prospecto as any)?.fechaConstitucion || '',
+      giroEmpresa: (prospecto as any)?.giroEmpresa || '',
+      representanteLegalNombre: (prospecto as any)?.representanteLegalNombre || '',
+      representanteLegalCurp: (prospecto as any)?.representanteLegalCurp || '',
+      representanteLegalRfc: (prospecto as any)?.representanteLegalRfc || '',
+      representanteLegalIdentificacion: (prospecto as any)?.representanteLegalIdentificacion || '',
     };
   });
 
@@ -285,6 +299,12 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
             institucionGobierno: (prospecto as any)?.institucionGobierno || '',
             institucionGobiernoId: (prospecto as any)?.institucionGobiernoId || '',
             clasificacionCliente: (prospecto as any)?.clasificacionCliente || 'Persona',
+            fechaConstitucion: (prospecto as any)?.fechaConstitucion || '',
+            giroEmpresa: (prospecto as any)?.giroEmpresa || '',
+            representanteLegalNombre: (prospecto as any)?.representanteLegalNombre || '',
+            representanteLegalCurp: (prospecto as any)?.representanteLegalCurp || '',
+            representanteLegalRfc: (prospecto as any)?.representanteLegalRfc || '',
+            representanteLegalIdentificacion: (prospecto as any)?.representanteLegalIdentificacion || '',
           };
         }
         return prev;
@@ -438,6 +458,19 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
   const handleSubmit = async () => {
     if (saving) return; // Prevenir doble clic
     if (!isView) {
+      const isMoralVal = formData.tipo === 'Persona Moral';
+      const isFisicaVal = !isMoralVal;
+      if (isFisicaVal) {
+        if (!formData.nombre.trim()) { toast.error('Nombre es obligatorio'); return; }
+        if (!formData.apellidoPaterno.trim()) { toast.error('Apellido Paterno es obligatorio'); return; }
+        if (!formData.fechaNacimiento.trim()) { toast.error('Fecha de Nacimiento es obligatoria'); return; }
+        if (!formData.curp.trim()) { toast.error('CURP es obligatorio'); return; }
+        if (!formData.rfc.trim()) { toast.error('RFC es obligatorio'); return; }
+      } else {
+        if (!(formData as any).denominacionRazonSocial?.trim()) { toast.error('Razón Social es obligatoria'); return; }
+        if (!formData.rfc.trim()) { toast.error('RFC es obligatorio'); return; }
+        if (!(formData as any).representanteLegalNombre?.trim()) { toast.error('Nombre del Representante Legal es obligatorio'); return; }
+      }
       setSaving(true);
       try {
       // Limpiar datos persistidos después de guardar exitosamente
@@ -1257,16 +1290,20 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
             <div className="bg-primary-light-theme px-3 py-2 mb-3 text-sm font-medium text-gray-800 border-l-4 border-primary-theme">
               Información Principal
             </div>
+            {(() => {
+              const isMoral = formData.tipo === 'Persona Moral';
+              const isFisica = !isMoral;
+              return (
             <div className="grid grid-cols-3 gap-x-4">
-              {/* Columna 1 - 6 campos */}
+              {/* Columna 1 */}
               <div className="space-y-1">
                 <div className="flex items-center gap-2">
                   <label className="text-xs w-28 flex-shrink-0 text-gray-700">ID PROSPECTO <span className="text-red-600">*</span></label>
-                  <input 
-                    type="text" 
-                    value={formData.idProspecto} 
-                    disabled 
-                    className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded bg-gray-100 text-gray-600" 
+                  <input
+                    type="text"
+                    value={formData.idProspecto}
+                    disabled
+                    className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded bg-gray-100 text-gray-600"
                   />
                 </div>
                 <div className="flex items-center gap-2">
@@ -1285,179 +1322,140 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
                         <option value="Persona Moral">Persona Moral</option>
                         <option value="Persona Fisica con Actividad Empresarial">Persona Fisica con Actividad Empresarial</option>
                       </select>
-                      <svg className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" width="10" height="10" viewBox="0 0 10 10" fill="#666">
-                        <path d="M5 7l-3-3h6z"/>
-                      </svg>
+                      <svg className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" width="10" height="10" viewBox="0 0 10 10" fill="#666"><path d="M5 7l-3-3h6z"/></svg>
                     </div>
                   )}
                 </div>
-                <div className="flex items-center gap-2">
-                  <label className="text-xs w-28 flex-shrink-0 text-gray-700">NOMBRE <span className="text-red-600">*</span></label>
-                  {isView ? (
-                    <div className="flex-1 px-2 py-1 text-xs text-gray-700">{formData.nombre}</div>
-                  ) : (
-                    <input 
-                      type="text" 
-                      value={formData.nombre}
-                      onChange={(e) => handleChange('nombre', e.target.value)}
-                      className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" 
-                    />
-                  )}
-                </div>
-                <div className="flex items-center gap-2">
-                  <label className="text-xs w-28 flex-shrink-0 text-gray-700">APELLIDO PATERNO <span className="text-red-600">*</span></label>
-                  {isView ? (
-                    <div className="flex-1 px-2 py-1 text-xs text-gray-700">{formData.apellidoPaterno}</div>
-                  ) : (
-                    <input 
-                      type="text" 
-                      value={formData.apellidoPaterno}
-                      onChange={(e) => handleChange('apellidoPaterno', e.target.value)}
-                      className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" 
-                    />
-                  )}
-                </div>
-                <div className="flex items-center gap-2">
-                  <label className="text-xs w-28 flex-shrink-0 text-gray-700">APELLIDO MATERNO <span className="text-red-600">*</span></label>
-                  {isView ? (
-                    <div className="flex-1 px-2 py-1 text-xs text-gray-700">{formData.apellidoMaterno}</div>
-                  ) : (
-                    <input 
-                      type="text" 
-                      value={formData.apellidoMaterno}
-                      onChange={(e) => handleChange('apellidoMaterno', e.target.value)}
-                      className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" 
-                    />
-                  )}
-                </div>
-                {/* RAZÓN SOCIAL — solo para Persona Moral y PFAE */}
-                {formData.tipo !== 'Persona Fisica' && (
-                <div className="flex items-center gap-2">
-                  <label className="text-xs w-28 flex-shrink-0 text-gray-700">RAZÓN SOCIAL</label>
-                  {isView ? (
-                    <div className="flex-1 px-2 py-1 text-xs text-gray-700">{formData.denominacionRazonSocial}</div>
-                  ) : (
-                    <input 
-                      type="text" 
-                      value={formData.denominacionRazonSocial}
-                      onChange={(e) => handleChange('denominacionRazonSocial', e.target.value)}
-                      className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" 
-                    />
-                  )}
-                </div>
-                )}
+                {/* Física: nombre y apellidos */}
+                {isFisica && (<>
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs w-28 flex-shrink-0 text-gray-700">NOMBRE <span className="text-red-600">*</span></label>
+                    {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700">{formData.nombre}</div> : (
+                      <input type="text" value={formData.nombre} onChange={(e) => handleChange('nombre', e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" />
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs w-28 flex-shrink-0 text-gray-700">APELLIDO PATERNO <span className="text-red-600">*</span></label>
+                    {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700">{formData.apellidoPaterno}</div> : (
+                      <input type="text" value={formData.apellidoPaterno} onChange={(e) => handleChange('apellidoPaterno', e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" />
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs w-28 flex-shrink-0 text-gray-700">APELLIDO MATERNO</label>
+                    {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700">{formData.apellidoMaterno}</div> : (
+                      <input type="text" value={formData.apellidoMaterno} onChange={(e) => handleChange('apellidoMaterno', e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" />
+                    )}
+                  </div>
+                </>)}
+                {/* Moral: razón social, fecha constitución, giro */}
+                {isMoral && (<>
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs w-28 flex-shrink-0 text-gray-700">RAZÓN SOCIAL <span className="text-red-600">*</span></label>
+                    {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700">{formData.denominacionRazonSocial}</div> : (
+                      <input type="text" value={formData.denominacionRazonSocial} onChange={(e) => handleChange('denominacionRazonSocial', e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" />
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs w-28 flex-shrink-0 text-gray-700">FECHA CONSTITUCIÓN</label>
+                    {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700">{(formData as any).fechaConstitucion}</div> : (
+                      <DatePicker value={(formData as any).fechaConstitucion} onChange={(date) => handleChange('fechaConstitucion' as any, date)} />
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs w-28 flex-shrink-0 text-gray-700">GIRO EMPRESA</label>
+                    {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700">{(formData as any).giroEmpresa}</div> : (
+                      <input type="text" value={(formData as any).giroEmpresa} onChange={(e) => handleChange('giroEmpresa' as any, e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" />
+                    )}
+                  </div>
+                </>)}
                 <div className="flex items-center gap-2">
                   <label className="text-xs w-28 flex-shrink-0 text-gray-700">TELÉFONO <span className="text-red-600">*</span></label>
-                  {isView ? (
-                    <div className="flex-1 px-2 py-1 text-xs text-gray-700">{formData.telefono}</div>
-                  ) : (
-                    <input 
-                      type="text" 
-                      value={formData.telefono}
-                      onChange={(e) => handleChange('telefono', e.target.value)}
-                      className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" 
-                    />
+                  {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700">{formData.telefono}</div> : (
+                    <input type="text" value={formData.telefono} onChange={(e) => handleChange('telefono', e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" />
                   )}
                 </div>
                 <CampoInstitucionGobierno
                   value={formData.institucionGobierno || ''}
                   onChange={(value, institucion) => {
                     handleChange('institucionGobierno', value);
-                    if (institucion) {
-                      handleChange('institucionGobiernoId', institucion.id);
-                      // NO sobrescribir clasificacionCliente — es propiedad del registro actual, no de la institución
-                    } else {
-                      handleChange('institucionGobiernoId', '');
-                    }
+                    handleChange('institucionGobiernoId', institucion ? institucion.id : '');
                   }}
                   disabled={isView}
                   variant="prospectos"
                 />
               </div>
 
-              {/* Columna 2 - 6 campos */}
+              {/* Columna 2 */}
               <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <label className="text-xs w-28 flex-shrink-0 text-gray-700">FECHA NACIMIENTO <span className="text-red-600">*</span></label>
-                  {isView ? (
-                    <div className="flex-1 px-2 py-1 text-xs text-gray-700">{formData.fechaNacimiento}</div>
-                  ) : (
-                    <DatePicker
-                      value={formData.fechaNacimiento}
-                      onChange={(date) => handleChange('fechaNacimiento', date)}
-                    />
-                  )}
-                </div>
-                <div className="flex items-center gap-2">
-                  <label className="text-xs w-28 flex-shrink-0 text-gray-700">ENTIDAD FEDERATIVA <span className="text-red-600">*</span></label>
-                  {isView ? (
-                    <div className="flex-1 px-2 py-1 text-xs text-gray-700">{formData.entidadFederativa}</div>
-                  ) : (
-                    <select 
-                      value={formData.entidadFederativa}
-                      onChange={(e) => handleChange('entidadFederativa', e.target.value)}
-                      className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded"
-                    >
-                      <option>CDMX</option>
-                      <option>Querétaro</option>
-                      <option>Puebla</option>
-                      <option>México</option>
-                      <option>Toluca</option>
-                    </select>
-                  )}
-                </div>
-                <div className="flex items-center gap-2">
-                  <label className="text-xs w-28 flex-shrink-0 text-gray-700">SEXO <span className="text-red-600">*</span></label>
-                  {isView ? (
-                    <div className="flex-1 px-2 py-1 text-xs text-gray-700">{formData.sexo}</div>
-                  ) : (
-                    <select 
-                      value={formData.sexo}
-                      onChange={(e) => handleChange('sexo', e.target.value)}
-                      className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded"
-                    >
-                      <option>Masculino</option>
-                      <option>Femenino</option>
-                    </select>
-                  )}
-                </div>
-                <div className="flex items-center gap-2">
-                  <label className="text-xs w-28 flex-shrink-0 text-gray-700">CURP <span className="text-red-600">*</span></label>
-                  {isView ? (
-                    <div className="flex-1 px-2 py-1 text-xs text-gray-700">{formData.curp}</div>
-                  ) : (
-                    <input 
-                      type="text" 
-                      value={formData.curp}
-                      onChange={(e) => handleChange('curp', e.target.value)}
-                      className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" 
-                    />
-                  )}
-                </div>
+                {/* Física: fecha nacimiento, entidad, sexo, curp */}
+                {isFisica && (<>
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs w-28 flex-shrink-0 text-gray-700">FECHA NACIMIENTO <span className="text-red-600">*</span></label>
+                    {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700">{formData.fechaNacimiento}</div> : (
+                      <DatePicker value={formData.fechaNacimiento} onChange={(date) => handleChange('fechaNacimiento', date)} />
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs w-28 flex-shrink-0 text-gray-700">ENTIDAD FEDERATIVA <span className="text-red-600">*</span></label>
+                    {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700">{formData.entidadFederativa}</div> : (
+                      <select value={formData.entidadFederativa} onChange={(e) => handleChange('entidadFederativa', e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded">
+                        <option>CDMX</option><option>Querétaro</option><option>Puebla</option><option>México</option><option>Toluca</option>
+                      </select>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs w-28 flex-shrink-0 text-gray-700">SEXO <span className="text-red-600">*</span></label>
+                    {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700">{formData.sexo}</div> : (
+                      <select value={formData.sexo} onChange={(e) => handleChange('sexo', e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded">
+                        <option>Masculino</option><option>Femenino</option>
+                      </select>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs w-28 flex-shrink-0 text-gray-700">CURP <span className="text-red-600">*</span></label>
+                    {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700">{formData.curp}</div> : (
+                      <input type="text" value={formData.curp} onChange={(e) => handleChange('curp', e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" />
+                    )}
+                  </div>
+                </>)}
+                {/* Moral: rep. legal */}
+                {isMoral && (<>
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs w-28 flex-shrink-0 text-gray-700">REP. LEGAL <span className="text-red-600">*</span></label>
+                    {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700">{(formData as any).representanteLegalNombre}</div> : (
+                      <input type="text" value={(formData as any).representanteLegalNombre} onChange={(e) => handleChange('representanteLegalNombre' as any, e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" placeholder="Nombre completo" />
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs w-28 flex-shrink-0 text-gray-700">CURP REP. LEGAL</label>
+                    {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700">{(formData as any).representanteLegalCurp}</div> : (
+                      <input type="text" value={(formData as any).representanteLegalCurp} onChange={(e) => handleChange('representanteLegalCurp' as any, e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" />
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs w-28 flex-shrink-0 text-gray-700">RFC REP. LEGAL</label>
+                    {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700">{(formData as any).representanteLegalRfc}</div> : (
+                      <input type="text" value={(formData as any).representanteLegalRfc} onChange={(e) => handleChange('representanteLegalRfc' as any, e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" />
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs w-28 flex-shrink-0 text-gray-700">ID REP. LEGAL</label>
+                    {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700">{(formData as any).representanteLegalIdentificacion}</div> : (
+                      <input type="text" value={(formData as any).representanteLegalIdentificacion} onChange={(e) => handleChange('representanteLegalIdentificacion' as any, e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" placeholder="No. de identificación" />
+                    )}
+                  </div>
+                </>)}
+                {/* Ambos tipos: RFC y correo */}
                 <div className="flex items-center gap-2">
                   <label className="text-xs w-28 flex-shrink-0 text-gray-700">RFC <span className="text-red-600">*</span></label>
-                  {isView ? (
-                    <div className="flex-1 px-2 py-1 text-xs text-gray-700">{formData.rfc}</div>
-                  ) : (
-                    <input 
-                      type="text" 
-                      value={formData.rfc}
-                      onChange={(e) => handleChange('rfc', e.target.value)}
-                      className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" 
-                    />
+                  {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700">{formData.rfc}</div> : (
+                    <input type="text" value={formData.rfc} onChange={(e) => handleChange('rfc', e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" />
                   )}
                 </div>
                 <div className="flex items-center gap-2">
                   <label className="text-xs w-28 flex-shrink-0 text-gray-700">CORREO ELECTRÓNICO <span className="text-red-600">*</span></label>
-                  {isView ? (
-                    <div className="flex-1 px-2 py-1 text-xs text-gray-700">{formData.correoElectronico}</div>
-                  ) : (
-                    <input 
-                      type="email" 
-                      value={formData.correoElectronico}
-                      onChange={(e) => handleChange('correoElectronico', e.target.value)}
-                      className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" 
-                    />
+                  {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700">{formData.correoElectronico}</div> : (
+                    <input type="email" value={formData.correoElectronico} onChange={(e) => handleChange('correoElectronico', e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" />
                   )}
                 </div>
               </div>
@@ -1540,6 +1538,8 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
                 </div>
               </div>
             </div>
+            );
+            })()}
           </div>
 
           {/* Tabs Navigation */}
@@ -1582,190 +1582,150 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
                 <div className="bg-primary-light-theme px-3 py-2 mb-3 text-sm font-medium text-gray-800 border-l-4 border-primary-theme">
                   DEFAULT
                 </div>
+                {(() => {
+                  const isMoral = formData.tipo === 'Persona Moral';
+                  const isFisica = !isMoral;
+                  return (
                 <div className="grid grid-cols-3 gap-x-4">
-                  {/* Columna 1 - 6 campos */}
+                  {/* Columna 1 */}
                   <div className="space-y-1">
                     <div className="flex items-center gap-2">
                       <label className="text-xs w-28 flex-shrink-0 text-gray-700">ID PROSPECTO <span className="text-red-600">*</span></label>
                       <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100">{formData.idProspecto}</div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <label className="text-xs w-28 flex-shrink-0 text-gray-700">NOMBRE <span className="text-red-600">*</span></label>
-                      {isView ? (
-                        <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100">{formData.nombre}</div>
-                      ) : (
-                        <input
-                          type="text"
-                          value={formData.nombre}
-                          onChange={(e) => handleChange('nombre', e.target.value)}
-                          className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded"
-                        />
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <label className="text-xs w-28 flex-shrink-0 text-gray-700">APELLIDO PATERNO <span className="text-red-600">*</span></label>
-                      {isView ? (
-                        <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100">{formData.apellidoPaterno}</div>
-                      ) : (
-                        <input
-                          type="text"
-                          value={formData.apellidoPaterno}
-                          onChange={(e) => handleChange('apellidoPaterno', e.target.value)}
-                          className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded"
-                        />
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <label className="text-xs w-28 flex-shrink-0 text-gray-700">APELLIDO MATERNO <span className="text-red-600">*</span></label>
-                      {isView ? (
-                        <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100">{formData.apellidoMaterno}</div>
-                      ) : (
-                        <input
-                          type="text"
-                          value={formData.apellidoMaterno}
-                          onChange={(e) => handleChange('apellidoMaterno', e.target.value)}
-                          className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded"
-                        />
-                      )}
-                    </div>
-                    {/* RAZÓN SOCIAL — solo para Persona Moral y PFAE */}
-                    {formData.tipo !== 'Persona Fisica' && (
-                    <div className="flex items-center gap-2">
-                      <label className="text-xs w-28 flex-shrink-0 text-gray-700">RAZÓN SOCIAL</label>
-                      {isView ? (
-                        <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100">{formData.denominacionRazonSocial}</div>
-                      ) : (
-                        <input
-                          type="text"
-                          value={formData.denominacionRazonSocial}
-                          onChange={(e) => handleChange('denominacionRazonSocial', e.target.value)}
-                          className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded"
-                        />
-                      )}
-                    </div>
-                    )}
+                    {isFisica && (<>
+                      <div className="flex items-center gap-2">
+                        <label className="text-xs w-28 flex-shrink-0 text-gray-700">NOMBRE <span className="text-red-600">*</span></label>
+                        {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100">{formData.nombre}</div> : (
+                          <input type="text" value={formData.nombre} onChange={(e) => handleChange('nombre', e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" />
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <label className="text-xs w-28 flex-shrink-0 text-gray-700">APELLIDO PATERNO <span className="text-red-600">*</span></label>
+                        {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100">{formData.apellidoPaterno}</div> : (
+                          <input type="text" value={formData.apellidoPaterno} onChange={(e) => handleChange('apellidoPaterno', e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" />
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <label className="text-xs w-28 flex-shrink-0 text-gray-700">APELLIDO MATERNO</label>
+                        {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100">{formData.apellidoMaterno}</div> : (
+                          <input type="text" value={formData.apellidoMaterno} onChange={(e) => handleChange('apellidoMaterno', e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" />
+                        )}
+                      </div>
+                    </>)}
+                    {isMoral && (<>
+                      <div className="flex items-center gap-2">
+                        <label className="text-xs w-28 flex-shrink-0 text-gray-700">RAZÓN SOCIAL <span className="text-red-600">*</span></label>
+                        {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100">{formData.denominacionRazonSocial}</div> : (
+                          <input type="text" value={formData.denominacionRazonSocial} onChange={(e) => handleChange('denominacionRazonSocial', e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" />
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <label className="text-xs w-28 flex-shrink-0 text-gray-700">FECHA CONSTITUCIÓN</label>
+                        {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100">{(formData as any).fechaConstitucion}</div> : (
+                          <DatePicker value={(formData as any).fechaConstitucion} onChange={(date) => handleChange('fechaConstitucion' as any, date)} />
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <label className="text-xs w-28 flex-shrink-0 text-gray-700">GIRO EMPRESA</label>
+                        {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100">{(formData as any).giroEmpresa}</div> : (
+                          <input type="text" value={(formData as any).giroEmpresa} onChange={(e) => handleChange('giroEmpresa' as any, e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" />
+                        )}
+                      </div>
+                    </>)}
                     <div className="flex items-center gap-2">
                       <label className="text-xs w-28 flex-shrink-0 text-gray-700">TELÉFONO <span className="text-red-600">*</span></label>
-                      {isView ? (
-                        <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100">{formData.telefono}</div>
-                      ) : (
-                        <input
-                          type="text"
-                          value={formData.telefono}
-                          onChange={(e) => handleChange('telefono', e.target.value)}
-                          className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded"
-                        />
+                      {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100">{formData.telefono}</div> : (
+                        <input type="text" value={formData.telefono} onChange={(e) => handleChange('telefono', e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" />
                       )}
                     </div>
                     <CampoInstitucionGobierno
                       value={formData.institucionGobierno || ''}
                       onChange={(value, institucion) => {
                         handleChange('institucionGobierno', value);
-                        if (institucion) {
-                          handleChange('institucionGobiernoId', institucion.id);
-                          // NO sobrescribir clasificacionCliente — es propiedad del registro actual
-                        } else {
-                          handleChange('institucionGobiernoId', '');
-                        }
+                        handleChange('institucionGobiernoId', institucion ? institucion.id : '');
                       }}
                       disabled={isView}
                       variant="prospectos"
                     />
                   </div>
 
-                  {/* Columna 2 - 6 campos */}
+                  {/* Columna 2 */}
                   <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <label className="text-xs w-28 flex-shrink-0 text-gray-700">FECHA NACIMIENTO <span className="text-red-600">*</span></label>
-                      {isView ? (
-                        <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100">{formData.fechaNacimiento}</div>
-                      ) : (
-                        <DatePicker
-                          value={formData.fechaNacimiento}
-                          onChange={(date) => handleChange('fechaNacimiento', date)}
-                        />
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <label className="text-xs w-28 flex-shrink-0 text-gray-700">ENTIDAD FEDERATIVA <span className="text-red-600">*</span></label>
-                      {isView ? (
-                        <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100">{formData.entidadFederativa}</div>
-                      ) : (
-                        <select
-                          value={formData.entidadFederativa}
-                          onChange={(e) => handleChange('entidadFederativa', e.target.value)}
-                          className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded"
-                        >
-                          <option value="CDMX">CDMX</option>
-                          <option value="Estado de México">Estado de México</option>
-                          <option value="Jalisco">Jalisco</option>
-                          <option value="Nuevo León">Nuevo León</option>
-                          <option value="Puebla">Puebla</option>
-                          <option value="Guanajuato">Guanajuato</option>
-                          <option value="Veracruz">Veracruz</option>
-                          <option value="Yucatán">Yucatán</option>
-                        </select>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <label className="text-xs w-28 flex-shrink-0 text-gray-700">SEXO <span className="text-red-600">*</span></label>
-                      {isView ? (
-                        <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100">{formData.sexo}</div>
-                      ) : (
-                        <select
-                          value={formData.sexo}
-                          onChange={(e) => handleChange('sexo', e.target.value)}
-                          className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded"
-                        >
-                          <option value="Masculino">Masculino</option>
-                          <option value="Femenino">Femenino</option>
-                        </select>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <label className="text-xs w-28 flex-shrink-0 text-gray-700">CURP <span className="text-red-600">*</span></label>
-                      {isView ? (
-                        <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100">{formData.curp}</div>
-                      ) : (
-                        <input
-                          type="text"
-                          value={formData.curp}
-                          onChange={(e) => handleChange('curp', e.target.value)}
-                          className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded"
-                          maxLength={18}
-                        />
-                      )}
-                    </div>
+                    {isFisica && (<>
+                      <div className="flex items-center gap-2">
+                        <label className="text-xs w-28 flex-shrink-0 text-gray-700">FECHA NACIMIENTO <span className="text-red-600">*</span></label>
+                        {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100">{formData.fechaNacimiento}</div> : (
+                          <DatePicker value={formData.fechaNacimiento} onChange={(date) => handleChange('fechaNacimiento', date)} />
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <label className="text-xs w-28 flex-shrink-0 text-gray-700">ENTIDAD FEDERATIVA <span className="text-red-600">*</span></label>
+                        {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100">{formData.entidadFederativa}</div> : (
+                          <select value={formData.entidadFederativa} onChange={(e) => handleChange('entidadFederativa', e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded">
+                            <option value="CDMX">CDMX</option><option value="Estado de México">Estado de México</option>
+                            <option value="Jalisco">Jalisco</option><option value="Nuevo León">Nuevo León</option>
+                            <option value="Puebla">Puebla</option><option value="Guanajuato">Guanajuato</option>
+                            <option value="Veracruz">Veracruz</option><option value="Yucatán">Yucatán</option>
+                          </select>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <label className="text-xs w-28 flex-shrink-0 text-gray-700">SEXO <span className="text-red-600">*</span></label>
+                        {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100">{formData.sexo}</div> : (
+                          <select value={formData.sexo} onChange={(e) => handleChange('sexo', e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded">
+                            <option value="Masculino">Masculino</option><option value="Femenino">Femenino</option>
+                          </select>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <label className="text-xs w-28 flex-shrink-0 text-gray-700">CURP <span className="text-red-600">*</span></label>
+                        {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100">{formData.curp}</div> : (
+                          <input type="text" value={formData.curp} onChange={(e) => handleChange('curp', e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" maxLength={18} />
+                        )}
+                      </div>
+                    </>)}
+                    {isMoral && (<>
+                      <div className="flex items-center gap-2">
+                        <label className="text-xs w-28 flex-shrink-0 text-gray-700">REP. LEGAL <span className="text-red-600">*</span></label>
+                        {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100">{(formData as any).representanteLegalNombre}</div> : (
+                          <input type="text" value={(formData as any).representanteLegalNombre} onChange={(e) => handleChange('representanteLegalNombre' as any, e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" placeholder="Nombre completo" />
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <label className="text-xs w-28 flex-shrink-0 text-gray-700">CURP REP. LEGAL</label>
+                        {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100">{(formData as any).representanteLegalCurp}</div> : (
+                          <input type="text" value={(formData as any).representanteLegalCurp} onChange={(e) => handleChange('representanteLegalCurp' as any, e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" />
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <label className="text-xs w-28 flex-shrink-0 text-gray-700">RFC REP. LEGAL</label>
+                        {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100">{(formData as any).representanteLegalRfc}</div> : (
+                          <input type="text" value={(formData as any).representanteLegalRfc} onChange={(e) => handleChange('representanteLegalRfc' as any, e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" />
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <label className="text-xs w-28 flex-shrink-0 text-gray-700">ID REP. LEGAL</label>
+                        {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100">{(formData as any).representanteLegalIdentificacion}</div> : (
+                          <input type="text" value={(formData as any).representanteLegalIdentificacion} onChange={(e) => handleChange('representanteLegalIdentificacion' as any, e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" placeholder="No. de identificación" />
+                        )}
+                      </div>
+                    </>)}
                     <div className="flex items-center gap-2">
                       <label className="text-xs w-28 flex-shrink-0 text-gray-700">RFC <span className="text-red-600">*</span></label>
-                      {isView ? (
-                        <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100">{formData.rfc}</div>
-                      ) : (
-                        <input
-                          type="text"
-                          value={formData.rfc}
-                          onChange={(e) => handleChange('rfc', e.target.value)}
-                          className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded"
-                          maxLength={13}
-                        />
+                      {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100">{formData.rfc}</div> : (
+                        <input type="text" value={formData.rfc} onChange={(e) => handleChange('rfc', e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" maxLength={13} />
                       )}
                     </div>
                     <div className="flex items-center gap-2">
                       <label className="text-xs w-28 flex-shrink-0 text-gray-700">CORREO ELECTRÓNICO <span className="text-red-600">*</span></label>
-                      {isView ? (
-                        <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100">{formData.correoElectronico}</div>
-                      ) : (
-                        <input
-                          type="email"
-                          value={formData.correoElectronico}
-                          onChange={(e) => handleChange('correoElectronico', e.target.value)}
-                          className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded"
-                        />
+                      {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100">{formData.correoElectronico}</div> : (
+                        <input type="email" value={formData.correoElectronico} onChange={(e) => handleChange('correoElectronico', e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" />
                       )}
                     </div>
                   </div>
 
-                  {/* Columna 3 - 3 campos */}
+                  {/* Columna 3 */}
                   <div className="space-y-1">
                     <div className="flex items-center gap-2">
                       <label className="text-xs w-32 flex-shrink-0 text-gray-700">ESTATUS SIC</label>
@@ -1820,6 +1780,8 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
                     </div>
                   </div>
                 </div>
+                );
+                })()}
               </div>
             </>
           )}

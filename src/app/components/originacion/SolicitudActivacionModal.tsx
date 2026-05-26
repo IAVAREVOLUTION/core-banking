@@ -34,6 +34,10 @@ export interface SolicitudActivacionModalProps {
     fechaCompromiso?: string;
     /** Frecuencia de pago (Mensual, Quincenal, etc.) */
     periodicidad?: string;
+    /** CURP o RFC del cliente — pre-rellena Número de Documento */
+    numeroDocumento?: string;
+    /** Institución de gobierno / institución financiera */
+    institucionFinanciera?: string;
   };
   /** Registro existente (si ya hay una Solicitud de Activación para esta originación) */
   existingActivacion?: SolicitudActivacionListItem;
@@ -65,9 +69,6 @@ export function SolicitudActivacionModal({
 }: SolicitudActivacionModalProps) {
    const isNew = !existingActivacion;
 
-   console.log('[DIAG SolicitudActivacionModal] incoming seed:', seed);
-   console.log('[DIAG SolicitudActivacionModal] incoming existingActivacion:', existingActivacion);
-   console.log('[DIAG SolicitudActivacionModal] incoming existingActivacion?.montoTransaccion:', existingActivacion?.montoTransaccion);
 
   const [cuentaBancaria,    setCuentaBancaria]    = useState<string>('');
   const [clienteNombreDB,   setClienteNombreDB]   = useState<string>('');
@@ -113,26 +114,24 @@ export function SolicitudActivacionModal({
     montoTransaccion:    seed.montoTransaccion,
     moneda:              seed.moneda,
     cuentaBancaria:      cuentaBancaria,
-    detailClaveProducto: seed.productoId,
-    detailMonto:         monto,
-    detailSubTotal:      monto,
-    lineaProducto:       seed.lineaProducto,
+    detailClaveProducto:   seed.productoId,
+    detailMonto:           monto,
+    detailSubTotal:        monto,
+    lineaProducto:         seed.lineaProducto,
+    numeroDocumento:       seed.numeroDocumento || '',
+    referencia:            originacionSolicitudId,
+    institucionFinanciera: seed.institucionFinanciera || '',
     ...(seed.fechaCompromiso ? { fechaCompromiso: seed.fechaCompromiso } : {}),
     ...(seed.periodicidad    ? { periodicidad: seed.periodicidad }       : {}),
   } : undefined;
 
   const handleSaved = (item: SolicitudActivacionListItem) => {
-    console.log('[DIAG SolicitudActivacionModal] handleSaved called, item:', item);
-    console.log('[DIAG SolicitudActivacionModal] existingActivacion passed to list:', existingActivacion);
-    console.log('[DIAG SolicitudActivacionModal] existingActivacion.montoTransaccion:', existingActivacion?.montoTransaccion);
-    console.log('[DIAG SolicitudActivacionModal] existingActivacion._raw:', existingActivacion?._raw);
     if (!item._fromDB) {
       toast.warning('Solicitud guardada localmente (sin conexión BD)');
     }
     onSaved(item);
   };
 
-  console.log('[DIAG SolicitudActivacionModal] Render:', { isNew, existingActivacion, accountReady, seed: { ...seed, clienteId: seed.clienteId?.substring(0,8)+'...' } });
 
   if (!accountReady) {
     return (

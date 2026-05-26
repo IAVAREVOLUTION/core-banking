@@ -451,17 +451,17 @@ estatus:               initialEditItem.estatus || d.estatus || 'Pendiente',
             data.estatus = 'Autorizada';
             data._estatusFromDB = 'Autorizada';
 
-            // Paso 2: crear cuenta eje — SIEMPRE, independiente de si activarCuentaDB OK
-            console.log('[onEnviar] clienteIdFinal para cuenta:', clienteIdFinal, '| solicitudId:', data.solicitudId);
-            if (clienteIdFinal && UUID_RE_ACT.test(clienteIdFinal)) {
+            // Paso 2: crear cuenta eje — solo para crédito, no para captación (la cuenta ya existe)
+            if (!esCaptacion && clienteIdFinal && UUID_RE_ACT.test(clienteIdFinal)) {
               const montoNum2 = parseFloat((data.montoTransaccion || '0').replace(/[^0-9.-]/g, '')) || 0;
               console.log('[onEnviar] Creando cuenta — solicitudId:', data.solicitudId, 'linea:', data.lineaProducto, 'tipo:', data.type, 'monto:', montoNum2);
               crearCuentaEjeDB(clienteIdFinal, data.cliente, data.solicitudId || undefined, data.lineaProducto || undefined, data.type || undefined, montoNum2)
                 .then(() => console.log('[onEnviar] Cuenta por solicitud creada OK'))
                 .catch(err => console.error('[onEnviar] Error creando cuenta:', err));
+            } else if (esCaptacion) {
+              console.log('[onEnviar] Captación — no se crea cuenta eje adicional, la cuenta ya existe');
             } else {
               console.warn('[onEnviar] SIN clienteId para cuenta eje — solicitudId:', data.solicitudId, 'clienteId form:', data.clienteId);
-              // Último recurso: intentar con solicitudId si es el mismo cliente
             }
           }
 

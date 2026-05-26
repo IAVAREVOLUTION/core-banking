@@ -50,7 +50,7 @@ const EMPTY_DET: DetalleRow = {
   componente_id: '', componente_codigo: '', componente_nombre: '',
 };
 
-const STATUSES: PolizaContable['status'][] = ['Creada', 'Validada', 'Posteada'];
+const STATUSES: PolizaContable['status'][] = ['Creada', 'Creado', 'Validada', 'Posteada', 'Procesado', 'Error'];
 
 export function PolizaContableForm({ mode, poliza, onSave, onCancel }: Props) {
   const isView = mode === 'view';
@@ -58,7 +58,7 @@ export function PolizaContableForm({ mode, poliza, onSave, onCancel }: Props) {
 
   // ── Columnas físicas ──────────────────────────────────────────────
   const [journalDate, setJournalDate] = useState(
-    poliza?.journal_date || new Date().toISOString().split('T')[0]
+    (poliza?.journal_date ?? '').split('T')[0] || new Date().toISOString().split('T')[0]
   );
   const [accountId, setAccountId]   = useState(poliza?.account_id || '');
   const [noCuenta, setNoCuenta]     = useState('');
@@ -105,6 +105,41 @@ export function PolizaContableForm({ mode, poliza, onSave, onCancel }: Props) {
     }).catch(() => {}).finally(() => { if (!cancelled) setCatLoading(false); });
     return () => { cancelled = true; };
   }, []);
+
+  // Load noCuenta + relational detalle rows when viewing/editing an existing poliza
+  useEffect(() => {
+    if (!poliza?.id) return;
+    let cancelled = false;
+    fetch(`${GL_JOURNAL_URL}/${poliza.id}`, { headers: GL_HEADERS })
+      .then(r => r.json())
+      .then(json => {
+        if (cancelled || !json.success) return;
+        const d = json.data;
+        if (d.no_cuenta) setNoCuenta(d.no_cuenta);
+        if (Array.isArray(d.detalle_rows) && d.detalle_rows.length > 0) {
+          setDetalleRows(d.detalle_rows.map((r: any) => {
+            // descripcion format: "DÉBITO | COMPONENTE | Nombre cuenta"
+            //                 or: "CRÉDITO | COMPONENTE | Nombre cuenta"
+            const parts = (r.descripcion ?? '').split(' | ');
+            const tipoPartida    = parts[0] ?? '';   // DÉBITO / CRÉDITO
+            const compNombre     = parts[1] ?? '';   // id_componente
+            const cuentaNombre   = parts[2] ?? '';   // nombre cuenta GL
+            return {
+              cuenta_contable_id:     r.id ?? '',
+              cuenta_contable_gl:     r.gl_account ?? '',
+              cuenta_contable_nombre: cuentaNombre || (r.gl_account ?? ''),
+              debito:  r.debit_amount  > 0 ? String(r.debit_amount)  : '',
+              credito: r.credit_amount > 0 ? String(r.credit_amount) : '',
+              componente_id:     '',
+              componente_codigo: compNombre,
+              componente_nombre: `${tipoPartida}${compNombre ? ` · ${compNombre}` : ''}`,
+            };
+          }));
+        }
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [poliza?.id]);
 
   const handleCuentaSelect = (result: { account_id: string; no_cuenta: string; producto_id: string; producto_display: string; cliente_id: string; cliente_nombre: string; moneda: string }) => {
     setAccountId(result.account_id);

@@ -55,6 +55,7 @@ function useCreditos() {
           moneda:         t.moneda || 'MXN',
           usuario:        h.responsable || '',
           gobierno:       r.institucion_gobierno || undefined,
+          fechaSol:       r.fecha_sol || r.fecha_autori || '',
         };
       });
       setRows(mapped);
@@ -368,9 +369,11 @@ function ListScreen({ rows, loading, error, refetch, onVer, onEditar }: {
         r.estatus.toLowerCase().includes(q)
       );
     }
-    return [...list].sort((a, b) =>
-      sortOrder === 'desc' ? b.noSol.localeCompare(a.noSol) : a.noSol.localeCompare(b.noSol)
-    );
+    return [...list].sort((a, b) => {
+      const da = new Date(a.fechaSol || 0).getTime();
+      const db = new Date(b.fechaSol || 0).getTime();
+      return sortOrder === 'desc' ? db - da : da - db;
+    });
   }, [rows, search, filtroEstatus, sortOrder]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PER_PAGE));

@@ -1,6 +1,10 @@
 import { useState, useEffect, forwardRef, useImperativeHandle } from 'react';
 import { toast } from 'sonner';
 import { useTabPersistence } from '@/app/hooks/useProductoPersistence';
+import { projectId, publicAnonKey } from '/utils/supabase/info';
+
+const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-7e2d13d9`;
+const HDR = { Authorization: `Bearer ${publicAnonKey}` };
 
 interface Prelacion {
   id: number;
@@ -221,6 +225,20 @@ function FormModal({ mode, item, productId, onSave, onClose }: FormModalProps) {
     ordenAplicacion: item?.ordenAplicacion || '',
     productosCargos: item?.productosCargos || '',
   });
+  const [componentes, setComponentes] = useState<{ id: number; codigo: string; nombre: string }[]>([]);
+
+  useEffect(() => {
+    fetch(`${API_BASE}/componentes-contables`, { headers: HDR })
+      .then(r => r.json())
+      .then(j => {
+        if (j.success && Array.isArray(j.data)) {
+          setComponentes(
+            [...j.data].sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'))
+          );
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -288,15 +306,16 @@ function FormModal({ mode, item, productId, onSave, onClose }: FormModalProps) {
 
                 <div>
                   <label className="block text-xs text-gray-700 mb-1 font-medium">Productos Cargos</label>
-                  <select 
-                    value={formData.productosCargos} 
-                    onChange={(e) => handleChange('productosCargos', e.target.value)} 
-                    disabled={isViewMode} 
+                  <select
+                    value={formData.productosCargos}
+                    onChange={(e) => handleChange('productosCargos', e.target.value)}
+                    disabled={isViewMode}
                     className={inputClassName()}
                   >
                     <option value="">Seleccione...</option>
-                    <option value="Capital">Capital</option>
-                    <option value="Interés en IVA">Interés en IVA</option>
+                    {componentes.map(c => (
+                      <option key={c.id} value={c.nombre}>{c.nombre}</option>
+                    ))}
                   </select>
                 </div>
               </div>

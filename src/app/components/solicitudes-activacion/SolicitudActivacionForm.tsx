@@ -396,7 +396,10 @@ export function SolicitudActivacionForm({
   const esPagado      = formData.estatus === 'Pagado';
   const esLineaCredito = (formData.lineaProducto || '')
     .toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').includes('linea');
-  const puedeActivar  = esPagado || esLineaCredito;
+  // No mostrar Activar si el registro ya lleg\u00f3 con estatus Pagado (o superior) desde la BD
+  const estatusFinales = ['Pagado', 'Autorizada', 'Activada', 'Activo'];
+  const yaEraActivado  = estatusFinales.includes(estatusAlAbrir.current);
+  const puedeActivar   = !yaEraActivado && (esPagado || esLineaCredito);
   // Cualquier estatus "post-enviado" que no sea Pagado: no mostrar bot\u00f3n Enviar
   const yaEnviada = ['Enviada', 'Activo', 'Autorizada', 'Activada'].includes(formData.estatus);
 
@@ -586,12 +589,16 @@ export function SolicitudActivacionForm({
           {activeTab === 'contable' && (
             <div className="p-4">
               <GeneracionContableTab
-                solicitudId={typeof solicitudId === 'string' ? solicitudId : String(solicitudId ?? '')}
+                solicitudId={formData.solicitudId || (typeof solicitudId === 'string' ? solicitudId : String(solicitudId ?? ''))}
                 credito={{
                   noSol:    formData.numeroDocumento || formData.solicitudId || '',
                   cliente:  formData.cliente || '',
                   montoAut: parseCurrency(formData.montoTransaccion),
                 }}
+                componentes={formData.detailMonto > 0
+                  ? [{ id_componente: 'CAPITAL', monto: formData.detailMonto }]
+                  : undefined
+                }
               />
             </div>
           )}
