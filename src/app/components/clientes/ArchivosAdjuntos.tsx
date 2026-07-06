@@ -315,30 +315,30 @@ ${legalValidated === 'Sí' ? 'La identidad del representante legal ha sido verif
                 accept=".pdf,.jpg,.jpeg,.png,.gif,.bmp,.webp,.doc,.docx,.xls,.xlsx"
                 onChange={(e) => {
                   const file = e.target.files?.[0];
-                  if (file) {
-                    // Crear URL del objeto para visualización
-                    const fileUrl = URL.createObjectURL(file);
-                    
+                  if (!file) return;
+                  const reader = new FileReader();
+                  reader.onloadend = () => {
                     const newArchivo: ArchivoAdjunto = {
-                      id: archivos.length + 1,
+                      id: Date.now(),
                       fileName: file.name,
                       documentType: 'Documento',
                       description: '',
-                      uploadDate: new Date().toLocaleString('es-MX', { 
-                        year: 'numeric', 
-                        month: '2-digit', 
+                      uploadDate: new Date().toLocaleString('es-MX', {
+                        year: 'numeric',
+                        month: '2-digit',
                         day: '2-digit',
                         hour: '2-digit',
                         minute: '2-digit'
                       }),
                       uploadedBy: 'Usuario Actual',
                       status: 'Activo',
-                      fileData: fileUrl
+                      fileData: reader.result as string,
                     };
                     setArchivos(prev => [...prev, newArchivo]);
                     setShowAdjuntarOptions(false);
                     toast.success(`Archivo "${file.name}" adjuntado exitosamente`);
-                  }
+                  };
+                  reader.readAsDataURL(file);
                 }}
               />
             </label>
@@ -798,13 +798,27 @@ ${legalValidated === 'Sí' ? 'La identidad del representante legal ha sido verif
             </div>
 
             {/* Contenido del archivo */}
-            <div className="flex-1 overflow-auto p-4 bg-gray-50">
-              {currentFile.fileData && (
-                <iframe
-                  src={currentFile.fileData}
-                  className="w-full h-full border-0"
-                  title={currentFile.fileName}
-                />
+            <div className="flex-1 overflow-auto p-4 bg-gray-50 flex items-center justify-center">
+              {currentFile.fileData ? (() => {
+                const isImage = /^data:image\//i.test(currentFile.fileData) || /\.(jpg|jpeg|png|gif|bmp|webp)$/i.test(currentFile.fileName);
+                const isPdf   = /^data:application\/pdf/i.test(currentFile.fileData) || /\.pdf$/i.test(currentFile.fileName);
+                if (isImage) {
+                  return <img src={currentFile.fileData} alt={currentFile.fileName} className="max-w-full max-h-full object-contain" />;
+                }
+                if (isPdf) {
+                  return <iframe src={currentFile.fileData} className="w-full h-full border-0" title={currentFile.fileName} />;
+                }
+                return (
+                  <div className="text-center text-gray-500 text-sm">
+                    <p className="mb-3">Vista previa no disponible para este tipo de archivo.</p>
+                    <a href={currentFile.fileData} download={currentFile.fileName}
+                      className="px-4 py-2 bg-[#4A6FA5] text-white text-xs rounded hover:bg-[#3E5C91]">
+                      Descargar archivo
+                    </a>
+                  </div>
+                );
+              })() : (
+                <p className="text-gray-400 text-sm">Sin contenido disponible</p>
               )}
             </div>
 

@@ -9,7 +9,7 @@ import * as kv from "./kv_store.tsx";
 // ─── Boot log ───────────────────────────────────────────────────────
 // TODOS los endpoints de J_CLIENTES devuelven TODOS los registros SIN WHERE
 // useClientesDB v11.0 → /clientes-lista-todos | useProspectosDB → /clientes-prospectos
-const EDGE_VERSION = "v52.0-FINAL-NO-DUPES";
+const EDGE_VERSION = "v69.0-FIX-PAR-CLIENTE-DUPLICATE";
 console.log(`[SERVER BOOT] Edge function loaded — ${EDGE_VERSION}`);
 console.log(`[SERVER BOOT] Routes: TODOS los endpoints de J_CLIENTES sin filtros WHERE`);
 console.log(`[SERVER BOOT] Auto-bootstrap: public.get_clientes() + public.get_all_jclientes() RPCs`);
@@ -650,10 +650,10 @@ const getProductosSegurosHandler = async (c: any) => {
     const rows = await sql`
       SELECT id, type, data
       FROM "EFINANCIANET_DB"."J_PRODUCTOS"
-      WHERE type = 'Seguro'
+      WHERE LOWER(type) IN ('seguro', 'seguros')
     `;
 
-    console.log(`[GET /productos-seguros v1.0] ${rows.length} registros tipo Seguro`);
+    console.log(`[GET /productos-seguros v1.0] ${rows.length} registros tipo Seguro/Seguros`);
     return c.json({ success: true, data: rows });
   } catch (err: any) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -1338,9 +1338,23 @@ const putClientesHandler = async (c: any) => {
     console.log(`[PUT /clientes/${id}] FINAL mergedData keys (${Object.keys(mergedData).length}):`, Object.keys(mergedData).join(", "));
     console.log(`[PUT /clientes/${id}] FINAL mergedData.contrasena: ${mergedData.contrasena === undefined ? "UNDEFINED" : `"${String(mergedData.contrasena).substring(0, 10)}..."`}`);
 
-    // Si par_cliente_id fue enviado explícitamente → setearlo (puede ser null para limpiar)
+    // Si par_cliente_id fue enviado explícitamente → verificar que no esté ya asignado a otro cliente
     // Si NO fue enviado → conservar el valor existente en BD
-    const updated = parClienteIdExplicit
+    let finalParClienteId = par_cliente_id;
+    if (parClienteIdExplicit && par_cliente_id) {
+      const existing = await sql`
+        SELECT id FROM "EFINANCIANET_DB"."J_CLIENTES"
+        WHERE par_cliente_id = ${par_cliente_id}::uuid
+          AND id != ${id}::uuid
+        LIMIT 1
+      `;
+      if (existing.length > 0) {
+        console.log(`[PUT /clientes/${id}] ⚠️ par_cliente_id ${par_cliente_id} ya está asignado al cliente ${existing[0].id} — conservando valor existente para evitar duplicado`);
+        finalParClienteId = undefined; // no actualizar par_cliente_id
+      }
+    }
+
+    const updated = (parClienteIdExplicit && finalParClienteId !== undefined)
       ? await sql`
         UPDATE "EFINANCIANET_DB"."J_CLIENTES"
         SET
@@ -1348,7 +1362,7 @@ const putClientesHandler = async (c: any) => {
           subtipo = COALESCE(${subtipo ?? null}, subtipo),
           estatus = COALESCE(${estatus ?? null}, estatus),
           data    = COALESCE(data, '{}'::jsonb) || ${sql.json(mergedData)}::jsonb,
-          par_cliente_id = ${par_cliente_id}
+          par_cliente_id = ${finalParClienteId}
         WHERE id = ${id}
         RETURNING id, type, subtipo, estatus, data, par_cliente_id
       `
@@ -2466,6 +2480,7 @@ const escribirMovimientoEnCuenta = async (cuentaId: string, movimiento: Record<s
   const existingData = parseJsonbData(cuenta.data);
   const movimientos  = Array.isArray(existingData.movimientos) ? existingData.movimientos : [];
   movimientos.push({
+    ...movimiento,
     id:           movimiento.id           || `mov-${Date.now()}`,
     fechaHora:    movimiento.fechaHora    || now,
     fechaRegistro: now,
@@ -2477,7 +2492,6 @@ const escribirMovimientoEnCuenta = async (cuentaId: string, movimiento: Record<s
     estatus:      movimiento.estatus      || 'Aplicado',
     saldoInicial: saldoActual,
     saldoFinal:   nuevoSaldo,
-    ...movimiento,
   });
   const newData = { ...existingData, movimientos };
 
@@ -3597,7 +3611,8 @@ const activarCuentaSolicitudHandler = async (c: any) => {
       || linea.includes('aportacion');
     const tipoMovimiento = esCaptacion ? 'Abono' : 'Cargo';
     const conceptoMovimiento = esCaptacion ? 'Apertura de cuenta - Depósito inicial' : 'Apertura de cuenta - Disposición inicial';
-    const saldoFinal = esCaptacion ? montoTransaccion : 0;
+    // Crédito: saldo_actual = monto_transaccion (deuda inicial). Aportación/Captación: saldo_actual = 0.
+    const saldoFinal = esCaptacion ? 0 : montoTransaccion;
 
     // Construir primer movimiento
     const now = new Date().toISOString();
@@ -4204,7 +4219,7 @@ const carteraMarcarPagadoHandler = async (c: any) => {
           const montoAutStr = String(cuentaRow.monto_aut || '0').replace(/[^0-9.-]/g, '');
           const saldoActual = parseFloat(String(cuentaRow.saldo_actual || '0').replace(/[^0-9.-]/g, '')) || 0;
           const saldoAntes  = saldoActual;
-          const nuevoSaldo  = Math.max(0, parseFloat(montoAutStr) || 0);
+          const nuevoSaldo  = Math.max(0, saldoActual - monto);
           const movPago = {
             tipo:          'Abono',
             concepto:      'Pago de Crédito',
@@ -5337,30 +5352,32 @@ Responde únicamente en JSON:
 }
 NO incluyas texto fuera del JSON.`;
 
-const SYSTEM_PROMPT_DOCUMENTO_INDIVIDUAL = `Eres un validador experto de documentos bancarios.
-Tu única tarea es evaluar SI EL DOCUMENTO ES VÁLIDO según el criterio indicado.
+const SYSTEM_PROMPT_DOCUMENTO_INDIVIDUAL = `Eres un validador de documentos bancarios. Ejecutas exactamente las instrucciones que recibes.
 
-REGLAS ESTRICTAS:
-1. Analiza SOLO el documento proporcionado. NO menciones documentos faltantes de la fase.
-2. Si el RFC del cliente coincide con el visible en el documento → el documento ES VÁLIDO para ese criterio.
-3. Si el CURP del cliente coincide con el visible en el documento → el documento ES VÁLIDO para ese criterio.
-4. Si el documento está vigente y es legible → ES VÁLIDO.
-5. "valido": true SIGNIFICA que el documento cumple los requisitos. USA true cuando los criterios se cumplen.
-6. Solo usa "valido": false si hay un problema REAL y CONCRETO en el documento mismo.
-7. "confianza" debe ser >= 0.8 cuando el documento cumple los criterios claramente.
-8. Para documentos tipo "Contrato Firmado", "Pagaré Firmado" o cualquier tipo que contenga "Firmado": el nombre mismo indica que el usuario ya verificó la firma. NO rechaces por ausencia de firmas físicas visibles — las firmas pueden ser digitales, electrónicas o estar fuera del área visible de la imagen. Si el documento tiene estructura de contrato o pagaré → responde valido: true.
-9. NUNCA rechaces un documento solo porque no ves firmas. Las firmas pueden ser invisibles en la imagen digital.
+REGLA FUNDAMENTAL — lee esto antes que todo:
+- "valido" refleja ÚNICAMENTE si todos los elementos obligatorios están presentes en la imagen.
+- Si todos los elementos obligatorios están presentes → "valido": true. Punto. No importa nada más.
+- Solo pones "valido": false si un elemento obligatorio FALTA o es ilegible en la imagen.
+- "faltantes" solo se llena cuando "valido" es false. Si "valido" es true → "faltantes": [].
+- NO escribas razonamientos, dudas ni justificaciones en "motivos" cuando el documento es válido. Solo lista lo que encontraste.
 
-RESPONDE ÚNICAMENTE EN JSON:
+INSTRUCCIONES:
+1. Para cada elemento en "ELEMENTOS OBLIGATORIOS": búscalo en la imagen.
+   - Lo encuentras claramente → menciónalo en "motivos", NO en "faltantes".
+   - NO lo encuentras → ponlo en "faltantes", "valido": false.
+2. Para "ELEMENTOS OPCIONALES": regístralos en "extraido" si están presentes.
+3. No apliques criterios que el prompt no mencione explícitamente.
+
+FORMATO DE RESPUESTA — ÚNICAMENTE JSON:
 {
   "valido": true,
-  "confianza": 0.9,
-  "motivos": ["El RFC coincide", "Documento vigente y legible"],
+  "confianza": 0.93,
+  "motivos": ["Fotografía presente", "Nombre visible: APELLIDO NOMBRE", "CURP coincide"],
   "faltantes": [],
+  "extraido": { "nombre": "...", "curp": "..." },
   "faseListaParaAvanzar": true,
   "documentosValidados": [{"tipo": "<tipoDocumento>", "valido": true, "motivos": ["..."]}]
-}
-NO incluyas texto fuera del JSON.`;
+}`;
 
 const validarDocumentoIAHandler = async (c: any) => {
   const LOG_IA = "[VALIDAR-IA]";
@@ -5468,9 +5485,63 @@ const validarDocumentoIAHandler = async (c: any) => {
       ...(nombreSolicitante ? { nombreSolicitante } : {}),
     };
 
-    // Documento individual: solo enviar lo necesario para validar ESE documento
+    // Extraer lista de elementos obligatorios del promptIA si viene embebida
+    // Busca sección "ELEMENTOS OBLIGATORIOS" y extrae los items con guión
+    let elementosObligatoriosDelPrompt: string[] = [];
+    let descripcionDocumento = promptIA || '';
+    if (promptIA) {
+      const seccionMatch = promptIA.match(/ELEMENTOS OBLIGATORIOS[^\n]*\n([\s\S]*?)(?:\n\n|\nSi CUALQUIER|$)/i);
+      if (seccionMatch) {
+        elementosObligatoriosDelPrompt = seccionMatch[1]
+          .split('\n')
+          .map((l: string) => l.replace(/^[-•*]\s*/, '').trim())
+          .filter((l: string) => l.length > 0);
+        // Descripción = todo antes de ELEMENTOS OBLIGATORIOS
+        descripcionDocumento = promptIA.split(/ELEMENTOS OBLIGATORIOS/i)[0].trim();
+      }
+    }
+
+    // Si no se extrajeron elementos del prompt, usar el prompt completo como checklist base
+    const elementosAVerificar = elementosObligatoriosDelPrompt.length > 0
+      ? elementosObligatoriosDelPrompt
+      : [];
+
+    // Fecha de referencia para evaluar vigencia/antigüedad de documentos.
+    // Se pre-calcula la fecha límite (hoy − 3 meses) para no depender de la
+    // aritmética de fechas del modelo, que es poco fiable.
+    const hoy = new Date();
+    const limite3Meses = new Date(hoy);
+    limite3Meses.setMonth(limite3Meses.getMonth() - 3);
+    const fmtFecha = (d: Date) =>
+      d.toLocaleDateString('es-MX', { year: 'numeric', month: 'long', day: 'numeric' });
+    const fechaHoyTxt = fmtFecha(hoy);
+    const fechaLimiteTxt = fmtFecha(limite3Meses);
+
+    // Documento individual: mensaje estructurado
     const userMessage = modoDocumento && !modoFase
-      ? `Valida el documento "${tipoDocumento}" según esta instrucción:\n${promptIA || "Verifica que el documento sea auténtico, legible y corresponda al tipo indicado."}\n\nContexto del solicitante:\n- Nombre: ${nombreSolicitante || "(no indicado)"}\n- Tipo persona: ${tipoPersona || "(no indicado)"}\n- Línea producto: ${lineaProducto || "(no indicado)"}\n- Fase: ${faseActual || `Fase ${faseNumero}`}\n\nResponde ÚNICAMENTE en JSON.`
+      ? [
+          `FECHA ACTUAL DEL SISTEMA: ${fechaHoyTxt}.`,
+          `Para documentos con requisito de vigencia de 3 meses (ej. comprobante de domicilio): la fecha de emisión es VÁLIDA si es igual o posterior a ${fechaLimiteTxt}. Solo está VENCIDO si la fecha de emisión es ANTERIOR a ${fechaLimiteTxt}. Usa estas fechas ya calculadas; no estimes.`,
+          ``,
+          `DOCUMENTO A VALIDAR: "${tipoDocumento}"`,
+          ``,
+          `VERIFICACIÓN DE TIPO: ¿El documento en la imagen ES un "${tipoDocumento}"?`,
+          `Si NO → "valido": false, faltantes: ["Documento incorrecto: se esperaba '${tipoDocumento}'"].`,
+          ``,
+          ...(elementosAVerificar.length > 0 ? [
+            `CHECKLIST — busca cada elemento físicamente en la imagen:`,
+            `• Si lo ves → menciónalo en "motivos".`,
+            `• Si NO lo ves → ponlo en "faltantes", "valido": false.`,
+            `• Si todos están presentes → "valido": true, "faltantes": [].`,
+            ``,
+            ...elementosAVerificar.map((e: string, i: number) => `${i + 1}. ${e}`),
+            ``,
+          ] : [
+            `Verifica que el documento sea un "${tipoDocumento}" auténtico y legible.`,
+            ``,
+          ]),
+          `Responde ÚNICAMENTE en JSON.`,
+        ].join('\n')
       : `Valida el siguiente contexto del proceso bancario y responde ÚNICAMENTE en JSON:\n\n${JSON.stringify(contextoFase, null, 2)}`;
 
     // ── 3. Preparar prompt y llamar a IA ──
@@ -5502,9 +5573,10 @@ const validarDocumentoIAHandler = async (c: any) => {
           const b64Match = imageDataUrl.match(/^data:(image\/[^;]+);base64,(.+)$/);
           const mediaType = b64Match ? b64Match[1] : "image/png";
           const b64Data   = b64Match ? b64Match[2] : imageDataUrl;
+          // IMPORTANTE: texto va ANTES que la imagen para que Claude lea las instrucciones primero
           content = [
-            { type: "image", source: { type: "base64", media_type: mediaType, data: b64Data } },
             { type: "text", text: textoPrincipal },
+            { type: "image", source: { type: "base64", media_type: mediaType, data: b64Data } },
           ];
         } else {
           content = [{ type: "text", text: textoPrincipal }];
@@ -5516,7 +5588,7 @@ const validarDocumentoIAHandler = async (c: any) => {
             "x-api-key": CLAUDE_KEY,
             "anthropic-version": "2023-06-01",
           },
-          body: JSON.stringify({ model, max_tokens: 1024, messages: [{ role: "user", content }] }),
+          body: JSON.stringify({ model, max_tokens: 2048, messages: [{ role: "user", content }] }),
         });
         const body = await res.text();
         if (!res.ok) {
@@ -5543,7 +5615,7 @@ const validarDocumentoIAHandler = async (c: any) => {
         const res = await fetch(url, {
           method: "POST",
           headers: { "Content-Type": "application/json", "Authorization": `Bearer ${auth}`, ...extra },
-          body: JSON.stringify({ model, messages, temperature: 0, max_tokens: 1024 }),
+          body: JSON.stringify({ model, messages, temperature: 0, max_tokens: 2048 }),
         });
         const body = await res.text();
         if (!res.ok) {
@@ -5581,24 +5653,42 @@ const validarDocumentoIAHandler = async (c: any) => {
       if (r.err) errores.push(r.err);
     }
 
-    // Si ninguno respondió → pass-through (no bloquear al usuario)
+    // Si ninguno respondió → rechazar, no validar sin criterio
     if (!rawContent) {
-      console.log(`${LOG_IA} Todos fallaron: ${errores.join(" | ")}`);
+      console.log(`${LOG_IA} Todos los modelos fallaron: ${errores.join(" | ")}`);
       return c.json({
-        valido: true, confianza: 0,
-        motivos: ["Validación IA omitida — sin disponibilidad. Revisión manual recomendada.", ...errores.slice(0, 2)],
-        faltantes: [], faseListaParaAvanzar: true, documentosValidados: [],
-        puedeGenerarDocumentos: true, puedeGenerarContrato: true, puedeGenerarPagare: true,
-        modelo: "ninguno", timestamp: new Date().toISOString(), _rateLimited: true, _errores: errores,
-      });
+        valido: false, confianza: 0,
+        motivos: ["Servicio de validación IA no disponible. Intente nuevamente en unos momentos."],
+        faltantes: [], faseListaParaAvanzar: false, documentosValidados: [],
+        modelo: "ninguno", timestamp: new Date().toISOString(), _errores: errores,
+      }, 503);
     }
 
     // ── 5. Parsear JSON de la respuesta ──
     const parseIAJson = (raw: string): any | null => {
+      // Intento 1: bloque markdown completo ```json ... ```
       try {
         const m = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
-        return JSON.parse(m ? m[1].trim() : raw.trim());
-      } catch (_) { return null; }
+        if (m) return JSON.parse(m[1].trim());
+      } catch (_) { /* continuar */ }
+      // Intento 2: JSON directo sin markdown
+      try { return JSON.parse(raw.trim()); } catch (_) { /* continuar */ }
+      // Intento 3: bloque markdown truncado — extraer desde { hasta el final
+      try {
+        const start = raw.indexOf('{');
+        if (start !== -1) return JSON.parse(raw.slice(start).trim());
+      } catch (_) { /* continuar */ }
+      // Intento 4: JSON truncado — extraer "valido" del texto aunque esté incompleto
+      const validoMatch = raw.match(/"valido"\s*:\s*(true|false)/);
+      if (validoMatch) {
+        return {
+          valido: validoMatch[1] === 'true',
+          confianza: 0.7,
+          motivos: ["Respuesta parcial de la IA — se extrajo el resultado principal"],
+          faltantes: [], faseListaParaAvanzar: validoMatch[1] === 'true',
+        };
+      }
+      return null;
     };
     let parsed: any = parseIAJson(rawContent);
     if (!parsed) {
@@ -5610,48 +5700,7 @@ const validarDocumentoIAHandler = async (c: any) => {
       };
     }
 
-    // ── Post-procesamiento Fase 4: si Contrato Firmado + Pagaré Firmado validados → aprobar ──
-    if (modoFase && !parsed.valido) {
-      const promptTexto = (contextoFase.promptIAProducto || "").toLowerCase();
-      const tieneContratoFirmado = promptTexto.includes("contrato firmado") && promptTexto.includes("validado por ia");
-      const tienePagareFirmado   = (promptTexto.includes("pagaré firmado") || promptTexto.includes("pagare firmado")) && promptTexto.includes("validado por ia");
-      if (tieneContratoFirmado && tienePagareFirmado) {
-        console.log(`${LOG_IA} ⚠️ Fase: Contrato Firmado + Pagaré Firmado validados → override valido=true`);
-        parsed.valido = true;
-        parsed.confianza = 0.9;
-        parsed.motivos = ["Contrato Firmado y Pagaré Firmado presentes y validados por IA — formalización completa", ...(parsed.motivos || []).slice(0, 2)];
-      }
-    }
-
-    // ── Post-procesamiento: detectar respuesta contradictoria del modelo ──
-    // Si todos los motivos son positivos pero valido=false, el modelo cometió un error lógico
-    const motivosPositivos = ["coincide", "válido", "vigente", "legible", "correcto", "auténtico",
-      "coinciden", "verificado", "aprobado", "completo", "presente", "corresponde"];
-    const motivosNegativos = ["no coincide", "falta", "inválido", "ilegible", "rechazado",
-      "incorrecto", "no se puede", "no presenta", "ausente", "error", "vencido",
-      "no se observan", "no se ven", "no hay firma", "sin firma", "no firma"];
-    const motivosArr: string[] = Array.isArray(parsed.motivos) ? parsed.motivos : [];
-    if (!parsed.valido && motivosArr.length > 0 && modoDocumento && !modoFase) {
-      const textoMotivos = motivosArr.join(" ").toLowerCase();
-      const tienePositivo = motivosPositivos.some(p => textoMotivos.includes(p));
-      const tieneNegativo = motivosNegativos.some(n => textoMotivos.includes(n));
-      if (tienePositivo && !tieneNegativo) {
-        console.log(`${LOG_IA} ⚠️ Respuesta contradictoria: motivos positivos pero valido=false → corrigiendo a valido=true`);
-        parsed.valido = true;
-        parsed.confianza = parsed.confianza > 0 ? parsed.confianza : 0.85;
-      }
-      // Override específico: documentos "Firmado" rechazados solo por ausencia de firmas visibles
-      const esFirmado = (tipoDocumento || "").toLowerCase().includes("firmado");
-      const soloFirmasFaltantes = tieneNegativo && motivosArr.every((m: string) =>
-        ["firma", "observan", "ven", "visible", "representante", "cliente"].some(kw => m.toLowerCase().includes(kw))
-      );
-      if (esFirmado && soloFirmasFaltantes) {
-        console.log(`${LOG_IA} ⚠️ Documento 'Firmado' rechazado por firmas no visibles → override a valido=true`);
-        parsed.valido = true;
-        parsed.confianza = 0.85;
-        parsed.motivos = ["Documento marcado como Firmado — firma puede ser digital o electrónica", ...motivosArr];
-      }
-    }
+    // La IA decide. Su respuesta se usa tal cual — sin overrides.
 
     const result = {
       valido: parsed.valido === true,
@@ -7158,9 +7207,488 @@ app.post(`/admin/run-migration`, async (c: any) => {
 });
 
 // ═══════════════════════════════════════════════════════════════════
+// PLD — Bootstrap tablas
+// ═══════════════════════════════════════════════════════════════════
+(async () => {
+  try {
+    await sql`
+      CREATE TABLE IF NOT EXISTS "EFINANCIANET_DB"."PLD_ALERTAS" (
+        id         SERIAL PRIMARY KEY,
+        no_alerta  TEXT NOT NULL,
+        fecha      TEXT NOT NULL,
+        cliente    TEXT NOT NULL,
+        tipo_alerta TEXT NOT NULL,
+        estatus    TEXT NOT NULL DEFAULT 'Pendiente',
+        usuario_asignado TEXT DEFAULT '',
+        resultado  TEXT DEFAULT '',
+        enviado_cnbv TEXT DEFAULT 'No',
+        monto      TEXT DEFAULT '',
+        descripcion TEXT DEFAULT '',
+        created_at TIMESTAMPTZ DEFAULT now()
+      )
+    `;
+    await sql`
+      CREATE TABLE IF NOT EXISTS "EFINANCIANET_DB"."PLD_ALERTAS_INTERNAS" (
+        id         SERIAL PRIMARY KEY,
+        no_alerta  TEXT NOT NULL,
+        fecha      TEXT NOT NULL,
+        cliente    TEXT NOT NULL,
+        tipo       TEXT NOT NULL,
+        estatus    TEXT NOT NULL DEFAULT 'Pendiente',
+        descripcion TEXT DEFAULT '',
+        resultado  TEXT DEFAULT '',
+        created_at TIMESTAMPTZ DEFAULT now()
+      )
+    `;
+    await sql`
+      CREATE TABLE IF NOT EXISTS "EFINANCIANET_DB"."PLD_REPORTES_CNBV" (
+        id         SERIAL PRIMARY KEY,
+        folio      TEXT NOT NULL,
+        fecha      TEXT NOT NULL,
+        tipo       TEXT NOT NULL,
+        cliente    TEXT NOT NULL,
+        monto      TEXT DEFAULT '',
+        estatus    TEXT NOT NULL DEFAULT 'Pendiente',
+        enviado    TEXT DEFAULT 'No',
+        created_at TIMESTAMPTZ DEFAULT now()
+      )
+    `;
+    await sql`
+      CREATE TABLE IF NOT EXISTS "EFINANCIANET_DB"."PLD_CALIFICACIONES" (
+        id              SERIAL PRIMARY KEY,
+        cliente_id      TEXT,
+        no_cliente      TEXT NOT NULL,
+        nombre_cliente  TEXT NOT NULL,
+        cliente_rfc     TEXT DEFAULT '',
+        cliente_personalidad TEXT DEFAULT '',
+        cliente_sucursal TEXT DEFAULT '',
+        fecha_calificacion TEXT DEFAULT '',
+        actividad_economica NUMERIC DEFAULT 0,
+        residencia      NUMERIC DEFAULT 0,
+        nacionalidad    NUMERIC DEFAULT 0,
+        tipo_persona    NUMERIC DEFAULT 0,
+        pep_listas_negras NUMERIC DEFAULT 0,
+        calificacion_total NUMERIC DEFAULT 0,
+        nivel_riesgo    TEXT DEFAULT 'Bajo',
+        created_at      TIMESTAMPTZ DEFAULT now()
+      )
+    `;
+    console.log("[PLD-BOOTSTRAP] ✅ Tablas PLD creadas/verificadas");
+  } catch (e: any) {
+    console.log("[PLD-BOOTSTRAP] Error:", e.message);
+  }
+})();
+
+// ── PLD Alertas ──────────────────────────────────────────────────────
+app.get(`${PREFIX}/pld/alertas`, async (c: any) => {
+  try {
+    const rows = await sql`SELECT * FROM "EFINANCIANET_DB"."PLD_ALERTAS" ORDER BY id DESC`;
+    return c.json({ data: rows });
+  } catch (e: any) { return c.json({ error: e.message }, 500); }
+});
+app.post(`${PREFIX}/pld/alertas`, async (c: any) => {
+  try {
+    const b = await c.req.json();
+    const [row] = await sql`
+      INSERT INTO "EFINANCIANET_DB"."PLD_ALERTAS"
+        (no_alerta, fecha, cliente, tipo_alerta, estatus, usuario_asignado, resultado, enviado_cnbv, monto, descripcion)
+      VALUES (${b.noAlerta}, ${b.fechaCreacion}, ${b.cliente}, ${b.tipoAlerta}, ${b.estatus ?? 'Pendiente'},
+              ${b.usuarioAsignado ?? ''}, ${b.resultado ?? ''}, ${b.enviadoCNBV ?? 'No'}, ${b.monto ?? ''}, ${b.descripcion ?? ''})
+      RETURNING *`;
+    return c.json({ data: row });
+  } catch (e: any) { return c.json({ error: e.message }, 500); }
+});
+app.put(`${PREFIX}/pld/alertas/:id`, async (c: any) => {
+  try {
+    const id = Number(c.req.param("id"));
+    const b = await c.req.json();
+    const [row] = await sql`
+      UPDATE "EFINANCIANET_DB"."PLD_ALERTAS"
+      SET no_alerta=${b.noAlerta}, fecha=${b.fechaCreacion}, cliente=${b.cliente},
+          tipo_alerta=${b.tipoAlerta}, estatus=${b.estatus}, usuario_asignado=${b.usuarioAsignado ?? ''},
+          resultado=${b.resultado ?? ''}, enviado_cnbv=${b.enviadoCNBV ?? 'No'},
+          monto=${b.monto ?? ''}, descripcion=${b.descripcion ?? ''}
+      WHERE id=${id} RETURNING *`;
+    return c.json({ data: row });
+  } catch (e: any) { return c.json({ error: e.message }, 500); }
+});
+app.delete(`${PREFIX}/pld/alertas/:id`, async (c: any) => {
+  try {
+    const id = Number(c.req.param("id"));
+    await sql`DELETE FROM "EFINANCIANET_DB"."PLD_ALERTAS" WHERE id=${id}`;
+    return c.json({ success: true });
+  } catch (e: any) { return c.json({ error: e.message }, 500); }
+});
+app.get(`${PREFIX}/pld/alertas-internas`, async (c: any) => {
+  try {
+    const rows = await sql`SELECT * FROM "EFINANCIANET_DB"."PLD_ALERTAS_INTERNAS" ORDER BY id DESC`;
+    return c.json({ data: rows });
+  } catch (e: any) { return c.json({ error: e.message }, 500); }
+});
+app.post(`${PREFIX}/pld/alertas-internas`, async (c: any) => {
+  try {
+    const b = await c.req.json();
+    const [row] = await sql`
+      INSERT INTO "EFINANCIANET_DB"."PLD_ALERTAS_INTERNAS"
+        (no_alerta, fecha, cliente, tipo, estatus, descripcion, resultado)
+      VALUES (${b.noAlerta}, ${b.fecha}, ${b.cliente}, ${b.tipo}, ${b.estatus ?? 'Pendiente'},
+              ${b.descripcion ?? ''}, ${b.resultado ?? ''})
+      RETURNING *`;
+    return c.json({ data: row });
+  } catch (e: any) { return c.json({ error: e.message }, 500); }
+});
+app.put(`${PREFIX}/pld/alertas-internas/:id`, async (c: any) => {
+  try {
+    const id = Number(c.req.param("id"));
+    const b = await c.req.json();
+    const [row] = await sql`
+      UPDATE "EFINANCIANET_DB"."PLD_ALERTAS_INTERNAS"
+      SET no_alerta=${b.noAlerta}, fecha=${b.fecha}, cliente=${b.cliente}, tipo=${b.tipo},
+          estatus=${b.estatus}, descripcion=${b.descripcion ?? ''}, resultado=${b.resultado ?? ''}
+      WHERE id=${id} RETURNING *`;
+    return c.json({ data: row });
+  } catch (e: any) { return c.json({ error: e.message }, 500); }
+});
+app.delete(`${PREFIX}/pld/alertas-internas/:id`, async (c: any) => {
+  try {
+    const id = Number(c.req.param("id"));
+    await sql`DELETE FROM "EFINANCIANET_DB"."PLD_ALERTAS_INTERNAS" WHERE id=${id}`;
+    return c.json({ success: true });
+  } catch (e: any) { return c.json({ error: e.message }, 500); }
+});
+app.get(`${PREFIX}/pld/reportes-cnbv`, async (c: any) => {
+  try {
+    const rows = await sql`SELECT * FROM "EFINANCIANET_DB"."PLD_REPORTES_CNBV" ORDER BY id DESC`;
+    return c.json({ data: rows });
+  } catch (e: any) { return c.json({ error: e.message }, 500); }
+});
+app.post(`${PREFIX}/pld/reportes-cnbv`, async (c: any) => {
+  try {
+    const b = await c.req.json();
+    const [row] = await sql`
+      INSERT INTO "EFINANCIANET_DB"."PLD_REPORTES_CNBV"
+        (folio, fecha, tipo, cliente, monto, estatus, enviado)
+      VALUES (${b.folio}, ${b.fecha}, ${b.tipo}, ${b.cliente}, ${b.monto ?? ''},
+              ${b.estatus ?? 'Pendiente'}, ${b.enviado ?? 'No'})
+      RETURNING *`;
+    return c.json({ data: row });
+  } catch (e: any) { return c.json({ error: e.message }, 500); }
+});
+app.put(`${PREFIX}/pld/reportes-cnbv/:id`, async (c: any) => {
+  try {
+    const id = Number(c.req.param("id"));
+    const b = await c.req.json();
+    const [row] = await sql`
+      UPDATE "EFINANCIANET_DB"."PLD_REPORTES_CNBV"
+      SET folio=${b.folio}, fecha=${b.fecha}, tipo=${b.tipo}, cliente=${b.cliente},
+          monto=${b.monto ?? ''}, estatus=${b.estatus}, enviado=${b.enviado ?? 'No'}
+      WHERE id=${id} RETURNING *`;
+    return c.json({ data: row });
+  } catch (e: any) { return c.json({ error: e.message }, 500); }
+});
+app.delete(`${PREFIX}/pld/reportes-cnbv/:id`, async (c: any) => {
+  try {
+    const id = Number(c.req.param("id"));
+    await sql`DELETE FROM "EFINANCIANET_DB"."PLD_REPORTES_CNBV" WHERE id=${id}`;
+    return c.json({ success: true });
+  } catch (e: any) { return c.json({ error: e.message }, 500); }
+});
+app.get(`${PREFIX}/pld/calificaciones`, async (c: any) => {
+  try {
+    const rows = await sql`SELECT * FROM "EFINANCIANET_DB"."PLD_CALIFICACIONES" ORDER BY id DESC`;
+    return c.json({ data: rows });
+  } catch (e: any) { return c.json({ error: e.message }, 500); }
+});
+app.post(`${PREFIX}/pld/calificaciones`, async (c: any) => {
+  try {
+    const b = await c.req.json();
+    const existing = await sql`SELECT id FROM "EFINANCIANET_DB"."PLD_CALIFICACIONES" WHERE no_cliente=${b.noCliente} LIMIT 1`;
+    if (existing.length > 0) {
+      const [row] = await sql`
+        UPDATE "EFINANCIANET_DB"."PLD_CALIFICACIONES"
+        SET nombre_cliente=${b.nombreCliente}, cliente_rfc=${b.clienteRFC ?? ''},
+            cliente_personalidad=${b.clientePersonalidad ?? ''}, cliente_sucursal=${b.clienteSucursal ?? ''},
+            fecha_calificacion=${b.fechaCalificacion ?? ''}, actividad_economica=${b.actividadEconomica ?? 0},
+            residencia=${b.residencia ?? 0}, nacionalidad=${b.nacionalidad ?? 0},
+            tipo_persona=${b.tipoPersona ?? 0}, pep_listas_negras=${b.pepListasNegras ?? 0},
+            calificacion_total=${b.calificacionTotal ?? 0}, nivel_riesgo=${b.nivelRiesgo ?? 'Bajo'}
+        WHERE no_cliente=${b.noCliente} RETURNING *`;
+      return c.json({ data: row });
+    }
+    const [row] = await sql`
+      INSERT INTO "EFINANCIANET_DB"."PLD_CALIFICACIONES"
+        (cliente_id, no_cliente, nombre_cliente, cliente_rfc, cliente_personalidad, cliente_sucursal,
+         fecha_calificacion, actividad_economica, residencia, nacionalidad, tipo_persona,
+         pep_listas_negras, calificacion_total, nivel_riesgo)
+      VALUES (${b.clienteId ?? null}, ${b.noCliente}, ${b.nombreCliente}, ${b.clienteRFC ?? ''},
+              ${b.clientePersonalidad ?? ''}, ${b.clienteSucursal ?? ''}, ${b.fechaCalificacion ?? ''},
+              ${b.actividadEconomica ?? 0}, ${b.residencia ?? 0}, ${b.nacionalidad ?? 0},
+              ${b.tipoPersona ?? 0}, ${b.pepListasNegras ?? 0}, ${b.calificacionTotal ?? 0},
+              ${b.nivelRiesgo ?? 'Bajo'})
+      RETURNING *`;
+    return c.json({ data: row });
+  } catch (e: any) { return c.json({ error: e.message }, 500); }
+});
+app.delete(`${PREFIX}/pld/calificaciones/:id`, async (c: any) => {
+  try {
+    const id = Number(c.req.param("id"));
+    await sql`DELETE FROM "EFINANCIANET_DB"."PLD_CALIFICACIONES" WHERE id=${id}`;
+    return c.json({ success: true });
+  } catch (e: any) { return c.json({ error: e.message }, 500); }
+});
+app.get(`${PREFIX}/pld/dashboard-stats`, async (c: any) => {
+  try {
+    const [alertasStats] = await sql`
+      SELECT COUNT(*) FILTER (WHERE estatus != 'Atendida') AS alertas_activas,
+             COUNT(*) FILTER (WHERE tipo_alerta = 'Relevante') AS alertas_relevantes,
+             COUNT(*) FILTER (WHERE tipo_alerta = 'Inusual') AS alertas_inusuales,
+             COUNT(*) FILTER (WHERE tipo_alerta = 'Preocupante') AS alertas_preoc
+      FROM "EFINANCIANET_DB"."PLD_ALERTAS"`;
+    const [internasStats] = await sql`
+      SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE estatus = 'Pendiente') AS pendientes
+      FROM "EFINANCIANET_DB"."PLD_ALERTAS_INTERNAS"`;
+    const [reportesStats] = await sql`
+      SELECT COUNT(*) FILTER (WHERE estatus = 'Pendiente') AS pendientes
+      FROM "EFINANCIANET_DB"."PLD_REPORTES_CNBV"`;
+    const [calStats] = await sql`
+      SELECT COUNT(*) AS total,
+             COUNT(*) FILTER (WHERE nivel_riesgo = 'Bajo') AS bajo,
+             COUNT(*) FILTER (WHERE nivel_riesgo = 'Medio') AS medio,
+             COUNT(*) FILTER (WHERE nivel_riesgo = 'Alto') AS alto
+      FROM "EFINANCIANET_DB"."PLD_CALIFICACIONES"`;
+    const recentAlertas = await sql`
+      SELECT id, no_alerta, fecha AS fecha_creacion, cliente, tipo_alerta, estatus, monto
+      FROM "EFINANCIANET_DB"."PLD_ALERTAS" ORDER BY id DESC LIMIT 8`;
+    return c.json({
+      alertasActivas: Number(alertasStats.alertas_activas), alertasRelevantes: Number(alertasStats.alertas_relevantes),
+      alertasInusuales: Number(alertasStats.alertas_inusuales), alertasPreoc: Number(alertasStats.alertas_preoc),
+      internasTotal: Number(internasStats.total), internasPendientes: Number(internasStats.pendientes),
+      reportesPendientes: Number(reportesStats.pendientes), calTotal: Number(calStats.total),
+      calBajo: Number(calStats.bajo), calMedio: Number(calStats.medio), calAlto: Number(calStats.alto),
+      recentAlertas,
+    });
+  } catch (e: any) { return c.json({ error: e.message }, 500); }
+});
+app.get("/pld/alertas", async (c: any) => {
+  try {
+    const rows = await sql`SELECT * FROM "EFINANCIANET_DB"."PLD_ALERTAS" ORDER BY id DESC`;
+    return c.json({ data: rows });
+  } catch (e: any) { return c.json({ error: e.message }, 500); }
+});
+app.post("/pld/alertas", async (c: any) => {
+  try {
+    const b = await c.req.json();
+    const [row] = await sql`
+      INSERT INTO "EFINANCIANET_DB"."PLD_ALERTAS"
+        (no_alerta, fecha, cliente, tipo_alerta, estatus, usuario_asignado, resultado, enviado_cnbv, monto, descripcion)
+      VALUES (${b.noAlerta}, ${b.fechaCreacion}, ${b.cliente}, ${b.tipoAlerta}, ${b.estatus ?? 'Pendiente'},
+              ${b.usuarioAsignado ?? ''}, ${b.resultado ?? ''}, ${b.enviadoCNBV ?? 'No'}, ${b.monto ?? ''}, ${b.descripcion ?? ''})
+      RETURNING *`;
+    return c.json({ data: row });
+  } catch (e: any) { return c.json({ error: e.message }, 500); }
+});
+app.put("/pld/alertas/:id", async (c: any) => {
+  try {
+    const id = Number(c.req.param("id"));
+    const b = await c.req.json();
+    const [row] = await sql`
+      UPDATE "EFINANCIANET_DB"."PLD_ALERTAS"
+      SET no_alerta=${b.noAlerta}, fecha=${b.fechaCreacion}, cliente=${b.cliente},
+          tipo_alerta=${b.tipoAlerta}, estatus=${b.estatus}, usuario_asignado=${b.usuarioAsignado ?? ''},
+          resultado=${b.resultado ?? ''}, enviado_cnbv=${b.enviadoCNBV ?? 'No'},
+          monto=${b.monto ?? ''}, descripcion=${b.descripcion ?? ''}
+      WHERE id=${id} RETURNING *`;
+    return c.json({ data: row });
+  } catch (e: any) { return c.json({ error: e.message }, 500); }
+});
+app.delete("/pld/alertas/:id", async (c: any) => {
+  try {
+    const id = Number(c.req.param("id"));
+    await sql`DELETE FROM "EFINANCIANET_DB"."PLD_ALERTAS" WHERE id=${id}`;
+    return c.json({ success: true });
+  } catch (e: any) { return c.json({ error: e.message }, 500); }
+});
+
+// ── PLD Alertas Internas ─────────────────────────────────────────────
+app.get("/pld/alertas-internas", async (c: any) => {
+  try {
+    const rows = await sql`SELECT * FROM "EFINANCIANET_DB"."PLD_ALERTAS_INTERNAS" ORDER BY id DESC`;
+    return c.json({ data: rows });
+  } catch (e: any) { return c.json({ error: e.message }, 500); }
+});
+app.post("/pld/alertas-internas", async (c: any) => {
+  try {
+    const b = await c.req.json();
+    const [row] = await sql`
+      INSERT INTO "EFINANCIANET_DB"."PLD_ALERTAS_INTERNAS"
+        (no_alerta, fecha, cliente, tipo, estatus, descripcion, resultado)
+      VALUES (${b.noAlerta}, ${b.fecha}, ${b.cliente}, ${b.tipo}, ${b.estatus ?? 'Pendiente'},
+              ${b.descripcion ?? ''}, ${b.resultado ?? ''})
+      RETURNING *`;
+    return c.json({ data: row });
+  } catch (e: any) { return c.json({ error: e.message }, 500); }
+});
+app.put("/pld/alertas-internas/:id", async (c: any) => {
+  try {
+    const id = Number(c.req.param("id"));
+    const b = await c.req.json();
+    const [row] = await sql`
+      UPDATE "EFINANCIANET_DB"."PLD_ALERTAS_INTERNAS"
+      SET no_alerta=${b.noAlerta}, fecha=${b.fecha}, cliente=${b.cliente}, tipo=${b.tipo},
+          estatus=${b.estatus}, descripcion=${b.descripcion ?? ''}, resultado=${b.resultado ?? ''}
+      WHERE id=${id} RETURNING *`;
+    return c.json({ data: row });
+  } catch (e: any) { return c.json({ error: e.message }, 500); }
+});
+app.delete("/pld/alertas-internas/:id", async (c: any) => {
+  try {
+    const id = Number(c.req.param("id"));
+    await sql`DELETE FROM "EFINANCIANET_DB"."PLD_ALERTAS_INTERNAS" WHERE id=${id}`;
+    return c.json({ success: true });
+  } catch (e: any) { return c.json({ error: e.message }, 500); }
+});
+
+// ── PLD Reportes CNBV ────────────────────────────────────────────────
+app.get("/pld/reportes-cnbv", async (c: any) => {
+  try {
+    const rows = await sql`SELECT * FROM "EFINANCIANET_DB"."PLD_REPORTES_CNBV" ORDER BY id DESC`;
+    return c.json({ data: rows });
+  } catch (e: any) { return c.json({ error: e.message }, 500); }
+});
+app.post("/pld/reportes-cnbv", async (c: any) => {
+  try {
+    const b = await c.req.json();
+    const [row] = await sql`
+      INSERT INTO "EFINANCIANET_DB"."PLD_REPORTES_CNBV"
+        (folio, fecha, tipo, cliente, monto, estatus, enviado)
+      VALUES (${b.folio}, ${b.fecha}, ${b.tipo}, ${b.cliente}, ${b.monto ?? ''},
+              ${b.estatus ?? 'Pendiente'}, ${b.enviado ?? 'No'})
+      RETURNING *`;
+    return c.json({ data: row });
+  } catch (e: any) { return c.json({ error: e.message }, 500); }
+});
+app.put("/pld/reportes-cnbv/:id", async (c: any) => {
+  try {
+    const id = Number(c.req.param("id"));
+    const b = await c.req.json();
+    const [row] = await sql`
+      UPDATE "EFINANCIANET_DB"."PLD_REPORTES_CNBV"
+      SET folio=${b.folio}, fecha=${b.fecha}, tipo=${b.tipo}, cliente=${b.cliente},
+          monto=${b.monto ?? ''}, estatus=${b.estatus}, enviado=${b.enviado ?? 'No'}
+      WHERE id=${id} RETURNING *`;
+    return c.json({ data: row });
+  } catch (e: any) { return c.json({ error: e.message }, 500); }
+});
+app.delete("/pld/reportes-cnbv/:id", async (c: any) => {
+  try {
+    const id = Number(c.req.param("id"));
+    await sql`DELETE FROM "EFINANCIANET_DB"."PLD_REPORTES_CNBV" WHERE id=${id}`;
+    return c.json({ success: true });
+  } catch (e: any) { return c.json({ error: e.message }, 500); }
+});
+
+// ── PLD Calificaciones ───────────────────────────────────────────────
+app.get("/pld/calificaciones", async (c: any) => {
+  try {
+    const rows = await sql`SELECT * FROM "EFINANCIANET_DB"."PLD_CALIFICACIONES" ORDER BY id DESC`;
+    return c.json({ data: rows });
+  } catch (e: any) { return c.json({ error: e.message }, 500); }
+});
+app.post("/pld/calificaciones", async (c: any) => {
+  try {
+    const b = await c.req.json();
+    const existing = await sql`
+      SELECT id FROM "EFINANCIANET_DB"."PLD_CALIFICACIONES"
+      WHERE no_cliente=${b.noCliente} LIMIT 1`;
+    if (existing.length > 0) {
+      const [row] = await sql`
+        UPDATE "EFINANCIANET_DB"."PLD_CALIFICACIONES"
+        SET nombre_cliente=${b.nombreCliente}, cliente_rfc=${b.clienteRFC ?? ''},
+            cliente_personalidad=${b.clientePersonalidad ?? ''}, cliente_sucursal=${b.clienteSucursal ?? ''},
+            fecha_calificacion=${b.fechaCalificacion ?? ''}, actividad_economica=${b.actividadEconomica ?? 0},
+            residencia=${b.residencia ?? 0}, nacionalidad=${b.nacionalidad ?? 0},
+            tipo_persona=${b.tipoPersona ?? 0}, pep_listas_negras=${b.pepListasNegras ?? 0},
+            calificacion_total=${b.calificacionTotal ?? 0}, nivel_riesgo=${b.nivelRiesgo ?? 'Bajo'}
+        WHERE no_cliente=${b.noCliente} RETURNING *`;
+      return c.json({ data: row });
+    }
+    const [row] = await sql`
+      INSERT INTO "EFINANCIANET_DB"."PLD_CALIFICACIONES"
+        (cliente_id, no_cliente, nombre_cliente, cliente_rfc, cliente_personalidad, cliente_sucursal,
+         fecha_calificacion, actividad_economica, residencia, nacionalidad, tipo_persona,
+         pep_listas_negras, calificacion_total, nivel_riesgo)
+      VALUES (${b.clienteId ?? null}, ${b.noCliente}, ${b.nombreCliente}, ${b.clienteRFC ?? ''},
+              ${b.clientePersonalidad ?? ''}, ${b.clienteSucursal ?? ''}, ${b.fechaCalificacion ?? ''},
+              ${b.actividadEconomica ?? 0}, ${b.residencia ?? 0}, ${b.nacionalidad ?? 0},
+              ${b.tipoPersona ?? 0}, ${b.pepListasNegras ?? 0}, ${b.calificacionTotal ?? 0},
+              ${b.nivelRiesgo ?? 'Bajo'})
+      RETURNING *`;
+    return c.json({ data: row });
+  } catch (e: any) { return c.json({ error: e.message }, 500); }
+});
+app.delete("/pld/calificaciones/:id", async (c: any) => {
+  try {
+    const id = Number(c.req.param("id"));
+    await sql`DELETE FROM "EFINANCIANET_DB"."PLD_CALIFICACIONES" WHERE id=${id}`;
+    return c.json({ success: true });
+  } catch (e: any) { return c.json({ error: e.message }, 500); }
+});
+
+// ── PLD Dashboard stats ──────────────────────────────────────────────
+app.get("/pld/dashboard-stats", async (c: any) => {
+  try {
+    const [alertasStats] = await sql`
+      SELECT
+        COUNT(*) FILTER (WHERE estatus != 'Atendida') AS alertas_activas,
+        COUNT(*) FILTER (WHERE tipo_alerta = 'Relevante') AS alertas_relevantes,
+        COUNT(*) FILTER (WHERE tipo_alerta = 'Inusual') AS alertas_inusuales,
+        COUNT(*) FILTER (WHERE tipo_alerta = 'Preocupante') AS alertas_preoc
+      FROM "EFINANCIANET_DB"."PLD_ALERTAS"
+    `;
+    const [internasStats] = await sql`
+      SELECT
+        COUNT(*) AS total,
+        COUNT(*) FILTER (WHERE estatus = 'Pendiente') AS pendientes
+      FROM "EFINANCIANET_DB"."PLD_ALERTAS_INTERNAS"
+    `;
+    const [reportesStats] = await sql`
+      SELECT COUNT(*) FILTER (WHERE estatus = 'Pendiente') AS pendientes
+      FROM "EFINANCIANET_DB"."PLD_REPORTES_CNBV"
+    `;
+    const [calStats] = await sql`
+      SELECT
+        COUNT(*) AS total,
+        COUNT(*) FILTER (WHERE nivel_riesgo = 'Bajo') AS bajo,
+        COUNT(*) FILTER (WHERE nivel_riesgo = 'Medio') AS medio,
+        COUNT(*) FILTER (WHERE nivel_riesgo = 'Alto') AS alto
+      FROM "EFINANCIANET_DB"."PLD_CALIFICACIONES"
+    `;
+    const recentAlertas = await sql`
+      SELECT id, no_alerta, fecha AS fecha_creacion, cliente, tipo_alerta, estatus, monto
+      FROM "EFINANCIANET_DB"."PLD_ALERTAS" ORDER BY id DESC LIMIT 8
+    `;
+    return c.json({
+      alertasActivas:     Number(alertasStats.alertas_activas),
+      alertasRelevantes:  Number(alertasStats.alertas_relevantes),
+      alertasInusuales:   Number(alertasStats.alertas_inusuales),
+      alertasPreoc:       Number(alertasStats.alertas_preoc),
+      internasTotal:      Number(internasStats.total),
+      internasPendientes: Number(internasStats.pendientes),
+      reportesPendientes: Number(reportesStats.pendientes),
+      calTotal:           Number(calStats.total),
+      calBajo:            Number(calStats.bajo),
+      calMedio:           Number(calStats.medio),
+      calAlto:            Number(calStats.alto),
+      recentAlertas,
+    });
+  } catch (e: any) { return c.json({ error: e.message }, 500); }
+});
+
+
+// ═══════════════════════════════════════════════════════════════════
 // SERVE — FORCE REDEPLOY 2026-02-25T12:00:00Z
 // ═══════════════════════════════════════════════════════════════════
-const DEPLOY_TIMESTAMP = "2026-05-22T18:00:00Z-v43.0-CONTABLE-GL-FIX";
+const DEPLOY_TIMESTAMP = "2026-05-26T10:00:00Z-v53.0-PLD-DB";
 console.log(`[SERVER BOOT] Routes registered — deploy=${DEPLOY_TIMESTAMP}, starting Deno.serve...`);
 
 // ── Headers CORS universales (reutilizados en preflight y errores fatales) ──

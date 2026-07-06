@@ -6,7 +6,7 @@ import { useState, useEffect } from 'react';
 import { DefaultTab } from './DefaultTab';
 import { AmortizacionesTab } from './AmortizacionesTab';
 import { AvisosVencimientoTab } from './AvisosVencimientoTab';
-import { PagosTab } from './PagosTab';
+import { MovimientosTab } from '../cuentas-ahorro/MovimientosTab';
 import { SolicitudesExtTab } from './SolicitudesExtTab';
 import { GeneracionContableTab } from './GeneracionContableTab';
 import { fetchMontoAut } from '../../hooks/useCarteraDB';
@@ -156,7 +156,7 @@ export function CarteraForm({ credito, mode, onBack }: Props) {
         )}
         {activeTab === 'movimientos' && (
           <div className="bg-white border border-gray-300 p-4">
-            <PagosTab solicitudId={credito.id} noSol={credito.noSol} montoAut={montoActual} />
+            <MovimientosTab mode={isRO ? 'ver' : 'editar'} accountId={credito.id} />
           </div>
         )}
         {activeTab === 'solicitudes-ext' && (

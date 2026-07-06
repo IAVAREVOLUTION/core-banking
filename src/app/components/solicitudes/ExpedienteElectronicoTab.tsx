@@ -20,7 +20,7 @@ import { supabase } from '../../lib/supabaseClient';
  * Se usa la versión 3.11.174 estable, sin worker (main thread only).
  */
 import {
-  DocumentoCargado, RequisitoProducto,
+  DocumentoCargado, RequisitoProducto, ElementoRequerido,
   saveToSession, loadFromSession, loadFromSavedStore, generateId,
   MOCK_REQUISITOS_PRODUCTO, MOCK_DOCUMENTOS,
 } from './solicitudCreditoStore';
@@ -422,6 +422,7 @@ interface CatalogoDocItem {
   nombre: string;
   activo: boolean;
   promptIA: string;
+  elementosRequeridos?: ElementoRequerido[];
 }
 
 function getPromptIAFromCatalogo(claveDocumento: string | undefined, catalogo: CatalogoDocItem[]): string {
@@ -433,6 +434,12 @@ function getPromptIAFromCatalogo(claveDocumento: string | undefined, catalogo: C
   }
   console.log(`[ExpedienteTab] getPromptIAFromCatalogo: clave="${claveDocumento}" → NO ENCONTRADO en catálogo`);
   return '';
+}
+
+function getElementosFromCatalogo(claveDocumento: string | undefined, catalogo: CatalogoDocItem[]): ElementoRequerido[] | undefined {
+  if (!claveDocumento) return undefined;
+  const match = catalogo.find(d => d.clave === claveDocumento);
+  return match?.elementosRequeridos;
 }
 
 /** Mapea una fila de data.expedientesElectronicos → RequisitoProducto */
@@ -459,6 +466,7 @@ function mapExpedienteToLocal(row: ExpedienteDBRow, idx: number, catalogo: Catal
     area: row.area || 'General',
     obligatorio: row.obligatorio ?? true,
     promptIA,
+    elementosRequeridos: getElementosFromCatalogo(claveDoc, catalogo),
   };
 }
 
@@ -504,25 +512,12 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
   // ── State: catálogo de documentos (para obtener promptIA) ──
   const [catalogoDocs, setCatalogoDocs] = useState<CatalogoDocItem[]>([]);
 
-  // ── Cargar catálogo de documentos ──
+  // ── Cargar catálogo de documentos — siempre desde DB, sin caché ──
   useEffect(() => {
-    const CATALOGO_CACHE_KEY = 'solicitud_catalogo_documentos_cache';
-    const CACHE_EXPIRY = 5 * 60 * 1000; // 5 minutos
-
     const loadCatalogo = async () => {
-      // 1) Intentar cache
-      try {
-        const cached = sessionStorage.getItem(CATALOGO_CACHE_KEY);
-        if (cached) {
-          const { data, timestamp } = JSON.parse(cached);
-          if (Date.now() - timestamp < CACHE_EXPIRY) {
-            setCatalogoDocs(data);
-            return;
-          }
-        }
-      } catch { /* ignore */ }
+      // Limpiar cualquier caché anterior para garantizar datos frescos
+      try { sessionStorage.removeItem('solicitud_catalogo_documentos_cache'); } catch { /* ignore */ }
 
-      // 2) Fetch desde API
       try {
         const res = await fetch(`${API_BASE}/catalogos/documentos`, {
           headers: { 'Authorization': `Bearer ${publicAnonKey}` },
@@ -530,8 +525,7 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
         if (res.ok) {
           const json = await res.json();
           const rows: any[] = json.data || json || [];
-          
-          // Helper para extraer promptIA (maneja objeto anidado o string directo)
+
           const extractPromptIA = (data: any): string => {
             if (!data) return '';
             if (typeof data.promptIA === 'object' && data.promptIA !== null) {
@@ -548,21 +542,12 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
               nombre: r.data?.nombre || '',
               activo: r.data?.activo !== false,
               promptIA: extractPromptIA(r.data),
+              elementosRequeridos: Array.isArray(r.data?.elementosRequeridos) ? r.data.elementosRequeridos : undefined,
             }))
             .filter((d: CatalogoDocItem) => d.activo);
 
-          console.log(`${LOG} Catálogo documentos cargado: ${items.length} items`);
-          console.log(`${LOG} Catálogo con promptIA:`, items.filter(i => i.promptIA).length);
-          
+          console.log(`${LOG} Catálogo documentos cargado (sin caché): ${items.length} items, con promptIA: ${items.filter(i => i.promptIA).length}`);
           setCatalogoDocs(items);
-          
-          // Guardar en cache
-          try {
-            sessionStorage.setItem(CATALOGO_CACHE_KEY, JSON.stringify({
-              data: items,
-              timestamp: Date.now(),
-            }));
-          } catch { /* ignore */ }
         }
       } catch (err) {
         console.warn(`${LOG} Error cargando catálogo de documentos:`, err);
@@ -1076,16 +1061,23 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
       // El prompt de la fase se usa ÚNICAMENTE al cambiar de fase ("Enviar Fase").
       let promptAEnviar = reqInfo?.promptIA || `Verificar que el documento sea un "${doc.tipoDocumento}" legítimo y legible.`;
       const promptFuente = reqInfo?.promptIA ? 'DOCUMENTO (catálogo)' : 'FALLBACK';
-      // Enriquecer el prompt con datos del cliente para documentos de identidad
-      const tipoDocNorm = (doc.tipoDocumento || '').toLowerCase();
-      const esINE = tipoDocNorm.includes('ine') || tipoDocNorm.includes('ife') || tipoDocNorm.includes('credencial') || tipoDocNorm.includes('elector');
-      const esCSF = tipoDocNorm.includes('situaci') || tipoDocNorm.includes('fiscal') || tipoDocNorm.includes('rfc') || tipoDocNorm.includes('sat');
-      if (esINE && curpCliente) {
-        promptAEnviar += `\n\nDATOS DEL CLIENTE REGISTRADO:\n- CURP del cliente: ${curpCliente}\nVerifica que el CURP visible en el documento coincida EXACTAMENTE con el CURP registrado del cliente. Si no coincide, el documento debe ser RECHAZADO.`;
+
+      // Enriquecer prompt con elementos requeridos del catálogo
+      const elementos: ElementoRequerido[] = reqInfo?.elementosRequeridos || [];
+      if (elementos.length > 0) {
+        const obligatorios = elementos.filter(e => e.obligatorio).map(e => e.elemento);
+        const opcionales   = elementos.filter(e => !e.obligatorio).map(e => e.elemento);
+        if (obligatorios.length > 0) {
+          promptAEnviar += `\n\nELEMENTOS OBLIGATORIOS — Si alguno no está claramente visible, devuelve valido: false:\n` +
+            obligatorios.map(e => `- ${e}`).join('\n');
+        }
+        if (opcionales.length > 0) {
+          promptAEnviar += `\n\nELEMENTOS OPCIONALES — Registra si están presentes en "extraido":\n` +
+            opcionales.map(e => `- ${e}`).join('\n');
+        }
+        promptAEnviar += `\n\nSi CUALQUIER elemento obligatorio no está claramente visible en el documento, devuelve valido: false e incluye en "motivos" qué elemento faltó.`;
       }
-      if (esCSF && rfcCliente) {
-        promptAEnviar += `\n\nDATOS DEL CLIENTE REGISTRADO:\n- RFC del cliente: ${rfcCliente}\nVerifica que el RFC visible en el documento coincida EXACTAMENTE con el RFC registrado del cliente. Si no coincide, el documento debe ser RECHAZADO.`;
-      }
+      // No se inyecta lógica adicional — el prompt del catálogo es la única fuente de verdad
       console.log(`${LOG} [IA] Enviando a /validar-documento-ia`);
       console.log(`${LOG} [IA]   - storagePath: ${doc.storagePath || '(n/a)'}`);
       console.log(`${LOG} [IA]   - tipoDocumento: ${doc.tipoDocumento}`);

@@ -127,6 +127,25 @@ export function PartesRelacionadasTab({ mode, solicitudId, montoSolicitado, clie
   };
 
   const handleGuardarParte = (parte: ParteRelacionada) => {
+    // Validar beneficiarios: si hay beneficiarios, la suma debe ser exactamente 100
+    if (parte.tipoRelacion === 'Beneficiario') {
+      const pct = parseFloat(parte.participacion);
+      if (!parte.participacion || isNaN(pct) || pct <= 0) {
+        toast.error('El porcentaje de participación es obligatorio y debe ser mayor a 0');
+        return;
+      }
+      // Calcular suma con el nuevo/editado valor
+      const otrasBeneficiarias = partes.filter(
+        (p, i) => p.tipoRelacion === 'Beneficiario' && (editIndex === null || i !== editIndex)
+      );
+      const sumaOtras = otrasBeneficiarias.reduce((acc, p) => acc + (parseFloat(p.participacion) || 0), 0);
+      const sumaTotal = sumaOtras + pct;
+      if (sumaTotal > 100) {
+        toast.error(`La suma de porcentajes de beneficiarios sería ${sumaTotal}%. No puede superar el 100%.`);
+        return;
+      }
+    }
+
     if (editIndex !== null) {
       setPartes(prev => prev.map((p, i) => i === editIndex ? parte : p));
       toast.success('Parte relacionada actualizada');
@@ -136,6 +155,11 @@ export function PartesRelacionadasTab({ mode, solicitudId, montoSolicitado, clie
     }
     setShowModal(false);
   };
+
+  // Suma actual de porcentajes de beneficiarios
+  const beneficiarios = partes.filter(p => p.tipoRelacion === 'Beneficiario');
+  const sumaBeneficiarios = beneficiarios.reduce((acc, p) => acc + (parseFloat(p.participacion) || 0), 0);
+  const beneficiariosOk = beneficiarios.length === 0 || sumaBeneficiarios === 100;
 
   const getTipoRelacionLabel = (value: string) => {
     return TIPOS_RELACION.find(t => t.value === value)?.label || value;
@@ -165,6 +189,26 @@ export function PartesRelacionadasTab({ mode, solicitudId, montoSolicitado, clie
           </button>
         )}
       </div>
+
+      {/* Indicador de participación de beneficiarios */}
+      {beneficiarios.length > 0 && (
+        <div className={`mb-3 px-3 py-2 text-xs flex items-center gap-2 border ${
+          beneficiariosOk
+            ? 'bg-green-50 border-green-200 text-green-700'
+            : 'bg-red-50 border-red-200 text-red-700'
+        }`}>
+          {beneficiariosOk ? (
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2.5 7l3 3 6-6" stroke="#2E7D32" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+          ) : (
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="6" stroke="#C62828" strokeWidth="1.5"/><path d="M7 4v3.5M7 10h.01" stroke="#C62828" strokeWidth="1.5" strokeLinecap="round"/></svg>
+          )}
+          <span>
+            Beneficiarios: {beneficiarios.length} registrado{beneficiarios.length !== 1 ? 's' : ''} —{' '}
+            Suma de participación: <strong>{sumaBeneficiarios}%</strong>
+            {!beneficiariosOk && ' — Debe ser exactamente 100%'}
+          </span>
+        </div>
+      )}
 
       {/* Lista de partes */}
       {partes.length === 0 ? (
@@ -236,6 +280,8 @@ export function PartesRelacionadasTab({ mode, solicitudId, montoSolicitado, clie
       {showModal && (
         <ModalParteRelacionada
           parte={editIndex !== null ? partes[editIndex] : null}
+          editIndex={editIndex}
+          partesActuales={partes}
           personasDisponibles={personasDisponibles}
           loadingPersonas={loadingPersonas}
           rolAsignado={rolAsignado}
@@ -249,6 +295,8 @@ export function PartesRelacionadasTab({ mode, solicitudId, montoSolicitado, clie
 
 interface ModalProps {
   parte: ParteRelacionada | null;
+  editIndex: number | null;
+  partesActuales: ParteRelacionada[];
   personasDisponibles: PersonaRelacionadaDropdown[];
   loadingPersonas: boolean;
   rolAsignado: { rol: string; nombre: string };
@@ -256,7 +304,7 @@ interface ModalProps {
   onClose: () => void;
 }
 
-function ModalParteRelacionada({ parte, personasDisponibles, loadingPersonas, rolAsignado, onSave, onClose }: ModalProps) {
+function ModalParteRelacionada({ parte, editIndex, partesActuales, personasDisponibles, loadingPersonas, rolAsignado, onSave, onClose }: ModalProps) {
   const [formData, setFormData] = useState({
     tipoRelacion: parte?.tipoRelacion || TIPOS_RELACION[0].value,
     personaId: '',
@@ -290,10 +338,27 @@ function ModalParteRelacionada({ parte, personasDisponibles, loadingPersonas, ro
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!formData.nombreCompleto.trim()) {
       toast.error('Seleccione una persona o ingrese el nombre');
       return;
+    }
+
+    // Validar participación de beneficiarios
+    if (formData.tipoRelacion === 'Beneficiario') {
+      const pct = Number.parseFloat(formData.participacion);
+      if (!formData.participacion || Number.isNaN(pct) || pct <= 0) {
+        toast.error('El porcentaje de participación es obligatorio y debe ser mayor a 0');
+        return;
+      }
+      const sumaOtros = partesActuales
+        .filter((p, i) => p.tipoRelacion === 'Beneficiario' && (editIndex === null || i !== editIndex))
+        .reduce((acc, p) => acc + (Number.parseFloat(p.participacion) || 0), 0);
+      const sumaTotal = sumaOtros + pct;
+      if (sumaTotal > 100) {
+        toast.error(`La suma de beneficiarios quedaría en ${sumaTotal}%. No puede superar el 100%.`);
+        return;
+      }
     }
 
     onSave({
@@ -384,14 +449,21 @@ function ModalParteRelacionada({ parte, personasDisponibles, loadingPersonas, ro
             <div>
               <label className="block text-xs font-medium text-gray-700 mb-1">
                 Participación (%)
+                {formData.tipoRelacion === 'Beneficiario' && <span className="text-red-500 ml-1">*</span>}
               </label>
               <input
-                type="text"
+                type="number"
+                min="0.01"
+                max="100"
+                step="0.01"
                 value={formData.participacion}
                 onChange={e => setFormData(prev => ({ ...prev, participacion: e.target.value }))}
                 placeholder="Ej: 50"
                 className="w-full px-3 py-2 text-xs border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-[#4A6FA5]"
               />
+              {formData.tipoRelacion === 'Beneficiario' && (
+                <p className="text-[10px] text-gray-400 mt-1">La suma de todos los beneficiarios debe ser exactamente 100%.</p>
+              )}
             </div>
 
             {/* Datos de contacto (solo lectura) */}

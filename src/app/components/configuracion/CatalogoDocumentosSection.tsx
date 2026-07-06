@@ -14,11 +14,19 @@ import { projectId, publicAnonKey } from '/utils/supabase/info';
 // TIPOS — Estructura de J_CATALOGOS: { id: uuid, type: varchar, data: jsonb }
 // El JSONB `data` contiene los campos del documento
 // ═══════════════════════════════════════════════════════════════════
+interface ElementoRequerido {
+  id: string;
+  elemento: string;
+  /** true → ausencia del elemento rechaza el documento */
+  obligatorio: boolean;
+}
+
 interface DocumentoCatalogoData {
   clave: string;
   nombre: string;
   descripcion: string;
   promptIA: string;
+  elementosRequeridos?: ElementoRequerido[];
   activo: boolean;
   fechaCreacion: string;
   fechaModificacion: string;
@@ -38,6 +46,7 @@ interface DocumentoCatalogo {
   nombre: string;
   descripcion: string;
   promptIA: string;
+  elementosRequeridos: ElementoRequerido[];
   activo: boolean;
   fechaCreacion: string;
   fechaModificacion: string;
@@ -82,6 +91,7 @@ function rowToFlat(row: DocumentoCatalogoRow): DocumentoCatalogo {
     nombre: d.nombre || '',
     descripcion: d.descripcion || '',
     promptIA: extractPromptIA(d),
+    elementosRequeridos: Array.isArray(d.elementosRequeridos) ? d.elementosRequeridos : [],
     activo: d.activo !== false,
     fechaCreacion: d.fechaCreacion || '',
     fechaModificacion: d.fechaModificacion || '',
@@ -94,6 +104,7 @@ function flatToData(item: DocumentoCatalogo): DocumentoCatalogoData {
     nombre: item.nombre,
     descripcion: item.descripcion,
     promptIA: item.promptIA,
+    elementosRequeridos: item.elementosRequeridos,
     activo: item.activo,
     fechaCreacion: item.fechaCreacion,
     fechaModificacion: item.fechaModificacion,
@@ -379,6 +390,7 @@ export function CatalogoDocumentosSection() {
     nombre: '',
     descripcion: '',
     promptIA: '',
+    elementosRequeridos: [] as ElementoRequerido[],
     activo: true,
   });
 
@@ -398,7 +410,7 @@ export function CatalogoDocumentosSection() {
 
   // ─── CRUD handlers ─────────────────────────────────────────────
   const handleNew = () => {
-    setFormData({ clave: '', nombre: '', descripcion: '', promptIA: '', activo: true });
+    setFormData({ clave: '', nombre: '', descripcion: '', promptIA: '', elementosRequeridos: [], activo: true });
     setSelectedItem(null);
     setMode('create');
   };
@@ -409,6 +421,7 @@ export function CatalogoDocumentosSection() {
       nombre: item.nombre,
       descripcion: item.descripcion,
       promptIA: item.promptIA,
+      elementosRequeridos: item.elementosRequeridos || [],
       activo: item.activo,
     });
     setSelectedItem(item);
@@ -421,6 +434,7 @@ export function CatalogoDocumentosSection() {
       nombre: item.nombre,
       descripcion: item.descripcion,
       promptIA: item.promptIA,
+      elementosRequeridos: item.elementosRequeridos || [],
       activo: item.activo,
     });
     setSelectedItem(item);
@@ -475,6 +489,7 @@ export function CatalogoDocumentosSection() {
           nombre: formData.nombre.trim(),
           descripcion: formData.descripcion.trim(),
           promptIA: formData.promptIA.trim(),
+          elementosRequeridos: formData.elementosRequeridos,
           activo: formData.activo,
           fechaCreacion: now,
           fechaModificacion: now,
@@ -490,12 +505,19 @@ export function CatalogoDocumentosSection() {
           nombre: formData.nombre.trim(),
           descripcion: formData.descripcion.trim(),
           promptIA: formData.promptIA.trim(),
+          elementosRequeridos: formData.elementosRequeridos,
           activo: formData.activo,
           fechaModificacion: now,
         };
         await db.update(updated);
         toast.success('Documento actualizado en BD', { description: `${updated.clave} guardado en J_CATALOGOS.` });
       }
+      // Invalidar todos los cachés del catálogo para que el Expediente tome los datos nuevos
+      try {
+        sessionStorage.removeItem(STORAGE_KEY);
+        sessionStorage.removeItem('solicitud_catalogo_documentos_cache');
+        sessionStorage.removeItem('catalogo_documentos_nombres_v1');
+      } catch { /* */ }
       setMode('list');
       setSelectedItem(null);
     } finally {
@@ -712,7 +734,7 @@ export function CatalogoDocumentosSection() {
                 value={formData.promptIA}
                 onChange={(e) => setFormData(p => ({ ...p, promptIA: e.target.value }))}
                 disabled={isViewMode}
-                placeholder="Describe detalladamente el contenido esperado del documento para que la IA pueda validarlo y clasificarlo correctamente..."
+                placeholder="Describe qué es este documento y qué debe contener. Ej: 'Verifica que sea una Identificación Oficial vigente (INE/IFE). Debe mostrar claramente la fotografía del titular, nombre completo y CURP.' Los elementos específicos a verificar se configuran en la tabla de abajo."
                 className={`${inputClassName()} resize-none font-mono text-[11px] leading-relaxed`}
               />
               <div className="flex justify-between mt-0.5">
@@ -721,6 +743,104 @@ export function CatalogoDocumentosSection() {
                   {formData.promptIA.length}/2000
                 </span>
               </div>
+            </div>
+
+            {/* Elementos a Verificar */}
+            <div className="bg-[#E7E6E6] px-3 py-1.5 mb-4 border-l-4 border-[#2E5C91] rounded-r flex items-center justify-between">
+              <span className="text-[11px] font-semibold text-gray-700 uppercase tracking-wide">Elementos a Verificar por IA</span>
+              {!isViewMode && (
+                <button
+                  type="button"
+                  onClick={() => setFormData(p => ({
+                    ...p,
+                    elementosRequeridos: [
+                      ...p.elementosRequeridos,
+                      { id: `elem-${Date.now()}`, elemento: '', obligatorio: true },
+                    ],
+                  }))}
+                  className="flex items-center gap-1 px-2 py-0.5 bg-[#2E5C91] text-white text-[10px] rounded hover:bg-[#1e4070]"
+                >
+                  <Plus size={11} /> Agregar elemento
+                </button>
+              )}
+            </div>
+
+            <div className="mb-6">
+              <p className="text-[10px] text-gray-500 mb-2">
+                Define qué elementos debe encontrar la IA en el documento. Los marcados como <strong>Obligatorio</strong> rechazan el documento si no están presentes.
+              </p>
+              {formData.elementosRequeridos.length === 0 ? (
+                <p className="text-[11px] text-gray-400 italic py-2">Sin elementos definidos — la IA solo usará el prompt general.</p>
+              ) : (
+                <div className="border border-gray-300 overflow-hidden">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr style={{ backgroundColor: '#D0D0D0' }} className="border-b border-gray-300">
+                        <th className="px-3 py-2 text-left text-[10px] text-gray-700 font-semibold border-r border-gray-300">ELEMENTO A VERIFICAR</th>
+                        <th className="px-3 py-2 text-center text-[10px] text-gray-700 font-semibold border-r border-gray-300 w-28">OBLIGATORIO</th>
+                        {!isViewMode && <th className="px-2 py-2 w-8" />}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {formData.elementosRequeridos.map((elem, idx) => (
+                        <tr key={elem.id} style={{ backgroundColor: idx % 2 === 0 ? '#FFFFFF' : '#EEEEEE' }} className="border-b border-gray-200">
+                          <td className="px-2 py-1.5 border-r border-gray-200">
+                            {isViewMode ? (
+                              <span className="text-gray-700">{elem.elemento || <em className="text-gray-400">Sin texto</em>}</span>
+                            ) : (
+                              <input
+                                type="text"
+                                value={elem.elemento}
+                                onChange={e => setFormData(p => ({
+                                  ...p,
+                                  elementosRequeridos: p.elementosRequeridos.map((el, i) =>
+                                    i === idx ? { ...el, elemento: e.target.value } : el
+                                  ),
+                                }))}
+                                placeholder="Ej: Firma del titular, Fotografía, CURP visible..."
+                                className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-[#2E5C91]"
+                              />
+                            )}
+                          </td>
+                          <td className="px-3 py-1.5 text-center border-r border-gray-200">
+                            <input
+                              type="checkbox"
+                              checked={elem.obligatorio}
+                              disabled={isViewMode}
+                              onChange={e => setFormData(p => ({
+                                ...p,
+                                elementosRequeridos: p.elementosRequeridos.map((el, i) =>
+                                  i === idx ? { ...el, obligatorio: e.target.checked } : el
+                                ),
+                              }))}
+                              className="w-3.5 h-3.5 accent-[#2E5C91]"
+                              title={elem.obligatorio ? 'Obligatorio — su ausencia rechaza el documento' : 'Opcional — solo se registra si está presente'}
+                            />
+                            <span className={`ml-1.5 text-[10px] ${elem.obligatorio ? 'text-red-600 font-medium' : 'text-gray-400'}`}>
+                              {elem.obligatorio ? 'Sí' : 'No'}
+                            </span>
+                          </td>
+                          {!isViewMode && (
+                            <td className="px-2 py-1.5 text-center">
+                              <button
+                                type="button"
+                                onClick={() => setFormData(p => ({
+                                  ...p,
+                                  elementosRequeridos: p.elementosRequeridos.filter((_, i) => i !== idx),
+                                }))}
+                                className="text-red-500 hover:text-red-700"
+                                title="Eliminar elemento"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            </td>
+                          )}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
 
             {/* Estado */}

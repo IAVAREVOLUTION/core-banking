@@ -201,7 +201,7 @@ export function formatCurrency(v: number | string): string {
 }
 export function parseCurrency(v: string): string { return v.replace(/[^0-9.-]/g, ''); }
 
-let _nextCR = 9;
+let _nextCR = 13;
 export function getNextCreditoId(): string { return `CR-${String(_nextCR).padStart(3, '0')}`; }
 export function consumeCreditoId(): string { const id = `CR-${String(_nextCR).padStart(3, '0')}`; _nextCR++; return id; }
 
@@ -233,10 +233,181 @@ export const MOCK_CREDITOS: CreditoListItem[] = [
   { id: 6, noCredito: 'CR-006', noCliente: 'CLI-006', cliente: 'Carlos Perez Leon', fechaCredito: '21/08/23', montoSolicitado: 10000, montoAutorizado: 10000, lineaProducto: 'Crédito', sublinea: 'Crédito individual', producto: 'Crédito Personal', sucursal: 'Toluca', estatusCredito: 'En revisión', fechaInicio: '21/08/23', fechaFin: '21/08/24' },
   { id: 7, noCredito: 'CR-007', noCliente: 'CLI-007', cliente: 'Juan Mendoza Anaya', fechaCredito: '17/08/23', montoSolicitado: 1100, montoAutorizado: 1100, lineaProducto: 'Crédito', sublinea: 'Crédito individual', producto: 'Crédito Personal', sucursal: 'San Luis Potosí', estatusCredito: 'Pendiente', fechaInicio: '17/08/23', fechaFin: '17/08/24' },
   { id: 8, noCredito: 'CR-008', noCliente: 'CLI-008', cliente: 'INHEM DE MEXICO S.A. DE C.V.', fechaCredito: '21/08/23', montoSolicitado: 15600, montoAutorizado: 15600, lineaProducto: 'Crédito', sublinea: 'Crédito individual', producto: 'Crédito Personal', sucursal: 'CDMX', estatusCredito: 'Autorizado', fechaInicio: '21/08/23', fechaFin: '21/08/24' },
+  { id: 9, noCredito: 'CR-009', noCliente: 'CLI-001', cliente: 'Juan Perez Perez', fechaCredito: '15/03/25', montoSolicitado: 1850000, montoAutorizado: 1850000, lineaProducto: 'Crédito', sublinea: 'Crédito Hipotecario', producto: 'Crédito Simple', sucursal: 'CDMX', estatusCredito: 'Autorizado', fechaInicio: '15/03/25', fechaFin: '15/03/45' },
+  { id: 10, noCredito: 'CR-010', noCliente: 'CLI-001', cliente: 'Juan Perez Perez', fechaCredito: '20/04/25', montoSolicitado: 150000, montoAutorizado: 150000, lineaProducto: 'Crédito', sublinea: 'Crédito Quirografario', producto: 'Crédito Personal', sucursal: 'CDMX', estatusCredito: 'Autorizado', fechaInicio: '20/04/25', fechaFin: '20/04/27' },
+  { id: 11, noCredito: 'CR-011', noCliente: 'CLI-001', cliente: 'Juan Perez Perez', fechaCredito: '10/05/25', montoSolicitado: 320000, montoAutorizado: 320000, lineaProducto: 'Crédito', sublinea: 'Crédito Prendario', producto: 'Crédito Simple', sucursal: 'CDMX', estatusCredito: 'Autorizado', fechaInicio: '10/05/25', fechaFin: '10/05/29' },
+  { id: 12, noCredito: 'CR-012', noCliente: 'CLI-001', cliente: 'Juan Perez Perez', fechaCredito: '02/06/25', montoSolicitado: 85000, montoAutorizado: 85000, lineaProducto: 'Crédito', sublinea: 'Crédito por Scoring', producto: 'Crédito Personal', sucursal: 'CDMX', estatusCredito: 'Autorizado', fechaInicio: '02/06/25', fechaFin: '02/06/27' },
 ];
 
 // Pre-seed SAVED_DATA
 MOCK_CREDITOS.forEach(m => { saveToSavedStore(m.id, 'form', buildFormFromMock(m)); });
+
+// Override CR-009 — Crédito Hipotecario (Crédito Simple con Garantía Depto)
+saveToSavedStore<CreditoGarantia[]>(9, 'garantias', [
+  {
+    id: 9001,
+    tipo: 'Hipotecaria',
+    subtipo: 'Departamento',
+    descripcion: 'Departamento habitacional de 3 recámaras, 2 baños, 95 m², escritura pública inscrita en RPP, libre de gravamen. Avalúo vigente emitido por perito certificado CNBV.',
+    valorNominal: 2_500_000,
+    ubicacion: 'Calle Roble #247, Depto. 4B, Col. Jardines del Pedregal, Álvaro Obregón, CDMX',
+    estatus: 'Vigente',
+  },
+]);
+saveToSavedStore(9, 'form', {
+  ...buildFormFromMock(MOCK_CREDITOS.find(m => m.id === 9)!),
+  lineaProducto: 'Crédito',
+  sublinea: 'Crédito Hipotecario',
+  producto: 'Crédito Simple',
+  destinoCredito: 'Adquisición de departamento habitacional con garantía hipotecaria inscrita en RPP. Inmueble ubicado en Col. Jardines del Pedregal, CDMX.',
+  periodo: 'Mensual',
+  plazos: '240',
+  plazoAutorizado: '240',
+  tasaAutorizada: '10.50',
+  tasaMinima: '9.00',
+  tasaMaxima: '13.50',
+  tasaAutorizadaTasas: '10.50',
+  plazoMinimo: '60',
+  plazoMaximo: '360',
+  montoMinimo: '500000',
+  montoMaximo: '5000000',
+  empresaFondeadora: 'Crédito Mx',
+  estatusPago: 'Al corriente',
+  estatusCartera: 'Vigente',
+  moneda: 'MXN',
+});
+
+// Override CR-010 — Crédito Quirografario (Crédito Personal con Pagaré)
+saveToSavedStore(10, 'form', {
+  ...buildFormFromMock(MOCK_CREDITOS.find(m => m.id === 10)!),
+  lineaProducto: 'Crédito',
+  sublinea: 'Crédito Quirografario',
+  producto: 'Crédito Personal',
+  destinoCredito: 'Capital de trabajo personal. Crédito quirografario respaldado únicamente con pagaré firmado por el acreditado y aval con obligación solidaria.',
+  periodo: 'Mensual',
+  plazos: '24',
+  plazoAutorizado: '24',
+  tasaAutorizada: '22.00',
+  tasaMinima: '18.00',
+  tasaMaxima: '28.00',
+  tasaAutorizadaTasas: '22.00',
+  plazoMinimo: '6',
+  plazoMaximo: '36',
+  montoMinimo: '5000',
+  montoMaximo: '300000',
+  empresaFondeadora: 'Crédito Mx',
+  estatusPago: 'Al corriente',
+  estatusCartera: 'Vigente',
+  moneda: 'MXN',
+});
+saveToSavedStore<CreditoGarantia[]>(10, 'garantias', [
+  {
+    id: 10001,
+    tipo: 'Personal',
+    subtipo: 'Pagaré',
+    descripcion: 'Pagaré quirografario por $150,000.00 firmado por el acreditado ante dos testigos. Vence a la par con la última amortización del crédito. Documento original en resguardo.',
+    valorNominal: 150_000,
+    ubicacion: 'Resguardo documental — Sucursal CDMX Norte',
+    estatus: 'Vigente',
+  },
+  {
+    id: 10002,
+    tipo: 'Personal',
+    subtipo: 'Aval',
+    descripcion: 'Obligado solidario con ingresos verificados $35,000/mes. Sin notas negativas en Buró de Crédito. Firma de contrato de obligación solidaria ante fedatario.',
+    valorNominal: 150_000,
+    ubicacion: 'Resguardo documental — Sucursal CDMX Norte',
+    estatus: 'Vigente',
+  },
+]);
+
+// Override CR-011 — Crédito Prendario / Vehículo (Crédito Simple con Garantía Auto)
+saveToSavedStore(11, 'form', {
+  ...buildFormFromMock(MOCK_CREDITOS.find(m => m.id === 11)!),
+  lineaProducto: 'Crédito',
+  sublinea: 'Crédito Prendario',
+  producto: 'Crédito Simple',
+  destinoCredito: 'Adquisición de vehículo automotor. Crédito prendario con prenda sin desplazamiento sobre el vehículo financiado, endoso en garantía registrado ante REPUVE.',
+  periodo: 'Mensual',
+  plazos: '48',
+  plazoAutorizado: '48',
+  tasaAutorizada: '14.50',
+  tasaMinima: '12.00',
+  tasaMaxima: '18.00',
+  tasaAutorizadaTasas: '14.50',
+  plazoMinimo: '12',
+  plazoMaximo: '60',
+  montoMinimo: '50000',
+  montoMaximo: '800000',
+  empresaFondeadora: 'Crédito Mx',
+  estatusPago: 'Al corriente',
+  estatusCartera: 'Vigente',
+  moneda: 'MXN',
+});
+saveToSavedStore<CreditoGarantia[]>(11, 'garantias', [
+  {
+    id: 11001,
+    tipo: 'Prendaria',
+    subtipo: 'Automóvil',
+    descripcion: 'Vehículo sedán 2023, 4 puertas, transmisión automática, color blanco — prenda sin desplazamiento. Factura original en resguardo. Endoso en garantía registrado ante REPUVE. Seguro todo riesgo vigente con beneficiario endosado a la institución.',
+    valorNominal: 420_000,
+    ubicacion: 'Estacionamiento del acreditado — Av. Insurgentes Sur 1235, Col. Del Valle, CDMX',
+    estatus: 'Vigente',
+  },
+]);
+
+// Override CR-012 — Scoring Crediticio (Crédito Personal pre-aprobado por score)
+saveToSavedStore(12, 'form', {
+  ...buildFormFromMock(MOCK_CREDITOS.find(m => m.id === 12)!),
+  lineaProducto: 'Crédito',
+  sublinea: 'Crédito por Scoring',
+  producto: 'Crédito Personal',
+  destinoCredito: 'Crédito pre-aprobado otorgado con base en modelo de scoring interno. Calificación crediticia 782/850. Sin garantía real — aprobación fundamentada en historial de pagos, nivel de endeudamiento y capacidad de pago verificada.',
+  periodo: 'Mensual',
+  plazos: '18',
+  plazoAutorizado: '18',
+  tasaAutorizada: '19.50',
+  tasaMinima: '16.00',
+  tasaMaxima: '24.00',
+  tasaAutorizadaTasas: '19.50',
+  plazoMinimo: '6',
+  plazoMaximo: '24',
+  montoMinimo: '10000',
+  montoMaximo: '150000',
+  empresaFondeadora: 'Crédito Mx',
+  estatusPago: 'Al corriente',
+  estatusCartera: 'Vigente',
+  moneda: 'MXN',
+});
+saveToSavedStore<CreditoGarantia[]>(12, 'garantias', [
+  {
+    id: 12001,
+    tipo: 'Personal',
+    subtipo: 'Score Buró de Crédito',
+    descripcion: 'Score Buró de Crédito: 782/850. Historial de 7 años sin notas negativas. 4 créditos previos liquidados puntualmente. Nivel de endeudamiento: 28% de ingresos mensuales.',
+    valorNominal: 85_000,
+    ubicacion: 'Buró de Crédito, S.A. de C.V. — Consulta folio BC-2025-06-0042871',
+    estatus: 'Vigente',
+  },
+  {
+    id: 12002,
+    tipo: 'Personal',
+    subtipo: 'Score Interno',
+    descripcion: 'Score interno modelo FICO adaptado: 810/1000. Variables: antigüedad laboral 6 años, ingresos netos $42,000/mes, relación deuda-ingreso 0.28, domicilio estable 4 años. Aprobación automática nivel A.',
+    valorNominal: 85_000,
+    ubicacion: 'Sistema de Originación Digital — Expediente SOD-2025-CLI001-0612',
+    estatus: 'Vigente',
+  },
+  {
+    id: 12003,
+    tipo: 'Personal',
+    subtipo: 'Capacidad de Pago',
+    descripcion: 'Análisis de capacidad de pago: ingresos comprobables $42,000/mes, egresos fijos $18,500/mes, excedente disponible $23,500/mes. Pago mensual estimado $5,200 representa el 12.4% del ingreso neto.',
+    valorNominal: 0,
+    ubicacion: 'Expediente digital — Área de Análisis de Crédito CDMX',
+    estatus: 'Vigente',
+  },
+]);
 
 // ═══════════════════════════════════════════════════════════════════
 // GENERAR CRÉDITO DESDE SOLICITUD

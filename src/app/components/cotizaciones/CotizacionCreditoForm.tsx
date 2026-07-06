@@ -355,10 +355,14 @@ export function CotizacionCreditoForm({ mode, lineaProducto, cotizacion, onSave,
     });
   }, [data.montoSolicitado, data.tasaCotizada, data.plazo, data.periodo, data.seguroFinanciado, data.totalSeguro]);
 
-  // Monto Garantía = montoSolicitado × aforo
+  // montoGarantia = montoSolicitado (base)
+  // montoCubrirGarantia = montoSolicitado * aforo (aforo en decimal, ej. 0.7 = 70%)
   useEffect(() => {
     if (data.aforo > 0 && data.montoSolicitado > 0) {
-      setData({ montoGarantia: Math.round(data.montoSolicitado * data.aforo * 100) / 100 });
+      setData({
+        montoGarantia: Math.round(data.montoSolicitado * 100) / 100,
+        montoCubrirGarantia: Math.round(data.montoSolicitado * data.aforo * 100) / 100,
+      });
     }
   }, [data.montoSolicitado, data.aforo]);
 
@@ -423,7 +427,7 @@ export function CotizacionCreditoForm({ mode, lineaProducto, cotizacion, onSave,
       montoMinimo: 0, montoMaximo: 0, montoSolicitado: 0,
       tasaMinima: 0, tasaMaxima: 0, tasaCotizada: 0,
       // Reset garantía
-      tipoGarantia: '', subtipoGarantia: '', aforo: 0, montoGarantia: 0,
+      tipoGarantia: '', subtipoGarantia: '', aforo: 0, montoGarantia: 0, montoCubrirGarantia: 0,
       // Reset seguro
       seguroFinanciado: false, seguroNombre: '', montoSeguro: 0, tasaSeguro: 0, totalSeguro: 0,
     });
@@ -451,14 +455,13 @@ export function CotizacionCreditoForm({ mode, lineaProducto, cotizacion, onSave,
 
   /** §5 — Seleccionar garantía → pick-map */
   const handleSelectGarantia = (g: GarantiaProducto) => {
-    const montoGar = data.montoSolicitado > 0
-      ? Math.round(data.montoSolicitado * g.aforo * 100) / 100
-      : 0;
+    const base = data.montoSolicitado > 0 ? data.montoSolicitado : 0;
     setData({
       tipoGarantia: g.tipoGarantia,
       subtipoGarantia: g.subtipoGarantia,
       aforo: g.aforo,
-      montoGarantia: montoGar,
+      montoGarantia: Math.round(base * 100) / 100,
+      montoCubrirGarantia: Math.round(base * g.aforo * 100) / 100,
     });
   };
 
@@ -472,7 +475,9 @@ export function CotizacionCreditoForm({ mode, lineaProducto, cotizacion, onSave,
     if (matchingRow) {
       const montoSeg = matchingRow.montoDefault;
       const tasaSeg = matchingRow.tasaDefault;
-      const totalSeg = Math.round(montoSeg * (1 + tasaSeg * data.plazo) * 100) / 100;
+      // totalSeguro = montoDefault * (1 + tasaDefault/100)
+      // pagoSeguroPeriodo = totalSeguro / plazo  (se calcula en el useEffect de pagos)
+      const totalSeg = Math.round(montoSeg * (1 + tasaSeg / 100) * 100) / 100;
       setData({
         seguroNombre: seg.nombre,
         montoSeguro: montoSeg,
@@ -951,7 +956,7 @@ export function CotizacionCreditoForm({ mode, lineaProducto, cotizacion, onSave,
                           ))}
                         </select>
                       </div>
-                      <div className="grid grid-cols-3 gap-3">
+                      <div className="grid grid-cols-4 gap-3">
                         <div className="flex flex-col">
                           <label className="text-[10px] text-gray-600 mb-1">Tipo</label>
                           <input value={data.tipoGarantia || '—'} disabled className={readonlyClass} />
@@ -961,8 +966,12 @@ export function CotizacionCreditoForm({ mode, lineaProducto, cotizacion, onSave,
                           <input value={data.aforo ? `${(data.aforo * 100).toFixed(0)}%` : '—'} disabled className={readonlyClass} />
                         </div>
                         <div className="flex flex-col">
-                          <label className="text-[10px] text-gray-600 mb-1">Monto Garantía <span className="text-[9px] text-gray-400">(calc)</span></label>
+                          <label className="text-[10px] text-gray-600 mb-1">Monto Solicitado</label>
                           <input value={data.montoGarantia ? formatMoney(data.montoGarantia) : '—'} disabled className={readonlyClass} />
+                        </div>
+                        <div className="flex flex-col">
+                          <label className="text-[10px] text-gray-600 mb-1">Monto a Cubrir</label>
+                          <input value={data.montoCubrirGarantia ? formatMoney(data.montoCubrirGarantia) : '—'} disabled className={readonlyClass} />
                         </div>
                       </div>
                     </div>
@@ -1200,7 +1209,8 @@ export function CotizacionCreditoForm({ mode, lineaProducto, cotizacion, onSave,
                                             if (isView) return;
                                             const montoSeg = row.montoDefault;
                                             const tasaSeg = row.tasaDefault;
-                                            const totalSeg = Math.round(montoSeg * (1 + tasaSeg * data.plazo) * 100) / 100;
+                                            // totalSeguro = montoDefault * (1 + tasaDefault/100)
+                                            const totalSeg = Math.round(montoSeg * (1 + tasaSeg / 100) * 100) / 100;
                                             setData({
                                               montoSeguro: montoSeg,
                                               tasaSeguro: tasaSeg,
@@ -1255,7 +1265,7 @@ export function CotizacionCreditoForm({ mode, lineaProducto, cotizacion, onSave,
                               <div className="flex flex-col">
                                 <label className="text-[11px] text-gray-600 mb-1 uppercase tracking-wider font-medium">Total Seguro <span className="text-[9px] text-gray-400 normal-case tracking-normal">(calc)</span></label>
                                 <input value={formatMoney(data.totalSeguro)} disabled className={readonlyClass} />
-                                <span className="text-[9px] text-gray-400 mt-0.5">= Monto x (1 + Tasa x Plazo:{data.plazo})</span>
+                                <span className="text-[9px] text-gray-400 mt-0.5">= Monto × (1 + Tasa/100) · Pago/periodo = Total ÷ {data.plazo || '?'}</span>
                               </div>
                               <div className="flex flex-col">
                                 <label className="text-[11px] text-gray-600 mb-1 uppercase tracking-wider font-medium">Fecha Primer Pago <span className="text-red-500">*</span></label>

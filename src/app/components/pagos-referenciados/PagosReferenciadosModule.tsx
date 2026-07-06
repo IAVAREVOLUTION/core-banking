@@ -1,5 +1,9 @@
-import { useState, useRef, useMemo } from 'react';
+import { useState, useRef, useMemo, useCallback, useEffect } from 'react';
 import { toast } from 'sonner';
+import { projectId, publicAnonKey } from '/utils/supabase/info';
+
+const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-7e2d13d9`;
+const HDR = { 'Content-Type': 'application/json', Authorization: `Bearer ${publicAnonKey}` };
 
 // ═══════════════════════════════════════════════════════════════════
 // TIPOS
@@ -17,417 +21,543 @@ interface PagoReferenciado {
   descripcion: string;
   moneda: string;
   tipoPago: string;
+  // Resueltos al identificar
+  cuentaDbId?: string;       // UUID de J_CUENTAS_CORP_CLIENTES
+  clienteId?: string;        // UUID de J_CLIENTES
+  clienteNombre?: string;
+  tipoCuenta?: 'aportacion' | 'credito'; // determina ABONO o CARGO
+  saldoActual?: number;
+  noCuenta?: string;
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// MOCK DATA
-// ═══════════════════════════════════════════════════════════════════
-const MOCK_PAGOS: PagoReferenciado[] = [
-  { id: 1, banco: 'BBVA', cuenta: 'CTA-EJE-001', referencia: 'I-001213', fecha: '02/02/2024', importe: 123.00, identificado: true, procesado: false, observaciones: 'NET SUITE', descripcion: 'SET', moneda: 'MXN', tipoPago: 'Transferencia' },
-  { id: 2, banco: 'BANAMEX', cuenta: 'CTA-EJE-002', referencia: 'I-001207', fecha: '04/28/2024', importe: 2000.00, identificado: false, procesado: false, observaciones: '', descripcion: 'SET', moneda: 'MXN', tipoPago: 'SPEI' },
-  { id: 3, banco: 'BANORTE', cuenta: 'CTA-EJE-003', referencia: 'SI-001208', fecha: '02/02/2024', importe: 59000.00, identificado: true, procesado: false, observaciones: 'NET SUITE', descripcion: 'SET', moneda: 'MXN', tipoPago: 'Depósito' },
-  { id: 4, banco: 'BANAMEX', cuenta: 'CTA-EJE-002', referencia: 'I-001209', fecha: '04/28/2024', importe: 2000.00, identificado: true, procesado: false, observaciones: 'NET SUITE', descripcion: 'SET', moneda: 'MXN', tipoPago: 'SPEI' },
-  { id: 5, banco: 'BANCOMER', cuenta: 'CTA-EJE-004', referencia: 'I-001211', fecha: '02/02/2024', importe: 3990.00, identificado: true, procesado: false, observaciones: 'NET SUITE', descripcion: 'SET', moneda: 'MXN', tipoPago: 'Cheque' },
-  { id: 6, banco: 'BANCOMER', cuenta: 'CTA-EJE-004', referencia: 'I-001210', fecha: '03/31/2025', importe: 300000.00, identificado: true, procesado: false, observaciones: 'NET SUITE', descripcion: 'SET', moneda: 'MXN', tipoPago: 'Transferencia' },
-  { id: 7, banco: 'BANCOMER', cuenta: 'CTA-EJE-004', referencia: 'I-001211', fecha: '03/31/2025', importe: 490000.00, identificado: true, procesado: false, observaciones: 'NET SUITE', descripcion: 'SET', moneda: 'MXN', tipoPago: 'SPEI' },
-  { id: 8, banco: 'HSBC', cuenta: 'CTA-EJE-005', referencia: 'I-001215', fecha: '05/15/2025', importe: 75000.00, identificado: true, procesado: true, observaciones: 'NET SUITE', descripcion: 'SET', moneda: 'MXN', tipoPago: 'Transferencia' },
-  { id: 9, banco: 'SANTANDER', cuenta: 'CTA-EJE-006', referencia: 'I-001220', fecha: '06/10/2025', importe: 150000.00, identificado: false, procesado: false, observaciones: '', descripcion: 'SET', moneda: 'USD', tipoPago: 'Cheque' },
-  { id: 10, banco: 'BBVA', cuenta: 'CTA-EJE-001', referencia: 'I-001225', fecha: '07/22/2025', importe: 45000.00, identificado: true, procesado: true, observaciones: 'NET SUITE', descripcion: 'SET', moneda: 'MXN', tipoPago: 'SPEI' },
-  { id: 11, banco: 'BANORTE', cuenta: 'CTA-EJE-003', referencia: 'I-001230', fecha: '08/05/2025', importe: 12500.00, identificado: true, procesado: false, observaciones: 'NET SUITE', descripcion: 'SET', moneda: 'MXN', tipoPago: 'Transferencia' },
-  { id: 12, banco: 'SCOTIABANK', cuenta: 'CTA-EJE-007', referencia: 'I-001235', fecha: '09/18/2025', importe: 88000.00, identificado: false, procesado: false, observaciones: '', descripcion: 'SET', moneda: 'MXN', tipoPago: 'Depósito' },
-  { id: 13, banco: 'BANAMEX', cuenta: 'CTA-EJE-002', referencia: 'I-001240', fecha: '10/30/2025', importe: 210000.00, identificado: true, procesado: true, observaciones: 'NET SUITE', descripcion: 'SET', moneda: 'MXN', tipoPago: 'SPEI' },
-  { id: 14, banco: 'HSBC', cuenta: 'CTA-EJE-005', referencia: 'I-001245', fecha: '11/12/2025', importe: 5600.00, identificado: true, procesado: false, observaciones: 'NET SUITE', descripcion: 'SET', moneda: 'USD', tipoPago: 'Cheque' },
-  { id: 15, banco: 'BBVA', cuenta: 'CTA-EJE-001', referencia: 'I-001250', fecha: '01/20/2026', importe: 340000.00, identificado: true, procesado: true, observaciones: 'NET SUITE', descripcion: 'SET', moneda: 'MXN', tipoPago: 'Transferencia' },
-  { id: 16, banco: 'SANTANDER', cuenta: 'CTA-EJE-006', referencia: 'I-001255', fecha: '03/08/2026', importe: 67500.00, identificado: false, procesado: false, observaciones: '', descripcion: 'SET', moneda: 'MXN', tipoPago: 'SPEI' },
-  { id: 17, banco: 'BANCOMER', cuenta: 'CTA-EJE-004', referencia: 'I-001260', fecha: '04/25/2026', importe: 125000.00, identificado: true, procesado: true, observaciones: 'NET SUITE', descripcion: 'SET', moneda: 'MXN', tipoPago: 'SPEI' },
-  { id: 18, banco: 'BANORTE', cuenta: 'CTA-EJE-003', referencia: 'I-001265', fecha: '06/14/2026', importe: 990.00, identificado: true, procesado: false, observaciones: 'NET SUITE', descripcion: 'SET', moneda: 'MXN', tipoPago: 'Depósito' },
-  { id: 19, banco: 'INBURSA', cuenta: 'CTA-EJE-008', referencia: 'I-001270', fecha: '08/02/2026', importe: 450000.00, identificado: true, procesado: true, observaciones: 'NET SUITE', descripcion: 'SET', moneda: 'MXN', tipoPago: 'Transferencia' },
-  { id: 20, banco: 'BBVA', cuenta: 'CTA-EJE-001', referencia: 'I-001275', fecha: '12/19/2026', importe: 28750.00, identificado: false, procesado: false, observaciones: '', descripcion: 'SET', moneda: 'USD', tipoPago: 'Cheque' },
-];
+interface CuentaDB {
+  id: string;
+  no_cuenta: string | null;
+  no_referenc1: string | null;
+  no_sol: string | null;
+  cliente_id: string | null;
+  cliente_nombre: string | null;
+  saldo_actual: number | null;
+  linea_produc: string | null;
+  tipo_produc: string | null;
+}
 
 // ═══════════════════════════════════════════════════════════════════
 // HELPERS
 // ═══════════════════════════════════════════════════════════════════
-function formatCurrency(n: number): string {
+function fmt(n: number): string {
   return '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function esCaptacion(row: CuentaDB): boolean {
+  const lp = (row.linea_produc || '').toLowerCase();
+  const tp = (row.tipo_produc || '').toLowerCase();
+  return lp.includes('captaci') || tp.includes('ahorro') || tp.includes('aportaci');
+}
+
+// Genera archivo CSV y dispara descarga
+function descargarCSV(pagos: PagoReferenciado[]) {
+  const cols = ['Banco','Cuenta','Referencia','Fecha','Importe','Identificado','Procesado','Observaciones','Descripcion','Moneda','Tipo Pago'];
+  const rows = pagos.map(p => [
+    p.banco, p.cuenta, p.referencia, p.fecha, p.importe,
+    p.identificado ? 'Sí' : 'No', p.procesado ? 'Sí' : 'No',
+    p.observaciones, p.descripcion, p.moneda, p.tipoPago,
+  ]);
+  const csv = [cols, ...rows].map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+  a.download = 'pagos-referenciados.csv'; a.click();
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// HOOK — Carga cuentas de la DB para resolver referencias
+// ═══════════════════════════════════════════════════════════════════
+function useCuentasDB() {
+  const [cuentas, setCuentas] = useState<CuentaDB[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  const cargar = useCallback(async () => {
+    setLoading(true);
+    try {
+      const r = await fetch(`${API_BASE}/cuentas-ahorro`, { headers: HDR });
+      if (!r.ok) return;
+      const j = await r.json();
+      const rows: CuentaDB[] = Array.isArray(j) ? j : (j.data || []);
+      setCuentas(rows);
+    } catch { /* silent */ } finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { cargar(); }, [cargar]);
+  return { cuentas, loading, recargar: cargar };
+}
+
+// Resuelve una referencia contra la lista de cuentas
+function resolverReferencia(ref: string, cuentas: CuentaDB[]): CuentaDB | undefined {
+  const r = ref.trim().toLowerCase();
+  return cuentas.find(c =>
+    (c.no_referenc1 || '').toLowerCase() === r ||
+    (c.no_sol       || '').toLowerCase() === r ||
+    (c.no_cuenta    || '').toLowerCase() === r
+  );
 }
 
 // ═══════════════════════════════════════════════════════════════════
 // COMPONENTE PRINCIPAL
 // ═══════════════════════════════════════════════════════════════════
 export function PagosReferenciadosModule() {
+  const [pagos, setPagos]           = useState<PagoReferenciado[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
-  const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
+  const [sortOrder, setSortOrder]   = useState<'desc' | 'asc'>('desc');
+  const [filtroEstatus, setFiltroEstatus] = useState('Todos');
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 8;
-  const tableRef = useRef<HTMLDivElement>(null);
-  const searchBarRef = useRef<HTMLInputElement>(null);
+  const [aplicando, setAplicando]   = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const itemsPerPage = 10;
 
-  // ── Export stubs ──
-  const handleExportCSV = () => toast.success('Exportando a CSV', { description: 'El archivo CSV se está descargando...', duration: 3000 });
-  const handleExportExcel = () => toast.success('Exportando a Excel', { description: 'El archivo se está descargando...', duration: 3000 });
-  const handleExportPDF = () => toast.success('Exportando a PDF', { description: 'El archivo PDF se está descargando...', duration: 3000 });
-  const handlePrint = () => toast.success('Imprimiendo', { description: 'Enviando documento a la impresora...', duration: 3000 });
+  const tableRef    = useRef<HTMLDivElement>(null);
+  const searchRef   = useRef<HTMLInputElement>(null);
 
-  const handleListaClick = () => {
-    if (tableRef.current) {
-      tableRef.current.classList.add('animate-highlight');
-      setTimeout(() => tableRef.current?.classList.remove('animate-highlight'), 1000);
-    }
+  const { cuentas, loading: loadingCuentas, recargar } = useCuentasDB();
+
+  // ── Cargar pagos desde bancos (simulación con referencias reales de la DB) ──
+  const handleCargarPagos = () => {
+    if (cuentas.length === 0) { toast.error('Cargando cuentas, intente en un momento...'); return; }
+    const bancos = ['BBVA', 'BANAMEX', 'BANORTE', 'HSBC', 'SANTANDER'];
+    const tipos  = ['Transferencia', 'SPEI', 'Depósito', 'Cheque'];
+    const nuevos: PagoReferenciado[] = cuentas.slice(0, 10).map((c, i) => {
+      const ref    = c.no_referenc1 || c.no_sol || c.no_cuenta || `REF-${i + 1}`;
+      const esCapt = esCaptacion(c);
+      return {
+        id: Date.now() + i,
+        banco:     bancos[i % bancos.length],
+        cuenta:    `CTA-EJE-${String(i + 1).padStart(3, '0')}`,
+        referencia: ref,
+        fecha:     new Date(Date.now() - i * 86400000 * 2).toLocaleDateString('es-MX'),
+        importe:   esCapt ? [500, 1000, 2500, 750, 1500, 3000, 800, 1200, 600, 2000][i % 10]
+                           : [3500, 5000, 8000, 12000, 6500, 9000, 4500, 7000, 11000, 5500][i % 10],
+        identificado:  true,
+        procesado:     false,
+        moneda:        'MXN',
+        tipoPago:      tipos[i % tipos.length],
+        observaciones: 'Banco en línea',
+        descripcion:   'Pago referenciado',
+        cuentaDbId:    c.id,
+        clienteId:     c.cliente_id || undefined,
+        clienteNombre: c.cliente_nombre || undefined,
+        tipoCuenta:    esCapt ? 'aportacion' : 'credito',
+        saldoActual:   c.saldo_actual ?? undefined,
+        noCuenta:      c.no_cuenta || undefined,
+      };
+    });
+    setPagos(prev => [...nuevos, ...prev]);
+    toast.success(`${nuevos.length} pagos cargados desde bancos`, {
+      description: `${nuevos.filter(p => p.identificado).length} identificados automáticamente`,
+    });
+    setCurrentPage(1);
   };
 
-  const handleBuscarClick = () => {
-    if (searchBarRef.current) {
-      searchBarRef.current.focus();
-      searchBarRef.current.classList.add('animate-highlight-border');
-      setTimeout(() => searchBarRef.current?.classList.remove('animate-highlight-border'), 1000);
-    }
+  // ── Toggle selección ──
+  const toggleSelect = (id: number) => {
+    setSelectedIds(prev => {
+      const s = new Set(prev);
+      s.has(id) ? s.delete(id) : s.add(id);
+      return s;
+    });
+  };
+  const toggleSelectAll = () => {
+    const pendientes = paged.filter(p => p.identificado && !p.procesado).map(p => p.id);
+    const todosSelec = pendientes.every(id => selectedIds.has(id));
+    setSelectedIds(prev => {
+      const s = new Set(prev);
+      if (todosSelec) { pendientes.forEach(id => s.delete(id)); }
+      else            { pendientes.forEach(id => s.add(id)); }
+      return s;
+    });
   };
 
-  // ── Filtrado ──
+  // ── Aplicar Cobranza ──
+  const handleAplicarCobranza = async () => {
+    const seleccionados = pagos.filter(p => selectedIds.has(p.id) && p.identificado && !p.procesado);
+    if (seleccionados.length === 0) {
+      toast.error('Seleccione pagos identificados y no procesados');
+      return;
+    }
+    setAplicando(true);
+    let ok = 0; let err = 0;
+
+    for (const pago of seleccionados) {
+      if (!pago.cuentaDbId || !pago.clienteId) { err++; continue; }
+
+      const esAportacion = pago.tipoCuenta === 'aportacion';
+      const saldoBase    = pago.saldoActual ?? 0;
+      const saldoNuevo   = esAportacion
+        ? saldoBase + pago.importe   // ABONO → suma
+        : saldoBase - pago.importe;  // CARGO → resta
+
+      const movimiento = {
+        fecha:       pago.fecha,
+        tipo:        esAportacion ? 'Abono' : 'Cargo',
+        sub_tipo:    esAportacion ? 'Aportacion' : 'Amortizacion',
+        concepto:    esAportacion ? 'Pago aportación referenciada' : 'Pago crédito referenciado',
+        referencia:  pago.referencia,
+        banco:       pago.banco,
+        monto:       pago.importe,
+        moneda:      pago.moneda,
+        forma_pago:  pago.tipoPago,
+      };
+
+      try {
+        const res = await fetch(`${API_BASE}/cuentas-ahorro/movimiento`, {
+          method: 'PATCH',
+          headers: HDR,
+          body: JSON.stringify({
+            cuenta_id:   pago.cuentaDbId,
+            movimiento,
+            saldo_nuevo: saldoNuevo,
+          }),
+        });
+        if (res.ok) {
+          ok++;
+          setPagos(prev => prev.map(p =>
+            p.id === pago.id
+              ? { ...p, procesado: true, saldoActual: saldoNuevo }
+              : p
+          ));
+        } else {
+          err++;
+          const j = await res.json().catch(() => ({}));
+          console.warn('Error aplicando pago:', j);
+        }
+      } catch (e: any) {
+        err++;
+        console.warn('Excepción aplicando pago:', e?.message);
+      }
+    }
+
+    setAplicando(false);
+    setSelectedIds(new Set());
+    recargar();
+
+    if (ok > 0 && err === 0)  toast.success(`${ok} pago(s) aplicados correctamente`);
+    else if (ok > 0)          toast.success(`${ok} aplicados`, { description: `${err} con error` });
+    else                      toast.error(`Error al aplicar ${err} pago(s)`);
+  };
+
+  // ── Filtrado y ordenamiento ──
   const filtered = useMemo(() => {
-    if (!searchTerm) return MOCK_PAGOS;
-    const s = searchTerm.toLowerCase();
-    return MOCK_PAGOS.filter(p =>
-      p.banco.toLowerCase().includes(s) ||
-      p.cuenta.toLowerCase().includes(s) ||
-      p.referencia.toLowerCase().includes(s) ||
-      p.fecha.includes(s) ||
-      p.observaciones.toLowerCase().includes(s) ||
-      p.descripcion.toLowerCase().includes(s) ||
-      p.moneda.toLowerCase().includes(s) ||
-      p.tipoPago.toLowerCase().includes(s) ||
-      formatCurrency(p.importe).includes(s)
-    );
-  }, [searchTerm]);
-
-  // ── Ordenamiento por fecha ──
-  const sorted = useMemo(() => {
-    return [...filtered].sort((a, b) => {
-      // Parse MM/DD/YYYY
-      const [am, ad, ay] = a.fecha.split('/').map(Number);
-      const [bm, bd, by_] = b.fecha.split('/').map(Number);
-      const da = new Date(ay, am - 1, ad).getTime();
-      const db = new Date(by_, bm - 1, bd).getTime();
+    let list = pagos;
+    if (filtroEstatus === 'Identificados')    list = list.filter(p => p.identificado);
+    if (filtroEstatus === 'No Identificados') list = list.filter(p => !p.identificado);
+    if (filtroEstatus === 'Procesados')       list = list.filter(p => p.procesado);
+    if (filtroEstatus === 'Pendientes')       list = list.filter(p => p.identificado && !p.procesado);
+    if (searchTerm) {
+      const s = searchTerm.toLowerCase();
+      list = list.filter(p =>
+        p.banco.toLowerCase().includes(s) ||
+        p.referencia.toLowerCase().includes(s) ||
+        p.cuenta.toLowerCase().includes(s) ||
+        (p.clienteNombre || '').toLowerCase().includes(s) ||
+        fmt(p.importe).includes(s)
+      );
+    }
+    return [...list].sort((a, b) => {
+      const pa = a.fecha.split('/'); const pb = b.fecha.split('/');
+      const da = new Date(+pa[2], +pa[1]-1, +pa[0]).getTime();
+      const db = new Date(+pb[2], +pb[1]-1, +pb[0]).getTime();
       return sortOrder === 'desc' ? db - da : da - db;
     });
-  }, [filtered, sortOrder]);
+  }, [pagos, searchTerm, sortOrder, filtroEstatus]);
 
-  // ── Paginación ──
-  const totalPages = Math.max(1, Math.ceil(sorted.length / itemsPerPage));
-  const startIndex = (currentPage - 1) * itemsPerPage;
-  const currentItems = sorted.slice(startIndex, startIndex + itemsPerPage);
-
-  const handleSearchChange = (value: string) => { setSearchTerm(value); setCurrentPage(1); };
-  const handleSortChange = (value: 'desc' | 'asc') => { setSortOrder(value); setCurrentPage(1); };
-  const handleFirstPage = () => setCurrentPage(1);
-  const handlePreviousPage = () => { if (currentPage > 1) setCurrentPage(currentPage - 1); };
-  const handleNextPage = () => { if (currentPage < totalPages) setCurrentPage(currentPage + 1); };
-  const handleLastPage = () => setCurrentPage(totalPages);
+  const totalPages   = Math.max(1, Math.ceil(filtered.length / itemsPerPage));
+  const paged        = filtered.slice((currentPage-1)*itemsPerPage, currentPage*itemsPerPage);
+  const pendientesSel = paged.filter(p => p.identificado && !p.procesado);
+  const todosSelec    = pendientesSel.length > 0 && pendientesSel.every(p => selectedIds.has(p.id));
+  const nSelec        = pagos.filter(p => selectedIds.has(p.id)).length;
 
   return (
     <div className="bg-white min-h-screen">
-      {/* ── Header Section con ícono y título ── */}
+
+      {/* Header */}
       <div className="bg-white px-4 py-3 border-b border-gray-300">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#666" strokeWidth="1.5">
-              <rect x="2" y="4" width="20" height="16" rx="2" />
-              <path d="M2 10h20" />
-              <path d="M6 16h4M14 16h4" />
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#666" strokeWidth="1.5">
+              <rect x="2" y="4" width="20" height="16" rx="2"/><path d="M2 10h20M6 16h4M14 16h4"/>
             </svg>
-            <h2 className="text-lg font-normal text-gray-800">Pagos Referenciados</h2>
-            <button className="p-1 ml-2">
-              <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#999" strokeWidth="2">
-                <circle cx="8" cy="8" r="6" />
-                <path d="M13 13l3 3" />
-              </svg>
-            </button>
+            <h2 className="text-lg text-gray-800">Pagos Referenciados</h2>
+            {loadingCuentas && <span className="text-xs text-gray-400">Cargando cuentas...</span>}
           </div>
-          <div className="flex items-center gap-4 text-sm text-gray-700">
-            <span onClick={handleListaClick} className="cursor-pointer hover:text-[#0099CC] transition-colors">Lista</span>
-            <span onClick={handleBuscarClick} className="cursor-pointer hover:text-[#0099CC] transition-colors">Buscar</span>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleCargarPagos}
+              className="flex items-center gap-1.5 px-4 py-1.5 bg-white border border-gray-400 text-gray-700 text-sm rounded hover:bg-gray-50"
+            >
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5">
+                <path d="M2 10v2h10v-2M7 2v7M4 6l3 3 3-3" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+              Cargar pagos desde bancos
+            </button>
+            <button
+              onClick={handleAplicarCobranza}
+              disabled={nSelec === 0 || aplicando}
+              className="flex items-center gap-1.5 px-4 py-1.5 bg-[#0099CC] text-white text-sm rounded hover:bg-[#0088BB] disabled:opacity-40 disabled:cursor-not-allowed"
+              style={{ fontWeight: 500 }}
+            >
+              {aplicando ? (
+                <svg className="animate-spin h-3.5 w-3.5" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2">
+                  <circle cx="6" cy="6" r="5" strokeOpacity="0.25"/><path d="M6 1a5 5 0 0 1 5 5" strokeLinecap="round"/>
+                </svg>
+              ) : (
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5">
+                  <path d="M2 7h10M8 4l4 3-4 3" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              )}
+              Aplicar Cobranza{nSelec > 0 ? ` (${nSelec})` : ''}
+            </button>
           </div>
         </div>
       </div>
 
-      {/* ── Filter Section con Ver y Dropdown (sin botón Nuevo) ── */}
+      {/* Ver bar */}
       <div className="px-4 py-2 bg-white border-b border-gray-300">
         <div className="flex items-center gap-3">
           <span className="text-sm text-gray-700">Ver</span>
           <div className="relative">
-            <select className="px-3 py-1.5 border border-gray-400 rounded text-sm bg-white pr-8 appearance-none min-w-[200px]">
-              <option>Vista general de Pagos</option>
+            <select className="px-3 py-1.5 border border-gray-400 rounded text-sm bg-white pr-8 appearance-none min-w-[240px]">
+              <option>Vista general de Pagos Referenciados</option>
             </select>
-            <svg className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" width="12" height="12" viewBox="0 0 12 12" fill="#666">
-              <path d="M6 8l-4-4h8z" />
-            </svg>
-          </div>
-          {/* Sin botón Nuevo — módulo de solo consulta */}
-        </div>
-      </div>
-
-      {/* ── Filtros Label ── */}
-      <div className="px-4 py-2 bg-[#F0F0F0] border-b border-gray-200">
-        <div className="flex items-center justify-between">
-          <span className="text-sm text-gray-700 font-medium">Filtros</span>
-          <div className="flex items-center gap-2">
-            <input
-              ref={searchBarRef}
-              type="text"
-              value={searchTerm}
-              onChange={(e) => handleSearchChange(e.target.value)}
-              placeholder="Buscar pagos..."
-              className="px-3 py-1 border border-gray-400 rounded text-sm w-64 transition-all"
-            />
+            <svg className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" width="12" height="12" viewBox="0 0 12 12" fill="#666"><path d="M6 8l-4-4h8z"/></svg>
           </div>
         </div>
       </div>
 
-      {/* ── Action Icons Bar ── */}
-      <div className="px-4 py-2.5 bg-[#F0F0F0] border-b border-gray-300">
+      {/* Filtros */}
+      <div className="px-4 py-2 bg-gray-50 border-b border-gray-200">
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <div className="flex items-center gap-3">
+            <span className="text-sm text-gray-700" style={{ fontWeight: 500 }}>Filtros</span>
+            <select
+              value={filtroEstatus}
+              onChange={e => { setFiltroEstatus(e.target.value); setCurrentPage(1); }}
+              className="px-2 py-1 text-xs border border-gray-300 rounded bg-white"
+            >
+              <option value="Todos">Todos</option>
+              <option value="Identificados">Identificados</option>
+              <option value="No Identificados">No Identificados</option>
+              <option value="Pendientes">Pendientes (por aplicar)</option>
+              <option value="Procesados">Procesados</option>
+            </select>
+          </div>
+          <input
+            ref={searchRef}
+            type="text"
+            value={searchTerm}
+            onChange={e => { setSearchTerm(e.target.value); setCurrentPage(1); }}
+            placeholder="Buscar por banco, referencia, cliente..."
+            className="px-3 py-1 border border-gray-400 rounded text-sm w-72"
+          />
+        </div>
+      </div>
+
+      {/* Barra de exportación + orden */}
+      <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-300">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <button
-              className="p-1.5 hover:bg-gray-200 rounded transition-colors hover:scale-110 transform"
-              title="Exportar a CSV"
-              onClick={handleExportCSV}
-            >
+            <button onClick={() => descargarCSV(filtered)} title="CSV"
+              className="p-1.5 hover:bg-gray-200 rounded">
               <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-                <rect x="2" y="2" width="16" height="16" rx="2" fill="#6B7280" />
+                <rect x="2" y="2" width="16" height="16" rx="2" fill="#6B7280"/>
                 <text x="10" y="13" fontSize="7" fontWeight="bold" textAnchor="middle" fill="white">CSV</text>
               </svg>
             </button>
-            <button
-              className="p-1.5 hover:bg-green-100 rounded transition-colors hover:scale-110 transform"
-              title="Exportar a Excel"
-              onClick={handleExportExcel}
-            >
+            <button onClick={() => toast.info('Exportando a Excel...')} title="Excel"
+              className="p-1.5 hover:bg-green-100 rounded">
               <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-                <rect x="3" y="3" width="14" height="14" rx="2" fill="#1D9F5B" />
-                <path d="M6 3v14M10 3v14M14 3v14M3 7h14M3 11h14M3 15h14" stroke="white" strokeWidth="1.2" />
+                <rect x="3" y="3" width="14" height="14" rx="2" fill="#1D9F5B"/>
+                <path d="M6 3v14M10 3v14M14 3v14M3 7h14M3 11h14M3 15h14" stroke="white" strokeWidth="1.2"/>
               </svg>
             </button>
-            <button
-              className="p-1.5 hover:bg-red-100 rounded transition-colors hover:scale-110 transform"
-              title="Exportar a PDF"
-              onClick={handleExportPDF}
-            >
+            <button onClick={() => toast.info('Generando PDF...')} title="PDF"
+              className="p-1.5 hover:bg-red-100 rounded">
               <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-                <path d="M5 3h8l4 4v10a1 1 0 01-1 1H5a1 1 0 01-1-1V4a1 1 0 011-1z" fill="#D32F2F" />
-                <path d="M13 3v4h4" stroke="white" strokeWidth="1.2" fill="none" />
-                <path d="M7 10h6M7 13h4" stroke="white" strokeWidth="1.2" />
+                <path d="M5 3h8l4 4v10a1 1 0 01-1 1H5a1 1 0 01-1-1V4a1 1 0 011-1z" fill="#D32F2F"/>
+                <path d="M13 3v4h4" stroke="white" strokeWidth="1.2" fill="none"/>
+                <path d="M7 10h6M7 13h4" stroke="white" strokeWidth="1.2"/>
               </svg>
             </button>
-            <button
-              className="p-1.5 hover:bg-blue-100 rounded transition-colors hover:scale-110 transform"
-              title="Imprimir"
-              onClick={handlePrint}
-            >
+            <button onClick={() => window.print()} title="Imprimir"
+              className="p-1.5 hover:bg-blue-100 rounded">
               <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-                <rect x="5" y="3" width="10" height="3" rx="0.5" fill="#1976D2" />
-                <rect x="3" y="6" width="14" height="7" rx="1" stroke="#1976D2" strokeWidth="1.5" fill="none" />
-                <rect x="5" y="11" width="10" height="6" rx="0.5" fill="#1976D2" />
-                <circle cx="5" cy="8" r="0.8" fill="#1976D2" />
+                <rect x="5" y="3" width="10" height="3" fill="#1976D2"/>
+                <rect x="3" y="6" width="14" height="7" rx="1" stroke="#1976D2" strokeWidth="1.5" fill="none"/>
+                <rect x="5" y="11" width="10" height="6" fill="#1976D2"/>
+                <circle cx="5" cy="8" r="0.8" fill="#1976D2"/>
               </svg>
             </button>
           </div>
-
           <div className="flex items-center gap-4 text-sm text-gray-700">
             <div className="flex items-center gap-2">
-              <span>Orden Rápido</span>
-              <div className="relative">
-                <select
-                  value={sortOrder}
-                  onChange={(e) => handleSortChange(e.target.value as 'desc' | 'asc')}
-                  className="px-2 py-1 border border-gray-400 rounded text-sm bg-white pr-6 appearance-none"
-                >
-                  <option value="desc">Descendente</option>
-                  <option value="asc">Ascendente</option>
-                </select>
-                <svg className="absolute right-1 top-1/2 -translate-y-1/2 pointer-events-none" width="10" height="10" viewBox="0 0 10 10" fill="#666">
-                  <path d="M5 7l-3-3h6z" />
-                </svg>
-              </div>
+              <span className="text-xs">Orden</span>
+              <select value={sortOrder} onChange={e => setSortOrder(e.target.value as 'desc' | 'asc')}
+                className="px-2 py-1 border border-gray-400 rounded text-xs bg-white">
+                <option value="desc">Descendente</option>
+                <option value="asc">Ascendente</option>
+              </select>
             </div>
-            <div className="flex items-center gap-2">
-              <div className="relative">
-                <select className="px-2 py-1 border border-gray-400 rounded text-sm bg-white pr-6 appearance-none">
-                  <option>Todos los Pagos</option>
-                  <option>Identificados</option>
-                  <option>No Identificados</option>
-                  <option>Procesados</option>
-                </select>
-                <svg className="absolute right-1 top-1/2 -translate-y-1/2 pointer-events-none" width="10" height="10" viewBox="0 0 10 10" fill="#0099CC">
-                  <path d="M5 7l-3-3h6z" />
-                </svg>
-              </div>
-              <button
-                className="p-0.5 text-[#0099CC] hover:text-[#0088BB] disabled:opacity-40"
-                title="Anterior"
-                onClick={handlePreviousPage}
-                disabled={currentPage === 1}
-              >
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                  <path d="M10 3L5 8l5 5V3z" />
-                </svg>
+            <span className="text-xs">Total: {filtered.length}</span>
+            <div className="flex items-center gap-1">
+              <button onClick={() => setCurrentPage(p => Math.max(1, p-1))} disabled={currentPage === 1}
+                className="p-0.5 text-[#0099CC] disabled:opacity-40">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M10 3L5 8l5 5V3z"/></svg>
               </button>
-              <button
-                className="p-0.5 text-[#0099CC] hover:text-[#0088BB] disabled:opacity-40"
-                title="Siguiente"
-                onClick={handleNextPage}
-                disabled={currentPage === totalPages}
-              >
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                  <path d="M6 3l5 5-5 5V3z" />
-                </svg>
+              <button onClick={() => setCurrentPage(p => Math.min(totalPages, p+1))} disabled={currentPage === totalPages}
+                className="p-0.5 text-[#0099CC] disabled:opacity-40">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M6 3l5 5-5 5V3z"/></svg>
               </button>
             </div>
-            <span className="font-medium">Total: {sorted.length}</span>
           </div>
         </div>
       </div>
 
-      {/* ── Tabla institucional ── */}
+      {/* Tabla */}
       <div className="px-4 py-4" ref={tableRef}>
-        <div className="border border-gray-300 overflow-hidden" style={{ backgroundColor: 'transparent' }}>
-          <table className="w-full text-sm" style={{ backgroundColor: 'transparent' }}>
+        <div className="border border-gray-300 overflow-hidden">
+          <table className="w-full text-xs">
             <thead>
-              <tr className="bg-[#D0D0D0] border-b border-gray-300">
-                <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700">BANCO</th>
-                <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700">CUENTA</th>
-                <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700">REFERENCIA</th>
-                <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700">FECHA</th>
-                <th className="px-3 py-2.5 text-right font-normal text-xs text-gray-700">IMPORTE</th>
-                <th className="px-3 py-2.5 text-center font-normal text-xs text-gray-700">IDENTIFICADO</th>
-                <th className="px-3 py-2.5 text-center font-normal text-xs text-gray-700">PROCESADO</th>
-                <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700">OBSERVACIONES</th>
-                <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700">DESCRIPCIÓN</th>
-                <th className="px-3 py-2.5 text-center font-normal text-xs text-gray-700">MONEDA</th>
-                <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700">TIPO DE PAGO</th>
+              <tr style={{ backgroundColor: '#D0D0D0' }} className="border-b border-gray-300">
+                <th className="px-2 py-2.5 w-8 border-r border-gray-300">
+                  <input type="checkbox" checked={todosSelec} onChange={toggleSelectAll}
+                    className="w-3 h-3 accent-[#0099CC]" title="Seleccionar todos pendientes"/>
+                </th>
+                <th className="px-3 py-2.5 text-left text-[10px] text-gray-700 border-r border-gray-300" style={{ fontWeight: 600 }}>BANCO</th>
+                <th className="px-3 py-2.5 text-left text-[10px] text-gray-700 border-r border-gray-300" style={{ fontWeight: 600 }}>REFERENCIA</th>
+                <th className="px-3 py-2.5 text-left text-[10px] text-gray-700 border-r border-gray-300" style={{ fontWeight: 600 }}>CLIENTE / CUENTA</th>
+                <th className="px-3 py-2.5 text-left text-[10px] text-gray-700 border-r border-gray-300" style={{ fontWeight: 600 }}>TIPO</th>
+                <th className="px-3 py-2.5 text-left text-[10px] text-gray-700 border-r border-gray-300" style={{ fontWeight: 600 }}>FECHA</th>
+                <th className="px-3 py-2.5 text-right text-[10px] text-gray-700 border-r border-gray-300" style={{ fontWeight: 600 }}>IMPORTE</th>
+                <th className="px-3 py-2.5 text-right text-[10px] text-gray-700 border-r border-gray-300" style={{ fontWeight: 600 }}>SALDO ACTUAL</th>
+                <th className="px-3 py-2.5 text-center text-[10px] text-gray-700 border-r border-gray-300" style={{ fontWeight: 600 }}>IDENTIFICADO</th>
+                <th className="px-3 py-2.5 text-center text-[10px] text-gray-700 border-r border-gray-300" style={{ fontWeight: 600 }}>MOVIMIENTO</th>
+                <th className="px-3 py-2.5 text-center text-[10px] text-gray-700" style={{ fontWeight: 600 }}>PROCESADO</th>
               </tr>
             </thead>
             <tbody>
-              {currentItems.length === 0 ? (
+              {pagos.length === 0 ? (
                 <tr>
-                  <td colSpan={11} className="px-3 py-8 text-center text-gray-500">
-                    No se encontraron pagos referenciados
+                  <td colSpan={11} className="px-3 py-12 text-center text-gray-500">
+                    <div className="flex flex-col items-center gap-3">
+                      <svg width="40" height="40" viewBox="0 0 40 40" fill="none" stroke="#D0D0D0" strokeWidth="1.5">
+                        <rect x="4" y="8" width="32" height="24" rx="3"/><path d="M4 16h32M12 24h6M24 24h4"/>
+                      </svg>
+                      <span>Sin pagos cargados. Use "Cargar pagos desde bancos" para importar.</span>
+                    </div>
                   </td>
                 </tr>
-              ) : (
-                currentItems.map((pago, index) => (
+              ) : paged.map((pago, idx) => {
+                const esSel    = selectedIds.has(pago.id);
+                const esAbono  = pago.tipoCuenta === 'aportacion';
+                const esCredito= pago.tipoCuenta === 'credito';
+                const canSel   = pago.identificado && !pago.procesado;
+                return (
                   <tr
                     key={pago.id}
-                    className="border-b border-gray-200 transition-colors duration-150"
-                    style={{
-                      backgroundColor: index % 2 === 1 ? '#EEEEEE' : '#FFFFFF',
-                    }}
-                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#E8F4F8'}
-                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = index % 2 === 1 ? '#EEEEEE' : '#FFFFFF'}
+                    className="border-b border-gray-200 cursor-pointer"
+                    style={{ backgroundColor: esSel ? '#E8F4F8' : idx % 2 === 1 ? '#EEEEEE' : '#FFFFFF' }}
+                    onMouseEnter={e => { if (!esSel) e.currentTarget.style.backgroundColor = '#E8F4F8'; }}
+                    onMouseLeave={e => { if (!esSel) e.currentTarget.style.backgroundColor = idx % 2 === 1 ? '#EEEEEE' : '#FFFFFF'; }}
+                    onClick={() => canSel && toggleSelect(pago.id)}
                   >
-                    <td className="px-3 py-2.5 text-xs text-gray-700">{pago.banco}</td>
-                    <td className="px-3 py-2.5 text-xs text-gray-700">{pago.cuenta}</td>
-                    <td className="px-3 py-2.5 text-xs text-[#0066CC]">{pago.referencia}</td>
-                    <td className="px-3 py-2.5 text-xs text-gray-700">{pago.fecha}</td>
-                    <td className="px-3 py-2.5 text-xs text-gray-700 text-right">{formatCurrency(pago.importe)}</td>
-                    <td className="px-3 py-2.5 text-center">
-                      {pago.identificado ? (
-                        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="inline-block">
-                          <path d="M3 8l3 3 7-7" stroke="#2E7D32" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                        </svg>
-                      ) : (
-                        <span className="text-gray-300">—</span>
+                    <td className="px-2 py-2 text-center border-r border-gray-200">
+                      {canSel && (
+                        <input type="checkbox" checked={esSel} onChange={() => toggleSelect(pago.id)}
+                          onClick={e => e.stopPropagation()} className="w-3 h-3 accent-[#0099CC]"/>
                       )}
                     </td>
-                    <td className="px-3 py-2.5 text-center">
-                      {pago.procesado ? (
-                        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="inline-block">
-                          <path d="M3 8l3 3 7-7" stroke="#2E7D32" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                        </svg>
+                    <td className="px-3 py-2 border-r border-gray-200" style={{ fontWeight: 500 }}>{pago.banco}</td>
+                    <td className="px-3 py-2 border-r border-gray-200 text-[#0066CC] font-mono">{pago.referencia}</td>
+                    <td className="px-3 py-2 border-r border-gray-200">
+                      {pago.clienteNombre ? (
+                        <div>
+                          <div style={{ fontWeight: 500 }}>{pago.clienteNombre}</div>
+                          <div className="text-[10px] text-gray-400">{pago.noCuenta || pago.cuenta}</div>
+                        </div>
                       ) : (
-                        <span className="text-gray-300">—</span>
+                        <span className="text-gray-400 italic">No identificado</span>
                       )}
                     </td>
-                    <td className="px-3 py-2.5 text-xs text-gray-700">{pago.observaciones}</td>
-                    <td className="px-3 py-2.5 text-xs text-gray-700">{pago.descripcion}</td>
-                    <td className="px-3 py-2.5 text-xs text-gray-700 text-center">{pago.moneda}</td>
-                    <td className="px-3 py-2.5 text-xs text-gray-700">{pago.tipoPago}</td>
+                    <td className="px-3 py-2 border-r border-gray-200">
+                      {pago.tipoCuenta ? (
+                        <span className={`px-1.5 py-0.5 text-[9px] border ${
+                          esAbono  ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                          esCredito? 'bg-orange-50 text-orange-700 border-orange-200' :
+                                     'bg-gray-50 text-gray-500 border-gray-200'
+                        }`}>
+                          {esAbono ? 'Aportación' : 'Crédito'}
+                        </span>
+                      ) : <span className="text-gray-300">—</span>}
+                    </td>
+                    <td className="px-3 py-2 border-r border-gray-200">{pago.fecha}</td>
+                    <td className="px-3 py-2 border-r border-gray-200 text-right font-mono"
+                        style={{ color: esAbono ? '#0E7B1F' : esCredito ? '#D32F2F' : '#374151' }}>
+                      {fmt(pago.importe)}
+                    </td>
+                    <td className="px-3 py-2 border-r border-gray-200 text-right font-mono text-gray-600">
+                      {pago.saldoActual !== undefined ? fmt(pago.saldoActual) : '—'}
+                    </td>
+                    <td className="px-3 py-2 border-r border-gray-200 text-center">
+                      {pago.identificado
+                        ? <svg width="14" height="14" viewBox="0 0 14 14" fill="none" className="inline-block"><path d="M2.5 7l3 3 6-6" stroke="#2E7D32" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                        : <span className="text-gray-300">—</span>}
+                    </td>
+                    <td className="px-3 py-2 border-r border-gray-200 text-center">
+                      {pago.identificado && !pago.procesado && (
+                        <span className={`px-1.5 py-0.5 text-[9px] border ${
+                          esAbono  ? 'bg-green-50 text-green-700 border-green-200' :
+                                     'bg-red-50 text-red-700 border-red-200'
+                        }`}>
+                          {esAbono ? 'ABONO' : 'CARGO'}
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 text-center">
+                      {pago.procesado
+                        ? <svg width="14" height="14" viewBox="0 0 14 14" fill="none" className="inline-block"><path d="M2.5 7l3 3 6-6" stroke="#2E7D32" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                        : <span className="text-gray-300">—</span>}
+                    </td>
                   </tr>
-                ))
-              )}
+                );
+              })}
             </tbody>
           </table>
         </div>
       </div>
 
-      {/* ── Paginación institucional ── */}
-      <div className="px-4 py-3 border-t border-gray-300">
-        <div className="flex items-center justify-end gap-3">
-          <button
-            className="p-1.5 hover:bg-gray-100 rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-            title="Primera página"
-            onClick={handleFirstPage}
-            disabled={currentPage === 1}
-          >
-            <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#666" strokeWidth="1.5">
-              <path d="M13 4L4 9l9 5V4z" />
-            </svg>
+      {/* Paginación */}
+      <div className="px-4 py-3 border-t border-gray-300 flex items-center justify-between">
+        <div className="text-xs text-gray-500">
+          {pagos.filter(p => p.identificado && !p.procesado).length} pendientes de aplicar •{' '}
+          {pagos.filter(p => p.procesado).length} procesados
+        </div>
+        <div className="flex items-center gap-3">
+          <button onClick={() => setCurrentPage(1)} disabled={currentPage === 1}
+            className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-40">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#666" strokeWidth="1.5"><path d="M11 3L3 8l8 5V3z"/></svg>
           </button>
-          <button
-            className="p-1.5 hover:bg-gray-100 rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-            title="Página anterior"
-            onClick={handlePreviousPage}
-            disabled={currentPage === 1}
-          >
-            <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#666" strokeWidth="1.5">
-              <path d="M9 4L4 9l5 5V4z" />
-            </svg>
+          <button onClick={() => setCurrentPage(p => Math.max(1, p-1))} disabled={currentPage === 1}
+            className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-40">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#666" strokeWidth="1.5"><path d="M9 3L4 8l5 5V3z"/></svg>
           </button>
-          <div className="text-sm text-gray-700 min-w-[100px] text-center">
-            Página {currentPage} de {totalPages}
-          </div>
-          <button
-            className="p-1.5 hover:bg-gray-100 rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-            title="Página siguiente"
-            onClick={handleNextPage}
-            disabled={currentPage === totalPages}
-          >
-            <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#666" strokeWidth="1.5">
-              <path d="M5 4l5 5-5 5V4z" />
-            </svg>
+          <span className="text-sm text-gray-700">Página {currentPage} de {totalPages}</span>
+          <button onClick={() => setCurrentPage(p => Math.min(totalPages, p+1))} disabled={currentPage === totalPages}
+            className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-40">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#666" strokeWidth="1.5"><path d="M5 3l5 5-5 5V3z"/></svg>
           </button>
-          <button
-            className="p-1.5 hover:bg-gray-100 rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-            title="Última página"
-            onClick={handleLastPage}
-            disabled={currentPage === totalPages}
-          >
-            <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#666" strokeWidth="1.5">
-              <path d="M4 4L13 9l-9 5V4z" />
-            </svg>
+          <button onClick={() => setCurrentPage(totalPages)} disabled={currentPage === totalPages}
+            className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-40">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#666" strokeWidth="1.5"><path d="M3 3l8 5-8 5V3z"/></svg>
           </button>
         </div>
       </div>
 
-      <style>{`
-        @keyframes highlight {
-          0%, 100% { background-color: transparent; }
-          50% { background-color: rgba(59, 130, 246, 0.1); }
-        }
-        
-        @keyframes highlight-border {
-          0%, 100% { border-color: #9CA3AF; }
-          50% { border-color: #3B82F6; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1); }
-        }
-        
-        .animate-highlight {
-          animation: highlight 1s ease-in-out;
-        }
-        
-        .animate-highlight-border {
-          animation: highlight-border 1s ease-in-out;
-        }
-      `}</style>
     </div>
   );
 }

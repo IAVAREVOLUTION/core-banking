@@ -142,9 +142,10 @@ export function useProductosSeguros(active: boolean) {
         if (res.ok) {
           const json = await res.json();
           const allRows: ProductoSeguroRow[] = json.data || [];
-          rows = allRows.filter(r => r.type === 'Seguro');
+          // Tolerante: acepta 'Seguro', 'Seguros', 'seguro', 'seguros'
+          rows = allRows.filter(r => /^seguros?$/i.test(r.type || ''));
           usedRoute = '/productos-seguros';
-          console.log(`[useProductosSeguros] Ruta /productos-seguros — ${allRows.length} total, ${rows.length} type=Seguro`);
+          console.log(`[useProductosSeguros] Ruta /productos-seguros — ${allRows.length} total, ${rows.length} type~Seguro`, allRows.map(r => r.type));
         } else {
           console.warn(`[useProductosSeguros] Ruta /productos-seguros respondió HTTP ${res.status}, intentando fallback...`);
         }
@@ -163,8 +164,8 @@ export function useProductosSeguros(active: boolean) {
           if (res2.ok) {
             const json2 = await res2.json();
             const allRows: ProductoSeguroRow[] = json2.data || [];
-            rows = allRows.filter(r => r.type === 'Seguro');
-            usedRoute = '/productos (filtro client-side type=Seguro)';
+            rows = allRows.filter(r => /^seguros?$/i.test(r.type || ''));
+            usedRoute = '/productos (filtro client-side type~Seguro)';
             console.log(`[useProductosSeguros] Fallback /productos — ${allRows.length} total, ${rows.length} type=Seguro`);
           }
         } catch (err) {

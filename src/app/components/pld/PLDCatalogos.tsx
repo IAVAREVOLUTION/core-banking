@@ -61,33 +61,35 @@ export function PLDCatalogos({ onBack }: Props) {
   };
 
   return (
-    <div className="bg-[#F5F5F5] min-h-full">
+    <div className="bg-white min-h-full">
       {/* Header */}
-      <div className="bg-white px-6 py-3 border-b border-gray-300 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="#4A6FA5" strokeWidth="1.5"><rect x="3" y="2" width="14" height="16" rx="1"/><path d="M7 2v4M13 2v4M3 6h14"/></svg>
-          <h1 className="text-sm text-gray-800" style={{ fontWeight: 700 }}>Catálogos PLD</h1>
-        </div>
-        <div className="flex items-center gap-2">
-          <button onClick={() => { setShowNuevo(true); setEditIdx(null); setConfirmDelete(null); }} className="px-4 py-1.5 bg-[#0099CC] text-white text-xs rounded hover:bg-[#0088BB]">+ Nuevo</button>
-          <button onClick={onBack} className="px-4 py-1.5 bg-white border border-gray-400 text-gray-700 text-xs rounded hover:bg-gray-50">Volver</button>
+      <div className="bg-white px-4 py-3 border-b border-gray-300">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="#666" strokeWidth="1.5"><rect x="3" y="2" width="14" height="16" rx="1"/><path d="M7 2v4M13 2v4M3 6h14"/></svg>
+            <h2 className="text-lg text-gray-800">Catálogos PLD</h2>
+          </div>
+          <div className="flex items-center gap-2">
+            <button onClick={() => { setShowNuevo(true); setEditIdx(null); setConfirmDelete(null); }} className="px-5 py-1.5 bg-[#0099CC] text-white text-sm rounded hover:bg-[#0088BB]" style={{ fontWeight: 500 }}>+ Nuevo</button>
+            <button onClick={onBack} className="px-4 py-1.5 bg-white border border-gray-400 text-gray-700 text-sm rounded hover:bg-gray-50">Volver</button>
+          </div>
         </div>
       </div>
 
-      <div className="px-6 py-4">
+      <div className="px-4 py-4">
         <div className="grid grid-cols-4 gap-4">
           {/* Menu lateral */}
-          <div className="bg-white border border-gray-300">
-            <div className="bg-[#D9E2F3] px-3 py-2 border-l-4 border-[#4A6FA5]">
-              <span className="text-xs text-[#4A6FA5]" style={{ fontWeight: 700 }}>CATÁLOGOS</span>
+          <div className="border border-gray-300">
+            <div style={{ backgroundColor: '#D0D0D0' }} className="px-3 py-2 border-b border-gray-300">
+              <span className="text-xs text-gray-700" style={{ fontWeight: 600 }}>CATÁLOGOS</span>
             </div>
             <div className="p-2 space-y-1">
               {(Object.keys(TITULOS) as CatalogoTipo[]).map(k => (
                 <button
                   key={k}
                   onClick={() => { setActivo(k); setEditIdx(null); setShowNuevo(false); setConfirmDelete(null); }}
-                  className={`w-full text-left px-3 py-1.5 text-xs rounded transition-colors ${
-                    activo === k ? 'bg-[#4A6FA5] text-white' : 'text-gray-700 hover:bg-gray-100'
+                  className={`w-full text-left px-3 py-1.5 text-xs transition-colors ${
+                    activo === k ? 'bg-[#4A6FA5] text-white' : 'text-gray-700 hover:bg-[#E8F4F8]'
                   }`}
                 >
                   {TITULOS[k]}
@@ -97,9 +99,9 @@ export function PLDCatalogos({ onBack }: Props) {
           </div>
 
           {/* Tabla */}
-          <div className="col-span-3 bg-white border border-gray-300">
-            <div className="bg-[#D9E2F3] px-3 py-2 border-l-4 border-[#4A6FA5] flex items-center justify-between">
-              <span className="text-xs text-[#4A6FA5]" style={{ fontWeight: 700 }}>{TITULOS[activo].toUpperCase()}</span>
+          <div className="col-span-3 border border-gray-300">
+            <div style={{ backgroundColor: '#D0D0D0' }} className="px-3 py-2 border-b border-gray-300 flex items-center justify-between">
+              <span className="text-xs text-gray-700" style={{ fontWeight: 600 }}>{TITULOS[activo].toUpperCase()}</span>
               <span className="text-[10px] text-gray-500">{items.length} elementos</span>
             </div>
 
@@ -153,7 +155,7 @@ export function PLDCatalogos({ onBack }: Props) {
                         ) : item}
                       </td>
                       <td className="px-3 py-1.5 border-r border-gray-200 text-center">
-                        <span className="px-1.5 py-0.5 rounded text-[9px] bg-green-100 text-green-700">Activo</span>
+                        <span className="px-1.5 py-0.5 text-[9px] bg-green-50 text-green-700 border border-green-200">Activo</span>
                       </td>
                       <td className="px-3 py-1.5 text-center whitespace-nowrap">
                         {confirmDelete === idx ? (

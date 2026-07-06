@@ -55,8 +55,13 @@ export interface TerminosCondiciones {
   tipoCalculo: string;
   moneda: string;
   montoGarantia: string;
+  montoAutorizado?: string;
+  _garantiaActiva?: boolean;  // persiste el estado del checkbox de garantía
   seguroFinanciado: boolean;
   montoSeguro: string;
+  pagoSeguro?: number;       // pago por período de seguro financiado
+  pagoTotal?: number;        // pago mensual + pagoSeguro
+  pagoMensual?: string;      // pago calculado de amortización
   // Inversión / Captación
   metodoIntereses?: string;      // 'Al vencimiento' | 'Capitalizable'
   // Crédito / Línea de Crédito — columnas top-level en J_CUENTAS_CORP_CLIENTES
@@ -91,6 +96,14 @@ export interface SimulacionRow {
   pagoTotal: number;
 }
 
+// Elemento específico que la IA debe verificar en un documento
+export interface ElementoRequerido {
+  id: string;
+  elemento: string;
+  /** true → ausencia rechaza el documento; false → solo advertencia */
+  obligatorio: boolean;
+}
+
 // Expediente Electrónico
 export interface RequisitoProducto {
   id: number;
@@ -101,6 +114,8 @@ export interface RequisitoProducto {
   area: string;
   obligatorio: boolean;
   promptIA: string;
+  /** Elementos específicos que la IA debe buscar en el documento */
+  elementosRequeridos?: ElementoRequerido[];
   /** Si se define, el requisito solo aplica a ese tipo de persona (ej: 'Moral', 'Física') */
   tipoPersona?: string;
 }
@@ -138,6 +153,8 @@ export interface DocumentoCargado {
 // Garantía registrada por el usuario en una solicitud
 export interface Garantia {
   id: number;
+  /** ID en J_GARANTIAS del cliente — referencia al registro origen */
+  garantiaDbId?: string;
   fecha: string;
   usuario: string;
   tipo: string;
@@ -629,8 +646,12 @@ export const EMPTY_TERMINOS: TerminosCondiciones = {
   tipoCalculo: 'Francés',
   moneda: 'MXN',
   montoGarantia: '',
+  montoAutorizado: '',
   seguroFinanciado: false,
   montoSeguro: '',
+  pagoSeguro: 0,
+  pagoTotal: 0,
+  pagoMensual: '',
   rendimientos: [],
   perfilInversionista: 'Conservador',
   riesgoInversionista: 'Bajo',
