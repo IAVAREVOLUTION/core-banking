@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { toast } from 'sonner';
 import * as store from './pldStore';
 import type { PerfilTransaccional } from './pldStore';
+import { usePLDClientes } from './usePLDClientes';
 
 interface Props { mode?: 'ver' | 'editar' | 'nuevo'; onBack?: () => void; }
 
@@ -12,16 +13,6 @@ const PRODUCTOS_CATALOGO = [
   { clave: 'PRO-004', nombre: 'Cuenta Corriente', tasa: '15%', moneda: 'MXN', estatus: 'Activo' },
   { clave: 'PRO-005', nombre: 'Préstamo automóviles', tasa: '10%', moneda: 'MXN', estatus: 'Activo' },
   { clave: 'PRO-006', nombre: 'Préstamo hipotecario', tasa: '20%', moneda: 'MXN', estatus: 'Activo' },
-];
-
-const CLIENTES_PLD = [
-  { id: 1, nombre: 'Juan Carlos García López', rfc: 'GALJ850315HDF', personalidad: 'Persona Física', sucursal: 'Matriz Centro' },
-  { id: 2, nombre: 'Comercializadora Del Norte SA de CV', rfc: 'CDN2011234567', personalidad: 'Persona Moral', sucursal: 'Sucursal Norte' },
-  { id: 3, nombre: 'María Elena Rodríguez Sánchez', rfc: 'ROSM900728MLN', personalidad: 'Persona Física c/Act. Emp.', sucursal: 'Sucursal Sur' },
-  { id: 4, nombre: 'Roberto Sánchez Cruz', rfc: 'SACR780512QWE', personalidad: 'Persona Física', sucursal: 'Matriz Centro' },
-  { id: 5, nombre: 'Ana Patricia Mendoza Flores', rfc: 'MEFA920310RTY', personalidad: 'Persona Física', sucursal: 'Sucursal Poniente' },
-  { id: 6, nombre: 'GRUPO EMPRESARIAL XYZ SA de CV', rfc: 'GEX180523ABC', personalidad: 'Persona Moral', sucursal: 'Sucursal Norte' },
-  { id: 7, nombre: 'Fernando Castro Ruiz', rfc: 'CARF761210DEF', personalidad: 'Persona Física', sucursal: 'Matriz Centro' },
 ];
 
 const EMPTY_FORM = {
@@ -40,6 +31,7 @@ const EMPTY_FORM = {
 export function PLDPerfilTransaccional({ mode = 'editar', onBack }: Props) {
   const isView = mode === 'ver';
   const [perfiles, setPerfiles] = useState(store.getPerfiles);
+  const { clientes: clientesDB, loading: loadingClientes } = usePLDClientes();
 
   // Modal Nuevo / Editar
   const [showNuevoModal, setShowNuevoModal] = useState(false);
@@ -63,12 +55,13 @@ export function PLDPerfilTransaccional({ mode = 'editar', onBack }: Props) {
   useEffect(() => { store.savePerfiles(perfiles); }, [perfiles]);
 
   const filteredClientes = useMemo(() => {
-    if (!clienteSearch) return CLIENTES_PLD;
+    const base = clientesDB.length > 0 ? clientesDB : [];
+    if (!clienteSearch) return base;
     const q = clienteSearch.toLowerCase();
-    return CLIENTES_PLD.filter(c =>
+    return base.filter(c =>
       c.nombre.toLowerCase().includes(q) || c.rfc.toLowerCase().includes(q)
     );
-  }, [clienteSearch]);
+  }, [clienteSearch, clientesDB]);
 
   // ── Abrir modal nuevo ──
   const handleOpenNuevo = () => {
@@ -100,7 +93,7 @@ export function PLDPerfilTransaccional({ mode = 'editar', onBack }: Props) {
   };
 
   // ── Seleccionar cliente ──
-  const handleSelectCliente = (c: typeof CLIENTES_PLD[0]) => {
+  const handleSelectCliente = (c: typeof clientesDB[0]) => {
     setModalForm(f => ({
       ...f,
       clienteId: c.id,
@@ -179,34 +172,36 @@ export function PLDPerfilTransaccional({ mode = 'editar', onBack }: Props) {
   const viewFieldCls = 'flex-1 px-2 py-1 text-xs border border-gray-300 rounded bg-gray-100 text-gray-600';
 
   return (
-    <div className="bg-[#F5F5F5] min-h-full">
+    <div className="bg-white min-h-full">
       {/* Header */}
-      <div className="bg-white px-6 py-3 border-b border-gray-300 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="#4A6FA5" strokeWidth="1.5"><rect x="3" y="3" width="14" height="14" rx="2"/><path d="M3 8h14M8 3v14"/></svg>
-          <h1 className="text-sm text-gray-800" style={{ fontWeight: 700 }}>Perfil Transaccional</h1>
-          <span className="text-xs text-gray-500">({perfiles.length} registros)</span>
-        </div>
-        <div className="flex items-center gap-2">
-          {!isView && (
-            <button onClick={() => { store.savePerfiles(perfiles); toast.success('Perfiles guardados'); onBack?.(); }} className="px-4 py-1.5 bg-[#0099CC] text-white text-xs rounded hover:bg-[#0088BB]">Guardar</button>
-          )}
-          <button onClick={onBack} className="px-4 py-1.5 bg-white border border-gray-400 text-gray-700 text-xs rounded hover:bg-gray-50">{isView ? 'Volver' : 'Cancelar'}</button>
+      <div className="bg-white px-4 py-3 border-b border-gray-300">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="#666" strokeWidth="1.5"><rect x="3" y="3" width="14" height="14" rx="2"/><path d="M3 8h14M8 3v14"/></svg>
+            <h2 className="text-lg text-gray-800">Perfil Transaccional</h2>
+            <span className="text-xs text-gray-500">({perfiles.length} registros)</span>
+          </div>
+          <div className="flex items-center gap-2">
+            {!isView && (
+              <button onClick={() => { store.savePerfiles(perfiles); toast.success('Perfiles guardados'); onBack?.(); }} className="px-5 py-1.5 bg-[#0099CC] text-white text-sm rounded hover:bg-[#0088BB]" style={{ fontWeight: 500 }}>Guardar</button>
+            )}
+            <button onClick={onBack} className="px-4 py-1.5 bg-white border border-gray-400 text-gray-700 text-sm rounded hover:bg-gray-50">{isView ? 'Volver' : 'Cancelar'}</button>
+          </div>
         </div>
       </div>
 
-      <div className="px-6 py-4">
-        <div className="bg-white border border-gray-300 p-4">
+      <div className="px-4 py-4">
+        <div className="border border-gray-300">
           {/* Section Header + Actions */}
-          <div className="bg-[#D9E2F3] px-3 py-2 mb-3 text-sm text-gray-800 border-l-4 border-[#4A6FA5] flex items-center justify-between" style={{ fontWeight: 500 }}>
-            <span>Perfiles Transaccionales</span>
+          <div style={{ backgroundColor: '#D0D0D0' }} className="px-3 py-2 border-b border-gray-300 flex items-center justify-between">
+            <span className="text-xs text-gray-700" style={{ fontWeight: 600 }}>PERFILES TRANSACCIONALES</span>
             {!isView && (
               <button onClick={handleOpenNuevo} className="px-3 py-1 bg-[#0099CC] text-white text-[10px] rounded hover:bg-[#0088BB]">+ Nuevo Perfil</button>
             )}
           </div>
 
           {/* Table */}
-          <div className="border border-gray-300">
+          <div className="overflow-auto">
             <table className="w-full text-xs">
               <thead>
                 <tr className="bg-[#D0D0D0]">
@@ -299,8 +294,8 @@ export function PLDPerfilTransaccional({ mode = 'editar', onBack }: Props) {
               {/* ── PASO 1: Seleccionar Cliente ── */}
               {modalStep === 'cliente' && (
                 <div>
-                  <div className="bg-[#D9E2F3] px-3 py-2 mb-3 text-xs text-gray-800 border-l-4 border-[#4A6FA5]" style={{ fontWeight: 500 }}>
-                    Seleccione el Cliente
+                  <div className="bg-gray-50 border border-gray-200 px-3 py-2 mb-3 text-xs text-gray-700" style={{ fontWeight: 600 }}>
+                    SELECCIONE EL CLIENTE
                   </div>
                   <div className="mb-3">
                     <div className="relative">
@@ -326,7 +321,12 @@ export function PLDPerfilTransaccional({ mode = 'editar', onBack }: Props) {
                         </tr>
                       </thead>
                       <tbody>
-                        {filteredClientes.length === 0 ? (
+                        {loadingClientes ? (
+                          <tr><td colSpan={4} className="px-3 py-6 text-center text-gray-400">
+                            <svg className="animate-spin h-4 w-4 mx-auto mb-1 text-[#4A6FA5]" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="6" cy="6" r="5" strokeOpacity="0.25"/><path d="M6 1a5 5 0 0 1 5 5" strokeLinecap="round"/></svg>
+                            Cargando clientes...
+                          </td></tr>
+                        ) : filteredClientes.length === 0 ? (
                           <tr><td colSpan={4} className="px-3 py-6 text-center text-gray-400">No se encontraron clientes</td></tr>
                         ) : filteredClientes.map((c, idx) => (
                           <tr
@@ -359,8 +359,8 @@ export function PLDPerfilTransaccional({ mode = 'editar', onBack }: Props) {
               {modalStep === 'perfil' && (
                 <div>
                   {/* Info cliente seleccionado */}
-                  <div className="bg-[#D9E2F3] px-3 py-2 mb-3 text-xs text-gray-800 border-l-4 border-[#4A6FA5] flex items-center justify-between" style={{ fontWeight: 500 }}>
-                    <span>Cliente Seleccionado</span>
+                  <div className="bg-gray-50 border border-gray-200 px-3 py-2 mb-3 text-xs text-gray-700 flex items-center justify-between" style={{ fontWeight: 600 }}>
+                    <span>CLIENTE SELECCIONADO</span>
                     {!modalEditId && (
                       <button onClick={() => setModalStep('cliente')} className="text-[10px] text-[#4A6FA5] hover:underline" style={{ fontWeight: 400 }}>Cambiar cliente</button>
                     )}
@@ -381,8 +381,8 @@ export function PLDPerfilTransaccional({ mode = 'editar', onBack }: Props) {
                   </div>
 
                   {/* Datos del perfil */}
-                  <div className="bg-[#D9E2F3] px-3 py-2 mb-3 text-xs text-gray-800 border-l-4 border-[#4A6FA5]" style={{ fontWeight: 500 }}>
-                    Datos del Perfil Transaccional
+                  <div className="bg-gray-50 border border-gray-200 px-3 py-2 mb-3 text-xs text-gray-700" style={{ fontWeight: 600 }}>
+                    DATOS DEL PERFIL TRANSACCIONAL
                   </div>
 
                   <div className="space-y-3">
@@ -569,8 +569,8 @@ export function PLDPerfilTransaccional({ mode = 'editar', onBack }: Props) {
             </div>
             <div className="p-5">
               {/* Info del cliente */}
-              <div className="bg-[#D9E2F3] px-3 py-2 mb-3 text-xs text-gray-800 border-l-4 border-[#4A6FA5]" style={{ fontWeight: 500 }}>
-                Datos del Cliente
+              <div className="bg-gray-50 border border-gray-200 px-3 py-2 mb-3 text-xs text-gray-700" style={{ fontWeight: 600 }}>
+                DATOS DEL CLIENTE
               </div>
               <div className="grid grid-cols-2 gap-x-6 gap-y-2 mb-4">
                 <div className="flex items-center gap-2">
@@ -584,8 +584,8 @@ export function PLDPerfilTransaccional({ mode = 'editar', onBack }: Props) {
               </div>
 
               {/* Info del perfil */}
-              <div className="bg-[#D9E2F3] px-3 py-2 mb-3 text-xs text-gray-800 border-l-4 border-[#4A6FA5]" style={{ fontWeight: 500 }}>
-                Información del Perfil
+              <div className="bg-gray-50 border border-gray-200 px-3 py-2 mb-3 text-xs text-gray-700" style={{ fontWeight: 600 }}>
+                INFORMACIÓN DEL PERFIL
               </div>
               <div className="grid grid-cols-2 gap-x-6 gap-y-2 mb-4">
                 <div className="flex items-center gap-2">

@@ -179,9 +179,9 @@ const SEED_KYC: KYCData = {
 const SEED_PARAMETROS: ParametrosPLD = {
   factorRiesgo: '100', montoMaxOperacionUSD: '10,000', montoMaxPersonaFisica: '500,000',
   montoMaxPersonaMoral: '5,000,000', aplicaPersonaFisica: 'Sí', aplicaPersonaMoral: 'Sí',
-  sujetoObligado: 'SOFOM ENR - Institución Financiera', organoSupervisor: 'CNBV',
-  diasActualizacionKYC: '365', porcentajeDesviacion: '30', diasRetencion: '1825',
-  alertasAutomaticas: true, envioAutomaticoCNBV: true,
+  sujetoObligado: 'SOFOM ENR', organoSupervisor: 'CNBV',
+  diasActualizacionKYC: '365', porcentajeDesviacion: '20', diasRetencion: '1825',
+  alertasAutomaticas: true, envioAutomaticoCNBV: false,
 };
 
 const SEED_CALIFICACION: CalificacionData = {

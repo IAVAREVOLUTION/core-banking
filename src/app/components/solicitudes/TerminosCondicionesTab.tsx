@@ -6,6 +6,11 @@ import {
   MOCK_TERMINOS, parseCurrency, formatCurrency, CAT_FRECUENCIA, CAT_TIPO_TASA, CAT_TIPO_CALCULO, CAT_MONEDA,
 } from './solicitudCreditoStore';
 import type { ProductoCatalogo } from '../../hooks/useProductosCatalogoDB';
+import { useProductosSeguros } from '../../hooks/useProductosSeguros';
+
+// ── Tipos internos ──
+interface GarantiaProducto { tipo: string; subtipo?: string; aforo?: number | string; }
+interface MatrizSeguroFila { montoMinimo?: number; montoMaximo?: number; montoDefault?: number; tasaDefault?: number; [k: string]: any; }
 
 interface Props {
   mode: 'nuevo' | 'editar' | 'ver';
@@ -297,6 +302,85 @@ export function TerminosCondicionesTab({ mode, solicitudId, lineaProducto, produ
 
   const [data, setData] = useState<TerminosCondiciones>(getInit);
   const isRO = mode === 'ver';
+
+  // ── Monto efectivo — debe ir PRIMERO, otros hooks lo usan ──
+  const montoEfectivo = useMemo(() => {
+    const raw = montoSolicitadoHeader || data.montoSolicitado || '0';
+    return parseFloat(parseCurrency(raw)) || 0;
+  }, [montoSolicitadoHeader, data.montoSolicitado]);
+
+  // ── Garantías del producto ──
+  const garantiasProducto = useMemo((): GarantiaProducto[] => {
+    const g = productoSeleccionado?.rawData?.garantias;
+    return Array.isArray(g) ? g : [];
+  }, [productoSeleccionado]);
+
+  // garantiaActiva y garantiaSeleccionada se restauran desde data persistido
+  const [garantiaActiva, setGarantiaActiva] = useState<boolean>(
+    () => !!(data._garantiaActiva || (data.porcentajeAforo && data.porcentajeAforo > 0))
+  );
+  const [garantiaSeleccionada, setGarantiaSeleccionada] = useState<GarantiaProducto | null>(() => {
+    if (!data.porcentajeAforo) return null;
+    const g = (productoSeleccionado?.rawData?.garantias as GarantiaProducto[] | undefined) || [];
+    return g.find(x => parseFloat(String(x.aforo ?? '')) === data.porcentajeAforo) || null;
+  });
+
+  // Al seleccionar garantía:
+  //   montoGarantia     = montoSolicitado (campo de solo lectura — muestra la base)
+  //   montoCubrirGarantia = montoSolicitado * (aforo / 100)
+  useEffect(() => {
+    if (!garantiaActiva || !garantiaSeleccionada) return;
+    const aforo = parseFloat(String(garantiaSeleccionada.aforo ?? '')) || 0;
+    const montoACubrir = montoEfectivo > 0 && aforo > 0 ? montoEfectivo * aforo / 100 : 0;
+    setData(prev => ({
+      ...prev,
+      montoGarantia: montoEfectivo.toFixed(2),
+      montoCubrirGarantia: montoACubrir,
+      porcentajeAforo: aforo,
+    }));
+  }, [garantiaActiva, garantiaSeleccionada, montoEfectivo]);
+
+  // ── Seguros financiados ──
+  const isSegurosActive = !!(data.seguroFinanciado);
+  const { productos: productosSeguros, loading: loadingSeguros } = useProductosSeguros(isSegurosActive);
+
+  const [seguroSeleccionadoId, setSeguroSeleccionadoId] = useState<string>('');
+  const [matrizFilaSeleccionada, setMatrizFilaSeleccionada] = useState<MatrizSeguroFila | null>(null);
+
+  const seguroActual = useMemo(() => {
+    if (!seguroSeleccionadoId) return null;
+    return productosSeguros.find(s => s.dbUuid === seguroSeleccionadoId || String(s.id) === seguroSeleccionadoId) || null;
+  }, [seguroSeleccionadoId, productosSeguros]);
+
+  // Filas de matriz — matrizTasaFija está directo en el objeto Product (no en rawData)
+  const matrizFiltrada = useMemo((): MatrizSeguroFila[] => {
+    if (!seguroActual) return [];
+    const matriz: MatrizSeguroFila[] = Array.isArray((seguroActual as any).matrizTasaFija)
+      ? (seguroActual as any).matrizTasaFija
+      : [];
+    if (montoEfectivo <= 0) return matriz; // sin monto → mostrar todas
+    return matriz.filter(f => {
+      const min = parseFloat(String(f.montoMinimo || 0)) || 0;
+      const max = parseFloat(String(f.montoMaximo || 0)) || 0;
+      return (min <= 0 || montoEfectivo >= min) && (max <= 0 || montoEfectivo <= max);
+    });
+  }, [seguroActual, montoEfectivo]);
+
+  // Al seleccionar fila de matriz → calcular totalSeguro = monto + monto * (tasa/100)
+  useEffect(() => {
+    if (!matrizFilaSeleccionada) return;
+    const monto = parseFloat(String(matrizFilaSeleccionada.montoDefault || 0)) || 0;
+    const tasa  = parseFloat(String(matrizFilaSeleccionada.tasaDefault  || 0)) || 0;
+    const plazo = parseInt(String(data.plazo || 1), 10) || 1;
+    const total = monto + monto * (tasa / 100);
+    const pagoPeriodo = plazo > 0 ? total / plazo : 0;
+    setData(prev => ({
+      ...prev,
+      montoSeguro: total.toFixed(2),
+      pagoSeguro: pagoPeriodo,
+      pagoTotal: (parseFloat(prev.pagoMensual || '0') + pagoPeriodo),
+    }));
+  }, [matrizFilaSeleccionada, data.plazo]);
 
   useEffect(() => {
     if (!isRO) saveToSession(solicitudId, 'terminos', data);
@@ -758,86 +842,263 @@ export function TerminosCondicionesTab({ mode, solicitudId, lineaProducto, produ
         </div>
       </div>
 
-      {/* Fila de Garantía — solo Crédito y Línea de Crédito */}
+      {/* ── Garantía — solo Crédito y Línea de Crédito ── */}
       {!isCaptacion && (
         <div className="mt-4 pt-4 border-t border-gray-200">
-          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Garantía</p>
-          <div className="grid grid-cols-3 gap-x-6">
-            <div>
-              <label className="block text-xs text-gray-700 mb-1">Monto Garantía</label>
-              <div className="relative">
-                <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-500">$</span>
-                <input
-                  type="text" inputMode="decimal"
-                  value={data.montoGarantia}
-                  onChange={e => handleNumeric('montoGarantia', e.target.value)}
-                  onBlur={() => handleCurrencyBlur('montoGarantia')}
-                  disabled={isRO} placeholder="0.00"
-                  className={`${ic()} pl-5`}
-                />
-              </div>
-            </div>
-            <div>
-              <label className="block text-xs text-gray-700 mb-1">Monto a Cubrir Garantía</label>
-              <div className="relative">
-                <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-500">$</span>
-                <input
-                  type="number" inputMode="decimal"
-                  value={data.montoCubrirGarantia ?? ''}
-                  onChange={e => set('montoCubrirGarantia', e.target.value === '' ? undefined : parseFloat(e.target.value) || 0)}
-                  disabled={isRO} placeholder="0.00" step="0.01"
-                  className={`${ic()} pl-5`}
-                />
-              </div>
-            </div>
-            <div>
-              <label className="block text-xs text-gray-700 mb-1">% Aforo</label>
-              <div className="relative">
-                <input
-                  type="number" inputMode="decimal"
-                  value={data.porcentajeAforo ?? ''}
-                  onChange={e => set('porcentajeAforo', e.target.value === '' ? undefined : parseFloat(e.target.value) || 0)}
-                  disabled={isRO} placeholder="0" step="0.01" min="0" max="100"
-                  className={`${ic()} pr-6`}
-                />
-                <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-500">%</span>
-              </div>
-            </div>
+          <div className="flex items-center gap-3 mb-3">
+            <label className="flex items-center gap-2 text-xs font-semibold text-gray-700 uppercase tracking-wide cursor-pointer">
+              <input
+                type="checkbox"
+                checked={garantiaActiva}
+                onChange={e => {
+                  setGarantiaActiva(e.target.checked);
+                  if (!e.target.checked) {
+                    setGarantiaSeleccionada(null);
+                    setData(prev => ({ ...prev, montoGarantia: '', montoCubrirGarantia: undefined, porcentajeAforo: undefined, _garantiaActiva: false }));
+                  } else {
+                    setData(prev => ({ ...prev, _garantiaActiva: true }));
+                  }
+                }}
+                disabled={isRO}
+                className="w-3.5 h-3.5 accent-[#4A6FA5]"
+              />
+              Garantía
+            </label>
+            {garantiasProducto.length === 0 && garantiaActiva && (
+              <span className="text-[10px] text-amber-600">El producto no tiene garantías configuradas</span>
+            )}
           </div>
+
+          {garantiaActiva && garantiasProducto.length > 0 && (() => {
+            const montoNum = montoEfectivo;
+            const sinMonto = montoNum <= 0;
+            return (
+              <div className="mb-3">
+                {sinMonto && (
+                  <div className="mb-2 px-3 py-1.5 bg-amber-50 border border-amber-200 text-amber-700 text-[10px]">
+                    Ingrese el Monto Solicitado antes de seleccionar una garantía.
+                  </div>
+                )}
+                <div className={`border border-gray-300 overflow-hidden ${sinMonto ? 'opacity-50 pointer-events-none' : ''}`}>
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr style={{ backgroundColor: '#D0D0D0' }} className="border-b border-gray-300">
+                        <th className="px-2 py-2 w-8 border-r border-gray-300" />
+                        <th className="px-3 py-2 text-left text-[10px] text-gray-700 font-semibold border-r border-gray-300">TIPO</th>
+                        <th className="px-3 py-2 text-left text-[10px] text-gray-700 font-semibold border-r border-gray-300">SUBTIPO</th>
+                        <th className="px-3 py-2 text-center text-[10px] text-gray-700 font-semibold border-r border-gray-300">% AFORO</th>
+                        <th className="px-3 py-2 text-right text-[10px] text-gray-700 font-semibold">MONTO A CUBRIR</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {garantiasProducto.map((g, idx) => {
+                        const sel = garantiaSeleccionada === g;
+                        const aforo = parseFloat(String(g.aforo ?? '')) || 0;
+                        const afoInvalido = aforo <= 0;
+                        const montoCubrir = !afoInvalido && montoNum > 0 ? montoNum * aforo / 100 : null;
+                        return (
+                          <tr
+                            key={idx}
+                            className="border-b border-gray-200 cursor-pointer"
+                            style={{ backgroundColor: sel ? '#E8F4F8' : idx % 2 === 0 ? '#FFF' : '#EEE' }}
+                            onClick={() => !isRO && !sinMonto && !afoInvalido && setGarantiaSeleccionada(sel ? null : g)}
+                          >
+                            <td className="px-2 py-1.5 text-center border-r border-gray-200">
+                              <input type="radio" checked={sel} readOnly disabled={afoInvalido || sinMonto} className="w-3 h-3 accent-[#4A6FA5]" />
+                            </td>
+                            <td className="px-3 py-1.5 border-r border-gray-200 font-medium text-gray-700">{g.tipo}</td>
+                            <td className="px-3 py-1.5 border-r border-gray-200 text-gray-600">{g.subtipo || '—'}</td>
+                            <td className="px-3 py-1.5 text-center border-r border-gray-200">
+                              {afoInvalido
+                                ? <span className="text-red-500 text-[9px]">Sin aforo</span>
+                                : <span className="font-mono text-gray-700">{aforo}%</span>}
+                            </td>
+                            <td className="px-3 py-1.5 text-right font-mono text-blue-700">
+                              {montoCubrir != null ? formatCurrency(montoCubrir) : '—'}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            );
+          })()}
+
+          {garantiaActiva && (
+            <div className="grid grid-cols-3 gap-x-6">
+              <div>
+                <label className="block text-xs text-gray-700 mb-1">Monto Solicitado</label>
+                <div className="relative">
+                  <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-500">$</span>
+                  <input type="text" value={data.montoGarantia || ''}
+                    readOnly disabled placeholder="0.00"
+                    className={`${ic(true)} pl-5 bg-gray-50`} />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs text-gray-700 mb-1">Monto a Cubrir Garantía</label>
+                <div className="relative">
+                  <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-500">$</span>
+                  <input type="text"
+                    value={data.montoCubrirGarantia != null && data.montoCubrirGarantia > 0
+                      ? Number(data.montoCubrirGarantia).toFixed(2) : ''}
+                    readOnly disabled
+                    placeholder="0.00" className={`${ic(true)} pl-5 bg-gray-50`} />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs text-gray-700 mb-1">% Aforo</label>
+                <div className="relative">
+                  <input type="text" value={data.porcentajeAforo != null ? String(data.porcentajeAforo) : ''}
+                    readOnly disabled placeholder="0" className={`${ic()} pr-6 bg-gray-50`} />
+                  <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-500">%</span>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
-      {/* Seguro financiado */}
+      {/* ── Seguro Financiado — solo Crédito y Línea de Crédito ── */}
       {!isCaptacion && (
         <div className="mt-4 pt-4 border-t border-gray-200">
-          <div className="flex items-center gap-6">
-            <label className="flex items-center gap-2 text-xs text-gray-700">
+          <div className="flex items-center gap-3 mb-3">
+            <label className="flex items-center gap-2 text-xs font-semibold text-gray-700 uppercase tracking-wide cursor-pointer">
               <input
                 type="checkbox"
-                checked={data.seguroFinanciado}
-                onChange={e => set('seguroFinanciado', e.target.checked)}
+                checked={!!data.seguroFinanciado}
+                onChange={e => {
+                  set('seguroFinanciado', e.target.checked);
+                  if (!e.target.checked) {
+                    setSeguroSeleccionadoId('');
+                    setMatrizFilaSeleccionada(null);
+                    setData(prev => ({ ...prev, montoSeguro: '', pagoSeguro: 0, pagoTotal: 0 }));
+                  }
+                }}
                 disabled={isRO}
-                className="w-3.5 h-3.5"
+                className="w-3.5 h-3.5 accent-[#4A6FA5]"
               />
               Seguro Financiado
             </label>
-            {data.seguroFinanciado && (
-              <div className="flex items-center gap-2">
-                <label className="text-xs text-gray-700">Monto Seguro:</label>
-                <div className="relative w-40">
-                  <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-500">$</span>
-                  <input
-                    type="text" inputMode="decimal"
-                    value={data.montoSeguro}
-                    onChange={e => handleNumeric('montoSeguro', e.target.value)}
-                    onBlur={() => handleCurrencyBlur('montoSeguro')}
-                    disabled={isRO} placeholder="0.00"
-                    className={`${ic()} pl-5`}
-                  />
-                </div>
-              </div>
-            )}
           </div>
+
+          {data.seguroFinanciado && (
+            <div className="space-y-3">
+              {/* Selector de seguro */}
+              <div>
+                <label className="block text-xs text-gray-700 mb-1">Seguro <span className="text-red-500">*</span></label>
+                {loadingSeguros ? (
+                  <p className="text-xs text-gray-400 py-1">Cargando seguros...</p>
+                ) : productosSeguros.length === 0 ? (
+                  <p className="text-xs text-amber-600 py-1">No hay productos de seguro configurados en J_PRODUCTOS</p>
+                ) : (
+                  <select
+                    value={seguroSeleccionadoId}
+                    onChange={e => { setSeguroSeleccionadoId(e.target.value); setMatrizFilaSeleccionada(null); }}
+                    disabled={isRO}
+                    className={sc()}
+                  >
+                    <option value="">-- Seleccionar seguro --</option>
+                    {productosSeguros.map(s => (
+                      <option key={s.dbUuid || String(s.id)} value={s.dbUuid || String(s.id)}>
+                        {s.nombre}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+
+              {/* Tabla Plazos y Montos del Seguro */}
+              {seguroActual && (
+                <div>
+                  <p className="text-xs font-medium text-gray-700 mb-1">Plazos y Montos del Seguro</p>
+                  {matrizFiltrada.length === 0 ? (
+                    <p className="text-xs text-amber-600 py-1">
+                      {montoEfectivo > 0
+                        ? 'El monto solicitado no está dentro del rango de cobertura de este seguro.'
+                        : 'Ingrese el monto solicitado para filtrar coberturas disponibles.'}
+                    </p>
+                  ) : (
+                    <div className="border border-gray-300 overflow-hidden">
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr style={{ backgroundColor: '#D0D0D0' }} className="border-b border-gray-300">
+                            <th className="px-3 py-2 text-left text-[10px] text-gray-700 font-semibold border-r border-gray-300">PERIODO</th>
+                            <th className="px-3 py-2 text-right text-[10px] text-gray-700 font-semibold border-r border-gray-300">MONTO DEF.</th>
+                            <th className="px-3 py-2 text-right text-[10px] text-gray-700 font-semibold border-r border-gray-300">TASA DEF.</th>
+                            <th className="px-3 py-2 text-center text-[10px] text-gray-700 font-semibold">ACCIÓN</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {matrizFiltrada.map((f, idx) => {
+                            const sel = matrizFilaSeleccionada === f;
+                            const periodo = (f as any).periodo || (f as any).frecuencia || '—';
+                            return (
+                              <tr key={idx} className="border-b border-gray-200"
+                                style={{ backgroundColor: sel ? '#E8F4F8' : idx % 2 === 0 ? '#FFF' : '#EEE' }}>
+                                <td className="px-3 py-2 border-r border-gray-200 text-gray-700">{periodo}</td>
+                                <td className="px-3 py-2 border-r border-gray-200 text-right font-mono text-gray-700">
+                                  {f.montoDefault != null ? formatCurrency(Number(f.montoDefault)) : '—'}
+                                </td>
+                                <td className="px-3 py-2 border-r border-gray-200 text-right font-mono text-gray-700">
+                                  {f.tasaDefault != null ? `${f.tasaDefault}%` : '—'}
+                                </td>
+                                <td className="px-3 py-2 text-center">
+                                  {sel ? (
+                                    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" className="inline-block text-[#4A6FA5]">
+                                      <circle cx="9" cy="9" r="8" stroke="#4A6FA5" strokeWidth="1.5"/>
+                                      <path d="M5 9l3 3 5-5" stroke="#4A6FA5" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                                    </svg>
+                                  ) : (
+                                    <button
+                                      onClick={() => !isRO && setMatrizFilaSeleccionada(f)}
+                                      disabled={isRO}
+                                      className="px-2 py-0.5 bg-[#4A6FA5] text-white text-[10px] rounded hover:bg-[#3E5C91] disabled:opacity-40"
+                                    >
+                                      Sel.
+                                    </button>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Resumen calculado */}
+              {matrizFilaSeleccionada && (() => {
+                const monto = Number(matrizFilaSeleccionada.montoDefault || 0);
+                const tasa  = Number(matrizFilaSeleccionada.tasaDefault  || 0);
+                const total = monto + monto * (tasa / 100);
+                return (
+                  <div className="space-y-2">
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-1">Monto Seguro</label>
+                      <input type="text" value={formatCurrency(monto)} readOnly disabled className={`${ic(true)} bg-gray-50`} />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-1">Tasa Seguro</label>
+                      <input type="text" value={`${tasa}%`} readOnly disabled className={`${ic(true)} bg-gray-50`} />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-1">Total Seguro</label>
+                      <input type="text" value={formatCurrency(total)} readOnly disabled
+                        className={`${ic(true)} bg-green-50 border-green-300 font-semibold`} />
+                      <p className="text-[10px] text-gray-400 mt-0.5">
+                        Total = {formatCurrency(monto)} + {formatCurrency(monto)} × {tasa / 100} = {formatCurrency(total)}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+          )}
         </div>
       )}
 

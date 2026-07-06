@@ -303,7 +303,7 @@ function CreditoFormView({ mode, creditoId, onCancel, onSave }: { mode: 'nuevo' 
   const ic = (err = false, dis = false) => `flex-1 px-2 py-1 text-xs border rounded focus:outline-none ${err ? 'border-red-400' : 'border-gray-300'} ${dis || isRO ? 'bg-gray-100 text-gray-600' : 'bg-white focus:ring-2 focus:ring-primary-theme'}`;
   const sc = (err = false) => `flex-1 px-2 py-1 text-xs border rounded focus:outline-none ${err ? 'border-red-400' : 'border-gray-300'} ${isRO ? 'bg-gray-100 text-gray-600' : 'bg-white focus:ring-2 focus:ring-primary-theme'}`;
   const Field = FormField;
-  const sections = [{ id: 'default', label: 'Default' }, { id: 'montos', label: 'Montos/Plazos' }, { id: 'tasas', label: 'Tasas' }, { id: 'amortizaciones', label: 'Amortizaciones' }, { id: 'expedientes', label: 'Expedientes Electrónicos' }, { id: 'autorizacion', label: 'Autorización' }, { id: 'garantias', label: 'Garantías' }, { id: 'cargos', label: 'Cargos' }, { id: 'avisos', label: 'Avisos' }, { id: 'solicitudes', label: 'Sol. Extraordinarias' }];
+  const sections = [{ id: 'default', label: 'Default' }, { id: 'montos', label: 'Montos/Plazos' }, { id: 'tasas', label: 'Tasas' }, { id: 'amortizaciones', label: 'Amortizaciones' }, { id: 'expedientes', label: 'Expedientes Electrónicos' }, { id: 'autorizacion', label: 'Autorización' }, { id: 'garantias', label: 'Garantías' }, { id: 'scoring', label: 'Scoring Crediticio' }, { id: 'cargos', label: 'Cargos' }, { id: 'avisos', label: 'Avisos' }, { id: 'solicitudes', label: 'Sol. Extraordinarias' }];
 
   return (
     <div className="bg-white min-h-screen">
@@ -353,6 +353,7 @@ function CreditoFormView({ mode, creditoId, onCancel, onSave }: { mode: 'nuevo' 
             {activeSec === 'expedientes' && <ExpedientesCreditoSection sid={sid} mode={mode} isRO={isRO} />}
             {activeSec === 'autorizacion' && <AutorizacionSection sid={sid} mode={mode} isRO={isRO} />}
             {activeSec === 'garantias' && <GarantiasSection sid={sid} mode={mode} isRO={isRO} />}
+            {activeSec === 'scoring' && <ScoringSection clienteId={fd.noCliente} />}
             {activeSec === 'cargos' && <CargosSection sid={sid} mode={mode} isRO={isRO} />}
             {activeSec === 'avisos' && <AvisosSection sid={sid} mode={mode} isRO={isRO} />}
             {activeSec === 'solicitudes' && <SolicitudesExtraSection sid={sid} mode={mode} isRO={isRO} />}
@@ -609,6 +610,172 @@ function AvisosSection({ sid, mode, isRO }: { sid: number | 'new'; mode: string;
       </div>
     )}
   </>);
+}
+
+// ── SCORING CREDITICIO SECTION ──
+const SCORING_DATA: Record<string, {
+  score: number; scoreMax: number; nivel: string; color: string;
+  fecha: string; fuente: string;
+  factores: { label: string; valor: string; impacto: 'positivo' | 'negativo' | 'neutro' }[];
+  historial: { fecha: string; tipo: string; monto: string; estatus: string; banco: string }[];
+  capacidad: { label: string; valor: string }[];
+}> = {
+  'CLI-001': {
+    score: 782, scoreMax: 850, nivel: 'Bueno', color: '#22C55E',
+    fecha: '01/06/2025', fuente: 'Buró de Crédito, S.A. de C.V.',
+    factores: [
+      { label: 'Historial de pagos', valor: 'Sin atrasos en 7 años', impacto: 'positivo' },
+      { label: 'Créditos activos', valor: '3 créditos vigentes', impacto: 'neutro' },
+      { label: 'Créditos liquidados', valor: '4 créditos pagados al 100%', impacto: 'positivo' },
+      { label: 'Nivel de endeudamiento', valor: '28% del ingreso mensual', impacto: 'positivo' },
+      { label: 'Antigüedad crediticia', valor: '7 años 4 meses', impacto: 'positivo' },
+      { label: 'Consultas recientes (90 días)', valor: '2 consultas', impacto: 'neutro' },
+      { label: 'Créditos con atraso', valor: 'Ninguno', impacto: 'positivo' },
+      { label: 'Tipo de créditos', valor: 'Hipotecario, Personal, Automotriz', impacto: 'positivo' },
+    ],
+    historial: [
+      { fecha: '15/03/25', tipo: 'Hipotecario', monto: '$1,850,000', estatus: 'Vigente', banco: 'Crédito Mx' },
+      { fecha: '20/04/25', tipo: 'Personal', monto: '$150,000', estatus: 'Vigente', banco: 'Crédito Mx' },
+      { fecha: '10/05/25', tipo: 'Automotriz', monto: '$320,000', estatus: 'Vigente', banco: 'Crédito Mx' },
+      { fecha: '12/01/23', tipo: 'Personal', monto: '$50,000', estatus: 'Liquidado', banco: 'Banco Azteca' },
+      { fecha: '05/06/21', tipo: 'Tarjeta de Crédito', monto: '$25,000', estatus: 'Liquidado', banco: 'BBVA' },
+      { fecha: '18/09/20', tipo: 'Personal', monto: '$30,000', estatus: 'Liquidado', banco: 'HSBC' },
+      { fecha: '03/03/19', tipo: 'Automotriz', monto: '$185,000', estatus: 'Liquidado', banco: 'Santander' },
+    ],
+    capacidad: [
+      { label: 'Ingresos netos mensuales', valor: '$42,000' },
+      { label: 'Egresos fijos mensuales', valor: '$18,500' },
+      { label: 'Excedente disponible', valor: '$23,500' },
+      { label: 'Deuda mensual actual', valor: '$11,760' },
+      { label: 'Relación deuda / ingreso', valor: '28.0%' },
+      { label: 'Capacidad de pago adicional', valor: '$11,740' },
+    ],
+  },
+};
+
+const SCORE_RANGOS = [
+  { min: 0,   max: 499, nivel: 'Muy Malo',  color: '#EF4444' },
+  { min: 500, max: 599, nivel: 'Malo',       color: '#F97316' },
+  { min: 600, max: 699, nivel: 'Regular',    color: '#EAB308' },
+  { min: 700, max: 749, nivel: 'Aceptable',  color: '#84CC16' },
+  { min: 750, max: 799, nivel: 'Bueno',      color: '#22C55E' },
+  { min: 800, max: 850, nivel: 'Excelente',  color: '#0EA5E9' },
+];
+
+function ScoringSection({ clienteId }: { clienteId: string }) {
+  const d = SCORING_DATA[clienteId];
+  const pct = d ? Math.round((d.score / d.scoreMax) * 100) : 0;
+  const rango = SCORE_RANGOS.find(r => d && d.score >= r.min && d.score <= r.max);
+
+  if (!d) return (
+    <div className="flex flex-col items-center justify-center py-16 text-gray-400">
+      <svg width="40" height="40" viewBox="0 0 40 40" fill="none" stroke="currentColor" strokeWidth="1.5" className="mb-3"><circle cx="20" cy="20" r="17"/><path d="M20 12v9M20 27h.01"/></svg>
+      <p className="text-sm">Sin información de scoring para este cliente.</p>
+    </div>
+  );
+
+  return (
+    <div className="space-y-4">
+
+      {/* ── Encabezado score ── */}
+      <div className="grid grid-cols-3 gap-4">
+
+        {/* Medidor score */}
+        <div className="col-span-1 bg-white border border-gray-300 p-4 flex flex-col items-center">
+          <p className="text-[10px] text-gray-500 uppercase tracking-wide mb-2">Score Crediticio</p>
+          <div className="relative w-36 h-36 mb-2">
+            <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90">
+              <circle cx="50" cy="50" r="40" fill="none" stroke="#E5E7EB" strokeWidth="10"/>
+              <circle cx="50" cy="50" r="40" fill="none" stroke={d.color} strokeWidth="10"
+                strokeDasharray={`${pct * 2.51} 251`} strokeLinecap="round"/>
+            </svg>
+            <div className="absolute inset-0 flex flex-col items-center justify-center">
+              <span className="text-3xl font-bold" style={{ color: d.color }}>{d.score}</span>
+              <span className="text-[10px] text-gray-400">/ {d.scoreMax}</span>
+            </div>
+          </div>
+          <span className="px-3 py-0.5 text-xs font-semibold rounded-full text-white" style={{ backgroundColor: d.color }}>{d.nivel}</span>
+          <div className="mt-3 w-full">
+            {SCORE_RANGOS.map(r => (
+              <div key={r.min} className="flex items-center gap-1.5 mb-0.5">
+                <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: r.color }}/>
+                <span className="text-[10px] text-gray-500 flex-1">{r.nivel}</span>
+                <span className="text-[10px] text-gray-400">{r.min}–{r.max}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Factores */}
+        <div className="col-span-2 bg-white border border-gray-300 p-4">
+          <p className="text-[10px] text-gray-500 uppercase tracking-wide mb-3">Factores de Calificación</p>
+          <div className="space-y-1.5">
+            {d.factores.map((f, i) => (
+              <div key={i} className="flex items-center gap-2 py-1 border-b border-gray-100 last:border-0">
+                <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${f.impacto === 'positivo' ? 'bg-green-500' : f.impacto === 'negativo' ? 'bg-red-400' : 'bg-gray-400'}`}/>
+                <span className="text-xs text-gray-600 w-48 flex-shrink-0">{f.label}</span>
+                <span className="text-xs text-gray-800 flex-1">{f.valor}</span>
+                <span className={`text-[10px] px-1.5 py-0.5 rounded ${f.impacto === 'positivo' ? 'bg-green-50 text-green-700' : f.impacto === 'negativo' ? 'bg-red-50 text-red-700' : 'bg-gray-100 text-gray-500'}`}>
+                  {f.impacto === 'positivo' ? '▲ Positivo' : f.impacto === 'negativo' ? '▼ Negativo' : '— Neutro'}
+                </span>
+              </div>
+            ))}
+          </div>
+          <div className="mt-3 pt-2 border-t border-gray-200 flex items-center gap-4 text-[10px] text-gray-400">
+            <span>Fuente: <strong className="text-gray-600">{d.fuente}</strong></span>
+            <span>Consulta: <strong className="text-gray-600">{d.fecha}</strong></span>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Capacidad de pago ── */}
+      <div className="bg-white border border-gray-300 p-4">
+        <p className="text-[10px] text-gray-500 uppercase tracking-wide mb-3">Capacidad de Pago</p>
+        <div className="grid grid-cols-3 gap-3">
+          {d.capacidad.map((c, i) => (
+            <div key={i} className="bg-gray-50 border border-gray-200 px-3 py-2">
+              <p className="text-[10px] text-gray-500 mb-0.5">{c.label}</p>
+              <p className="text-sm font-semibold text-gray-800">{c.valor}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* ── Historial de créditos ── */}
+      <div className="bg-white border border-gray-300 p-4">
+        <p className="text-[10px] text-gray-500 uppercase tracking-wide mb-3">Historial de Créditos Reportados</p>
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse text-xs min-w-[600px]">
+            <thead>
+              <tr className="bg-gray-100 border-b border-gray-300">
+                <th className="px-3 py-2 text-left text-[10px] text-gray-600 font-medium border-r border-gray-200">Fecha</th>
+                <th className="px-3 py-2 text-left text-[10px] text-gray-600 font-medium border-r border-gray-200">Tipo</th>
+                <th className="px-3 py-2 text-right text-[10px] text-gray-600 font-medium border-r border-gray-200">Monto</th>
+                <th className="px-3 py-2 text-left text-[10px] text-gray-600 font-medium border-r border-gray-200">Institución</th>
+                <th className="px-3 py-2 text-center text-[10px] text-gray-600 font-medium">Estatus</th>
+              </tr>
+            </thead>
+            <tbody>
+              {d.historial.map((h, i) => (
+                <tr key={i} className="border-b border-gray-100 hover:bg-gray-50">
+                  <td className="px-3 py-1.5 border-r border-gray-100 text-gray-600">{h.fecha}</td>
+                  <td className="px-3 py-1.5 border-r border-gray-100 text-gray-700">{h.tipo}</td>
+                  <td className="px-3 py-1.5 border-r border-gray-100 text-right font-mono text-gray-700">{h.monto}</td>
+                  <td className="px-3 py-1.5 border-r border-gray-100 text-gray-600">{h.banco}</td>
+                  <td className="px-3 py-1.5 text-center">
+                    <span className={`px-2 py-0.5 text-[10px] rounded-full ${h.estatus === 'Vigente' ? 'bg-blue-50 text-blue-700' : 'bg-green-50 text-green-700'}`}>
+                      {h.estatus}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+  );
 }
 
 // ── SOLICITUDES EXTRAORDINARIAS SECTION ──

@@ -16,15 +16,43 @@ interface Garantia {
 }
 
 export function TabGarantias({ mode, camposEditables }: TabGarantiasProps) {
-  const [data, setData] = useState<Garantia[]>([
-    { id: 1, tipo: 'Mueble', subtipo: 'Automóvil', garantia: 'GAR-006-Inventario-Retail', valorNominal: '$850,000.00', descripcion: 'Inventario completo de mercancía en tienda...', ubicacion: 'Plaza Comercial Centro, Monterrey...' },
-    { id: 2, tipo: 'Inmueble', subtipo: 'Departamento', garantia: 'GAR-007-Casa-Guadalajara', valorNominal: '$3,250,000.00', descripcion: 'Casa habitación de 3 recámaras, 2 baños co...', ubicacion: 'Colonia Chapalita, Guadalajara, Jal...' },
-    { id: 3, tipo: 'Inmueble', subtipo: 'Departamento', garantia: 'Seleccione', valorNominal: '$1,200,000.00', descripcion: 'Esc departamento de 3 habita Lomas y 100...', ubicacion: 'Refundir, municipio CDAM' },
-    { id: 4, tipo: 'Mueble', subtipo: 'Maquinaria', garantia: 'GAR-005-Tractor-Caterpillar', valorNominal: '$1,500,000.00', descripcion: 'El Tractor Caterpillar de color amarillo con ca...', ubicacion: 'Garage de la Rimada El Rincón, Sa...' },
-    { id: 5, tipo: 'Mueble', subtipo: 'Automóvil', garantia: 'GAR-004-Automóvil-Mazda3', valorNominal: '$218,500.00', descripcion: 'Mazda 3 2020 en un estado propietario 3 años...', ubicacion: 'CP 33000 Colonia Los Flores, CP-61800...' },
-    { id: 6, tipo: 'Inmueble', subtipo: 'Terreno', garantia: 'GAR-003-Terreno-San-Luis', valorNominal: '$200.00', descripcion: 'Casa para particular de 3 habitaciones y 200...', ubicacion: 'La tienda San Luis Nuevo' },
-    { id: 7, tipo: 'Inmueble', subtipo: 'Departamento', garantia: 'GAR-002-Departamento', valorNominal: '$2,100,250.50', descripcion: 'Casa para particular de 2 habitaciones y 200...', ubicacion: 'Granjas de Allende San Luis Rincón' },
-    { id: 8, tipo: 'Mueble', subtipo: 'Automóvil', garantia: 'GAR-001-Automóvil', valorNominal: '$189,150.00', descripcion: 'Vehículo marca Chevrolet modelo Aveo 2021...', ubicacion: 'Calle Alem 6710 Plaza CP-Rivas Ave...' },
+  const [data] = useState<Garantia[]>([
+    {
+      id: 1,
+      tipo: 'Inmueble',
+      subtipo: 'Casa Habitación',
+      garantia: 'GAR-001-Hipotecaria-CDMX',
+      valorNominal: '$2,500,000.00',
+      descripcion: 'Casa habitacional de dos niveles, escritura pública inscrita en RPP, libre de gravamen. Avalúo vigente emitido por perito certificado CNBV.',
+      ubicacion: 'Calle Roble #247, Col. Jardines del Pedregal, CDMX',
+    },
+    {
+      id: 2,
+      tipo: 'Personal',
+      subtipo: 'Pagaré',
+      garantia: 'GAR-002-Quirografario-Pagare',
+      valorNominal: '$150,000.00',
+      descripcion: 'Pagaré quirografario firmado por el acreditado ante dos testigos. Vence a la par con la última amortización del crédito.',
+      ubicacion: 'Resguardo documental — Sucursal CDMX Norte',
+    },
+    {
+      id: 3,
+      tipo: 'Mueble',
+      subtipo: 'Automóvil',
+      garantia: 'GAR-003-Prendario-Vehiculo',
+      valorNominal: '$420,000.00',
+      descripcion: 'Vehículo sedán 2023, 4 puertas, transmisión automática — prenda sin desplazamiento. Endoso en garantía registrado ante REPUVE.',
+      ubicacion: 'Av. Insurgentes Sur 1235, CDMX',
+    },
+    {
+      id: 4,
+      tipo: 'Personal',
+      subtipo: 'Scoring Crediticio',
+      garantia: 'GAR-004-Scoring-CLI001',
+      valorNominal: '$0.00',
+      descripcion: 'Score crediticio: 780/850. Historial limpio en Buró de Crédito. Sin notas negativas. Ingresos verificados $35,000/mes.',
+      ubicacion: 'Buró de Crédito / Expediente digital cliente CLI-001',
+    },
   ]);
   const [showFormModal, setShowFormModal] = useState(false);
 
@@ -164,7 +192,52 @@ interface FormModalProps {
   onClose: () => void;
 }
 
+const SUBTIPOS_POR_TIPO: Record<string, string[]> = {
+  'Hipotecaria': [
+    'Casa Habitación',
+    'Departamento',
+    'Condominio',
+    'Terreno Urbano',
+    'Terreno Ejidal',
+    'Local Comercial',
+    'Oficina',
+    'Bodega',
+    'Edificio',
+    'Nave Industrial',
+  ],
+  'Quirografaria': [
+    'Pagaré',
+    'Aval',
+    'Aval Empresarial',
+    'Obligado Solidario',
+    'Carta de Crédito',
+    'Fianza',
+  ],
+  'Prendaria (Vehículo)': [
+    'Automóvil',
+    'Camioneta',
+    'Motocicleta',
+    'Vehículo de Carga',
+    'Autobús / Minibús',
+    'Maquinaria Agrícola',
+    'Maquinaria Industrial',
+    'Equipo de Construcción',
+    'Equipo Médico',
+    'Equipo de Cómputo',
+  ],
+  'Scoring Crediticio': [
+    'Score Buró de Crédito',
+    'Score Interno',
+    'Historial de Pagos',
+    'Capacidad de Pago',
+    'Análisis Financiero',
+  ],
+};
+
 function FormModal({ onClose }: FormModalProps) {
+  const [tipo, setTipo] = useState('');
+  const subtipos = SUBTIPOS_POR_TIPO[tipo] ?? [];
+
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
       <div className="bg-white shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-hidden flex flex-col border-2 border-gray-400" onClick={(e) => e.stopPropagation()}>
@@ -192,10 +265,16 @@ function FormModal({ onClose }: FormModalProps) {
                 <label className="block text-xs text-gray-700 mb-1 font-medium">
                   Tipo <span className="text-red-600">*</span>
                 </label>
-                <select className="w-full px-2 py-1 text-xs border border-gray-400">
+                <select
+                  value={tipo}
+                  onChange={e => setTipo(e.target.value)}
+                  className="w-full px-2 py-1 text-xs border border-gray-400"
+                >
                   <option value="">Seleccionar...</option>
-                  <option value="Mueble">Mueble</option>
-                  <option value="Inmueble">Inmueble</option>
+                  <option value="Hipotecaria">Hipotecaria</option>
+                  <option value="Quirografaria">Quirografaria</option>
+                  <option value="Prendaria (Vehículo)">Prendaria (Vehículo)</option>
+                  <option value="Scoring Crediticio">Scoring Crediticio</option>
                 </select>
               </div>
 
@@ -204,12 +283,14 @@ function FormModal({ onClose }: FormModalProps) {
                 <label className="block text-xs text-gray-700 mb-1 font-medium">
                   Subtipo <span className="text-red-600">*</span>
                 </label>
-                <select className="w-full px-2 py-1 text-xs border border-gray-400">
-                  <option value="">Seleccionar...</option>
-                  <option value="Automóvil">Automóvil</option>
-                  <option value="Terreno">Terreno</option>
-                  <option value="Departamento">Departamento</option>
-                  <option value="Maquinaria">Maquinaria</option>
+                <select
+                  disabled={!tipo}
+                  className="w-full px-2 py-1 text-xs border border-gray-400 disabled:bg-gray-100 disabled:text-gray-400"
+                >
+                  <option value="">{tipo ? 'Seleccionar...' : 'Primero seleccione un Tipo'}</option>
+                  {subtipos.map(s => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
                 </select>
               </div>
 

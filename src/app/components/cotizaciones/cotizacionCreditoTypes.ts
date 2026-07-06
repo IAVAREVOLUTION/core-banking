@@ -64,7 +64,8 @@ export interface CotizacionCreditoData {
   tipoGarantia: string;
   subtipoGarantia: string;
   aforo: number;
-  montoGarantia: number;       // = montoSolicitado * aforo
+  montoGarantia: number;         // = montoSolicitado (base)
+  montoCubrirGarantia: number;   // = montoSolicitado * aforo
 
   // §6 — Cálculo de Amortización
   tipoCalculoAmortizacion: string;
@@ -342,6 +343,7 @@ export function crearCotizacionCreditoVacia(
       subtipoGarantia: '',
       aforo: 0,
       montoGarantia: 0,
+      montoCubrirGarantia: 0,
 
       // Cálculo
       tipoCalculoAmortizacion: 'Francés',

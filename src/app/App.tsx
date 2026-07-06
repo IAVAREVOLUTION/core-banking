@@ -57,6 +57,8 @@ import { AportacionesModule } from './components/cartera/AportacionesModule';
 import { CobranzaModule } from './components/cartera/CobranzaModule';
 import { CotizacionesModule } from './components/cotizaciones/CotizacionesModule';
 import { PolizasContablesModule } from './components/polizas-contables/PolizasContablesModule';
+import { GestionRiesgosModule } from './components/gestion-riesgos/GestionRiesgosModule';
+import { UNEHome } from './components/une/UNEHome';
 import efinanciaLogo from '@/assets/7b6cb23c00b7817818c638af3eae0a416e1e9f57.png';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { useProductosCredito } from './hooks/useProductosCredito';
@@ -65,7 +67,7 @@ import { useProductosCaptacionDB } from './hooks/useProductosCaptacionDB';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 
 type View = 'list' | 'form' | 'direccion';
-type Module = 'dashboard' | 'configuracion' | 'productos' | 'garantias' | 'prospectos' | 'clientes' | 'cotizaciones' | 'cuentas-ahorro' | 'solicitudes-creditos' | 'solicitudes-activacion' | 'originacion' | 'creditos' | 'inversiones' | 'cartera-credito' | 'cartera-inversion' | 'cartera-ahorro' | 'avisos-vencimiento' | 'pld' | 'pagos-referenciados' | 'casos-cobranza' | 'cobranza' | 'ejec-reportes' | 'polizas-contables';
+type Module = 'dashboard' | 'configuracion' | 'productos' | 'garantias' | 'prospectos' | 'clientes' | 'cotizaciones' | 'cuentas-ahorro' | 'solicitudes-creditos' | 'solicitudes-activacion' | 'originacion' | 'creditos' | 'inversiones' | 'cartera-credito' | 'cartera-inversion' | 'cartera-ahorro' | 'avisos-vencimiento' | 'pld' | 'pagos-referenciados' | 'casos-cobranza' | 'cobranza' | 'ejec-reportes' | 'polizas-contables' | 'gestion-riesgos' | 'une';
 type ClienteView = 'dashboard' | 'list' | 'form' | 'direccion';
 type ProspectoView = 'dashboard' | 'list' | 'form';
 type SolicitudView = 'dashboard' | 'list' | 'form';
@@ -678,6 +680,8 @@ function App() {
     { id: 'cartera-ahorro', label: 'Cartera ahorro' },
     { id: 'ejec-reportes', label: 'Ejec. Reportes Regulatorios' },
     { id: 'polizas-contables', label: 'Pólizas Contables' },
+    { id: 'gestion-riesgos', label: 'Gestión de Riesgos' },
+    { id: 'une', label: 'UNE — Quejas y Reclamaciones' },
   ];
 
   return (
@@ -1121,7 +1125,7 @@ function App() {
             {/* Contenido del módulo */}
             {clienteView === 'dashboard' ? (
               <ClientesDashboard
-                clientes={clientes}
+                clientes={clientesDB}
                 onNew={handleNewCliente}
                 onEdit={handleEditCliente}
                 onView={handleViewCliente}
@@ -1420,6 +1424,10 @@ function App() {
           <EjecReportesModule />
         ) : currentModule === 'polizas-contables' ? (
           <PolizasContablesModule />
+        ) : currentModule === 'gestion-riesgos' ? (
+          <GestionRiesgosModule />
+        ) : currentModule === 'une' ? (
+          <UNEHome />
         ) : (
           <div className="p-8 text-center text-gray-500">
             Módulo en desarrollo

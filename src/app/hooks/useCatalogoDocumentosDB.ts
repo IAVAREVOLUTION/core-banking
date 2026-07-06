@@ -51,12 +51,9 @@ export function useCatalogoDocumentosDB() {
       return null;
     })();
 
-    if (cached && cached.length > 0) {
-      setTiposDocumento(cached);
-      setLoading(false);
-    }
+    // Siempre ir a la DB — el catálogo puede cambiar frecuentemente
+    try { sessionStorage.removeItem(STORAGE_KEY); } catch { /* */ }
 
-    // Siempre intentar refrescar desde servidor
     fetch(`${API_BASE}/catalogos/documentos`, {
       headers: { 'Authorization': `Bearer ${publicAnonKey}`, 'Content-Type': 'application/json' },
     })
@@ -69,8 +66,7 @@ export function useCatalogoDocumentosDB() {
           .filter(Boolean);
         if (nombres.length > 0) {
           setTiposDocumento(nombres);
-          try { sessionStorage.setItem(STORAGE_KEY, JSON.stringify(nombres)); } catch { /* */ }
-        } else if (!cached) {
+        } else {
           setTiposDocumento(FALLBACK_TIPOS);
         }
       })
