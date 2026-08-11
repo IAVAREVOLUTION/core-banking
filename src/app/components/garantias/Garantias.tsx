@@ -48,7 +48,7 @@ export function Garantias() {
     const result = await saveGarantia(garantiaData);
     if (result.ok && result.source === 'db') {
       toast.success(
-        formMode === 'create' ? 'Garantia creada en DB' : 'Garantia actualizada en DB',
+        formMode === 'create' ? 'Bien creado en DB' : 'Bien actualizado en DB',
         { description: `"${garantiaData.garantia}" — guardado en J_GARANTIAS` }
       );
       // Refetch para asegurar sincronización con la tabla real
@@ -58,7 +58,7 @@ export function Garantias() {
         description: 'Revisar consola [GarantiasDB] para ver el error. Ejecutar hotfix-insert-jgarantia.sql si es necesario.',
       });
     } else {
-      toast.error('Error al guardar garantía', {
+      toast.error('Error al guardar el bien', {
         description: result.error || 'Error desconocido',
       });
     }

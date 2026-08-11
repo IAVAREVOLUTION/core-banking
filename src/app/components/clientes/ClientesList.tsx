@@ -205,7 +205,7 @@ export function ClientesList({
               <circle cx="12" cy="8" r="4"/>
               <path d="M4 20c0-4 3.5-7 8-7s8 3 8 7"/>
             </svg>
-            <h2 className="text-lg font-normal text-gray-800">Lista de Clientes</h2>
+            <h2 className="text-lg font-normal text-gray-800">Lista de Personas</h2>
             <button className="p-1 ml-2">
               <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#999" strokeWidth="2">
                 <circle cx="8" cy="8" r="6"/>
@@ -226,7 +226,7 @@ export function ClientesList({
           <span className="text-sm text-gray-700">Ver</span>
           <div className="relative">
             <select className="px-3 py-1.5 border border-gray-400 rounded text-sm bg-white pr-8 appearance-none min-w-[200px]">
-              <option>Vista general del Cliente</option>
+              <option>Vista general de Personas</option>
             </select>
             <svg className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" width="12" height="12" viewBox="0 0 12 12" fill="#666">
               <path d="M6 8l-4-4h8z"/>
@@ -414,7 +414,7 @@ export function ClientesList({
             <thead>
               <tr className="bg-gray-100 border-b border-gray-300">
                 <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700 whitespace-nowrap">Editar | Ver</th>
-                <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700 whitespace-nowrap">ID CLIENTE</th>
+                <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700 whitespace-nowrap">ID</th>
                 <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700 whitespace-nowrap">NOMBRE COMPLETO</th>
                 <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700 whitespace-nowrap">CURP</th>
                 <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700 whitespace-nowrap">RFC</th>

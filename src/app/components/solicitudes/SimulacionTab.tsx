@@ -7,6 +7,7 @@ import {
   CAT_FRECUENCIA,
 } from './solicitudCreditoStore';
 import { FlujInversionRow, calcularFlujInversion, TASA_ISR_ANUAL } from '../cotizaciones/cotizacionCaptacionTypes';
+import { generarTablaArrendamiento, type SimulacionArrendamiento } from '../cotizaciones/cotizacionArrendamientoTypes';
 
 interface AportacionRow {
   noAportacion: number;
@@ -26,6 +27,16 @@ interface Props {
   simulacionInicial?: SimulacionRow[];
   /** Monto autorizado de la solicitud — usado para simulación de aportaciones */
   montoAutorizado?: number;
+  /** Monto capturado en el encabezado (Plazos y Montos), bruto — respaldo cuando montoAutorizado aún no se calculó (Términos y Condiciones nunca se visitó) */
+  montoSolicitadoHeader?: string;
+  /** Plazo capturado en el encabezado — prioridad sobre terminos.plazo (Simular no requiere haber visitado Términos y Condiciones) */
+  plazoHeader?: string;
+  /** Tasa autocompletada en el encabezado (Matriz de Tasa Fija) — prioridad sobre terminos.tasa */
+  tasaHeader?: string;
+  /** Fecha Inicio del encabezado — respaldo cuando terminos.fechaPrimerPago aún no se sincronizó (Términos y Condiciones nunca se visitó) */
+  fechaInicioHeader?: string;
+  /** Frecuencia autocompletada desde la Matriz de Tasa Fija (encabezado) — respaldo cuando terminos.frecuencia aún no se sincronizó */
+  frecuenciaHeader?: string;
   /** Notifica la fecha del último pago cuando cambia la tabla/calendario */
   onFechaFinChange?: (fecha: string) => void;
 }
@@ -58,6 +69,16 @@ function parseDate(f: string): Date | null {
     return isNaN(d.getTime()) ? null : d;
   }
   return null;
+}
+
+/** Normaliza DD/MM/YYYY o YYYY-MM-DD → YYYY-MM-DD. Retorna '' si inválida. */
+function toIsoDate(f: string): string {
+  const d = parseDate(f);
+  if (!d) return '';
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
 }
 
 /** Formatea Date → DD/MM/YYYY (interno) */
@@ -145,11 +166,12 @@ function generarCalendarioAportaciones(
   return rows;
 }
 
-export function SimulacionTab({ mode, solicitudId, lineaProducto, tipoProducto, calendarioAportaciones, simulacionInicial, montoAutorizado, onFechaFinChange }: Props) {
+export function SimulacionTab({ mode, solicitudId, lineaProducto, tipoProducto, calendarioAportaciones, simulacionInicial, montoAutorizado, montoSolicitadoHeader, plazoHeader, tasaHeader, fechaInicioHeader, frecuenciaHeader, onFechaFinChange }: Props) {
   const isRO = mode === 'ver';
   const isCap = esCaptacion(lineaProducto, tipoProducto);
   const _tpRaw = (tipoProducto || lineaProducto || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
   const isInversion = isCap && _tpRaw.includes('invers');
+  const isArrendamiento = !isCap && _tpRaw.includes('arrendamiento') && _tpRaw.includes('puro');
 
   // ── Amortización (solo crédito) ──
   const getInitRows = (): SimulacionRow[] => {
@@ -281,25 +303,42 @@ export function SimulacionTab({ mode, solicitudId, lineaProducto, tipoProducto, 
     if (last?.fechaInversion) onFechaFinChange(last.fechaInversion);
   }, [invRows]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Tabla de Arrendamiento Puro ──
+  const getInitArrRows = (): SimulacionArrendamiento | null => {
+    const s = loadFromSession<SimulacionArrendamiento>(solicitudId, 'simulacion_arrendamiento');
+    if (s) return s;
+    if (mode !== 'nuevo') {
+      const saved = loadFromSavedStore<SimulacionArrendamiento>(solicitudId, 'simulacion_arrendamiento');
+      if (saved) return saved;
+    }
+    return null;
+  };
+
+  const [arrRows, setArrRows] = useState<SimulacionArrendamiento | null>(isArrendamiento ? getInitArrRows : null);
+
+  useEffect(() => {
+    if (!isRO && isArrendamiento && arrRows) saveToSession(solicitudId, 'simulacion_arrendamiento', arrRows);
+  }, [arrRows, solicitudId, isRO, isArrendamiento]);
+
+  useEffect(() => {
+    if (!onFechaFinChange || !isArrendamiento || !arrRows) return;
+    const last = arrRows.calendario[arrRows.calendario.length - 1];
+    if (last?.fechaPago) onFechaFinChange(last.fechaPago);
+  }, [arrRows]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const handleSimularInversion = () => {
     const terminos = readTerminos();
-    const montoBase = (montoAutorizado && montoAutorizado > 0) ? montoAutorizado : parseFloat(parseCurrency(terminos.montoSolicitado || '0'));
-    const tasa = parseFloat(String(terminos.tasa || '0').replace(/[^0-9.-]/g, ''));
-    const plazo = parseInt(String(terminos.plazo || '0'));
-    const frecuencia = terminos.frecuencia || 'Mensual';
-    const fechaRaw = terminos.fechaPrimeraAportacion || terminos.fechaPrimerPago || '';
-    // Normalize DD/MM/YYYY → YYYY-MM-DD for calcularFlujInversion
-    const normalizarFecha = (f: string): string => {
-      const parts = f.split('/');
-      if (parts.length === 3 && parts[0].length === 2) return `${parts[2]}-${parts[1]}-${parts[0]}`;
-      return f;
-    };
-    const fechaInicio = normalizarFecha(fechaRaw);
+    const montoBase = (montoAutorizado && montoAutorizado > 0) ? montoAutorizado : parseFloat(parseCurrency(montoSolicitadoHeader || terminos.montoSolicitado || '0'));
+    const tasa = parseFloat((tasaHeader || terminos.tasa || '0').replace(/[^0-9.-]/g, ''));
+    const plazo = parseInt(String(plazoHeader || terminos.plazo || '0'));
+    const frecuencia = terminos.frecuencia || frecuenciaHeader || 'Mensual';
+    const fechaRaw = terminos.fechaPrimeraAportacion || terminos.fechaPrimerPago || fechaInicioHeader || '';
+    const fechaInicio = toIsoDate(fechaRaw);
     const metodo = terminos.metodoIntereses || 'Al vencimiento';
 
     if (montoBase <= 0 || tasa <= 0 || plazo <= 0) {
       toast.error('Datos insuficientes', {
-        description: `Complete Monto (${montoBase}), Tasa (${tasa}) y Plazo (${plazo}) en Términos y Condiciones.`,
+        description: `Complete Monto (${montoBase}), Tasa (${tasa}) y Plazo (${plazo}) en Plazos y Montos / Términos y Condiciones.`,
         duration: 4000,
       });
       return;
@@ -318,13 +357,15 @@ export function SimulacionTab({ mode, solicitudId, lineaProducto, tipoProducto, 
   // ── Simular Crédito ──
   const handleSimularCredito = () => {
     const terminos = readTerminos();
-    const montoSol = parseFloat(parseCurrency(terminos.montoSolicitado || '0'));
+    const montoSol = parseFloat(parseCurrency(montoSolicitadoHeader || terminos.montoSolicitado || '0'));
     // Monto Autorizado tiene prioridad sobre Monto Solicitado en Términos
     const monto = (montoAutorizado && montoAutorizado > 0) ? montoAutorizado : montoSol;
-    const tasa = parseFloat(String(terminos.tasa || '0').replace(/[^0-9.-]/g, ''));
-    const plazo = parseInt(String(terminos.plazo || '0'));
-    const frecuencia = terminos.frecuencia || 'Mensual';
-    const fechaPrimerPago = terminos.fechaPrimerPago || '';
+    // Plazo/Tasa del encabezado tienen prioridad — Simular no requiere haber
+    // visitado Términos y Condiciones (Plazo se captura en Plazos y Montos).
+    const tasa = parseFloat((tasaHeader || terminos.tasa || '0').replace(/[^0-9.-]/g, ''));
+    const plazo = parseInt(String(plazoHeader || terminos.plazo || '0'));
+    const frecuencia = terminos.frecuencia || frecuenciaHeader || 'Mensual';
+    const fechaPrimerPago = toIsoDate(terminos.fechaPrimerPago || fechaInicioHeader || '');
     const tipoCalculo = terminos.tipoCalculo || 'Francés';
     const seguro = terminos.seguroFinanciado
       ? parseFloat(parseCurrency(terminos.montoSeguro || '0')) / (plazo || 1)
@@ -332,33 +373,82 @@ export function SimulacionTab({ mode, solicitudId, lineaProducto, tipoProducto, 
 
     if (monto <= 0 || tasa <= 0 || plazo <= 0) {
       toast.error('Datos insuficientes', {
-        description: `Complete Monto (${ monto }), Tasa (${ tasa }) y Plazo (${ plazo }) en Términos y Condiciones.`,
+        description: `Complete Monto (${ monto }), Tasa (${ tasa }) y Plazo (${ plazo }) en Plazos y Montos / Términos y Condiciones.`,
         duration: 4000,
       });
       return;
     }
 
-    const newRows = generarSimulacion(monto, tasa, plazo, frecuencia, fechaPrimerPago, tipoCalculo, seguro);
+    // Arrendamiento Financiero: descuenta el valor residual configurado en
+    // Términos y Condiciones — la tabla de amortización converge a ese saldo
+    // en vez de a cero (Crédito tradicional no tiene residual, siempre 0).
+    const montoResidual = terminos.montoResidual || 0;
+    const newRows = generarSimulacion(monto, tasa, plazo, frecuencia, fechaPrimerPago, tipoCalculo, seguro, montoResidual);
     setRows(newRows);
     saveToSession(solicitudId, 'simulacion', newRows);
-    const fuenteMonto = (montoAutorizado && montoAutorizado > 0) ? 'Monto Autorizado' : 'Monto Solicitado';
-    toast.success('Simulación generada', { description: `${newRows.length} pagos (${tipoCalculo}) · ${fuenteMonto}: ${formatCurrency(monto)}`, duration: 3000 });
+    toast.success('Simulación generada', { description: `${newRows.length} pagos (${tipoCalculo}) · Monto Autorizado: ${formatCurrency(monto)}`, duration: 3000 });
+  };
+
+  // ── Simular Arrendamiento Puro ──
+  const handleSimularArrendamiento = () => {
+    const terminos = readTerminos();
+    const monto = (montoAutorizado && montoAutorizado > 0)
+      ? montoAutorizado
+      : parseFloat(String(terminos.montoAutorizado || montoSolicitadoHeader || '0'));
+    const montoResidual = terminos.montoResidual || 0;
+    const tasa = parseFloat((tasaHeader || terminos.tasa || '0').replace(/[^0-9.-]/g, ''));
+    const plazo = parseInt(String(plazoHeader || terminos.plazo || '0'));
+    const frecuencia = terminos.frecuencia || frecuenciaHeader || 'Mensual';
+    const fechaPrimerPago = toIsoDate(terminos.fechaPrimerPago || fechaInicioHeader || '');
+    const seguro = terminos.seguroFinanciado
+      ? parseFloat(parseCurrency(terminos.montoSeguro || '0')) / (plazo || 1)
+      : 0;
+    const numRentasAnticipadas = parseInt(String(terminos.rentasAnticipadas || '0'), 10) || 0;
+
+    if (monto <= 0 || tasa <= 0 || plazo <= 0) {
+      toast.error('Datos insuficientes', {
+        description: `Complete Monto Autorizado (${monto}), Tasa (${tasa}) y Plazo (${plazo}) en Plazos y Montos / Términos y Condiciones.`,
+        duration: 4000,
+      });
+      return;
+    }
+    if (!fechaPrimerPago) {
+      toast.error('Fecha requerida', { description: 'Complete la Fecha Inicio en el encabezado o la Fecha Primer Pago en Términos y Condiciones.', duration: 4000 });
+      return;
+    }
+
+    const resultado = generarTablaArrendamiento({
+      montoAutorizado: monto,
+      montoResidual,
+      tasaAnual: tasa,
+      plazoMeses: plazo,
+      frecuencia,
+      fechaPrimerPago,
+      seguroPorPeriodo: seguro,
+      numRentasAnticipadas,
+    });
+    setArrRows(resultado);
+    saveToSession(solicitudId, 'simulacion_arrendamiento', resultado);
+    toast.success('Simulación generada', {
+      description: `${resultado.calendario.length} rentas · Monto Autorizado: ${formatCurrency(monto)}${numRentasAnticipadas > 0 ? ` · ${numRentasAnticipadas} renta(s) anticipada(s) en Cargos` : ''}`,
+      duration: 3500,
+    });
   };
 
   // ── Simular Captación/Aportación ──
   const handleSimularAportaciones = () => {
     const terminos = readTerminos();
     // Prioridad: montoAutorizado (si existe y > 0) > montoSolicitado
-    const montoBase = (montoAutorizado && montoAutorizado > 0) ? montoAutorizado : parseFloat(parseCurrency(terminos.montoSolicitado || '0'));
+    const montoBase = (montoAutorizado && montoAutorizado > 0) ? montoAutorizado : parseFloat(parseCurrency(montoSolicitadoHeader || terminos.montoSolicitado || '0'));
     const monto = montoBase;
-    const plazo = parseInt(String(terminos.plazo || '0'));
-    const frecuencia = terminos.frecuencia || 'Mensual';
-    const fechaInicio = terminos.fechaPrimeraAportacion || terminos.fechaPrimerPago || '';
+    const plazo = parseInt(String(plazoHeader || terminos.plazo || '0'));
+    const frecuencia = terminos.frecuencia || frecuenciaHeader || 'Mensual';
+    const fechaInicio = terminos.fechaPrimeraAportacion || terminos.fechaPrimerPago || fechaInicioHeader || '';
     const moneda = terminos.moneda || 'MXN';
 
     if (monto <= 0 || plazo <= 0) {
       toast.error('Datos insuficientes', {
-        description: `Complete Monto (${ monto }) y Plazo (${ plazo }) en Términos y Condiciones.`,
+        description: `Complete Monto (${ monto }) y Plazo (${ plazo }) en Plazos y Montos / Términos y Condiciones.`,
         duration: 4000,
       });
       return;
@@ -368,9 +458,8 @@ export function SimulacionTab({ mode, solicitudId, lineaProducto, tipoProducto, 
     setCalRows(newCal);
     saveToSession(solicitudId, 'simulacion_cal', newCal);
     const montoPorPeriodo = newCal.length > 0 ? newCal[0].monto : 0;
-    const fuente = (montoAutorizado && montoAutorizado > 0) ? 'Monto Autorizado' : 'Monto Solicitado';
     toast.success('Calendario recalculado', {
-      description: `${newCal.length} aportaciones · ${formatCurrency(montoPorPeriodo)} c/u · Total: ${formatCurrency(monto)} (${fuente})`,
+      description: `${newCal.length} aportaciones · ${formatCurrency(montoPorPeriodo)} c/u · Total: ${formatCurrency(monto)} (Monto Autorizado)`,
       duration: 3000,
     });
   };
@@ -474,6 +563,93 @@ export function SimulacionTab({ mode, solicitudId, lineaProducto, tipoProducto, 
                       <td className="px-3 py-2.5 text-xs text-right text-red-800">{formatCurrency(totalISR)}</td>
                       <td className="px-3 py-2.5 text-xs text-right text-green-800">{formatCurrency(totalInteresNeto)}</td>
                       <td className="px-3 py-2.5 text-xs text-right text-purple-900 font-bold">{formatCurrency(capitalFinalTotal)}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // ════════════════════════════════════════════════
+  // ARRENDAMIENTO PURO
+  // ════════════════════════════════════════════════
+  if (isArrendamiento) {
+    const totalPago = arrRows ? arrRows.calendario.reduce((s, r) => s + r.pagoPeriodo, 0) : 0;
+
+    const estatusBadge = (estatus: string) => {
+      const cls =
+        estatus === 'Pagado' ? 'bg-green-50 text-green-700 border-green-200' :
+        estatus === 'Vencido' ? 'bg-red-50 text-red-700 border-red-200' :
+        'bg-amber-50 text-amber-700 border-amber-200';
+      return <span className={`px-1.5 py-0.5 text-[9px] border rounded ${cls}`}>{estatus}</span>;
+    };
+
+    return (
+      <div className="border border-gray-200 bg-white p-0">
+        <div className="border-t border-gray-300">
+          <div className="bg-primary-tint-theme border-l-4 border-primary-theme px-3 py-2 flex items-center justify-between">
+            <span className="text-sm font-medium text-gray-800">CALENDARIO DE PAGOS — ARRENDAMIENTO PURO</span>
+            {!isRO && (
+              <button
+                onClick={handleSimularArrendamiento}
+                className="px-4 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded text-xs flex items-center gap-1.5"
+              >
+                <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" strokeWidth="1.5">
+                  <path d="M6.5 1v5.5L9 9" strokeLinecap="round" strokeLinejoin="round"/>
+                  <circle cx="6.5" cy="6.5" r="5.5"/>
+                </svg>
+                Simular
+              </button>
+            )}
+          </div>
+
+          {!arrRows || arrRows.calendario.length === 0 ? (
+            <div className="p-8 text-center text-gray-500 text-sm">
+              No hay simulación generada. Complete los Términos y Condiciones y presione "Simular".
+            </div>
+          ) : (
+            <div className="p-4">
+              {arrRows.rentasAnticipadasDescontadas.length > 0 && (
+                <div className="mb-3 px-3 py-2 bg-blue-50 border border-blue-200 text-xs text-blue-800">
+                  {arrRows.rentasAnticipadasDescontadas.length} renta(s) anticipada(s) descontada(s) del calendario —
+                  se muestran en el subtab <strong>Cargos</strong> como parte del desembolso inicial.
+                </div>
+              )}
+              <div className="border border-gray-300 overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr style={{ backgroundColor: '#D0D0D0' }} className="border-b border-gray-300">
+                      <th className="px-3 py-2 text-center text-[10px] text-gray-700 font-semibold border-r border-gray-300">NO. RENTA</th>
+                      <th className="px-3 py-2 text-left text-[10px] text-gray-700 font-semibold border-r border-gray-300">FECHA</th>
+                      <th className="px-3 py-2 text-right text-[10px] text-gray-700 font-semibold border-r border-gray-300">RENTA SIN IVA</th>
+                      <th className="px-3 py-2 text-right text-[10px] text-gray-700 font-semibold border-r border-gray-300">SEGURO</th>
+                      <th className="px-3 py-2 text-right text-[10px] text-gray-700 font-semibold border-r border-gray-300">IVA</th>
+                      <th className="px-3 py-2 text-right text-[10px] text-gray-700 font-semibold border-r border-gray-300">PAGO PERIODO</th>
+                      <th className="px-3 py-2 text-center text-[10px] text-gray-700 font-semibold">ESTATUS</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {arrRows.calendario.map((r, idx) => (
+                      <tr key={r.noRenta} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                        <td className="px-3 py-1.5 text-center border-r border-gray-200">{r.noRenta}</td>
+                        <td className="px-3 py-1.5 border-r border-gray-200">{formatDateCalendar(r.fechaPago)}</td>
+                        <td className="px-3 py-1.5 text-right border-r border-gray-200 font-mono">{formatCurrency(r.rentaSinIva)}</td>
+                        <td className="px-3 py-1.5 text-right border-r border-gray-200 font-mono">{formatCurrency(r.seguro)}</td>
+                        <td className="px-3 py-1.5 text-right border-r border-gray-200 font-mono">{formatCurrency(r.iva)}</td>
+                        <td className="px-3 py-1.5 text-right border-r border-gray-200 font-mono font-medium">{formatCurrency(r.pagoPeriodo)}</td>
+                        <td className="px-3 py-1.5 text-center">{estatusBadge(r.estatus)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="bg-gray-100 border-t-2 border-gray-400 font-medium">
+                      <td colSpan={5} className="px-3 py-2.5 text-xs text-gray-800">TOTAL CALENDARIO</td>
+                      <td className="px-3 py-2.5 text-xs text-right text-gray-800 font-mono">{formatCurrency(totalPago)}</td>
+                      <td />
                     </tr>
                   </tfoot>
                 </table>

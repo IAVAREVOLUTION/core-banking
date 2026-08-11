@@ -17,9 +17,18 @@ import {
   formatCurrency,
 } from './solicitudCreditoStore';
 import { useGarantiasDB } from '../../hooks/useGarantiasDB';
+import { useCategoriaBienDB } from '../../hooks/useCategoriaBienDB';
 
 const LOG = '[GarantiasTab]';
 const CURRENT_USER = '(sesión pendiente)';
+
+// Categoría default según tipo de producto: arrendamiento puro → Activo Fijo,
+// cualquier otro (crédito tradicional, etc.) → Garantía.
+function defaultCategoriaPorProducto(tipoProducto: string | undefined): string {
+  const t = (tipoProducto || '').toLowerCase();
+  if (t.includes('arrendamiento') && t.includes('puro')) return 'ACTIVO_FIJO';
+  return 'GARANTIA';
+}
 
 // Garantías de ejemplo por tipo de crédito
 function buildGarantiasDemoForTipo(tipo: string): Garantia[] {
@@ -191,6 +200,10 @@ export function GarantiasTab({ mode, solicitudId, montoSolicitado, clienteId, fa
   console.log(`${LOG} clienteId:`, clienteId, '| solicitudId:', solicitudId, '| aforo:', porcentajeAforo);
 
   const { garantias: garantiasCliente, loading: loadingCliente } = useGarantiasDB(clienteId);
+  const { categorias: categoriasBien } = useCategoriaBienDB();
+  const categoriaLabel = (clave: string | undefined): string =>
+    categoriasBien.find(c => c.clave === clave)?.nombre || clave || '—';
+  const categoriaDefault = useMemo(() => defaultCategoriaPorProducto(tipoProducto), [tipoProducto]);
 
   const getInitItems = useCallback((): Garantia[] => {
     const s = loadFromSession<Garantia[]>(solicitudId, 'garantias');
@@ -261,7 +274,7 @@ export function GarantiasTab({ mode, solicitudId, montoSolicitado, clienteId, fa
 
   const handleAgregarSeleccionadas = () => {
     if (selectedDbIds.size === 0) {
-      toast.error('Seleccione al menos una garantía');
+      toast.error('Seleccione al menos un bien');
       return;
     }
     const now = new Date();
@@ -274,6 +287,7 @@ export function GarantiasTab({ mode, solicitudId, montoSolicitado, clienteId, fa
         garantiaDbId: String(g.id),
         fecha,
         usuario: CURRENT_USER,
+        categoria: g.categoria || categoriaDefault,
         tipo: g.tipo || '',
         subtipo: g.subtipo || '',
         descripcion: g.descripcion || g.garantia || '',
@@ -290,13 +304,13 @@ export function GarantiasTab({ mode, solicitudId, montoSolicitado, clienteId, fa
     setItems(prev => [...prev.filter(g => !DEMO_IDS.has(g.id)), ...nuevas]);
     setSelectedDbIds(new Set());
     setShowModal(false);
-    toast.success(`${nuevas.length} garantía(s) agregada(s) a la solicitud`);
+    toast.success(`${nuevas.length} bien(es) agregado(s) a la solicitud`);
     console.log(`${LOG} Agregadas:`, nuevas.map(g => `${g.tipo} — ${formatCurrency(g.valorNominal)}`).join(', '));
   };
 
   const handleEliminar = (id: number) => {
     setItems(prev => prev.filter(g => g.id !== id));
-    toast.success('Garantía eliminada de la solicitud');
+    toast.success('Bien eliminado de la solicitud');
   };
 
   return (
@@ -307,7 +321,7 @@ export function GarantiasTab({ mode, solicitudId, montoSolicitado, clienteId, fa
         <div className="flex items-center justify-between">
           <div>
             <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide">
-              Garantías de la Solicitud
+              Bienes de la Solicitud
             </span>
             <span className="ml-2 text-[10px] text-gray-400">
               {items.length} seleccionada(s)
@@ -321,7 +335,7 @@ export function GarantiasTab({ mode, solicitudId, montoSolicitado, clienteId, fa
               <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M6 1v10M1 6h10"/>
               </svg>
-              Seleccionar Garantía
+              Seleccionar Bien
             </button>
           )}
         </div>
@@ -385,14 +399,15 @@ export function GarantiasTab({ mode, solicitudId, montoSolicitado, clienteId, fa
             <svg className="mx-auto mb-2" width="32" height="32" viewBox="0 0 32 32" fill="none" stroke="#D1D5DB" strokeWidth="1.5">
               <rect x="4" y="8" width="24" height="16" rx="2"/><path d="M4 14h24M12 8V5M20 8V5"/>
             </svg>
-            <p>No hay garantías seleccionadas para esta solicitud.</p>
-            {!isRO && <p className="mt-1 text-gray-300">Presione "Seleccionar Garantía" para agregar.</p>}
+            <p>No hay bienes seleccionados para esta solicitud.</p>
+            {!isRO && <p className="mt-1 text-gray-300">Presione "Seleccionar Bien" para agregar.</p>}
           </div>
         ) : (
           <div className="border border-gray-300 overflow-hidden overflow-x-auto">
             <table className="w-full text-xs min-w-[900px]">
               <thead>
                 <tr style={{ backgroundColor: '#D0D0D0' }} className="border-b border-gray-300">
+                  <th className="px-3 py-2 text-left text-[10px] text-gray-700 font-semibold border-r border-gray-300">CATEGORÍA</th>
                   <th className="px-3 py-2 text-left text-[10px] text-gray-700 font-semibold border-r border-gray-300">TIPO</th>
                   <th className="px-3 py-2 text-left text-[10px] text-gray-700 font-semibold border-r border-gray-300">SUBTIPO</th>
                   <th className="px-3 py-2 text-left text-[10px] text-gray-700 font-semibold border-r border-gray-300">DESCRIPCIÓN</th>
@@ -412,6 +427,7 @@ export function GarantiasTab({ mode, solicitudId, montoSolicitado, clienteId, fa
                     onMouseEnter={e => { e.currentTarget.style.backgroundColor = '#E8F4F8'; }}
                     onMouseLeave={e => { e.currentTarget.style.backgroundColor = idx % 2 === 0 ? '#FFFFFF' : '#EEEEEE'; }}
                   >
+                    <td className="px-3 py-2 border-r border-gray-200 text-gray-600">{categoriaLabel(g.categoria)}</td>
                     <td className="px-3 py-2 border-r border-gray-200 font-medium text-gray-700">
                       {g.tipo}
                       {DEMO_IDS.has(g.id) && (
@@ -453,7 +469,7 @@ export function GarantiasTab({ mode, solicitudId, montoSolicitado, clienteId, fa
               </tbody>
               <tfoot>
                 <tr style={{ backgroundColor: '#D0D0D0' }} className="border-t border-gray-300">
-                  <td colSpan={3} className="px-3 py-2 text-xs font-semibold text-gray-700">Total:</td>
+                  <td colSpan={4} className="px-3 py-2 text-xs font-semibold text-gray-700">Total:</td>
                   <td className="px-3 py-2 text-right font-mono font-bold text-gray-800">{formatCurrency(totalSeleccionadas)}</td>
                   <td colSpan={isRO ? 3 : 4} />
                 </tr>
@@ -467,7 +483,7 @@ export function GarantiasTab({ mode, solicitudId, montoSolicitado, clienteId, fa
       <div className="border-t border-gray-200 px-4 py-3">
         <div className="flex items-center justify-between mb-2">
           <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide">
-            Garantías Registradas del Cliente
+            Bienes Registrados del Cliente
           </span>
           <span className="text-[10px] text-gray-400">{garantiasCliente.length} disponible(s)</span>
         </div>
@@ -478,17 +494,18 @@ export function GarantiasTab({ mode, solicitudId, montoSolicitado, clienteId, fa
               <circle cx="12" cy="12" r="10" strokeOpacity="0.25"/>
               <path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round"/>
             </svg>
-            Cargando garantías del cliente...
+            Cargando bienes del cliente...
           </div>
         ) : garantiasCliente.length === 0 ? (
           <p className="text-xs text-gray-400 italic py-2">
-            {clienteId ? 'El cliente no tiene garantías registradas en J_GARANTIAS.' : 'No hay cliente asociado.'}
+            {clienteId ? 'El cliente no tiene bienes registrados en J_GARANTIAS.' : 'No hay cliente asociado.'}
           </p>
         ) : (
           <div className="border border-gray-300 overflow-hidden overflow-x-auto">
             <table className="w-full text-xs min-w-[700px]">
               <thead>
                 <tr style={{ backgroundColor: '#D0D0D0' }} className="border-b border-gray-300">
+                  <th className="px-3 py-2 text-left text-[10px] text-gray-700 font-semibold border-r border-gray-300">CATEGORÍA</th>
                   <th className="px-3 py-2 text-left text-[10px] text-gray-700 font-semibold border-r border-gray-300">TIPO</th>
                   <th className="px-3 py-2 text-left text-[10px] text-gray-700 font-semibold border-r border-gray-300">SUBTIPO</th>
                   <th className="px-3 py-2 text-left text-[10px] text-gray-700 font-semibold border-r border-gray-300">DESCRIPCIÓN</th>
@@ -506,6 +523,7 @@ export function GarantiasTab({ mode, solicitudId, montoSolicitado, clienteId, fa
                       className="border-b border-gray-200"
                       style={{ backgroundColor: yaAgregada ? '#F0FDF4' : idx % 2 === 0 ? '#FFFFFF' : '#EEEEEE', opacity: yaAgregada ? 0.7 : 1 }}
                     >
+                      <td className="px-3 py-1.5 border-r border-gray-200 text-gray-600">{categoriaLabel(gc.categoria)}</td>
                       <td className="px-3 py-1.5 border-r border-gray-200 font-medium text-gray-700">
                         {gc.tipo}
                         {yaAgregada && <span className="ml-1 text-[9px] text-green-600">✓ agregada</span>}
@@ -534,7 +552,7 @@ export function GarantiasTab({ mode, solicitudId, montoSolicitado, clienteId, fa
 
             {/* Header */}
             <div className="bg-[#4A6FA5] px-5 py-3 flex items-center justify-between">
-              <span className="text-sm font-semibold text-white">Seleccionar Garantía</span>
+              <span className="text-sm font-semibold text-white">Seleccionar Bien</span>
               <button onClick={() => setShowModal(false)} className="text-white/80 hover:text-white">
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
                   <path d="M2 2l12 12M14 2L2 14"/>
@@ -547,13 +565,13 @@ export function GarantiasTab({ mode, solicitudId, montoSolicitado, clienteId, fa
               {garantiasDisponibles.length === 0 ? (
                 <div className="text-center py-8 text-gray-400 text-xs">
                   {garantiasCliente.length === 0
-                    ? 'El cliente no tiene garantías registradas en J_GARANTIAS.'
-                    : 'Todas las garantías del cliente ya fueron agregadas a esta solicitud.'}
+                    ? 'El cliente no tiene bienes registrados en J_GARANTIAS.'
+                    : 'Todos los bienes del cliente ya fueron agregados a esta solicitud.'}
                 </div>
               ) : (
                 <>
                   <p className="text-xs text-gray-600 mb-3">
-                    Seleccione las garantías del cliente que respaldarán esta solicitud.
+                    Seleccione los bienes del cliente que respaldarán esta solicitud.
                     {porcentajeAforo ? ` Aforo configurado: ${porcentajeAforo}% — monto a cubrir: ${formatCurrency(montoACubrir)}.` : ''}
                   </p>
                   <div className="border border-gray-300 overflow-hidden overflow-x-auto mb-4">
@@ -568,6 +586,7 @@ export function GarantiasTab({ mode, solicitudId, montoSolicitado, clienteId, fa
                               className="w-3 h-3 accent-[#4A6FA5]"
                             />
                           </th>
+                          <th className="px-3 py-2 text-left text-[10px] text-gray-700 font-semibold border-r border-gray-300">CATEGORÍA</th>
                           <th className="px-3 py-2 text-left text-[10px] text-gray-700 font-semibold border-r border-gray-300">TIPO</th>
                           <th className="px-3 py-2 text-left text-[10px] text-gray-700 font-semibold border-r border-gray-300">DESCRIPCIÓN</th>
                           <th className="px-3 py-2 text-right text-[10px] text-gray-700 font-semibold border-r border-gray-300">VALOR</th>
@@ -593,6 +612,7 @@ export function GarantiasTab({ mode, solicitudId, montoSolicitado, clienteId, fa
                                   className="w-3 h-3 accent-[#4A6FA5]"
                                 />
                               </td>
+                              <td className="px-3 py-2 border-r border-gray-200 text-gray-600">{categoriaLabel(g.categoria)}</td>
                               <td className="px-3 py-2 border-r border-gray-200 font-medium text-gray-700">{g.tipo}{g.subtipo ? ` / ${g.subtipo}` : ''}</td>
                               <td className="px-3 py-2 border-r border-gray-200 text-gray-600">{g.descripcion || g.garantia || '—'}</td>
                               <td className="px-3 py-2 border-r border-gray-200 text-right font-mono text-gray-700">{g.valorNominal ? formatCurrency(g.valorNominal) : '—'}</td>

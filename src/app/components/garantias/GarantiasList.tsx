@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { Garantia } from '@/types/garantia';
 import { toast } from 'sonner';
 import type { GarantiaBackendStatus } from '@/app/hooks/useGarantiasDB';
+import { useCategoriaBienDB } from '@/app/hooks/useCategoriaBienDB';
 
 interface GarantiasListProps {
   garantias: Garantia[];
@@ -24,6 +25,7 @@ export function GarantiasList({ garantias, loading, backendStatus, onNew, onEdit
   const [columnWidths, setColumnWidths] = useState({
     actions: 100,
     id: 100,
+    categoria: 110,
     garantia: 180,
     tipo: 120,
     subtipo: 120,
@@ -40,6 +42,10 @@ export function GarantiasList({ garantias, loading, backendStatus, onNew, onEdit
   const [startWidth, setStartWidth] = useState(0);
 
   console.log('[GarantiasDB] Lista — total:', garantias.length, '| backendStatus:', backendStatus);
+
+  const { categorias: categoriasBien } = useCategoriaBienDB();
+  const categoriaLabel = (clave: string): string =>
+    categoriasBien.find(c => c.clave === clave)?.nombre || clave || '—';
 
   const formatDate = (dateString: string) => {
     if (!dateString) return '—';
@@ -239,7 +245,7 @@ export function GarantiasList({ garantias, loading, backendStatus, onNew, onEdit
               <rect x="4" y="4" width="16" height="16" rx="2" stroke="currentColor" strokeWidth="1.5" fill="none"/>
               <path d="M4 9h16M9 4v16" stroke="currentColor" strokeWidth="1.5"/>
             </svg>
-            <h2 className="text-lg font-normal text-gray-800">Garantías</h2>
+            <h2 className="text-lg font-normal text-gray-800">Bienes</h2>
             <button className="p-1 ml-2">
               <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#999" strokeWidth="2">
                 <circle cx="8" cy="8" r="6"/>
@@ -260,7 +266,7 @@ export function GarantiasList({ garantias, loading, backendStatus, onNew, onEdit
           <span className="text-sm text-gray-700">Ver</span>
           <div className="relative">
             <select className="px-3 py-1.5 border border-gray-400 rounded text-sm bg-white pr-8 appearance-none min-w-[200px]">
-              <option>Vista general de garantías</option>
+              <option>Vista general de bienes</option>
             </select>
             <svg className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" width="12" height="12" viewBox="0 0 12 12" fill="#666">
               <path d="M6 8l-4-4h8z"/>
@@ -282,7 +288,7 @@ export function GarantiasList({ garantias, loading, backendStatus, onNew, onEdit
               type="text" 
               value={searchTerm}
               onChange={(e) => handleSearchChange(e.target.value)}
-              placeholder="Buscar garantías..." 
+              placeholder="Buscar bienes..."
               className="px-3 py-1 border border-gray-400 rounded text-sm w-64 transition-all"
             />
           </div>
@@ -405,6 +411,13 @@ export function GarantiasList({ garantias, loading, backendStatus, onNew, onEdit
                     onMouseDown={(e) => handleResizeStart(e, 'id')}
                   />
                 </th>
+                <th className="relative px-3 py-2.5 text-left font-normal text-xs text-gray-700" style={{ width: `${columnWidths.categoria}px` }}>
+                  CATEGORÍA
+                  <div
+                    className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-[#0099CC] transition-colors"
+                    onMouseDown={(e) => handleResizeStart(e, 'categoria')}
+                  />
+                </th>
                 <th className="relative px-3 py-2.5 text-left font-normal text-xs text-gray-700" style={{ width: `${columnWidths.garantia}px` }}>
                   GARANTÍA
                   <div
@@ -469,7 +482,7 @@ export function GarantiasList({ garantias, loading, backendStatus, onNew, onEdit
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={11} className="px-3 py-12 text-center text-gray-500">
+                  <td colSpan={12} className="px-3 py-12 text-center text-gray-500">
                     <div className="flex flex-col items-center gap-2">
                       <svg className="animate-spin h-6 w-6 text-[#0099CC]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
@@ -481,7 +494,7 @@ export function GarantiasList({ garantias, loading, backendStatus, onNew, onEdit
                 </tr>
               ) : currentGarantias.length === 0 ? (
                 <tr>
-                  <td colSpan={11} className="px-3 py-12 text-center text-gray-500">
+                  <td colSpan={12} className="px-3 py-12 text-center text-gray-500">
                     <div className="flex flex-col items-center gap-2">
                       <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" strokeWidth="1.5">
                         <rect x="3" y="3" width="18" height="18" rx="2"/>
@@ -489,8 +502,8 @@ export function GarantiasList({ garantias, loading, backendStatus, onNew, onEdit
                       </svg>
                       <span className="text-sm">
                         {searchTerm
-                          ? 'No se encontraron garantías con ese criterio de búsqueda'
-                          : 'No hay registros en J_GARANTIAS. Haz clic en "Nuevo" para crear una garantía.'}
+                          ? 'No se encontraron bienes con ese criterio de búsqueda'
+                          : 'No hay registros en J_GARANTIAS. Haz clic en "Nuevo" para crear un bien.'}
                       </span>
                     </div>
                   </td>
@@ -516,6 +529,7 @@ export function GarantiasList({ garantias, loading, backendStatus, onNew, onEdit
                         {truncateId(garantia.id)}
                       </div>
                     </td>
+                    <td className="px-3 py-2.5 text-xs text-gray-700 overflow-hidden text-ellipsis whitespace-nowrap">{categoriaLabel(garantia.categoria)}</td>
                     <td className="px-3 py-2.5 overflow-hidden">
                       <div className="text-xs text-gray-700 text-ellipsis overflow-hidden whitespace-nowrap">{garantia.garantia || '—'}</div>
                     </td>

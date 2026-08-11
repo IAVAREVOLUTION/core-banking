@@ -98,6 +98,11 @@ export function buildFormDataFromListItem(s: SolicitudListItem): Record<string, 
     montoAutorizado: hdr.monto_autorizado
       || (typeof s.montoAutorizado === 'number' && s.montoAutorizado > 0 ? s.montoAutorizado.toFixed(2) : null)
       || d.montoAutorizado || '0.00',
+    // Plazo y % Enganche ahora se capturan en el encabezado ("Plazos y Montos")
+    // — deben reconstruirse aquí igual que Monto, o se pierden al reabrir la
+    // solicitud aunque sí estén guardados en terminos_condiciones._raw.
+    plazo: sol.terminos_condiciones?.parametros_simulacion?.plazo || rawTerminos.plazo || d.plazo || '',
+    porcentajeEnganche: rawTerminos.porcentajeEnganche || d.porcentajeEnganche || '',
     fechaInicio: rawTerminos.fechaInicio || rawTerminos.fechaPrimerPago || extra._fechaInicio || '',
     fechaFin: rawTerminos.fechaFin || extra._fechaFin || '',
     _clienteId: extra._clienteId || hdr.cliente_id || d._clienteId || '',
@@ -145,6 +150,14 @@ export function preloadSubtabsFromDBData(
       montoGarantia: rawTerminos.montoGarantia || '',
       seguroFinanciado: rawTerminos.seguroFinanciado ?? false,
       montoSeguro: rawTerminos.montoSeguro || '',
+      // Arrendamiento — Parámetros de Arrendamiento
+      porcentajeEnganche: rawTerminos.porcentajeEnganche || '',
+      montoEnganche: rawTerminos.montoEnganche || 0,
+      montoAutorizado: rawTerminos.montoAutorizado || '',
+      comisionApertura: rawTerminos.comisionApertura || '',
+      porcentajeValorResidualSel: rawTerminos.porcentajeValorResidualSel || '',
+      montoResidual: rawTerminos.montoResidual || 0,
+      rentasAnticipadas: rawTerminos.rentasAnticipadas || '',
       // Crédito / Línea de Crédito — columnas top-level de J_CUENTAS_CORP_CLIENTES
       montoCubrirGarantia: rowExtras?.montoCubrirGarantia != null
         ? Number(rowExtras.montoCubrirGarantia)

@@ -23,6 +23,7 @@ import { CargoTab } from '../productos/tabs/CargoTab';
 import { FasesTab } from '../productos/tabs/FasesTab';
 import { GarantiaTab } from '../productos/tabs/GarantiaTab';
 import { ComisionesTab } from '../productos/tabs/ComisionesTab';
+import { OpcionesConfigTab } from './OpcionesConfigTab';
 import { ExpedientesProductoTab } from '../productos/tabs/ExpedientesProductoTab';
 import { PlantillasTab } from '../productos/tabs/PlantillasTab';
 import { MotorContableTab } from '../productos/tabs/MotorContableTab';
@@ -386,6 +387,10 @@ export function ProductoLineaCreditoForm({
           cargo: cargoRef.current?.getData() || [],
           fases: fasesRef.current?.getData() || formData.fases || [],
           comisiones: comisionesRef.current?.getData() || [],
+          comisionesApertura: comisionAperturaRef.current?.getData() || [],
+          enganches: engancheRef.current?.getData() || [],
+          rentasAnticipadas: rentaAnticipadaRef.current?.getData() || [],
+          valorResidualOpciones: valorResidualRef.current?.getData() || [],
           expedientes: expedientesRef.current?.getData() || [],
           periodosRegistros: periodos || [],
           tasasReferenciaRegistros: tasasReferencia || [],
@@ -447,6 +452,10 @@ export function ProductoLineaCreditoForm({
   const fasesRef = useRef<{ getData: () => any[] }>(null);
   const garantiasRef = useRef<{ getData: () => any[] }>(null);
   const comisionesRef = useRef<{ getData: () => any[] }>(null);
+  const comisionAperturaRef = useRef<{ getData: () => any[] }>(null);
+  const engancheRef = useRef<{ getData: () => any[] }>(null);
+  const valorResidualRef = useRef<{ getData: () => any[] }>(null);
+  const rentaAnticipadaRef = useRef<{ getData: () => any[] }>(null);
   const expedientesRef = useRef<{ getData: () => any[] }>(null);
   const comitesRef = useRef<{ getData: () => any[] }>(null);
   const plantillasRef = useRef<{ getData: () => any[] }>(null);
@@ -543,6 +552,10 @@ export function ProductoLineaCreditoForm({
     }
   };
 
+  // Subtabs de arrendamiento (Comisión Apertura, Enganche, Valor Residual, Rentas
+  // Anticipadas) solo aplican cuando la sublínea es Arrendamiento Puro o Financiero.
+  const isArrendamiento = /arrendamiento/i.test(formData.sublineaProducto || '');
+
   const tabs = [
     { id: 'default', label: 'Default' },
     // === Tabs homologados desde Producto Crédito (orden idéntico) ===
@@ -554,6 +567,13 @@ export function ProductoLineaCreditoForm({
     { id: 'expedientes', label: 'Requisitos OK' },
     { id: 'cargo', label: 'Cargos' },
     { id: 'comisiones', label: 'Comisiones' },
+    // === Cotizador de Arrendamiento Puro — solo si sublínea es Arrendamiento ===
+    ...(isArrendamiento ? [
+      { id: 'comision-apertura', label: 'Comisiones por Apertura' },
+      { id: 'enganche', label: '% Enganche' },
+      { id: 'valor-residual', label: 'Valor Residual' },
+      { id: 'renta-anticipada', label: 'Rentas Anticipadas' },
+    ] : []),
     // === Tabs específicos de Línea de Crédito (mantener sin cambios) ===
     { id: 'comites', label: 'Comité de Crédito' },
     { id: 'condiciones-disposicion', label: 'Condiciones de Disposiciones' },
@@ -939,6 +959,67 @@ export function ProductoLineaCreditoForm({
                 initialData={product?.comisiones}
                 persistToStorage
                 storagePrefix="linea_credito"
+              />
+            </div>
+
+            <div style={{ display: activeTab === 'comision-apertura' ? 'block' : 'none' }}>
+              <OpcionesConfigTab
+                ref={comisionAperturaRef}
+                mode={mode}
+                productId={productId}
+                initialData={(product as any)?.comisionesApertura}
+                storagePrefix="linea_credito"
+                storageSuffix="comision_apertura"
+                titulo="Comisiones por Apertura"
+                labelValor="% Comisión"
+                sufijoValor="%"
+                tipoValor="porcentaje"
+              />
+            </div>
+
+            <div style={{ display: activeTab === 'enganche' ? 'block' : 'none' }}>
+              <OpcionesConfigTab
+                ref={engancheRef}
+                mode={mode}
+                productId={productId}
+                initialData={(product as any)?.enganches}
+                storagePrefix="linea_credito"
+                storageSuffix="enganche"
+                titulo="% Enganche"
+                labelValor="% Enganche"
+                sufijoValor="%"
+                tipoValor="porcentaje"
+              />
+            </div>
+
+            <div style={{ display: activeTab === 'valor-residual' ? 'block' : 'none' }}>
+              <OpcionesConfigTab
+                ref={valorResidualRef}
+                mode={mode}
+                productId={productId}
+                initialData={(product as any)?.valorResidualOpciones}
+                storagePrefix="linea_credito"
+                storageSuffix="valor_residual"
+                titulo="Valor Residual"
+                labelValor="% Valor Residual"
+                sufijoValor="%"
+                tipoValor="porcentaje"
+              />
+            </div>
+
+            <div style={{ display: activeTab === 'renta-anticipada' ? 'block' : 'none' }}>
+              <OpcionesConfigTab
+                ref={rentaAnticipadaRef}
+                mode={mode}
+                productId={productId}
+                initialData={(product as any)?.rentasAnticipadas}
+                storagePrefix="linea_credito"
+                storageSuffix="renta_anticipada"
+                titulo="Rentas Anticipadas"
+                labelValor="No. de Rentas Anticipadas"
+                sufijoValor=""
+                tipoValor="lista"
+                opcionesLista={['0', '1', '2', '3', '4', '5']}
               />
             </div>
 

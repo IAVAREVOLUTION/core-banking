@@ -317,6 +317,101 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
     return found;
   }, [formData.productoId, productosDB]);
 
+  // ── % Enganche — visible en el encabezado (solo Arrendamiento) ──
+  const isArrendamientoHeader = (formData.tipoProducto || '').toLowerCase().includes('arrendamiento');
+  const enganchesProductoHeader = useMemo(() => {
+    const arr = productoSeleccionado?.rawData?.enganches;
+    return Array.isArray(arr)
+      ? arr.filter((o: any) => o?.estatus === 'ACTIVO').map((o: any) => ({ id: o.id, valor: String(o.valor) }))
+      : [];
+  }, [productoSeleccionado]);
+
+  // ── Plazo + Matriz de Tasa Fija — visible en el encabezado junto al producto ──
+  // Sembrado desde 'terminos' guardado (sessionStorage/BD) para no perder Tasa/
+  // Frecuencia ya persistidas al reabrir una solicitud, mientras la Matriz del
+  // producto (aún no cargada en el primer render) no confirme una fila igual.
+  const [showMatrizModal, setShowMatrizModal] = useState(false);
+  const [tasaSeleccionadaHeader, setTasaSeleccionadaHeader] = useState<string>(() => {
+    const t = loadFromSession<any>(storageId, 'terminos') || loadFromSavedStore<any>(storageId, 'terminos');
+    return t?.tasa || '';
+  });
+  const [frecuenciaSeleccionadaHeader, setFrecuenciaSeleccionadaHeader] = useState<string>(() => {
+    const t = loadFromSession<any>(storageId, 'terminos') || loadFromSavedStore<any>(storageId, 'terminos');
+    return t?.frecuencia || '';
+  });
+  type FilaMatriz = {
+    plazoMinimo?: number; plazoMaximo?: number; plazoDefault?: number;
+    montoMinimo?: number; montoMaximo?: number; montoDefault?: number;
+    tasaMinima?: string; tasaMaxima?: string; tasaDefault?: string; tasaAplicable?: string;
+    periodo?: string;
+  };
+  // Fila completa de la Matriz que corresponde al Plazo actual — fuente de
+  // verdad para validar que Monto/Plazo/Tasa se mantengan en su rango.
+  const [filaMatrizSeleccionada, setFilaMatrizSeleccionada] = useState<FilaMatriz | null>(null);
+  const matrizTasaFijaProducto = useMemo(() => {
+    const rd = productoSeleccionado?.rawData;
+    const arr = Array.isArray(rd?.matrizTasaFija) ? rd.matrizTasaFija : [];
+    return arr as FilaMatriz[];
+  }, [productoSeleccionado]);
+
+  // Auto-derivar la fila de Matriz SOLO la primera vez que hay un Plazo sin
+  // fila fija aún (p.ej. solicitud recién cargada con Plazo guardado, o el
+  // usuario tecleó un Plazo antes de haber abierto el modal alguna vez).
+  // Una vez que existe una fila seleccionada (filaMatrizSeleccionada, fijada
+  // aquí o por el botón "Seleccionar" del modal), esta NO se reasigna nunca
+  // automáticamente — si el usuario edita el Plazo en Términos y Condiciones
+  // a un valor que cae en el rango de OTRA fila, la matriz elegida debe
+  // mantenerse igual y el campo simplemente queda fuera de rango (error de
+  // validación), no cambia de matriz por su cuenta.
+  useEffect(() => {
+    if (filaMatrizSeleccionada) return;
+    const plazoNum = parseInt(formData.plazo || '0', 10);
+    if (!plazoNum || matrizTasaFijaProducto.length === 0) return;
+    const fila = matrizTasaFijaProducto.find(f =>
+      plazoNum >= (f.plazoMinimo || 0) && plazoNum <= (f.plazoMaximo || Infinity)
+    );
+    if (!fila) return;
+    const tasaAnual = parseFloat(String(fila.tasaMinima ?? fila.tasaAplicable ?? '0')) || 0;
+    const tasaDefault = parseFloat(String(fila.tasaDefault ?? '')) || tasaAnual;
+    if (tasaDefault > 0) setTasaSeleccionadaHeader(tasaDefault.toFixed(4));
+    if (fila.periodo) setFrecuenciaSeleccionadaHeader(fila.periodo);
+    setFilaMatrizSeleccionada(fila);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formData.plazo, matrizTasaFijaProducto, filaMatrizSeleccionada]);
+
+  // Validación en tiempo real: Monto y Plazo del encabezado deben permanecer
+  // dentro del rango de la fila de Matriz vigente.
+  const matrizRangoError = useMemo(() => {
+    if (!filaMatrizSeleccionada) return null;
+    const montoNum = parseFloat(parseCurrency(formData.montoSolicitado || '0')) || 0;
+    const min = filaMatrizSeleccionada.montoMinimo || 0;
+    const max = filaMatrizSeleccionada.montoMaximo || 0;
+    if (montoNum > 0 && ((min > 0 && montoNum < min) || (max > 0 && montoNum > max))) {
+      return `Monto fuera de rango para este plazo (${formatCurrency(min)} – ${formatCurrency(max)})`;
+    }
+    return null;
+  }, [filaMatrizSeleccionada, formData.montoSolicitado]);
+
+  // Rango de Tasa anual [mín, máx] de la fila vigente — habilita edición de
+  // Tasa en Términos y Condiciones dentro de ese rango.
+  const tasaRangoMatrizHeader = useMemo(() => {
+    if (!filaMatrizSeleccionada) return null;
+    const min = parseFloat(String(filaMatrizSeleccionada.tasaMinima ?? '0')) || 0;
+    const max = parseFloat(String(filaMatrizSeleccionada.tasaMaxima ?? filaMatrizSeleccionada.tasaMinima ?? '0')) || 0;
+    if (min <= 0 && max <= 0) return null;
+    return { min, max: max > 0 ? max : min };
+  }, [filaMatrizSeleccionada]);
+
+  // Rango de Plazo [mín, máx] de la fila vigente — permite capturar un Plazo
+  // custom en Términos y Condiciones, validado contra ese rango.
+  const plazoRangoMatrizHeader = useMemo(() => {
+    if (!filaMatrizSeleccionada) return null;
+    const min = filaMatrizSeleccionada.plazoMinimo || 0;
+    const max = filaMatrizSeleccionada.plazoMaximo || 0;
+    if (min <= 0 && max <= 0) return null;
+    return { min, max: max > 0 ? max : min };
+  }, [filaMatrizSeleccionada]);
+
   // ── Fases del producto seleccionado — fuente de verdad ──
   const fasesDelProducto = useMemo(() => {
     const rd = productoSeleccionado?.rawData;
@@ -1061,7 +1156,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
       if (!formData.tipoProducto || formData.tipoProducto.trim() === '') errores.push('Tipo de Producto');
       if (!formData.productoId || formData.productoId.trim() === '') errores.push('Producto');
       if (!formData.fechaSolicitud || formData.fechaSolicitud.trim() === '') errores.push('Fecha de Solicitud');
-      if (!formData.montoSolicitado || formData.montoSolicitado.trim() === '' || parseFloat(formData.montoSolicitado.replace(/[^0-9.-]/g, '')) <= 0) errores.push('Monto Solicitado');
+      if (!formData.montoSolicitado || formData.montoSolicitado.trim() === '' || parseFloat(formData.montoSolicitado.replace(/[^0-9.-]/g, '')) <= 0) errores.push('Monto Autorizado');
       if (!formData.sucursal || formData.sucursal.trim() === '') errores.push('Sucursal');
       // Validaciones específicas por tipo
       const _lineaVal = (formData.lineaProducto || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
@@ -1489,6 +1584,26 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
           if (!resultFase.ok) {
             toast.warning('Fase actualizada localmente (sin BD)', { description: resultFase.error || 'Sincronización pendiente' });
           }
+
+          // ── Persistir Cargos SOLO al enviar a originación (estatus → 'En proceso') ──
+          // El resto del tiempo Cargos es vista previa (sessionStorage), nunca viaja a BD.
+          if (logAccion === 'enviar_solicitud' && estatusFinal === 'En proceso') {
+            const cargos = loadFromSession(storageId, 'cargos') ?? loadFromSavedStore(storageId, 'cargos');
+            if (cargos) {
+              try {
+                await onSave?.({
+                  ...formData,
+                  faseId: nuevaFaseId,
+                  descripcionFase: nuevaDescripcionFase,
+                  area: nuevaArea,
+                  estatusSolicitud: estatusFinal,
+                  _allSubtabs: { cargos },
+                });
+              } catch (cargosErr) {
+                console.warn('[SolicitudCreditoForm] No se pudieron persistir los cargos al enviar a originación:', cargosErr);
+              }
+            }
+          }
         } else {
         }
 
@@ -1666,18 +1781,29 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
   const handleProductoChange = (productoId: string) => {
     const dbProd = productosDB.find(p => p.id === productoId);
     const staticProd = CAT_PRODUCTOS.find(p => p.value === productoId);
-    
+
     // Get first fase from product config to initialize
     const rd = dbProd?.rawData;
     const rawFases = (Array.isArray(rd?.fases) && rd.fases.length > 0 ? rd.fases : null)
       ?? (Array.isArray(rd?.fasesRegistros) && rd.fasesRegistros.length > 0 ? rd.fasesRegistros : null)
       ?? (Array.isArray(rd?.fase) ? rd.fase : null);
     const firstFase = Array.isArray(rawFases) && rawFases.length > 0 ? rawFases[0] : null;
-    
+
     const faseId = firstFase ? String(firstFase.id ?? firstFase.fase_id ?? firstFase.seq ?? '1') : '1';
     const faseNombre = firstFase?.fase || firstFase?.notes || 'Fase 1';
     const faseArea = firstFase?.area || '';
-    
+
+    // Cambio real de producto (no la carga inicial) — limpiar Plazo/Tasa/%
+    // Enganche del encabezado y forzar nueva selección de plazo en la Matriz,
+    // ya que pertenecían al producto anterior.
+    const isRealChange = !!formData.productoId && formData.productoId !== productoId;
+    if (isRealChange) {
+      try { sessionStorage.removeItem(`sol_credito_${storageId}_terminos`); } catch { /* ignore */ }
+      setTasaSeleccionadaHeader('');
+      setFrecuenciaSeleccionadaHeader('');
+      setFilaMatrizSeleccionada(null);
+    }
+
     setFormData(prev => ({
       ...prev,
       productoId,
@@ -1686,6 +1812,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
       faseId,
       descripcionFase: faseNombre,
       area: faseArea,
+      ...(isRealChange ? { plazo: '', porcentajeEnganche: '', montoAutorizado: '' } : {}),
     }));
   };
 
@@ -1735,6 +1862,8 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
     if (!formData.sucursal) e.sucursal = 'Obligatorio';
     const ms = parseFloat(parseCurrency(formData.montoSolicitado || '0'));
     if (!formData.montoSolicitado || isNaN(ms) || ms <= 0) e.montoSolicitado = 'Monto > 0';
+    if (!formData.plazo || parseInt(formData.plazo, 10) <= 0) e.plazo = 'Obligatorio';
+    if (!e.montoSolicitado && matrizRangoError) e.montoSolicitado = matrizRangoError;
     setErrors(e);
     if (Object.keys(e).length > 0) {
       toast.error('Campos obligatorios incompletos', { description: `${Object.keys(e).length} campo(s) requieren corrección`, duration: 4000 });
@@ -2280,6 +2409,29 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
               <Lbl>Nombre Producto</Lbl>
               <input type="text" value={formData.nombreProducto} disabled className={ic(false, true)} />
             </div>
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <Lbl req error={errors.plazo}>Plazo</Lbl>
+                {matrizTasaFijaProducto.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setShowMatrizModal(true)}
+                    className="text-[10px] text-[#0066CC] hover:underline"
+                  >
+                    Ver Matriz de Tasa Fija
+                  </button>
+                )}
+              </div>
+              <input
+                type="text" inputMode="decimal"
+                value={formData.plazo || ''}
+                onChange={e => handleNumeric('plazo', e.target.value)}
+                disabled={isRO}
+                placeholder="Ej: 12"
+                className={ic(false, !!errors.plazo)}
+              />
+              {errors.plazo && <span className="text-[10px] text-red-500 mt-0.5 block">{errors.plazo}</span>}
+            </div>
           </div>
 
           {/* ── Col 3 ── */}
@@ -2295,7 +2447,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
               </select>
             </div>
             <div>
-              <Lbl req error={errors.montoSolicitado}>Monto Solicitado</Lbl>
+              <Lbl req error={errors.montoSolicitado}>Monto Autorizado</Lbl>
               <div className="relative">
                 <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-500">$</span>
                 <input
@@ -2308,21 +2460,32 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
                 />
               </div>
               {errors.montoSolicitado && <span className="text-[10px] text-red-500 mt-0.5 block">{errors.montoSolicitado}</span>}
+              {!errors.montoSolicitado && matrizRangoError && (
+                <span className="text-[10px] text-red-500 mt-0.5 block">{matrizRangoError}</span>
+              )}
+              {isArrendamientoHeader && (
+                <p className="text-[10px] text-gray-400 mt-0.5">Monto financiado (post-enganche) se calcula en Términos y Condiciones</p>
+              )}
             </div>
-            <div>
-              <Lbl>Monto Autorizado</Lbl>
-              <div className="relative">
-                <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-500">$</span>
-                <input
-                  type="text" inputMode="decimal"
-                  value={formData.montoAutorizado}
-                  onChange={e => handleNumeric('montoAutorizado', e.target.value)}
-                  onBlur={() => handleCurrencyBlur('montoAutorizado')}
-                  disabled={isRO} placeholder="0.00"
-                  className={`${ic()} pl-5`}
-                />
+            {isArrendamientoHeader && (
+              <div>
+                <Lbl>% Enganche</Lbl>
+                <select
+                  value={formData.porcentajeEnganche || ''}
+                  onChange={e => set('porcentajeEnganche', e.target.value)}
+                  disabled={isRO}
+                  className={sc()}
+                >
+                  <option value="">Seleccione...</option>
+                  {enganchesProductoHeader.map(o => (
+                    <option key={o.id} value={o.valor}>{o.valor}%</option>
+                  ))}
+                </select>
+                {enganchesProductoHeader.length === 0 && (
+                  <span className="text-[10px] text-amber-600 mt-0.5 block">Sin opciones activas en el producto</span>
+                )}
               </div>
-            </div>
+            )}
             <div>
               <Lbl>Fecha Inicio</Lbl>
               <DatePicker value={formData.fechaInicio || ''} onChange={v => set('fechaInicio', v)} disabled={isRO} placeholder="DD/MM/YYYY" className={ic()} />
@@ -2509,6 +2672,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
                     mode={mode}
                     solicitudId={storageId}
                     lineaProducto={formData.lineaProducto}
+                    tipoProducto={formData.tipoProducto}
                     productoSeleccionado={productoSeleccionado}
                     montoSolicitadoHeader={formData.montoSolicitado}
                     fechaInicioHeader={formData.fechaInicio || ''}
@@ -2516,6 +2680,14 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
                     plazoCotizacion={(cotizacionData as any)?._terminosCondiciones?.plazo || ''}
                     cotizacionTerminos={(cotizacionData as any)?._terminosCondiciones}
                     onFechaPrimeraAportacionChange={v => set('fechaInicio', v)}
+                    onMontoAutorizadoChange={v => set('montoAutorizado', v)}
+                    porcentajeEngancheHeader={formData.porcentajeEnganche}
+                    plazoHeader={formData.plazo}
+                    onPlazoLoaded={v => set('plazo', v)}
+                    tasaHeader={tasaSeleccionadaHeader}
+                    frecuenciaHeader={frecuenciaSeleccionadaHeader}
+                    tasaRangoMatriz={tasaRangoMatrizHeader}
+                    plazoRangoMatriz={plazoRangoMatrizHeader}
                   />
                 )}
                 {sec.id === 'simulacion' && (
@@ -2526,6 +2698,11 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
                     tipoProducto={formData.tipoProducto}
                     calendarioAportaciones={formData._calendarioAportaciones}
                     montoAutorizado={typeof formData.montoAutorizado === 'number' ? formData.montoAutorizado : parseFloat(String(formData.montoAutorizado || '0').replace(/[^0-9.-]/g, ''))}
+                    montoSolicitadoHeader={formData.montoSolicitado}
+                    plazoHeader={formData.plazo}
+                    tasaHeader={tasaSeleccionadaHeader}
+                    fechaInicioHeader={formData.fechaInicio || ''}
+                    frecuenciaHeader={frecuenciaSeleccionadaHeader}
                     onFechaFinChange={v => set('fechaFin', v)}
                   />
                 )}
@@ -2547,7 +2724,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
                   />
                 )}
                 {sec.id === 'garantias' && (
-                  <GarantiasTab mode={mode} solicitudId={storageId} montoSolicitado={formData.montoSolicitado} clienteId={formData._clienteId} faseIdActual={parseInt(formData.faseId) || 1} />
+                  <GarantiasTab mode={mode} solicitudId={storageId} montoSolicitado={formData.montoSolicitado} clienteId={formData._clienteId} faseIdActual={parseInt(formData.faseId) || 1} tipoProducto={formData.tipoProducto} />
                 )}
                 {sec.id === 'comisiones' && (
                   <ComisionesTab mode={mode} solicitudId={storageId} montoSolicitado={formData.montoSolicitado} productoId={formData.productoId} />
@@ -2562,7 +2739,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
                   <ComitesTab mode={mode} solicitudId={storageId} />
                 )}
                 {sec.id === 'cargos' && (
-                  <SolicitudCargosTab mode={mode} solicitudId={storageId} />
+                  <SolicitudCargosTab mode={mode} solicitudId={storageId} lineaProducto={formData.lineaProducto} tipoProducto={formData.tipoProducto} />
                 )}
                 {sec.id === 'flujoTrabajo' && (
                   <div className="bg-white border border-gray-200 p-4">
@@ -2698,6 +2875,113 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
           });
         }}
       />
+
+      {/* ── Modal Matriz de Tasa Fija (solo consulta) ── */}
+      {showMatrizModal && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center" onClick={() => setShowMatrizModal(false)}>
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px]" />
+          <div className="relative bg-white rounded-lg shadow-2xl w-full max-w-3xl mx-4 max-h-[80vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="modal-header-theme px-5 py-3 flex items-center justify-between">
+              <span className="text-sm font-semibold tracking-wide uppercase">Matriz de Tasa Fija — {formData.nombreProducto}</span>
+              <button onClick={() => setShowMatrizModal(false)} className="text-white/80 hover:text-white">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><path d="M2 2l12 12M14 2L2 14" /></svg>
+              </button>
+            </div>
+            <div className="p-4 overflow-auto">
+              <table className="w-full text-xs border-collapse">
+                <thead>
+                  <tr style={{ backgroundColor: '#D0D0D0' }} className="border-b border-gray-300">
+                    <th className="px-3 py-2 text-center font-semibold text-[10px] text-gray-700 border-r border-gray-300">PLAZO (MESES)</th>
+                    <th className="px-3 py-2 text-center font-semibold text-[10px] text-gray-700 border-r border-gray-300">FRECUENCIA</th>
+                    <th className="px-3 py-2 text-right font-semibold text-[10px] text-gray-700 border-r border-gray-300">MONTO MÍNIMO</th>
+                    <th className="px-3 py-2 text-right font-semibold text-[10px] text-gray-700 border-r border-gray-300">MONTO MÁXIMO</th>
+                    <th className="px-3 py-2 text-right font-semibold text-[10px] text-gray-700 border-r border-gray-300">TASA ANUAL</th>
+                    <th className="px-3 py-2 text-right font-semibold text-[10px] text-gray-700 border-r border-gray-300">TASA MENSUAL</th>
+                    <th className="px-3 py-2 text-center font-semibold text-[10px] text-gray-700 border-r border-gray-300">ESTATUS</th>
+                    <th className="px-3 py-2 text-center font-semibold text-[10px] text-gray-700 w-24">ACCIÓN</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {matrizTasaFijaProducto.map((f, idx) => {
+                    const tasaAnual = parseFloat(String(f.tasaMinima ?? f.tasaAplicable ?? '0')) || 0;
+                    const tasaDefault = parseFloat(String(f.tasaDefault ?? '')) || tasaAnual;
+                    const tasaMensual = tasaAnual / 12;
+                    const montoNum = parseFloat(parseCurrency(formData.montoSolicitado || '0')) || 0;
+                    const min = f.montoMinimo || 0;
+                    const max = f.montoMaximo || 0;
+                    const fueraDeRango = montoNum > 0 && ((min > 0 && montoNum < min) || (max > 0 && montoNum > max));
+                    const esSeleccionada = !!filaMatrizSeleccionada
+                      && filaMatrizSeleccionada.plazoMinimo === f.plazoMinimo
+                      && filaMatrizSeleccionada.plazoMaximo === f.plazoMaximo;
+                    return (
+                      <tr key={idx} className={esSeleccionada ? 'bg-blue-50 ring-1 ring-inset ring-blue-300' : idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                        <td className="px-3 py-1.5 text-center border-r border-gray-200 font-medium">
+                          {esSeleccionada && (
+                            <svg className="inline-block mr-1 -mt-0.5" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="#0066CC" strokeWidth="2.5">
+                              <path d="M3 8l3.5 3.5L13 4.5" strokeLinecap="round" strokeLinejoin="round" />
+                            </svg>
+                          )}
+                          {f.plazoMinimo} – {f.plazoMaximo}
+                        </td>
+                        <td className="px-3 py-1.5 text-center border-r border-gray-200">{f.periodo || '—'}</td>
+                        <td className="px-3 py-1.5 text-right border-r border-gray-200 font-mono">{formatCurrency(min)}</td>
+                        <td className="px-3 py-1.5 text-right border-r border-gray-200 font-mono">{formatCurrency(max)}</td>
+                        <td className="px-3 py-1.5 text-right border-r border-gray-200 font-mono">{tasaAnual.toFixed(2)}%</td>
+                        <td className="px-3 py-1.5 text-right border-r border-gray-200 font-mono">{tasaMensual.toFixed(2)}%</td>
+                        <td className="px-3 py-1.5 text-center border-r border-gray-200">
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-green-50 text-green-700">
+                            <span className="w-1.5 h-1.5 rounded-full bg-green-500" /> Activo
+                          </span>
+                        </td>
+                        <td className="px-3 py-1.5 text-center">
+                          <button
+                            type="button"
+                            title={fueraDeRango ? 'El Monto Autorizado actual no está en el rango de este plazo — podrás ajustarlo después de seleccionar' : ''}
+                            onClick={() => {
+                              set('plazo', String(f.plazoDefault || f.plazoMaximo || f.plazoMinimo || ''));
+                              setTasaSeleccionadaHeader(tasaDefault.toFixed(4));
+                              if (f.periodo) setFrecuenciaSeleccionadaHeader(f.periodo);
+                              setFilaMatrizSeleccionada(f);
+                              // Si el usuario no capturó Monto, o el que tiene queda fuera del
+                              // rango de esta fila, sugerir el Monto Default de la fila elegida.
+                              if ((!formData.montoSolicitado || fueraDeRango) && f.montoDefault) {
+                                set('montoSolicitado', String(f.montoDefault));
+                              }
+                              setShowMatrizModal(false);
+                              toast.success('Plazo, tasa y frecuencia aplicados', { description: `Plazo ${f.plazoMinimo}–${f.plazoMaximo} meses · Tasa ${tasaDefault.toFixed(2)}% anual${f.periodo ? ` · ${f.periodo}` : ''}` });
+                            }}
+                            className={`px-2.5 py-1 rounded text-[10px] font-medium ${
+                              esSeleccionada
+                                ? 'bg-blue-100 text-[#0066CC] cursor-default'
+                                : 'bg-[#0099CC] text-white hover:bg-[#0088BB]'
+                            }`}
+                          >
+                            {esSeleccionada ? 'Seleccionada' : 'Seleccionar'}
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              {(() => {
+                const montoNum = parseFloat(parseCurrency(formData.montoSolicitado || '0')) || 0;
+                if (montoNum <= 0) {
+                  return <p className="text-[10px] text-amber-600 mt-3">Capture el Monto Autorizado para validar el rango de cada plazo.</p>;
+                }
+                const algunoEnRango = matrizTasaFijaProducto.some(f => {
+                  const min = f.montoMinimo || 0, max = f.montoMaximo || 0;
+                  return (min <= 0 || montoNum >= min) && (max <= 0 || montoNum <= max);
+                });
+                if (!algunoEnRango) {
+                  return <p className="text-[10px] text-red-600 mt-3">El Monto Autorizado no está dentro del rango de ningún plazo de este producto.</p>;
+                }
+                return <p className="text-[10px] text-gray-400 mt-3">Seleccione el plazo correspondiente al Monto Autorizado.</p>;
+              })()}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

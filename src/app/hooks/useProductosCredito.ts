@@ -80,6 +80,11 @@ function mapRowToProduct(row: ProductoCreditoRow, index: number): Product {
     impuestos: Array.isArray(d.impuestos) ? d.impuestos : undefined,
     comisiones: Array.isArray(d.comisiones) ? d.comisiones : Array.isArray(d.comision) ? d.comision : undefined,
     tabulador: Array.isArray(d.tabuladorProductos) ? d.tabuladorProductos : undefined,
+    // ── Cotizador de Arrendamiento — subtabs de opciones configurables ──
+    valorResidualOpciones: Array.isArray(d.valorResidualOpciones) ? d.valorResidualOpciones : undefined,
+    rentasAnticipadas: Array.isArray(d.rentasAnticipadas) ? d.rentasAnticipadas : undefined,
+    enganches: Array.isArray(d.enganches) ? d.enganches : undefined,
+    comisionesApertura: Array.isArray(d.comisionesApertura) ? d.comisionesApertura : undefined,
 
     // ── Nodos hijos estáticos (se guardan/leen del JSONB para Modo Consulta) ──
     amortizaciones: Array.isArray(d.amortizaciones) ? d.amortizaciones : undefined,

@@ -83,6 +83,7 @@ function mapRowToGarantia(row: JGarantiaRow): Garantia {
 
   return {
     id: row.uuid,
+    categoria: def.categoria || 'GARANTIA',
     tipo: row.tipo || def.tipo || '',
     subtipo: row.subtipo || def.subtipo || '',
     garantia: row.garantia || def.garantia || '',
@@ -103,6 +104,8 @@ function mapRowToGarantia(row: JGarantiaRow): Garantia {
     porcentajeAforo: def.porcentajeAforo != null ? Number(def.porcentajeAforo) : undefined,
     cliente_id: row.cliente_id || '',
     clienteNombre: def.clienteNombre || '',
+    proveedor_id: def.proveedor_id || '',
+    proveedorNombre: def.proveedorNombre || '',
     documentos: Array.isArray(exp.documentos) ? exp.documentos : [],
   };
 }
@@ -113,6 +116,7 @@ function mapRowToGarantia(row: JGarantiaRow): Garantia {
 function buildDataJson(g: Garantia): Record<string, any> {
   return {
     default: {
+      categoria: g.categoria || 'GARANTIA',
       tipo: g.tipo,
       subtipo: g.subtipo,
       garantia: g.garantia,
@@ -132,6 +136,8 @@ function buildDataJson(g: Garantia): Record<string, any> {
       montoCubrirGarantia: g.montoCubrirGarantia ?? null,
       porcentajeAforo: g.porcentajeAforo ?? null,
       clienteNombre: g.clienteNombre || '',
+      proveedor_id: g.proveedor_id || '',
+      proveedorNombre: g.proveedorNombre || '',
     },
     expedienteElectronico: {
       documentos: g.documentos || [],

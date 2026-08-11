@@ -16,6 +16,8 @@ interface Props {
   mode: 'nuevo' | 'editar' | 'ver';
   solicitudId: number | string | 'new';
   lineaProducto: string;
+  /** Sublínea/tipo del producto — usado para detectar Arrendamiento Puro */
+  tipoProducto?: string;
   productoSeleccionado?: ProductoCatalogo;
   /** Monto solicitado del header — se sincroniza automáticamente */
   montoSolicitadoHeader?: string;
@@ -31,6 +33,22 @@ interface Props {
   onFechaPrimeraAportacionChange?: (fecha: string) => void;
   /** Callback para notificar al padre si hay errores de validación */
   onValidationChange?: (hasErrors: boolean) => void;
+  /** Callback cuando Monto Autorizado se recalcula (Arrendamiento) — sincroniza el campo del header, que Simular usa */
+  onMontoAutorizadoChange?: (monto: string) => void;
+  /** % Enganche seleccionado en el encabezado (Arrendamiento) — fuente de verdad; Términos lo usa para calcular Monto Autorizado/Enganche */
+  porcentajeEngancheHeader?: string;
+  /** Plazo capturado en el encabezado (junto al producto) — fuente de verdad; Términos lo usa en sus cálculos internos (tasa, seguro, validaciones de rango) */
+  plazoHeader?: string;
+  /** Notifica al header el Plazo cargado desde una solicitud existente (migración: solicitudes guardadas antes de que Plazo viviera en el encabezado) */
+  onPlazoLoaded?: (plazo: string) => void;
+  /** Tasa autocompletada al seleccionar plazo en el modal de Matriz (encabezado) */
+  tasaHeader?: string;
+  /** Frecuencia autocompletada desde la fila de la Matriz de Tasa Fija seleccionada — prioridad sobre data.frecuencia */
+  frecuenciaHeader?: string;
+  /** Rango de Tasa anual [mín, máx] de la fila de Matriz vigente — habilita edición de Tasa dentro de ese rango */
+  tasaRangoMatriz?: { min: number; max: number } | null;
+  /** Rango de Plazo [mín, máx] de la fila de Matriz vigente — permite capturar un Plazo custom validado contra ese rango */
+  plazoRangoMatriz?: { min: number; max: number } | null;
 }
 
 interface ProductLimits {
@@ -260,7 +278,7 @@ function extractTerminosFromProduct(prod: ProductoCatalogo): Partial<TerminosCon
   return result;
 }
 
-export function TerminosCondicionesTab({ mode, solicitudId, lineaProducto, productoSeleccionado, montoSolicitadoHeader, fechaInicioHeader, tasaCotizacion, plazoCotizacion, cotizacionTerminos, onFechaPrimeraAportacionChange, onValidationChange }: Props) {
+export function TerminosCondicionesTab({ mode, solicitudId, lineaProducto, tipoProducto, productoSeleccionado, montoSolicitadoHeader, fechaInicioHeader, tasaCotizacion, plazoCotizacion, cotizacionTerminos, onFechaPrimeraAportacionChange, onValidationChange, onMontoAutorizadoChange, porcentajeEngancheHeader, plazoHeader, onPlazoLoaded, tasaHeader, frecuenciaHeader, tasaRangoMatriz, plazoRangoMatriz }: Props) {
   console.log('[TerminosTab] MOUNT - productoSeleccionado:', productoSeleccionado?.nombreProducto, '| productoId:', productoSeleccionado?.id);
   // Track which productoId was last applied to avoid re-applying
   const lastAppliedProductoId = useRef<string>('');
@@ -315,6 +333,141 @@ export function TerminosCondicionesTab({ mode, solicitudId, lineaProducto, produ
     return Array.isArray(g) ? g : [];
   }, [productoSeleccionado]);
 
+  // ── Cotizador de Arrendamiento — Puro y Financiero comparten los mismos
+  // campos de Términos (Comisión, Enganche, Residual, Rentas Anticipadas);
+  // lo que difiere es el tipo de simulación que genera "Simular"
+  // (Calendario de Pagos vs Tabla de Amortización) — ver SimulacionTab.tsx.
+  // Detección: mismo patrón usado en GarantiasTab.tsx (defaultCategoriaPorProducto)
+  const isArrendamiento = useMemo(() => {
+    const t = (tipoProducto || '').toLowerCase();
+    return t.includes('arrendamiento');
+  }, [tipoProducto]);
+  // Alias retrocompatible — el resto del archivo ya usa este nombre para
+  // condicionar los campos nuevos, que ahora aplican a Puro Y Financiero.
+  const isArrendamientoPuro = isArrendamiento;
+
+  const opcionesActivas = (arr: any): { id: number; valor: string }[] => {
+    return Array.isArray(arr)
+      ? arr.filter((o: any) => o?.estatus === 'ACTIVO').map((o: any) => ({ id: o.id, valor: String(o.valor) }))
+      : [];
+  };
+
+  // Comisión por Apertura — lee del subtab genérico "Comisiones" del producto
+  // (Transacción = "Apertura Cuenta", Tipo = Porcentaje, Activa = true).
+  // El subtab dedicado "Comisiones por Apertura" fue removido: Comisiones es
+  // ahora la única fuente que también lee Solicitudes.
+  const comisionesAperturaProducto = useMemo(() => {
+    const comisiones: any[] = Array.isArray(productoSeleccionado?.rawData?.comisiones)
+      ? productoSeleccionado!.rawData!.comisiones
+      : [];
+    return comisiones
+      .filter((c: any) => c?.transaccion === 'Apertura Cuenta' && c?.tipoComision === 'Porcentaje' && c?.assetBoolean === true)
+      .map((c: any) => ({ id: c.id, valor: String(c.percentage) }));
+  }, [productoSeleccionado]);
+  const enganchesProducto = useMemo(
+    () => opcionesActivas(productoSeleccionado?.rawData?.enganches),
+    [productoSeleccionado]
+  );
+  const rentasAnticipadasProducto = useMemo(
+    () => opcionesActivas(productoSeleccionado?.rawData?.rentasAnticipadas),
+    [productoSeleccionado]
+  );
+  // % Valor Residual — subtab dedicado "Valor Residual" del producto (lista de
+  // opciones activas, mismo patrón que Comisión/Enganche/Rentas Anticipadas).
+  // Si el producto no tiene opciones configuradas, Monto Residual = 0.
+  const valorResidualOpciones = useMemo(
+    () => opcionesActivas(productoSeleccionado?.rawData?.valorResidualOpciones),
+    [productoSeleccionado]
+  );
+
+  // Monto Autorizado = Monto Solicitado × (1 − % Enganche / 100)
+  // Sin enganche configurado/seleccionado → Monto Autorizado = Monto Solicitado
+  const montoAutorizadoNum = useMemo(() => {
+    const pct = parseFloat(data.porcentajeEnganche || '0') || 0;
+    return montoEfectivo * (1 - pct / 100);
+  }, [montoEfectivo, data.porcentajeEnganche]);
+
+  // % Enganche ahora se selecciona en el encabezado principal del formulario
+  // (dropdown junto a Monto Autorizado) — se sincroniza hacia este subtab, que
+  // sigue siendo dueño del cálculo de Monto Enganche/Monto Autorizado/Monto Residual.
+  useEffect(() => {
+    if (porcentajeEngancheHeader !== undefined && porcentajeEngancheHeader !== data.porcentajeEnganche) {
+      setData(prev => ({ ...prev, porcentajeEnganche: porcentajeEngancheHeader }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [porcentajeEngancheHeader]);
+
+  // Plazo ahora se captura en el encabezado (junto al producto, con el modal de
+  // Matriz de Tasa Fija) — se sincroniza hacia este subtab, que conserva toda su
+  // lógica interna de cálculo (tasa por plazo en Captación, pago de seguro, etc.).
+  useEffect(() => {
+    if (plazoHeader !== undefined && plazoHeader !== data.plazo) {
+      setData(prev => ({ ...prev, plazo: plazoHeader }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [plazoHeader]);
+
+  // Migración: si esta solicitud ya tenía un Plazo capturado en Términos (flujo
+  // previo a que Plazo viviera en el encabezado) y el encabezado aún no tiene
+  // valor, informar al header una sola vez al cargar.
+  const plazoLoadedNotifiedRef = useRef(false);
+  useEffect(() => {
+    if (plazoLoadedNotifiedRef.current) return;
+    if (plazoHeader) { plazoLoadedNotifiedRef.current = true; return; }
+    if (data.plazo) {
+      onPlazoLoaded?.(data.plazo);
+      plazoLoadedNotifiedRef.current = true;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data.plazo, plazoHeader]);
+
+  // Tasa autocompletada desde el modal de Matriz de Tasa Fija (encabezado) —
+  // el modal ya validó que el Plazo/Monto estén dentro de rango antes de fijarla.
+  useEffect(() => {
+    if (tasaHeader !== undefined && tasaHeader !== data.tasa) {
+      setData(prev => ({ ...prev, tasa: tasaHeader }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tasaHeader]);
+
+  // Frecuencia autocompletada desde la fila de la Matriz seleccionada (encabezado).
+  useEffect(() => {
+    if (frecuenciaHeader && frecuenciaHeader !== data.frecuencia) {
+      setData(prev => ({ ...prev, frecuencia: frecuenciaHeader }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [frecuenciaHeader]);
+
+  // Recalcular Monto Enganche, Monto Autorizado y Monto Residual — solo Arrendamiento Puro.
+  // % Valor Residual ahora es una selección del usuario (subtab Valor Residual del
+  // producto), no un valor derivado — si el producto no tiene opciones configuradas,
+  // no hay nada que elegir y Monto Residual = 0.
+  useEffect(() => {
+    if (isRO || !isArrendamientoPuro) return;
+    const pctEnganche = parseFloat(data.porcentajeEnganche || '0') || 0;
+    const montoEnganche = montoEfectivo > 0 && pctEnganche > 0 ? montoEfectivo * pctEnganche / 100 : 0;
+    const pctResidual = parseFloat(data.porcentajeValorResidualSel || '0') || 0;
+    const montoResidual = montoAutorizadoNum > 0 && pctResidual > 0
+      ? montoAutorizadoNum * pctResidual / 100
+      : 0;
+
+    if (
+      montoEnganche !== data.montoEnganche ||
+      montoResidual !== data.montoResidual ||
+      montoAutorizadoNum.toFixed(2) !== data.montoAutorizado
+    ) {
+      setData(prev => ({
+        ...prev,
+        montoEnganche,
+        montoResidual,
+        montoAutorizado: montoAutorizadoNum.toFixed(2),
+      }));
+    }
+    // Sincronizar Monto Autorizado con el header — Simular lo lee de ahí (prop
+    // montoAutorizado de SimulacionTab), no de este data local por sessionStorage.
+    onMontoAutorizadoChange?.(montoAutorizadoNum.toFixed(2));
+  }, [isRO, isArrendamientoPuro, montoEfectivo, data.porcentajeEnganche, montoAutorizadoNum, data.porcentajeValorResidualSel]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // garantiaActiva y garantiaSeleccionada se restauran desde data persistido
   const [garantiaActiva, setGarantiaActiva] = useState<boolean>(
     () => !!(data._garantiaActiva || (data.porcentajeAforo && data.porcentajeAforo > 0))
@@ -326,19 +479,19 @@ export function TerminosCondicionesTab({ mode, solicitudId, lineaProducto, produ
   });
 
   // Al seleccionar garantía:
-  //   montoGarantia     = montoSolicitado (campo de solo lectura — muestra la base)
-  //   montoCubrirGarantia = montoSolicitado * (aforo / 100)
+  //   montoGarantia (Monto Autorizado) = Monto Solicitado × (1 − % Enganche / 100)
+  //   montoCubrirGarantia              = montoGarantia × (aforo / 100)
   useEffect(() => {
     if (!garantiaActiva || !garantiaSeleccionada) return;
     const aforo = parseFloat(String(garantiaSeleccionada.aforo ?? '')) || 0;
-    const montoACubrir = montoEfectivo > 0 && aforo > 0 ? montoEfectivo * aforo / 100 : 0;
+    const montoACubrir = montoAutorizadoNum > 0 && aforo > 0 ? montoAutorizadoNum * aforo / 100 : 0;
     setData(prev => ({
       ...prev,
-      montoGarantia: montoEfectivo.toFixed(2),
+      montoGarantia: montoAutorizadoNum.toFixed(2),
       montoCubrirGarantia: montoACubrir,
       porcentajeAforo: aforo,
     }));
-  }, [garantiaActiva, garantiaSeleccionada, montoEfectivo]);
+  }, [garantiaActiva, garantiaSeleccionada, montoAutorizadoNum]);
 
   // ── Seguros financiados ──
   const isSegurosActive = !!(data.seguroFinanciado);
@@ -551,6 +704,18 @@ export function TerminosCondicionesTab({ mode, solicitudId, lineaProducto, produ
       .filter((r: { min: number; max: number }) => r.min > 0);
   }, [productoSeleccionado]);
 
+  // Tasa capturada/editada por el usuario fuera del rango [min, max] de la
+  // fila de Matriz de Tasa Fija vigente (tasaRangoMatriz, del encabezado).
+  const tasaFueraDeRango = useMemo(() => {
+    if (!tasaRangoMatriz) return null;
+    const tasaNum = parseFloat(data.tasa || '0') || 0;
+    if (tasaNum <= 0) return null;
+    if (tasaNum < tasaRangoMatriz.min || tasaNum > tasaRangoMatriz.max) {
+      return `Tasa fuera de rango (${tasaRangoMatriz.min.toFixed(2)}% – ${tasaRangoMatriz.max.toFixed(2)}%)`;
+    }
+    return null;
+  }, [data.tasa, tasaRangoMatriz]);
+
   const validationErrors = useMemo(() => {
     const errs: Record<string, string> = {};
     const limits = productoSeleccionado ? extractProductLimits(productoSeleccionado) : {};
@@ -598,8 +763,17 @@ export function TerminosCondicionesTab({ mode, solicitudId, lineaProducto, produ
           const plazosStr = [...new Set(plazosValidosDirect)].sort((a, b) => a - b).join(', ');
           errs.plazo = `Plazos válidos: ${plazosStr} días`;
         }
+      } else if (plazoRangoMatriz) {
+        // Arrendamiento/Crédito: ya hay una fila de Matriz seleccionada explícitamente
+        // (encabezado) — validar solo contra ESE rango, no contra toda la matriz.
+        if (!plazoNum || plazoNum <= 0) {
+          errs.plazo = `Plazo debe estar en: ${plazoRangoMatriz.min}-${plazoRangoMatriz.max} meses`;
+        } else if (plazoNum < plazoRangoMatriz.min || plazoNum > plazoRangoMatriz.max) {
+          errs.plazo = `Plazo debe estar en: ${plazoRangoMatriz.min}-${plazoRangoMatriz.max} meses`;
+        }
       } else if (matrizPlazoRanges.length > 0) {
-        // Captación Inversión: plazo debe caer en algún rango plazoMinimo–plazoMaximo
+        // Captación Inversión: sin fila seleccionada explícita — plazo debe caer
+        // en cualquiera de los rangos plazoMinimo–plazoMaximo de la matriz.
         if (!plazoNum || plazoNum <= 0) {
           const rangosStr = matrizPlazoRanges.map((r: { min: number; max: number }) => r.max > r.min ? `${r.min}-${r.max}` : `${r.min}`).join(', ');
           errs.plazo = `Plazo debe estar en: ${rangosStr} días`;
@@ -635,12 +809,12 @@ export function TerminosCondicionesTab({ mode, solicitudId, lineaProducto, produ
 
     console.log('[TerminosTab] validationErrors:', errs);
     return errs;
-  }, [data.montoSolicitado, data.plazo, data.tasa, productoSeleccionado, plazosValidosDirect, matrizPlazoRanges, lineaProducto]);
+  }, [data.montoSolicitado, data.plazo, data.tasa, productoSeleccionado, plazosValidosDirect, matrizPlazoRanges, lineaProducto, plazoRangoMatriz]);
 
   // Notificar al padre cuando hay errores
   useEffect(() => {
-    onValidationChange?.(Object.keys(validationErrors).length > 0);
-  }, [validationErrors, onValidationChange]);
+    onValidationChange?.(Object.keys(validationErrors).length > 0 || !!tasaFueraDeRango);
+  }, [validationErrors, tasaFueraDeRango, onValidationChange]);
 
   const ic = (disabled = false, hasError = false) => {
     const base = 'w-full px-2 py-1.5 text-xs border rounded focus:outline-none';
@@ -701,7 +875,7 @@ export function TerminosCondicionesTab({ mode, solicitudId, lineaProducto, produ
         {/* Col 1 */}
         <div className="space-y-3">
           <div>
-            <label className="block text-xs text-gray-700 mb-1">Monto Solicitado <span className="text-red-500">*</span></label>
+            <label className="block text-xs text-gray-700 mb-1">Monto Autorizado <span className="text-red-500">*</span></label>
             <div className="relative">
               <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-500">$</span>
               <input
@@ -753,12 +927,19 @@ export function TerminosCondicionesTab({ mode, solicitudId, lineaProducto, produ
           )}
 
           <div>
-            <label className="block text-xs text-gray-700 mb-1">Plazo <span className="text-red-500">*</span></label>
+            <label className="block text-xs text-gray-700 mb-1">
+              Plazo <span className="text-red-500">*</span>
+              {plazoRangoMatriz && <span className="ml-1 text-gray-400 font-normal">({plazoRangoMatriz.min}–{plazoRangoMatriz.max} meses)</span>}
+            </label>
             <input
               type="text" inputMode="decimal"
-              value={data.plazo}
-              onChange={e => handleNumeric('plazo', e.target.value)}
-              disabled={isRO} placeholder="Ej: 12"
+              value={data.plazo || ''}
+              onChange={e => {
+                handleNumeric('plazo', e.target.value);
+                onPlazoLoaded?.(e.target.value);
+              }}
+              disabled={isRO}
+              placeholder={plazoRangoMatriz ? `Ej: ${plazoRangoMatriz.min}` : 'Ej: 12'}
               className={ic(false, !!validationErrors.plazo)}
             />
             {validationErrors.plazo && (
@@ -783,10 +964,19 @@ export function TerminosCondicionesTab({ mode, solicitudId, lineaProducto, produ
               value={data.tasa}
               onChange={e => handleNumeric('tasa', e.target.value)}
               onBlur={() => handlePercentBlur('tasa')}
-              disabled={isRO || isCaptacion || !!productoSeleccionado} placeholder="0.0000"
-              className={ic(false, !!validationErrors.tasa)}
+              // Editable dentro del rango de la fila de Matriz de Tasa Fija vigente
+              // (tasaRangoMatriz); sin matriz o en Captación sigue de solo lectura.
+              disabled={isRO || isCaptacion || (!!productoSeleccionado && !tasaRangoMatriz)}
+              placeholder="0.0000"
+              className={ic(false, !!validationErrors.tasa || !!tasaFueraDeRango)}
             />
-            {(isCaptacion || productoSeleccionado) && data.tasa && (
+            {tasaFueraDeRango && (
+              <p className="text-[10px] text-red-500 mt-0.5">{tasaFueraDeRango}</p>
+            )}
+            {!tasaFueraDeRango && tasaRangoMatriz && (
+              <p className="text-[10px] text-green-600 mt-0.5">Rango permitido: {tasaRangoMatriz.min.toFixed(2)}% – {tasaRangoMatriz.max.toFixed(2)}%</p>
+            )}
+            {!tasaRangoMatriz && (isCaptacion || productoSeleccionado) && data.tasa && (
               <p className="text-[10px] text-green-600 mt-0.5">{isCaptacion ? 'Tasa del producto (solo lectura)' : 'Tasa del producto'}</p>
             )}
             {validationErrors.tasa && (
@@ -842,7 +1032,120 @@ export function TerminosCondicionesTab({ mode, solicitudId, lineaProducto, produ
         </div>
       </div>
 
-      {/* ── Garantía — solo Crédito y Línea de Crédito ── */}
+      {/* ── Cotizador de Arrendamiento — sección propia, fuera del grid de 3 columnas ── */}
+      {isArrendamientoPuro && (
+        <div className="mt-4 pt-4 border-t border-gray-200">
+          <div className="bg-[#4A6FA5] text-white text-xs font-semibold uppercase tracking-wide px-3 py-1.5 rounded mb-3">
+            Parámetros de Arrendamiento
+          </div>
+          <div className="grid grid-cols-4 gap-x-6 gap-y-4">
+            <div>
+              <label className="block text-xs text-gray-700 mb-1">Comisión por Apertura</label>
+              <select
+                value={data.comisionApertura || ''}
+                onChange={e => set('comisionApertura', e.target.value)}
+                disabled={isRO}
+                className={sc()}
+              >
+                <option value="">Seleccione...</option>
+                {comisionesAperturaProducto.map(o => (
+                  <option key={o.id} value={o.valor}>{o.valor}%</option>
+                ))}
+              </select>
+              {comisionesAperturaProducto.length === 0 && (
+                <p className="text-[10px] text-amber-600 mt-0.5">Sin opciones activas configuradas en el producto</p>
+              )}
+            </div>
+
+            {enganchesProducto.length > 0 && (
+              <div>
+                <label className="block text-xs text-gray-700 mb-1">Monto Enganche</label>
+                <div className="relative">
+                  <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-500">$</span>
+                  <input
+                    type="text"
+                    value={formatCurrency(data.montoEnganche || 0)}
+                    disabled
+                    className={`${ic(true)} pl-5`}
+                  />
+                </div>
+                <p className="text-[10px] text-gray-400 mt-0.5">% Enganche se selecciona en el encabezado</p>
+              </div>
+            )}
+
+            <div>
+              <label className="block text-xs text-gray-700 mb-1">% Valor Residual</label>
+              <select
+                value={data.porcentajeValorResidualSel || ''}
+                onChange={e => set('porcentajeValorResidualSel', e.target.value)}
+                disabled={isRO}
+                className={sc()}
+              >
+                <option value="">Sin residual (0%)</option>
+                {valorResidualOpciones.map(o => (
+                  <option key={o.id} value={o.valor}>{o.valor}%</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs text-gray-700 mb-1">Monto Residual</label>
+              <div className="relative">
+                <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-500">$</span>
+                <input
+                  type="text"
+                  value={formatCurrency(data.montoResidual || 0)}
+                  disabled
+                  className={`${ic(true)} pl-5`}
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs text-gray-700 mb-1">Rentas Anticipadas</label>
+              <select
+                value={data.rentasAnticipadas || ''}
+                onChange={e => set('rentasAnticipadas', e.target.value)}
+                disabled={isRO}
+                className={sc()}
+              >
+                <option value="">Seleccione...</option>
+                {rentasAnticipadasProducto.map(o => (
+                  <option key={o.id} value={o.valor}>{o.valor}</option>
+                ))}
+              </select>
+              {rentasAnticipadasProducto.length === 0 && (
+                <p className="text-[10px] text-amber-600 mt-0.5">Sin opciones activas configuradas en el producto</p>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-xs text-gray-700 mb-1">Plazo</label>
+              <input
+                type="text"
+                value={data.plazo ? `${data.plazo} meses` : ''}
+                disabled
+                placeholder="Seleccione en Plazos y Montos"
+                className={ic(true)}
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs text-gray-700 mb-1">Tasa Mensual</label>
+              <input
+                type="text"
+                value={data.tasa ? `${(parseFloat(data.tasa) / 12).toFixed(4)}%` : ''}
+                disabled
+                placeholder="Seleccione Plazo"
+                className={ic(true)}
+              />
+              <p className="text-[10px] text-gray-400 mt-0.5">Tasa anual de la Matriz ÷ 12</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Bien (Garantía) — solo Crédito y Línea de Crédito ── */}
       {!isCaptacion && (
         <div className="mt-4 pt-4 border-t border-gray-200">
           <div className="flex items-center gap-3 mb-3">
@@ -862,10 +1165,10 @@ export function TerminosCondicionesTab({ mode, solicitudId, lineaProducto, produ
                 disabled={isRO}
                 className="w-3.5 h-3.5 accent-[#4A6FA5]"
               />
-              Garantía
+              Bien
             </label>
             {garantiasProducto.length === 0 && garantiaActiva && (
-              <span className="text-[10px] text-amber-600">El producto no tiene garantías configuradas</span>
+              <span className="text-[10px] text-amber-600">El producto no tiene bienes configurados</span>
             )}
           </div>
 
@@ -876,7 +1179,7 @@ export function TerminosCondicionesTab({ mode, solicitudId, lineaProducto, produ
               <div className="mb-3">
                 {sinMonto && (
                   <div className="mb-2 px-3 py-1.5 bg-amber-50 border border-amber-200 text-amber-700 text-[10px]">
-                    Ingrese el Monto Solicitado antes de seleccionar una garantía.
+                    Ingrese el Monto Autorizado antes de seleccionar un bien.
                   </div>
                 )}
                 <div className={`border border-gray-300 overflow-hidden ${sinMonto ? 'opacity-50 pointer-events-none' : ''}`}>
@@ -929,7 +1232,7 @@ export function TerminosCondicionesTab({ mode, solicitudId, lineaProducto, produ
           {garantiaActiva && (
             <div className="grid grid-cols-3 gap-x-6">
               <div>
-                <label className="block text-xs text-gray-700 mb-1">Monto Solicitado</label>
+                <label className="block text-xs text-gray-700 mb-1">Monto Autorizado</label>
                 <div className="relative">
                   <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-500">$</span>
                   <input type="text" value={data.montoGarantia || ''}
@@ -938,7 +1241,7 @@ export function TerminosCondicionesTab({ mode, solicitudId, lineaProducto, produ
                 </div>
               </div>
               <div>
-                <label className="block text-xs text-gray-700 mb-1">Monto a Cubrir Garantía</label>
+                <label className="block text-xs text-gray-700 mb-1">Monto a Cubrir Bien</label>
                 <div className="relative">
                   <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-500">$</span>
                   <input type="text"

@@ -172,6 +172,11 @@ export interface Product {
   tasasReferencia?: any[];
   garantias?: any[];
   plantillas?: PlantillaInstitucional[];
+  // === Cotizador de Arrendamiento — subtabs de opciones configurables ===
+  valorResidualOpciones?: any[];
+  rentasAnticipadas?: any[];
+  enganches?: any[];
+  comisionesApertura?: any[];
 
   // === SUBTABS ESTÁTICOS DE CRÉDITO (se guardan/leen del JSONB) ===
   amortizaciones?: any[];

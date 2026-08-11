@@ -106,6 +106,7 @@ export function ProductoFormDefaultTab({ formData, mode, handleChange, showDescu
                 const opcionesCredito = [
                   'Crédito Empleado', 'Créditos Personales', 'Préstamos para viviendas',
                   'Préstamos para vehículos', 'Créditos empresariales',
+                  'Arrendamiento Puro', 'Arrendamiento Financiero',
                 ];
                 const opciones = isSeguros ? opcionesSeguros : opcionesCredito;
                 const currentVal = formData.sublineaProducto || '';

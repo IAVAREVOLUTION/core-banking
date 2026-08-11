@@ -194,7 +194,7 @@ export const FRECUENCIAS_PAGO: { label: string; dias: number }[] = [
   { label: 'Anual', dias: 360 },
 ];
 
-const IVA_RATE = 0.16;
+export const IVA_RATE = 0.16;
 
 // ═══════════════════════════════════════════════════════════════
 // FUNCIONES UTILITARIAS
@@ -237,13 +237,17 @@ export function generarTablaAmortizacionCredito(
   periodo: string,
   fechaPrimerPago: string,
   tipoCalculo: string,
-  seguroPorPeriodo: number = 0
+  seguroPorPeriodo: number = 0,
+  /** Saldo remanente al final del plazo — usado por Arrendamiento Financiero
+   *  (valor residual). Default 0 preserva el comportamiento de Crédito/Cotizaciones. */
+  saldoFinal: number = 0
 ): AmortizacionRow[] {
   if (monto <= 0 || tasaAnual <= 0 || plazo <= 0 || !fechaPrimerPago) return [];
 
   const freq = FRECUENCIAS_PAGO.find(f => f.label === periodo);
   const diasPeriodo = freq?.dias || 30;
   const r = (tasaAnual / 100 / 360) * diasPeriodo;
+  const montoAmortizable = Math.max(0, monto - saldoFinal);
 
   const rows: AmortizacionRow[] = [];
   let saldo = monto;
@@ -257,25 +261,25 @@ export function generarTablaAmortizacionCredito(
     let ivaInteres = Math.round(pagoInteres * IVA_RATE * 100) / 100;
 
     if (tipoLower.includes('francés') || tipoLower.includes('frances')) {
-      // Pagos iguales
-      const pmt = calcularPagoPeriodo(monto, tasaAnual, plazo, diasPeriodo);
+      // Pagos iguales — se amortiza solo montoAmortizable (monto − residual)
+      const pmt = calcularPagoPeriodo(montoAmortizable, tasaAnual, plazo, diasPeriodo);
       pagoCapital = Math.round((pmt - pagoInteres) * 100) / 100;
     } else if (tipoLower.includes('alemán') || tipoLower.includes('aleman')) {
       // Capital constante
-      pagoCapital = Math.round((monto / plazo) * 100) / 100;
+      pagoCapital = Math.round((montoAmortizable / plazo) * 100) / 100;
     } else if (tipoLower.includes('americano')) {
       // Solo intereses, capital al final
-      pagoCapital = i === plazo - 1 ? saldo : 0;
+      pagoCapital = i === plazo - 1 ? Math.round((saldo - saldoFinal) * 100) / 100 : 0;
     } else {
       // Simple — capital constante + interés sobre saldo original
-      pagoCapital = Math.round((monto / plazo) * 100) / 100;
+      pagoCapital = Math.round((montoAmortizable / plazo) * 100) / 100;
       pagoInteres = Math.round((monto * r) * 100) / 100;
       ivaInteres = Math.round(pagoInteres * IVA_RATE * 100) / 100;
     }
 
-    // Ajuste último pago
+    // Ajuste último pago — el saldo converge a saldoFinal (residual), no a cero
     if (i === plazo - 1 && !tipoLower.includes('americano')) {
-      pagoCapital = Math.round(saldo * 100) / 100;
+      pagoCapital = Math.round((saldo - saldoFinal) * 100) / 100;
     }
 
     const pagoPeriodo = Math.round((pagoCapital + pagoInteres + ivaInteres) * 100) / 100;
@@ -283,7 +287,7 @@ export function generarTablaAmortizacionCredito(
     const pagoTotal = Math.round((pagoPeriodo + pagoSeguro) * 100) / 100;
 
     saldo = Math.round((saldo - pagoCapital) * 100) / 100;
-    if (saldo < 0) saldo = 0;
+    if (saldo < saldoFinal) saldo = saldoFinal;
 
     rows.push({
       noPago: i + 1,

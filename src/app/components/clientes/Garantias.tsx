@@ -10,6 +10,7 @@
  * ═══════════════════════════════════════════════════════════════════
  */
 import { useGarantiasDB } from '@/app/hooks/useGarantiasDB';
+import { useCategoriaBienDB } from '@/app/hooks/useCategoriaBienDB';
 
 interface GarantiasProps {
   onBack: () => void;
@@ -26,6 +27,10 @@ export function Garantias({ onBack: _onBack, mode: _mode, clienteId }: Garantias
     loading,
     backendStatus,
   } = useGarantiasDB(clienteIdStr || undefined);
+
+  const { categorias: categoriasBien } = useCategoriaBienDB();
+  const categoriaLabel = (clave: string): string =>
+    categoriasBien.find(c => c.clave === clave)?.nombre || clave || '—';
 
   // ── Formateo ──
   const formatDate = (dateString: string) => {
@@ -51,7 +56,7 @@ export function Garantias({ onBack: _onBack, mode: _mode, clienteId }: Garantias
     <div className="flex-1">
       {/* Encabezado institucional */}
       <div className="bg-blue-50 border-l-4 border-primary-theme px-3 py-2 mb-3 flex items-center justify-between">
-        <span className="text-sm font-medium text-gray-800">GARANTÍAS DEL CLIENTE</span>
+        <span className="text-sm font-medium text-gray-800">BIENES DEL CLIENTE</span>
       </div>
 
       {/* Info banner */}
@@ -66,7 +71,8 @@ export function Garantias({ onBack: _onBack, mode: _mode, clienteId }: Garantias
         <table className="w-full text-xs border-collapse">
           <thead>
             <tr className="border-b border-gray-400" style={{ backgroundColor: 'var(--theme-table-header)' }}>
-              <th className="px-3 py-2 text-left font-medium text-xs text-gray-800 border-r border-gray-300">Garantía</th>
+              <th className="px-3 py-2 text-left font-medium text-xs text-gray-800 border-r border-gray-300">Categoría</th>
+              <th className="px-3 py-2 text-left font-medium text-xs text-gray-800 border-r border-gray-300">Bien</th>
               <th className="px-3 py-2 text-left font-medium text-xs text-gray-800 border-r border-gray-300">Tipo</th>
               <th className="px-3 py-2 text-left font-medium text-xs text-gray-800 border-r border-gray-300">Subtipo</th>
               <th className="px-3 py-2 text-right font-medium text-xs text-gray-800 border-r border-gray-300">Valor Nominal</th>
@@ -77,25 +83,25 @@ export function Garantias({ onBack: _onBack, mode: _mode, clienteId }: Garantias
           <tbody className="bg-white">
             {loading ? (
               <tr>
-                <td colSpan={6} className="px-3 py-8 text-center text-xs text-gray-500">
+                <td colSpan={7} className="px-3 py-8 text-center text-xs text-gray-500">
                   <div className="flex items-center justify-center gap-2">
                     <svg className="animate-spin h-4 w-4 text-[#0099CC]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
                     </svg>
-                    Cargando garantías desde J_GARANTIAS...
+                    Cargando bienes desde J_GARANTIAS...
                   </div>
                 </td>
               </tr>
             ) : garantiasCliente.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-3 py-8 text-center text-xs text-gray-500">
+                <td colSpan={7} className="px-3 py-8 text-center text-xs text-gray-500">
                   <div className="flex flex-col items-center gap-1">
                     <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" strokeWidth="1.5">
                       <rect x="3" y="3" width="18" height="18" rx="2"/>
                       <path d="M3 9h18M9 3v18"/>
                     </svg>
-                    <span>Este cliente no tiene garantías asociadas.</span>
+                    <span>Este cliente no tiene bienes asociados.</span>
                   </div>
                 </td>
               </tr>
@@ -105,6 +111,7 @@ export function Garantias({ onBack: _onBack, mode: _mode, clienteId }: Garantias
                   key={garantia.id}
                   className="border-b border-gray-300 hover:bg-gray-50"
                 >
+                  <td className="px-3 py-2 text-xs text-gray-700 border-r border-gray-300">{categoriaLabel(garantia.categoria)}</td>
                   <td className="px-3 py-2 text-xs text-gray-700 border-r border-gray-300">
                     <span title={String(garantia.id)}>{garantia.garantia || truncateId(garantia.id)}</span>
                   </td>
@@ -124,7 +131,7 @@ export function Garantias({ onBack: _onBack, mode: _mode, clienteId }: Garantias
 
       {/* Total */}
       <div className="mt-2 text-right text-xs text-gray-500">
-        {garantiasCliente.length} garantía{garantiasCliente.length !== 1 ? 's' : ''} asociada{garantiasCliente.length !== 1 ? 's' : ''}
+        {garantiasCliente.length} bien{garantiasCliente.length !== 1 ? 'es' : ''} asociado{garantiasCliente.length !== 1 ? 's' : ''}
       </div>
     </div>
   );

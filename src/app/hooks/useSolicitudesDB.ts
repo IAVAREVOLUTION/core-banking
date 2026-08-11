@@ -305,6 +305,9 @@ function formToDBPayload(form: SolicitudFormData, allSubtabs?: Record<string, an
   const autorizaciones: any[] = subtabArr('autorizaciones', 'autorizaciones');
   const notas: any[] = subtabArr('notas', 'notas');
   const partesRelacionadas: any[] = subtabArr('partesRelacionadas', 'partes_relacionadas');
+  // cargos: solo viaja cuando SolicitudCreditoForm lo incluye explícitamente en allSubtabs
+  // (al enviar a originación) — el resto del tiempo permanece como vista previa en sessionStorage.
+  const cargos: any[] = subtabArr('cargos', 'cargos');
 
   // ── Build the Core-managed header fields ──
   // Only non-null values are included so deepMerge won't wipe original fields
@@ -332,10 +335,21 @@ function formToDBPayload(form: SolicitudFormData, allSubtabs?: Record<string, an
   const mergedHeader = origSol.header ? deepMerge(origSol.header, coreHeader) : coreHeader;
 
   // ── Build Core-managed terminos fields (only non-empty) ──
+  // NOTA: Plazo y % Enganche ahora se capturan en el encabezado ("Plazos y
+  // Montos"), no solo en el subtab Términos y Condiciones — si el usuario
+  // nunca visita ese subtab, terminos.plazo queda vacío; form.plazo/
+  // form.porcentajeEnganche son el respaldo (fuente real en ese caso).
   const coreTerminosRaw: Record<string, any> = {};
   if (terminos.montoSolicitado || form.montoSolicitado) coreTerminosRaw.montoSolicitado = terminos.montoSolicitado || form.montoSolicitado || '';
-  if (terminos.plazo) coreTerminosRaw.plazo = terminos.plazo;
+  if (terminos.plazo || form.plazo) coreTerminosRaw.plazo = terminos.plazo || form.plazo;
   if (terminos.tasa) coreTerminosRaw.tasa = terminos.tasa;
+  if (terminos.porcentajeEnganche || form.porcentajeEnganche) coreTerminosRaw.porcentajeEnganche = terminos.porcentajeEnganche || form.porcentajeEnganche;
+  if (terminos.montoEnganche) coreTerminosRaw.montoEnganche = terminos.montoEnganche;
+  if (terminos.montoAutorizado || form.montoAutorizado) coreTerminosRaw.montoAutorizado = terminos.montoAutorizado || form.montoAutorizado;
+  if (terminos.comisionApertura) coreTerminosRaw.comisionApertura = terminos.comisionApertura;
+  if (terminos.porcentajeValorResidualSel) coreTerminosRaw.porcentajeValorResidualSel = terminos.porcentajeValorResidualSel;
+  if (terminos.montoResidual) coreTerminosRaw.montoResidual = terminos.montoResidual;
+  if (terminos.rentasAnticipadas) coreTerminosRaw.rentasAnticipadas = terminos.rentasAnticipadas;
   if (terminos.frecuencia) coreTerminosRaw.frecuencia = terminos.frecuencia;
   if (terminos.fechaPrimerPago) coreTerminosRaw.fechaPrimerPago = terminos.fechaPrimerPago;
   if (terminos.fechaPrimeraAportacion) coreTerminosRaw.fechaPrimeraAportacion = terminos.fechaPrimeraAportacion;
@@ -361,7 +375,7 @@ function formToDBPayload(form: SolicitudFormData, allSubtabs?: Record<string, an
   const origTcParams = origSol.terminos_condiciones?.parametros_simulacion || {};
   const coreParams: Record<string, any> = {};
   if (terminos.montoSolicitado || form.montoSolicitado) coreParams.monto_solicitado = terminos.montoSolicitado || form.montoSolicitado;
-  if (terminos.plazo) coreParams.plazo = terminos.plazo;
+  if (terminos.plazo || form.plazo) coreParams.plazo = terminos.plazo || form.plazo;
   if (terminos.tasa) coreParams.tasa_interes = terminos.tasa;
   if (terminos.frecuencia) coreParams.periodicidad = terminos.frecuencia;
   if (terminos.fechaPrimerPago) coreParams.fecha_primer_pago = terminos.fechaPrimerPago;
@@ -484,6 +498,11 @@ function formToDBPayload(form: SolicitudFormData, allSubtabs?: Record<string, an
       },
       rolAsignado: p.rolAsignado || null,
       nombreEjecutivo: p.nombreEjecutivo || null,
+    })),
+    cargos: cargos.map((c: any) => ({
+      tipo_cargo: c.tipoCargo || null, descripcion: c.descripcion || null,
+      monto: c.monto ?? null, fecha_cargo: c.fechaCargo || null,
+      estatus: c.estatus || null, notas: c.notas || null,
     })),
   };
 

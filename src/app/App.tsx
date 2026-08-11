@@ -406,11 +406,11 @@ function App() {
     // NO actualizamos state local — refetch trae los datos reales.
     // ═══════════════════════════════════════════════════════════════
     if (clienteFormMode === 'create') {
-      toast.success('Cliente creado exitosamente', {
-        description: `El cliente "${clienteData.nombre || 'Nuevo Cliente'}" ha sido registrado en J_CLIENTES.`,
+      toast.success('Persona creada exitosamente', {
+        description: `"${clienteData.nombre || 'Nueva Persona'}" ha sido registrada en J_CLIENTES.`,
       });
     } else if (clienteFormMode === 'edit') {
-      toast.success('Cliente actualizado', {
+      toast.success('Persona actualizada', {
         description: `Los cambios en "${clienteData.nombre || ''}" han sido guardados en J_CLIENTES.`,
       });
     }
@@ -614,10 +614,24 @@ function App() {
     }, 2000);
   };
 
-  // CRÍTICO: Usar useMemo para evitar recálculos en cada render
+  // BUG FIX: nextId debía calcularse del array mock local `products`, que
+  // nunca se sincroniza con los productos reales de BD (productosCreditoDB /
+  // productosSegurosDB) — por eso dos altas podían recibir el mismo
+  // consecutivo (ej. "PR-001" repetido) si el mock no había crecido entre
+  // sesiones. Ahora se calcula desde el idProducto real más alto ya
+  // persistido, según qué submódulo de ProductoForm esté activo.
   const nextId = useMemo(() => {
-    return Math.max(...products.map((p) => p.id), 0) + 1;
-  }, [products]);
+    const fuente = productoTab === 'seguros' ? productosSegurosDB : productosCreditoDB;
+    let maxNum = 0;
+    for (const p of fuente) {
+      const match = (p.idProducto || '').match(/^PR-(\d+)$/);
+      if (match) {
+        const n = parseInt(match[1], 10);
+        if (n > maxNum) maxNum = n;
+      }
+    }
+    return maxNum + 1;
+  }, [productoTab, productosCreditoDB, productosSegurosDB]);
 
   // ── Detectar si ya existe un producto de Captación con Cuenta Eje activada ──
   const cuentaEjeExistente = useMemo(() => {
@@ -660,9 +674,9 @@ function App() {
   const navigationTabs = [
     { id: 'configuracion', label: 'Configuración' },
     { id: 'productos', label: 'Productos' },
-    { id: 'garantias', label: 'Garantías' },
+    { id: 'garantias', label: 'Bienes' },
     { id: 'prospectos', label: 'Prospectos' },
-    { id: 'clientes', label: 'Clientes' },
+    { id: 'clientes', label: 'Personas' },
     { id: 'cotizaciones', label: 'Cotizaciones' },
     { id: 'cuentas-ahorro', label: 'Cuentas ahorro' },
     { id: 'solicitudes-creditos', label: 'Solicitudes' },
@@ -867,7 +881,7 @@ function App() {
                     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
                       <path d="M3 3h10M3 8h10M3 13h10"/>
                     </svg>
-                    <span>Productos Crédito</span>
+                    <span>Producto Activo</span>
                   </button>
                   <button
                     onClick={() => {
@@ -934,9 +948,9 @@ function App() {
                         )}
                       </svg>
                       <span>
-                        {(productoTab === 'credito' ? lineaCreditoFormMode : formMode) === 'create' ? `Nuevo Producto ${productoTab === 'captacion' ? 'Captación' : productoTab === 'producto-credito' ? 'Crédito' : productoTab === 'seguros' ? 'Seguros' : 'Línea de Crédito'}` : 
-                         (productoTab === 'credito' ? lineaCreditoFormMode : formMode) === 'edit' ? `Editar Producto ${productoTab === 'captacion' ? 'Captación' : productoTab === 'producto-credito' ? 'Crédito' : productoTab === 'seguros' ? 'Seguros' : 'Línea de Crédito'}` : 
-                         `Ver Producto ${productoTab === 'captacion' ? 'Captación' : productoTab === 'producto-credito' ? 'Crédito' : productoTab === 'seguros' ? 'Seguros' : 'Línea de Crédito'}`}
+                        {(productoTab === 'credito' ? lineaCreditoFormMode : formMode) === 'create' ? `Nuevo Producto ${productoTab === 'captacion' ? 'Captación' : productoTab === 'producto-credito' ? '' : productoTab === 'seguros' ? 'Seguros' : 'Línea de Crédito'}`.trim() :
+                         (productoTab === 'credito' ? lineaCreditoFormMode : formMode) === 'edit' ? `Editar Producto ${productoTab === 'captacion' ? 'Captación' : productoTab === 'producto-credito' ? '' : productoTab === 'seguros' ? 'Seguros' : 'Línea de Crédito'}`.trim() :
+                         `Ver Producto ${productoTab === 'captacion' ? 'Captación' : productoTab === 'producto-credito' ? '' : productoTab === 'seguros' ? 'Seguros' : 'Línea de Crédito'}`.trim()}
                       </span>
                     </button>
                   )}
@@ -1089,7 +1103,7 @@ function App() {
                     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
                       <path d="M3 3h10M3 8h10M3 13h10"/>
                     </svg>
-                    <span>Lista de Clientes</span>
+                    <span>Lista de Personas</span>
                   </button>
                   
                   {/* Tab dinámico que muestra el modo actual */}
@@ -1107,9 +1121,9 @@ function App() {
                         )}
                       </svg>
                       <span>
-                        {clienteFormMode === 'create' ? 'Nuevo Cliente' : 
-                         clienteFormMode === 'edit' ? 'Editar Cliente' : 
-                         'Ver Cliente'}
+                        {clienteFormMode === 'create' ? 'Nueva Persona' :
+                         clienteFormMode === 'edit' ? 'Editar Persona' :
+                         'Ver Persona'}
                       </span>
                     </button>
                   )}

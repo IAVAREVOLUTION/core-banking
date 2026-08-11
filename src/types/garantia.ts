@@ -12,6 +12,7 @@ export interface DocumentoExpediente {
 
 export interface Garantia {
   id: number | string; // AUTOINCREMENTAL o UUID desde DB
+  categoria: string; // CATEGORIA_BIEN - 'GARANTIA' | 'ACTIVO_FIJO' - Obligatorio (catálogo J_CATALOGOS type='CategoriaBien')
   tipo: string; // TYPE - VARCHAR(30) - Obligatorio
   subtipo: string; // SUBTYPE - VARCHAR(30) - Obligatorio
   garantia: string; // COLLATERAL - VARCHAR(50) - Obligatorio
@@ -33,5 +34,8 @@ export interface Garantia {
   // ── FK a J_CLIENTES ──
   cliente_id?: string; // uuid FK → J_CLIENTES.uuid (se guarda en columna)
   clienteNombre?: string; // nombre para mostrar en UI (NO se persiste en columna, va en data)
+  // ── Proveedor del bien — referencia a J_CLIENTES con type='Proveedor' (va en data, no hay columna física) ──
+  proveedor_id?: string; // uuid de J_CLIENTES (type='Proveedor')
+  proveedorNombre?: string; // nombre para mostrar en UI
   documentos?: DocumentoExpediente[]; // Expediente Electrónico
 }

@@ -9,6 +9,7 @@ import { PerfilTransaccional } from './PerfilTransaccional';
 import { ArchivosAdjuntos } from './ArchivosAdjuntos';
 import { Garantias } from '@/app/components/clientes/Garantias';
 import { CuentaAhorro } from './CuentaAhorro';
+import { CuentasBancariasTab } from './CuentasBancariasTab';
 import { useCuentasAhorroDB } from '@/app/hooks/useCuentasAhorroDB';
 import { SolicitudesCredito } from './SolicitudesCredito';
 import { Creditos } from './Creditos';
@@ -108,7 +109,9 @@ interface FormData {
   activacionTarjetaDebito: boolean;
   numeroTarjetaDebito: string;
   clasificacionCliente: string;
-  
+  /** Escribe la columna type de J_CLIENTES — 'Clientes' (default) | 'Proveedor' */
+  tipoPersona?: string;
+
   telefonoDomicilio: string;
   telefonoOficina: string;
   telefonoCasa: string;
@@ -357,7 +360,8 @@ export function AltaClienteDefault({ onBack, onSave, mode, cliente, onNavigateTo
       activacionTarjetaDebito: false,
       numeroTarjetaDebito: '',
       clasificacionCliente: '',
-      
+      tipoPersona: 'Clientes',
+
       telefonoDomicilio: '',
       telefonoOficina: '',
       telefonoCasa: '',
@@ -628,7 +632,8 @@ export function AltaClienteDefault({ onBack, onSave, mode, cliente, onNavigateTo
         activacionTarjetaDebito: raw.activacionTarjetaDebito || def.activacionTarjetaDebito || clienteCompleto.activacionTarjetaDebito || false,
         numeroTarjetaDebito: gMulti('numeroTarjetaDebito', 'numero_tarjeta_debito') || '',
         clasificacionCliente: gMulti('clasificacionCliente', 'clasificacion_cliente') || '',
-        
+        tipoPersona: clienteCompleto.tipo || 'Clientes',
+
         telefonoDomicilio: gMulti('telefonoDomicilio', 'telefono', 'telefonoCelular', 'celular') || '',
         telefonoOficina: gMulti('telefonoOficina', 'telefono_oficina') || '',
         telefonoCasa: gMulti('telefonoCasa', 'celular', 'telefonoCelular', 'telefono_casa') || '',
@@ -1044,6 +1049,7 @@ export function AltaClienteDefault({ onBack, onSave, mode, cliente, onNavigateTo
       activacionTarjetaDebito: false,
       numeroTarjetaDebito: '',
       clasificacionCliente: '',
+      tipoPersona: 'Clientes',
       institucionGobierno: '',
       institucionGobiernoId: '',
     });
@@ -1468,10 +1474,13 @@ export function AltaClienteDefault({ onBack, onSave, mode, cliente, onNavigateTo
       };
 
       // ════════════════════════════════════════════════════════════════
-      // REGLA INSTITUCIONAL: type = "Clientes" (plural, alineado con activación de prospectos)
+      // REGLA INSTITUCIONAL: type = "Clientes" (plural, alineado con activación
+      // de prospectos) por defecto. Si el usuario elige "Tipo de Persona" =
+      // Proveedor, type = "Proveedor" — mismo registro en J_CLIENTES, distinto
+      // type, para que pickers como el de Garantías puedan filtrar por rol.
       // subtipo y estatus se toman del formulario
       // ════════════════════════════════════════════════════════════════
-      const typeValue = 'Clientes';
+      const typeValue = formData.tipoPersona || 'Clientes';
       const subtipoValue = formData.personalidad || 'Física';
       const estatusValue = formData.estatusCliente || 'Activo';
 
@@ -1663,10 +1672,11 @@ export function AltaClienteDefault({ onBack, onSave, mode, cliente, onNavigateTo
     { id: 'sic', label: 'SIC' },
     { id: 'listas-negras', label: 'Listas Negras' },
     { id: 'kyc', label: 'KYC' },
-    { id: 'garantias', label: 'Garantías' },
+    { id: 'garantias', label: 'Bienes' },
     { id: 'perfil-transaccional', label: 'Perfil Transaccional' },
     { id: 'cotizaciones', label: 'Cotizaciones' },
     { id: 'cuentas-ahorro', label: 'Cuentas de Ahorro' },
+    { id: 'cuentas-bancarias', label: 'Cuentas Bancarias' },
     { id: 'solicitudes', label: 'Solicitudes de Crédito' },
     { id: 'creditos', label: 'Créditos' },
     { id: 'inversiones', label: 'Inversiones' },
@@ -1692,7 +1702,7 @@ export function AltaClienteDefault({ onBack, onSave, mode, cliente, onNavigateTo
               <circle cx="10" cy="6" r="3"/>
               <path d="M3 18c0-3.5 3-6 7-6s7 2.5 7 6"/>
             </svg>
-            <span className="text-sm text-gray-700 font-normal">Alta Cliente</span>
+            <span className="text-sm text-gray-700 font-normal">Alta Persona</span>
             <button className="ml-2 p-1">
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#999" strokeWidth="2">
                 <circle cx="7" cy="7" r="5"/>
@@ -1749,7 +1759,7 @@ export function AltaClienteDefault({ onBack, onSave, mode, cliente, onNavigateTo
               {/* ════════════════════════════════════════════════════ */}
               <div className="space-y-1.5">
                 <div className="flex flex-col min-h-[52px]">
-                  <label className="text-[10px] text-gray-600 mb-0.5">ID CLIENTE <span className="text-red-600">*</span></label>
+                  <label className="text-[10px] text-gray-600 mb-0.5">ID <span className="text-red-600">*</span></label>
                   <input 
                     type="text" 
                     value={formData.idCliente || ''}
@@ -1797,9 +1807,26 @@ export function AltaClienteDefault({ onBack, onSave, mode, cliente, onNavigateTo
                   )}
                 </div>
 
+                {/* TIPO DE PERSONA — escribe la columna type de J_CLIENTES (Cliente/Proveedor/etc.) */}
+                <div className="flex flex-col min-h-[52px]">
+                  <label className="text-[10px] text-gray-600 mb-0.5">TIPO DE PERSONA <span className="text-red-600">*</span></label>
+                  {!camposEditables ? (
+                    <div className="px-2 py-1 text-xs text-gray-700">{formData.tipoPersona === 'Proveedor' ? 'Proveedor' : 'Cliente'}</div>
+                  ) : (
+                    <select
+                      value={formData.tipoPersona || 'Clientes'}
+                      onChange={(e) => handleChange('tipoPersona', e.target.value)}
+                      className="px-2 py-1 text-xs border border-gray-300 rounded"
+                    >
+                      <option value="Clientes">Cliente</option>
+                      <option value="Proveedor">Proveedor</option>
+                    </select>
+                  )}
+                </div>
+
                 {/* CLASIFICACIÓN DEL CLIENTE — catálogo dinámico desde DB */}
                 <div className="flex flex-col min-h-[52px]">
-                  <label className="text-[10px] text-gray-600 mb-0.5">CLASIFICACIÓN DEL CLIENTE <span className="text-red-600">*</span></label>
+                  <label className="text-[10px] text-gray-600 mb-0.5">CLASIFICACIÓN <span className="text-red-600">*</span></label>
                   {!camposEditables ? (
                     <div className="px-2 py-1 text-xs text-gray-700">{formData.clasificacionCliente || '—'}</div>
                   ) : (
@@ -3620,6 +3647,13 @@ export function AltaClienteDefault({ onBack, onSave, mode, cliente, onNavigateTo
                       cuentaEje: numeroCuenta
                     });
                   }}
+                />
+              )}
+
+              {activeTab === 'cuentas-bancarias' && (
+                <CuentasBancariasTab
+                  mode={mode}
+                  clienteId={clienteId}
                 />
               )}
 

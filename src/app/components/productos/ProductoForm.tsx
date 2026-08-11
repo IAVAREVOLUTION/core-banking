@@ -19,6 +19,7 @@ import { CaptacionTab } from './tabs/CaptacionTab';
 import { TasaInversionTab } from './tabs/TasaInversionTab';
 import { ConstitucionTab } from './tabs/ConstitucionTab';
 import { ComisionesTab } from './tabs/ComisionesTab';
+import { OpcionesConfigTab } from '../productos-linea-credito/OpcionesConfigTab';
 import { FasesTab } from './tabs/FasesTab';
 import { GarantiaTab } from './tabs/GarantiaTab';
 import { JerarquiaProductosTab } from './tabs/JerarquiaProductosTab';
@@ -225,6 +226,9 @@ export function ProductoForm({
   const requisitosRef = useRef<{ getData: () => any[] }>(null);
   const tabuladorRef = useRef<{ getData: () => any[] }>(null);
   const plantillasRef = useRef<{ getData: () => any[] }>(null);
+  const valorResidualRef = useRef<{ getData: () => any[] }>(null);
+  const rentaAnticipadaRef = useRef<{ getData: () => any[] }>(null);
+  const engancheRef = useRef<{ getData: () => any[] }>(null);
 
   useEffect(() => {
     if (formData.lineaProducto) {
@@ -307,6 +311,9 @@ export function ProductoForm({
         garantias: garantiasRef.current?.getData() || [],
         impuestos: impuestosRef.current?.getData() || [],
         comisiones: comisionesRef.current?.getData() || [],
+        valorResidualOpciones: valorResidualRef.current?.getData() || [],
+        rentasAnticipadas: rentaAnticipadaRef.current?.getData() || [],
+        enganches: engancheRef.current?.getData() || [],
         requisitos: requisitosRef.current?.getData() || [],
         tabulador: tabuladorRef.current?.getData() || [],
         plantillas: plantillasRef.current?.getData() || [],
@@ -320,7 +327,11 @@ export function ProductoForm({
       // Nodo padre: Datos Generales + nodos hijos: subtabs
       // type = 'Credito' (fijo)
       // ═══════════════════════════════════════════════════════════════
-      const idProducto = `PR-${String(formData.id || productId).padStart(3, '0')}`;
+      // BUG FIX: preservar el idProducto ya asignado al editar — antes se
+      // recalculaba SIEMPRE desde formData.id/productId (que es index+1 en
+      // la lista cargada, no un consecutivo estable), lo que podía sobrescribir
+      // el idProducto real de un producto existente con uno duplicado de otro.
+      const idProducto = product?.idProducto || `PR-${String(formData.id || productId).padStart(3, '0')}`;
 
       const jCreditoData: Record<string, any> = {
         // ── Nodo padre: Datos Generales ──
@@ -364,6 +375,9 @@ export function ProductoForm({
         garantias: garantiasRef.current?.getData() || [],
         impuestos: impuestosRef.current?.getData() || [],
         comisiones: comisionesRef.current?.getData() || [],
+        valorResidualOpciones: valorResidualRef.current?.getData() || [],
+        rentasAnticipadas: rentaAnticipadaRef.current?.getData() || [],
+        enganches: engancheRef.current?.getData() || [],
         requisitos: requisitosRef.current?.getData() || [],
         tabuladorProductos: tabuladorRef.current?.getData() || [],
         amortizaciones: efectivoAmortizaciones,
@@ -427,6 +441,16 @@ export function ProductoForm({
     // Limpiar claves de Línea de Crédito y legacy
     try { localStorage.removeItem(`linea_comisiones_producto_${productId}`); } catch (e) { /* ignore */ }
     try { localStorage.removeItem(`comisiones_producto_${productId}`); } catch (e) { /* ignore */ }
+    // OpcionesConfigTab (Valor Residual, Rentas Anticipadas, Enganche) usa localStorage
+    [
+      `credito_valor_residual_producto_${productId}`,
+      `credito_renta_anticipada_producto_${productId}`,
+      `credito_enganche_producto_${productId}`,
+      // Residuo de un subtab "Comisiones por Apertura" ya removido — se limpia por si quedó de sesiones previas
+      `credito_comision_apertura_producto_${productId}`,
+    ].forEach(key => {
+      try { localStorage.removeItem(key); } catch (e) { /* ignore */ }
+    });
   };
 
   // Cancel con limpieza
@@ -504,6 +528,9 @@ export function ProductoForm({
   };
 
   const isSeguros = linea === 'Seguros';
+  // Subtabs de arrendamiento (Valor Residual, Rentas Anticipadas) solo aplican
+  // cuando la sublínea del producto es Arrendamiento Puro o Financiero.
+  const isArrendamiento = /arrendamiento/i.test(formData.sublineaProducto || '');
 
   // Tabs dinámicos según el tipo de producto
   const allTabs = [
@@ -528,6 +555,12 @@ export function ProductoForm({
     { id: 'prelacion', label: 'Prelación de cargos' },
     { id: 'tabulador-productos', label: 'Tabulador de Productos' },
     { id: 'plantillas', label: 'Plantillas' },
+    // === Cotizador de Arrendamiento — solo si sublínea es Arrendamiento ===
+    ...(isArrendamiento ? [
+      { id: 'valor-residual', label: 'Valor Residual' },
+      { id: 'renta-anticipada', label: 'Rentas Anticipadas' },
+      { id: 'enganche', label: '% Enganche' },
+    ] : []),
   ];
 
   // ══════════════════════════════════════════════════════════════
@@ -630,7 +663,9 @@ export function ProductoForm({
               <path d="M4 9h16M9 4v16" stroke="currentColor" strokeWidth="1.5"/>
             </svg>
             <h2 className="text-lg font-normal text-gray-800">
-              {mode === 'create' ? `Alta Productos ${isSeguros ? 'Seguros' : 'Crédito'}` : mode === 'edit' ? `Editar Producto ${isSeguros ? 'Seguros' : 'Crédito'}` : `Ver Producto ${isSeguros ? 'Seguros' : 'Crédito'}`}
+              {isSeguros
+                ? (mode === 'create' ? 'Alta Productos Seguros' : mode === 'edit' ? 'Editar Producto Seguros' : 'Ver Producto Seguros')
+                : (mode === 'create' ? 'Alta Producto' : mode === 'edit' ? 'Editar Producto' : 'Ver Producto')}
             </h2>
             {/* Mostrar idProducto y UUID en modo consulta/editar */}
             {!isCreate && product?.idProducto && (
@@ -1002,6 +1037,57 @@ export function ProductoForm({
                 cargos={Array.isArray(product?.cargos) ? product.cargos : undefined}
               />
             </div>
+
+            {isArrendamiento && (
+              <>
+                <div style={{ display: activeTab === 'valor-residual' ? 'block' : 'none' }}>
+                  <OpcionesConfigTab
+                    ref={valorResidualRef}
+                    mode={mode}
+                    productId={productId}
+                    initialData={(product as any)?.valorResidualOpciones}
+                    storagePrefix="credito"
+                    storageSuffix="valor_residual"
+                    titulo="Valor Residual"
+                    labelValor="% Valor Residual"
+                    sufijoValor="%"
+                    tipoValor="porcentaje"
+                  />
+                </div>
+
+                <div style={{ display: activeTab === 'renta-anticipada' ? 'block' : 'none' }}>
+                  <OpcionesConfigTab
+                    ref={rentaAnticipadaRef}
+                    mode={mode}
+                    productId={productId}
+                    initialData={(product as any)?.rentasAnticipadas}
+                    storagePrefix="credito"
+                    storageSuffix="renta_anticipada"
+                    titulo="Rentas Anticipadas"
+                    labelValor="No. de Rentas Anticipadas"
+                    sufijoValor=""
+                    tipoValor="lista"
+                    opcionesLista={['0', '1', '2', '3', '4', '5']}
+                  />
+                </div>
+
+                <div style={{ display: activeTab === 'enganche' ? 'block' : 'none' }}>
+                  <OpcionesConfigTab
+                    ref={engancheRef}
+                    mode={mode}
+                    productId={productId}
+                    initialData={(product as any)?.enganches}
+                    storagePrefix="credito"
+                    storageSuffix="enganche"
+                    titulo="% Enganche"
+                    labelValor="% Enganche"
+                    sufijoValor="%"
+                    tipoValor="porcentaje"
+                  />
+                </div>
+
+              </>
+            )}
 
             <div style={{ display: activeTab === 'tabulador-productos' ? 'block' : 'none' }}>
               <TabuladorProductosTab ref={tabuladorRef} mode={mode} productId={productId} persistToStorage initialData={Array.isArray(product?.tabulador) ? product.tabulador : undefined} />

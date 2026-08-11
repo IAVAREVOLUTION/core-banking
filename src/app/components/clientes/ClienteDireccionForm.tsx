@@ -30,7 +30,7 @@ export function ClienteDireccionForm({ onBack }: ClienteDireccionFormProps) {
     { id: 'sic', label: 'SIC' },
     { id: 'listas-negras', label: 'Listas Negras' },
     { id: 'kyc', label: 'KYC' },
-    { id: 'garantias', label: 'Garantías' },
+    { id: 'garantias', label: 'Bienes' },
     { id: 'perfil-transaccional', label: 'Perfil Transaccional' },
     { id: 'cuentas-ahorro', label: 'Cuenta de Ahorro' },
     { id: 'solicitudes', label: 'Solicitudes de Crédito' },
@@ -91,7 +91,7 @@ export function ClienteDireccionForm({ onBack }: ClienteDireccionFormProps) {
               <div>
                 <div className="space-y-2.5">
                   <div className="flex items-center gap-2">
-                    <label className="text-xs w-32 flex-shrink-0 text-gray-700">ID CLIENTE *</label>
+                    <label className="text-xs w-32 flex-shrink-0 text-gray-700">ID *</label>
                     <input type="text" value="CLI-001-CLI-006" disabled className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded bg-gray-100 text-gray-600" />
                   </div>
                   <div className="flex items-center gap-2">

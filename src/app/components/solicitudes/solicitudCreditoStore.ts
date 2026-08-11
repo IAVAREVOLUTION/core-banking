@@ -31,6 +31,10 @@ export interface SolicitudFormData {
   sucursal: string;
   montoSolicitado: string;
   montoAutorizado: string;
+  /** % Enganche — solo Arrendamiento. Fuente de verdad para Monto Autorizado = Monto Solicitado × (1 − %Enganche) */
+  porcentajeEnganche?: string;
+  /** Plazo — visible en el encabezado junto al producto; se sincroniza hacia Términos y Condiciones */
+  plazo?: string;
   // Fechas de vigencia del crédito (unificadas con Originación)
   fechaInicio?: string;
   fechaFin?: string;
@@ -74,6 +78,13 @@ export interface TerminosCondiciones {
   riesgoInversionista?: string;   // Bajo | Medio | Alto
   horizonteInversion?: string;    // Corto plazo | Mediano plazo | Largo plazo
   experienciaInversion?: string;  // Ninguna | Básica | Intermedia | Avanzada
+  // Cotizador de Arrendamiento Puro — solo aplica cuando el producto es arrendamiento puro
+  comisionApertura?: string;     // % elegido del subtab Comisiones por Apertura del producto
+  porcentajeEnganche?: string;   // % elegido del subtab % Enganche del producto
+  montoEnganche?: number;        // calculado: montoSolicitado * (porcentajeEnganche / 100)
+  porcentajeValorResidualSel?: string; // % elegido del subtab Valor Residual del producto
+  montoResidual?: number;        // calculado: montoAutorizadoNum * (porcentajeValorResidualSel / 100)
+  rentasAnticipadas?: string;    // No. elegido del subtab Rentas Anticipadas del producto
 }
 
 export interface RendimientoRow {
@@ -157,6 +168,8 @@ export interface Garantia {
   garantiaDbId?: string;
   fecha: string;
   usuario: string;
+  /** 'GARANTIA' | 'ACTIVO_FIJO' — catálogo J_CATALOGOS type='CategoriaBien' */
+  categoria?: string;
   tipo: string;
   subtipo: string;
   descripcion: string;
@@ -371,6 +384,71 @@ export function formatCurrency(value: string | number): string {
 
 export function parseCurrency(f: string): string {
   return f.replace(/[^0-9.-]/g, '');
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Cotizador de Arrendamiento Puro — desglose de desembolso inicial
+// ═══════════════════════════════════════════════════════════════════
+const IVA_RATE_ARRENDAMIENTO = 0.16;
+
+export interface ConceptoCargoArrendamiento {
+  concepto: string;   // clave institucional, ej. 'ENGANCHE'
+  descripcion: string; // label visible
+  monto: number;
+}
+
+/**
+ * Calcula el desglose de desembolso inicial de Arrendamiento (Puro y
+ * Financiero). Vista previa durante simulación — solo se persiste a BD al
+ * enviar a originación (ver avanzarFase en SolicitudCreditoForm.tsx).
+ *
+ * Soporta N rentas anticipadas (no solo la primera): cada renta anticipada
+ * genera su propia línea "Renta Anticipada (Mes N)" + "Seguro (Mes N)" +
+ * su IVA correspondiente, tal como pide la HU REQ-4 Parte D.2.
+ */
+export function calcularCargosArrendamiento(params: {
+  montoSolicitado: number;
+  montoAutorizado: number;
+  porcentajeEnganche: number;
+  porcentajeComisionApertura: number;
+  montoEnganche: number;
+  /** Rentas sin IVA descontadas del calendario/tabla, una por cada renta anticipada (mes 1, 2, 3...) */
+  rentasAnticipadas: { rentaSinIva: number; seguro: number }[];
+}): ConceptoCargoArrendamiento[] {
+  const {
+    montoAutorizado, porcentajeComisionApertura,
+    montoEnganche, rentasAnticipadas,
+  } = params;
+
+  const comisionAperturaSinIva = montoAutorizado > 0 && porcentajeComisionApertura > 0
+    ? Math.round(montoAutorizado * (porcentajeComisionApertura / 100) * 100) / 100
+    : 0;
+  const ivaComision = Math.round(comisionAperturaSinIva * IVA_RATE_ARRENDAMIENTO * 100) / 100;
+
+  const todos: ConceptoCargoArrendamiento[] = [
+    { concepto: 'ENGANCHE', descripcion: 'Enganche', monto: montoEnganche },
+    { concepto: 'COMISION_APERTURA', descripcion: 'Comisión por Apertura (Sin IVA)', monto: comisionAperturaSinIva },
+    { concepto: 'IVA_COMISION', descripcion: 'IVA de la Comisión (16%)', monto: ivaComision },
+  ];
+
+  rentasAnticipadas.forEach((r, idx) => {
+    const mes = idx + 1;
+    const ivaRentaSeguro = Math.round((r.rentaSinIva + r.seguro) * IVA_RATE_ARRENDAMIENTO * 100) / 100;
+    todos.push(
+      { concepto: `RENTA_ANTICIPADA_MES${mes}`, descripcion: `Renta Anticipada (Mes ${mes} - Sin IVA)`, monto: r.rentaSinIva },
+      { concepto: `SEGURO_MES${mes}`, descripcion: `Seguro del Bien (Mes ${mes})`, monto: r.seguro },
+      { concepto: `IVA_RENTA_SEGURO_MES${mes}`, descripcion: `IVA de la Renta y Seguro Mes ${mes} (16%)`, monto: ivaRentaSeguro },
+    );
+  });
+
+  // Conceptos que no aplican (monto = 0, ej. sin enganche o sin comisión
+  // configurada) no se muestran — regla explícita de la HU.
+  const conceptos = todos.filter(c => c.monto > 0);
+
+  const total = Math.round(conceptos.reduce((s, c) => s + c.monto, 0) * 100) / 100;
+  conceptos.push({ concepto: 'TOTAL_PAGO_INICIAL', descripcion: 'Total Pago Inicial Requerido', monto: total });
+
+  return conceptos;
 }
 
 // ---- N° Solicitud: BAN-DIGITAL-AAAAMMDD-999999 ----
@@ -657,6 +735,12 @@ export const EMPTY_TERMINOS: TerminosCondiciones = {
   riesgoInversionista: 'Bajo',
   horizonteInversion: 'Corto plazo',
   experienciaInversion: 'Básica',
+  comisionApertura: '',
+  porcentajeEnganche: '',
+  montoEnganche: 0,
+  porcentajeValorResidualSel: '',
+  montoResidual: 0,
+  rentasAnticipadas: '',
 };
 
 // ---- Mock de requisitos del producto ----
@@ -918,7 +1002,9 @@ export function generarSimulacion(
   frecuencia: string,
   fechaPrimerPago: string,
   tipoCalculo: string = 'Francés',
-  seguroPorPeriodo: number = 0
+  seguroPorPeriodo: number = 0,
+  /** Valor residual (Arrendamiento Financiero) — saldo remanente al final del plazo */
+  montoResidual: number = 0
 ): SimulacionRow[] {
   if (monto <= 0 || tasaAnual <= 0 || plazo <= 0) return [];
 
@@ -938,6 +1024,7 @@ export function generarSimulacion(
     fechaISO,
     tipoCalculo,
     seguroPorPeriodo,
+    montoResidual,
   );
 
   // Adaptar: convertir fechaPago ISO → DD/MM/YYYY y quitar campo moneda

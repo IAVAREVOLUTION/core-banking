@@ -1,4 +1,4 @@
-import { useState, useEffect, forwardRef, useImperativeHandle } from 'react';
+import { useState, useEffect, useRef, forwardRef, useImperativeHandle } from 'react';
 import { toast } from 'sonner';
 import { useTabPersistence } from '@/app/hooks/useProductoPersistence';
 
@@ -77,11 +77,23 @@ export const ComisionesTab = forwardRef<{ getData: () => Comision[] }, Comisione
     const defaultComisiones: Comision[] = [];
 
     const isCreate = mode === 'create' || mode === 'nuevo';
-    if (isCreate && storageKey) {
-      // ComisionesTab usa localStorage (storageType: 'local'), limpiar ambos por seguridad
-      try { localStorage.removeItem(storageKey); } catch (_) { /* ignore */ }
-      try { sessionStorage.removeItem(storageKey); } catch (_) { /* ignore */ }
-    }
+
+    // BUG FIX: limpiar storage solo UNA VEZ al montar (no en cada render).
+    // Antes este bloque corría en el cuerpo del componente sin guard, así que
+    // cada vez que el usuario agregaba una comisión y React re-renderizaba,
+    // volvía a borrar el storage recién escrito por useTabPersistence,
+    // desincronizando la fuente persistida del estado en memoria — la fila
+    // agregada parecía "no aparecer" hasta guardar el producto (momento en
+    // que getData() lee directo del estado de React, sin pasar por storage).
+    const clearedOnCreateRef = useRef(false);
+    useEffect(() => {
+      if (isCreate && storageKey && !clearedOnCreateRef.current) {
+        try { localStorage.removeItem(storageKey); } catch (_) { /* ignore */ }
+        try { sessionStorage.removeItem(storageKey); } catch (_) { /* ignore */ }
+        clearedOnCreateRef.current = true;
+      }
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     const { data, setData } = useTabPersistence<Comision>(
       storageKey,
@@ -101,27 +113,25 @@ export const ComisionesTab = forwardRef<{ getData: () => Comision[] }, Comisione
       }
     }, [data, onDataChange]);
 
-    // ── Cargos: prop > sessionStorage > fallback ──
+    // ── Cargos: merge BD (prop) + sessionStorage (cargos agregados en la
+    // sesión actual del subtab "Cargo" aún no guardados) ──
+    const mergeCargos = (): CargoItem[] => {
+      const fromDB: CargoItem[] = cargos && cargos.length > 0 ? cargos : [];
+      const fromStorage = readCargosFromStorage(productId, prefix);
+      const dbIds = new Set(fromDB.map(c => c.id));
+      const merged = [...fromDB, ...fromStorage.filter(c => !dbIds.has(c.id))];
+      return merged.length > 0 ? merged : fromStorage;
+    };
+
     const [cargosDisponibles, setCargosDisponibles] = useState<CargoItem[]>([]);
     useEffect(() => {
-      if (cargos && cargos.length > 0) {
-        setCargosDisponibles(cargos);
-      } else {
-        const fromStorage = readCargosFromStorage(productId, prefix);
-        if (fromStorage.length > 0) {
-          setCargosDisponibles(fromStorage);
-        }
-      }
+      setCargosDisponibles(mergeCargos());
+      // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [cargos, productId, prefix]);
 
     // ── Refrescar cargos al abrir modal (BD + sessionStorage) ──
     const refreshCargosDisponibles = () => {
-      const fromDB: CargoItem[] = cargos && cargos.length > 0 ? cargos : [];
-      const fromStorage = readCargosFromStorage(productId, prefix);
-      // Merge: DB como base, agregar de storage los que no existan por id
-      const dbIds = new Set(fromDB.map(c => c.id));
-      const merged = [...fromDB, ...fromStorage.filter(c => !dbIds.has(c.id))];
-      setCargosDisponibles(merged.length > 0 ? merged : fromStorage);
+      setCargosDisponibles(mergeCargos());
     };
 
     const [selectedRow, setSelectedRow] = useState<number | null>(null);

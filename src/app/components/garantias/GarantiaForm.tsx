@@ -8,6 +8,7 @@ import { toast } from 'sonner';
 import { DatePicker } from '@/app/components/ui/DatePicker';
 import { Eye, Search, X, Users } from 'lucide-react';
 import { useClientesDB, type ClienteDB } from '@/app/hooks/useClientesDB';
+import { useCategoriaBienDB } from '@/app/hooks/useCategoriaBienDB';
 
 // ─── Persistencia sessionStorage ───
 const STORAGE_KEY_FORM = 'garantia_form_data';
@@ -51,9 +52,53 @@ interface GarantiaFormProps {
   nextId: number;
 }
 
+// ─── Helpers de layout — campo con label + error consistentes ───
+function Field({
+  label,
+  required,
+  error,
+  children,
+}: {
+  label: React.ReactNode;
+  required?: boolean;
+  error?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div>
+      <label className="block text-xs text-gray-700 mb-1">
+        {label} {required && <span className="text-red-500">*</span>}
+      </label>
+      {children}
+      {error && <span className="text-[10px] text-red-500 mt-0.5 block">{error}</span>}
+    </div>
+  );
+}
+
+function ViewValue({ children }: { children: React.ReactNode }) {
+  return <div className="px-2 py-1.5 text-xs text-gray-700 min-h-[30px]">{children || '—'}</div>;
+}
+
+function inputClass(hasError: boolean): string {
+  return `w-full px-2 py-1.5 text-xs border rounded ${hasError ? 'border-red-500' : 'border-gray-300'}`;
+}
+
+function formatCurrencyMXN(value: number): string {
+  return new Intl.NumberFormat('es-MX', {
+    style: 'currency',
+    currency: 'MXN',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(value);
+}
+
 // Catálogos según definición
 const TIPOS_GARANTIA = ['Mueble', 'Inmueble'];
-const SUBTIPOS_GARANTIA = ['Automóvil', 'Terreno', 'Maquinaria', 'Departamento'];
+// Subtipo depende del Tipo elegido — evita mostrar "Automóvil" al elegir "Inmueble"
+const SUBTIPOS_POR_TIPO: Record<string, string[]> = {
+  Mueble: ['Automóvil', 'Maquinaria'],
+  Inmueble: ['Terreno', 'Departamento', 'Casa', 'Local Comercial'],
+};
 const ESTATUS_GARANTIA = ['Aceptado', 'Rechazado', 'Pendiente'];
 const TIPOS_DOCUMENTO = [
   'Escritura',
@@ -121,6 +166,7 @@ export function GarantiaForm({
     // 3. Nuevo
     return {
       id: nextId,
+      categoria: 'GARANTIA',
       tipo: '',
       subtipo: '',
       garantia: '',
@@ -141,6 +187,8 @@ export function GarantiaForm({
       porcentajeAforo: undefined,
       cliente_id: '',
       clienteNombre: '',
+      proveedor_id: '',
+      proveedorNombre: '',
     };
   }, [isCreate, garantia, nextId, storageId]);
 
@@ -148,25 +196,11 @@ export function GarantiaForm({
     const cached = loadSession<DocumentoExpediente[]>(`${STORAGE_KEY_DOCS}_${storageId}`);
     if (cached) return cached;
     if (garantia?.documentos && garantia.documentos.length > 0) return garantia.documentos;
-    // Demo doc solo para garantías existentes que no tengan documentos guardados
-    if (!isCreate && garantia) {
-      return [{
-        id: 1,
-        fechaRegistro: '2024-01-15T10:30:00',
-        usuarioRegistro: 'EMI-001 Emilio Camarena',
-        archivo: 'GarantiaAutomotriz.pdf',
-        tipoDocumento: 'Carta de Aceptación',
-        descripcion: 'Carta de aceptación del crédito Juan Perez Perez',
-        estatus: 'Pendiente',
-        observaciones: 'Sin Observaciones',
-        fileData: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf',
-      }];
-    }
     return [];
-  }, [isCreate, garantia, storageId]);
+  }, [garantia, storageId]);
 
   const getInitialTab = useCallback((): string => {
-    return loadSession<string>(`${STORAGE_KEY_TAB}_${storageId}`) || 'default';
+    return loadSession<string>(`${STORAGE_KEY_TAB}_${storageId}`) || 'expediente';
   }, [storageId]);
 
   const [activeTab, setActiveTab] = useState(getInitialTab);
@@ -196,6 +230,7 @@ export function GarantiaForm({
   const [showClienteModal, setShowClienteModal] = useState(false);
   const [clienteSearch, setClienteSearch] = useState('');
   const { clientes: clientesDB, loading: loadingClientes } = useClientesDB(showClienteModal);
+  const { categorias: categoriasBien } = useCategoriaBienDB();
 
   const filteredClientes = clientesDB.filter((c: ClienteDB) => {
     if (!clienteSearch.trim()) return true;
@@ -225,6 +260,38 @@ export function GarantiaForm({
     setFormData(prev => ({ ...prev, cliente_id: '', clienteNombre: '' }));
   };
 
+  // ─── Proveedor modal state — se dan de alta en Personas con type='Proveedor' ───
+  const [showProveedorModal, setShowProveedorModal] = useState(false);
+  const [proveedorSearch, setProveedorSearch] = useState('');
+  // Reutiliza el mismo hook de Personas (J_CLIENTES) — no hay tabla separada de proveedores
+  const { clientes: personasDB, loading: loadingPersonas } = useClientesDB(showProveedorModal);
+
+  const proveedoresDB = personasDB.filter((c: ClienteDB) => c.tipo === 'Proveedor');
+
+  const filteredProveedores = proveedoresDB.filter((c: ClienteDB) => {
+    if (!proveedorSearch.trim()) return true;
+    const q = proveedorSearch.toLowerCase();
+    return (
+      c.nombreCompleto.toLowerCase().includes(q) ||
+      c.idCliente.toLowerCase().includes(q) ||
+      (c.rfc && c.rfc.toLowerCase().includes(q))
+    );
+  });
+
+  const handleSelectProveedor = (proveedor: ClienteDB) => {
+    setFormData(prev => ({
+      ...prev,
+      proveedor_id: proveedor.dbUuid,
+      proveedorNombre: proveedor.nombreCompleto,
+    }));
+    setShowProveedorModal(false);
+    setProveedorSearch('');
+  };
+
+  const handleClearProveedor = () => {
+    setFormData(prev => ({ ...prev, proveedor_id: '', proveedorNombre: '' }));
+  };
+
   // ─── Persistencia automática ───
   useEffect(() => {
     if (!isView) {
@@ -242,14 +309,33 @@ export function GarantiaForm({
     saveSession(`${STORAGE_KEY_TAB}_${storageId}`, activeTab);
   }, [activeTab, storageId]);
 
+  // BUG FIX: si el usuario sale del alta de un Bien nuevo sin guardar (navegando
+  // a otro módulo, no solo con el botón Cancelar), el borrador quedaba en
+  // sessionStorage y reaparecía la próxima vez que se abría "Nuevo Bien".
+  // Limpiar el storage de "nuevo" al desmontar cubre cualquier forma de salir.
+  useEffect(() => {
+    return () => {
+      if (isCreate) {
+        clearSession(storageId);
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const handleChange = (
     field: keyof Garantia,
     value: string | number
   ) => {
-    setFormData((prev) => ({
-      ...prev,
-      [field]: value,
-    }));
+    setFormData((prev) => {
+      // Al cambiar Tipo, limpiar Subtipo si ya no pertenece al nuevo Tipo
+      if (field === 'tipo') {
+        const subtiposValidos = SUBTIPOS_POR_TIPO[String(value)] || [];
+        if (!subtiposValidos.includes(prev.subtipo)) {
+          return { ...prev, tipo: value as string, subtipo: '' };
+        }
+      }
+      return { ...prev, [field]: value };
+    });
     // Limpiar error del campo al editarlo
     if (errors[field]) {
       setErrors(prev => {
@@ -264,6 +350,7 @@ export function GarantiaForm({
     const newErrors: Record<string, string> = {};
 
     // Validar campos obligatorios
+    if (!formData.categoria) newErrors.categoria = 'Campo obligatorio';
     if (!formData.tipo) newErrors.tipo = 'Campo obligatorio';
     if (!formData.subtipo) newErrors.subtipo = 'Campo obligatorio';
     if (!formData.garantia?.trim()) newErrors.garantia = 'Campo obligatorio';
@@ -493,7 +580,6 @@ export function GarantiaForm({
   };
 
   const tabs = [
-    { id: 'default', label: 'Default' },
     { id: 'expediente', label: 'Expediente Electrónico' },
   ];
 
@@ -507,7 +593,7 @@ export function GarantiaForm({
               <rect x="4" y="4" width="16" height="16" rx="2" stroke="currentColor" strokeWidth="1.5" fill="none"/>
               <path d="M4 9h16M9 4v16" stroke="currentColor" strokeWidth="1.5"/>
             </svg>
-            <h2 className="text-lg font-normal text-gray-800">Alta Garantía</h2>
+            <h2 className="text-lg font-normal text-gray-800">Alta Bien</h2>
             <button className="p-1 ml-2">
               <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#999" strokeWidth="2">
                 <circle cx="8" cy="8" r="6"/>
@@ -541,265 +627,195 @@ export function GarantiaForm({
       {/* Form Content */}
       <div className="px-4 py-4">
         <div className="bg-white border border-gray-300">
-          {/* Datos Garantía - Siempre visible */}
-          <div className="p-4 border-b border-gray-300">
-            <div className="bg-[#D9E2F3] px-3 py-1.5 mb-3 text-sm font-medium text-gray-800 border-l-4 border-[#4A6FA5]">
-              Datos Garantía
-            </div>
-            
-            <div className="space-y-1">
-              {/* Fila 1 - 3 columnas */}
-              <div className="grid grid-cols-3 gap-x-4">
-                <div className="flex items-center gap-2">
-                  <label className="text-xs w-32 flex-shrink-0 text-gray-700">ID Garantía <span className="text-red-500">*</span></label>
-                  <input 
-                    type="text" 
-                    value={formData.id}
-                    disabled 
-                    className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded bg-gray-100 text-gray-600" 
-                  />
-                </div>
-                <div className="flex items-center gap-2">
-                  <label className="text-xs w-32 flex-shrink-0 text-gray-700">Tipo <span className="text-red-500">*</span></label>
-                  {isView ? (
-                    <div className="flex-1 px-2 py-1 text-xs text-gray-700">{formData.tipo}</div>
-                  ) : (
-                    <div className="flex-1">
-                      <select 
-                        value={formData.tipo}
-                        onChange={(e) => handleChange('tipo', e.target.value)}
-                        className={`w-full px-2 py-0.5 text-xs border rounded ${errors.tipo ? 'border-red-500' : 'border-gray-300'}`}
-                      >
-                        <option value="">Seleccione...</option>
-                        {TIPOS_GARANTIA.map((tipo) => (
-                          <option key={tipo} value={tipo}>{tipo}</option>
-                        ))}
-                      </select>
-                      {errors.tipo && <span className="text-xs text-red-500">{errors.tipo}</span>}
-                    </div>
-                  )}
-                </div>
-                <div className="flex items-center gap-2">
-                  <label className="text-xs w-32 flex-shrink-0 text-gray-700">Subtipo <span className="text-red-500">*</span></label>
-                  {isView ? (
-                    <div className="flex-1 px-2 py-1 text-xs text-gray-700">{formData.subtipo}</div>
-                  ) : (
-                    <div className="flex-1">
-                      <select 
-                        value={formData.subtipo}
-                        onChange={(e) => handleChange('subtipo', e.target.value)}
-                        className={`w-full px-2 py-0.5 text-xs border rounded ${errors.subtipo ? 'border-red-500' : 'border-gray-300'}`}
-                      >
-                        <option value="">Seleccione...</option>
-                        {SUBTIPOS_GARANTIA.map((subtipo) => (
-                          <option key={subtipo} value={subtipo}>{subtipo}</option>
-                        ))}
-                      </select>
-                      {errors.subtipo && <span className="text-xs text-red-500">{errors.subtipo}</span>}
-                    </div>
-                  )}
-                </div>
-              </div>
+          <div className="p-4 border-b border-gray-300 space-y-5">
 
-              {/* Fila Cliente — FK a J_CLIENTES */}
-              <div className="grid grid-cols-3 gap-x-4">
-                <div className="flex items-center gap-2 col-span-2">
-                  <label className="text-xs w-32 flex-shrink-0 text-gray-700">
-                    <Users className="inline w-3.5 h-3.5 mr-1 text-blue-500" />
-                    Cliente <span className="text-red-500">*</span>
-                  </label>
+            {/* ═══ Clasificación — Categoría condiciona Tipo/Subtipo ═══ */}
+            <section>
+              <div className="bg-[#D9E2F3] px-3 py-1.5 mb-3 text-sm font-medium text-gray-800 border-l-4 border-[#4A6FA5]">
+                Clasificación del Bien
+              </div>
+              <div className="grid grid-cols-4 gap-4">
+                <Field label="ID Garantía">
+                  <input
+                    type="text"
+                    value={formData.id}
+                    disabled
+                    className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded bg-gray-100 text-gray-600"
+                  />
+                </Field>
+                <Field label="Categoría" required error={errors.categoria}>
                   {isView ? (
-                    <div className="flex-1 px-2 py-1 text-xs text-gray-700">
-                      {formData.clienteNombre || '—'}
-                    </div>
+                    <ViewValue>{categoriasBien.find(c => c.clave === formData.categoria)?.nombre || formData.categoria}</ViewValue>
                   ) : (
-                    <div className="flex-1 flex items-center gap-1">
-                      <div
-                        onClick={() => !isView && setShowClienteModal(true)}
-                        className={`flex-1 flex items-center justify-between px-2 py-1 text-xs border rounded cursor-pointer hover:border-blue-400 ${
-                          errors.cliente_id ? 'border-red-500 bg-red-50' : 'border-gray-300'
-                        }`}
-                      >
-                        <span className={formData.clienteNombre ? 'text-gray-800' : 'text-gray-400'}>
-                          {formData.clienteNombre || 'Seleccionar cliente...'}
-                        </span>
-                        <Search className="w-3.5 h-3.5 text-gray-400" />
-                      </div>
-                      {formData.cliente_id && (
-                        <button
-                          type="button"
-                          onClick={handleClearCliente}
-                          className="p-0.5 text-red-400 hover:text-red-600"
-                          title="Quitar cliente"
-                        >
-                          <X className="w-3.5 h-3.5" />
-                        </button>
-                      )}
-                    </div>
+                    <select
+                      value={formData.categoria}
+                      onChange={(e) => handleChange('categoria', e.target.value)}
+                      className={inputClass(!!errors.categoria)}
+                    >
+                      {categoriasBien.map((cat) => (
+                        <option key={cat.clave} value={cat.clave}>{cat.nombre}</option>
+                      ))}
+                    </select>
                   )}
-                  {errors.cliente_id && <span className="text-xs text-red-500 ml-1">{errors.cliente_id}</span>}
+                </Field>
+                <Field label="Tipo" required error={errors.tipo}>
+                  {isView ? (
+                    <ViewValue>{formData.tipo}</ViewValue>
+                  ) : (
+                    <select
+                      value={formData.tipo}
+                      onChange={(e) => handleChange('tipo', e.target.value)}
+                      className={inputClass(!!errors.tipo)}
+                    >
+                      <option value="">Seleccione...</option>
+                      {TIPOS_GARANTIA.map((tipo) => (
+                        <option key={tipo} value={tipo}>{tipo}</option>
+                      ))}
+                    </select>
+                  )}
+                </Field>
+                <Field label="Subtipo" required error={errors.subtipo}>
+                  {isView ? (
+                    <ViewValue>{formData.subtipo}</ViewValue>
+                  ) : (
+                    <select
+                      value={formData.subtipo}
+                      onChange={(e) => handleChange('subtipo', e.target.value)}
+                      disabled={!formData.tipo}
+                      className={`${inputClass(!!errors.subtipo)} ${!formData.tipo ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                    >
+                      <option value="">{formData.tipo ? 'Seleccione...' : 'Elija un Tipo primero'}</option>
+                      {(SUBTIPOS_POR_TIPO[formData.tipo] || []).map((subtipo) => (
+                        <option key={subtipo} value={subtipo}>{subtipo}</option>
+                      ))}
+                    </select>
+                  )}
+                </Field>
+              </div>
+            </section>
+
+            {/* ═══ Cliente / Proveedor ═══ */}
+            <section>
+              <div className="bg-[#D9E2F3] px-3 py-1.5 mb-3 text-sm font-medium text-gray-800 border-l-4 border-[#4A6FA5]">
+                Cliente / Proveedor
+              </div>
+              <div className="grid grid-cols-4 gap-4">
+                <div className="col-span-2">
+                  <Field label={<><Users className="inline w-3.5 h-3.5 mr-1 text-blue-500 -mt-0.5" />Cliente</>} required error={errors.cliente_id}>
+                    {isView ? (
+                      <ViewValue>{formData.clienteNombre || '—'}</ViewValue>
+                    ) : (
+                      <div className="flex items-center gap-1">
+                        <div
+                          onClick={() => setShowClienteModal(true)}
+                          className={`flex-1 flex items-center justify-between px-2 py-1.5 text-xs border rounded cursor-pointer hover:border-blue-400 ${
+                            errors.cliente_id ? 'border-red-500 bg-red-50' : 'border-gray-300'
+                          }`}
+                        >
+                          <span className={formData.clienteNombre ? 'text-gray-800' : 'text-gray-400'}>
+                            {formData.clienteNombre || 'Seleccionar cliente...'}
+                          </span>
+                          <Search className="w-3.5 h-3.5 text-gray-400" />
+                        </div>
+                        {formData.cliente_id && (
+                          <button
+                            type="button"
+                            onClick={handleClearCliente}
+                            className="p-1 text-red-400 hover:text-red-600"
+                            title="Quitar cliente"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </Field>
                 </div>
                 {formData.cliente_id && (
-                  <div className="flex items-center gap-2">
-                    <label className="text-xs w-32 flex-shrink-0 text-gray-500">UUID</label>
-                    <input
-                      type="text"
-                      value={formData.cliente_id}
-                      disabled
-                      className="flex-1 px-2 py-1 text-[10px] border border-gray-300 rounded bg-gray-100 text-gray-500 font-mono truncate"
-                    />
+                  <div className="col-span-2">
+                    <Field label="UUID">
+                      <input
+                        type="text"
+                        value={formData.cliente_id}
+                        disabled
+                        className="w-full px-2 py-1.5 text-[10px] border border-gray-300 rounded bg-gray-100 text-gray-500 font-mono truncate"
+                      />
+                    </Field>
+                  </div>
+                )}
+
+                {/* Proveedor del bien — persona dada de alta en Personas con type='Proveedor' */}
+                <div className="col-span-2">
+                  <Field label={<><Users className="inline w-3.5 h-3.5 mr-1 text-amber-500 -mt-0.5" />Proveedor</>}>
+                    {isView ? (
+                      <ViewValue>{formData.proveedorNombre || '—'}</ViewValue>
+                    ) : (
+                      <div className="flex items-center gap-1">
+                        <div
+                          onClick={() => setShowProveedorModal(true)}
+                          className="flex-1 flex items-center justify-between px-2 py-1.5 text-xs border rounded cursor-pointer hover:border-amber-400 border-gray-300"
+                        >
+                          <span className={formData.proveedorNombre ? 'text-gray-800' : 'text-gray-400'}>
+                            {formData.proveedorNombre || 'Seleccionar proveedor...'}
+                          </span>
+                          <Search className="w-3.5 h-3.5 text-gray-400" />
+                        </div>
+                        {formData.proveedor_id && (
+                          <button
+                            type="button"
+                            onClick={handleClearProveedor}
+                            className="p-1 text-red-400 hover:text-red-600"
+                            title="Quitar proveedor"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </Field>
+                </div>
+                {formData.proveedor_id && (
+                  <div className="col-span-2">
+                    <Field label="UUID Proveedor">
+                      <input
+                        type="text"
+                        value={formData.proveedor_id}
+                        disabled
+                        className="w-full px-2 py-1.5 text-[10px] border border-gray-300 rounded bg-gray-100 text-gray-500 font-mono truncate"
+                      />
+                    </Field>
                   </div>
                 )}
               </div>
+            </section>
 
-              {/* Fila 2 - 3 columnas */}
-              <div className="grid grid-cols-3 gap-x-4">
-                <div className="flex items-center gap-2">
-                  <label className="text-xs w-32 flex-shrink-0 text-gray-700">Garantía <span className="text-red-500">*</span></label>
-                  {isView ? (
-                    <div className="flex-1 px-2 py-1 text-xs text-gray-700">{formData.garantia}</div>
-                  ) : (
-                    <div className="flex-1">
-                      <input 
-                        type="text" 
-                        value={formData.garantia}
-                        onChange={(e) => handleChange('garantia', e.target.value)}
-                        maxLength={50}
-                        className={`w-full px-2 py-0.5 text-xs border rounded ${errors.garantia ? 'border-red-500' : 'border-gray-300'}`}
-                      />
-                      {errors.garantia && <span className="text-xs text-red-500">{errors.garantia}</span>}
-                    </div>
-                  )}
-                </div>
-                <div className="flex items-center gap-2">
-                  <label className="text-xs w-32 flex-shrink-0 text-gray-700">Valor Nominal <span className="text-red-500">*</span></label>
-                  {isView ? (
-                    <div className="flex-1 px-2 py-1 text-xs text-gray-700">
-                      {new Intl.NumberFormat('es-MX', {
-                        style: 'currency',
-                        currency: 'MXN',
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
-                      }).format(formData.valorNominal)}
-                    </div>
-                  ) : (
-                    <div className="flex-1">
-                      <input 
-                        type="number" 
-                        value={formData.valorNominal === 0 ? '' : formData.valorNominal}
-                        onChange={(e) => handleChange('valorNominal', e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
-                        step="0.01"
-                        placeholder="0.00"
-                        className={`w-full px-2 py-0.5 text-xs border rounded ${errors.valorNominal ? 'border-red-500' : 'border-gray-300'}`}
-                      />
-                      {errors.valorNominal && <span className="text-xs text-red-500">{errors.valorNominal}</span>}
-                    </div>
-                  )}
-                </div>
-                <div className="flex items-center gap-2">
-                  <label className="text-xs w-32 flex-shrink-0 text-gray-700">Fecha de Tasación</label>
-                  {isView ? (
-                    <div className="flex-1 px-2 py-1 text-xs text-gray-700">{formatDate(formData.fechaTasacion)}</div>
-                  ) : (
-                    <DatePicker 
-                      value={formData.fechaTasacion}
-                      onChange={(date) => handleChange('fechaTasacion', date)}
-                    />
-                  )}
-                </div>
+            {/* ═══ Identificación del Bien ═══ */}
+            <section>
+              <div className="bg-[#D9E2F3] px-3 py-1.5 mb-3 text-sm font-medium text-gray-800 border-l-4 border-[#4A6FA5]">
+                Identificación del Bien
               </div>
-
-              {/* Fila 3 - 3 columnas */}
-              <div className="grid grid-cols-3 gap-x-4">
-                <div className="flex items-center gap-2">
-                  <label className="text-xs w-32 flex-shrink-0 text-gray-700">Valor de Tasación</label>
+              <div className="grid grid-cols-2 gap-4">
+                <Field label="Nombre / Garantía" required error={errors.garantia}>
                   {isView ? (
-                    <div className="flex-1 px-2 py-1 text-xs text-gray-700">
-                      {formData.valorTasacion ? new Intl.NumberFormat('es-MX', {
-                        style: 'currency',
-                        currency: 'MXN',
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
-                      }).format(formData.valorTasacion) : ''}
-                    </div>
+                    <ViewValue>{formData.garantia}</ViewValue>
                   ) : (
-                    <input 
-                      type="number" 
-                      value={formData.valorTasacion || ''}
-                      onChange={(e) => handleChange('valorTasacion', parseFloat(e.target.value) || 0)}
-                      step="0.01"
-                      className="flex-1 px-2 py-0.5 text-xs border border-gray-300 rounded" 
+                    <input
+                      type="text"
+                      value={formData.garantia}
+                      onChange={(e) => handleChange('garantia', e.target.value)}
+                      maxLength={50}
+                      className={inputClass(!!errors.garantia)}
                     />
                   )}
-                </div>
-                <div className="flex items-center gap-2">
-                  <label className="text-xs w-32 flex-shrink-0 text-gray-700">Notario o Perito Tasador</label>
+                </Field>
+                <Field label="Estatus">
                   {isView ? (
-                    <div className="flex-1 px-2 py-1 text-xs text-gray-700">{formData.peritaTasador}</div>
+                    <ViewValue>{formData.estatus}</ViewValue>
                   ) : (
-                    <div className="flex-1">
-                      <input 
-                        type="text" 
-                        value={formData.peritaTasador}
-                        onChange={(e) => handleChange('peritaTasador', e.target.value)}
-                        maxLength={150}
-                        className={`w-full px-2 py-0.5 text-xs border rounded ${errors.peritaTasador ? 'border-red-500' : 'border-gray-300'}`}
-                      />
-                      {errors.peritaTasador && <span className="text-xs text-red-500">{errors.peritaTasador}</span>}
-                    </div>
-                  )}
-                </div>
-                <div className="flex items-center gap-2">
-                  <label className="text-xs w-32 flex-shrink-0 text-gray-700">Tasa de Interés</label>
-                  {isView ? (
-                    <div className="flex-1 px-2 py-1 text-xs text-gray-700">{formData.tasaInteres}</div>
-                  ) : (
-                    <div className="flex-1">
-                      <input 
-                        type="text" 
-                        value={formData.tasaInteres}
-                        onChange={(e) => handleChange('tasaInteres', e.target.value)}
-                        placeholder="%"
-                        maxLength={5}
-                        className={`w-full px-2 py-0.5 text-xs border rounded ${errors.tasaInteres ? 'border-red-500' : 'border-gray-300'}`}
-                      />
-                      {errors.tasaInteres && <span className="text-xs text-red-500">{errors.tasaInteres}</span>}
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Fila 4 - 3 columnas */}
-              <div className="grid grid-cols-3 gap-x-4">
-                <div className="flex items-center gap-2">
-                  <label className="text-xs w-32 flex-shrink-0 text-gray-700">Fecha de Vencimiento</label>
-                  {isView ? (
-                    <div className="flex-1 px-2 py-1 text-xs text-gray-700">{formatDate(formData.fechaVencimiento)}</div>
-                  ) : (
-                    <DatePicker 
-                      value={formData.fechaVencimiento}
-                      onChange={(date) => handleChange('fechaVencimiento', date)}
-                    />
-                  )}
-                </div>
-                <div className="flex items-center gap-2">
-                  <label className="text-xs w-32 flex-shrink-0 text-gray-700">Fecha Registro</label>
-                  <input 
-                    type="text" 
-                    value={formatDateTime(formData.fechaRegistro)}
-                    disabled 
-                    className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded bg-gray-100 text-gray-600" 
-                  />
-                </div>
-                <div className="flex items-center gap-2">
-                  <label className="text-xs w-32 flex-shrink-0 text-gray-700">Estatus</label>
-                  {isView ? (
-                    <div className="flex-1 px-2 py-1 text-xs text-gray-700">{formData.estatus}</div>
-                  ) : (
-                    <select 
+                    <select
                       value={formData.estatus}
                       onChange={(e) => handleChange('estatus', e.target.value)}
-                      className="flex-1 px-2 py-0.5 text-xs border border-gray-300 rounded"
+                      className={inputClass(false)}
                     >
                       <option value="">Seleccione...</option>
                       {ESTATUS_GARANTIA.map((estatus) => (
@@ -807,20 +823,31 @@ export function GarantiaForm({
                       ))}
                     </select>
                   )}
-                </div>
+                </Field>
               </div>
-
-              {/* Fila 5 - 3 columnas */}
-              <div className="grid grid-cols-3 gap-x-4">
-                <div className="flex items-center gap-2">
-                  <label className="text-xs w-32 flex-shrink-0 text-gray-700">Estado</label>
+              <div className="grid grid-cols-1 mt-3">
+                <Field label="Ubicación" required error={errors.ubicacion}>
                   {isView ? (
-                    <div className="flex-1 px-2 py-1 text-xs text-gray-700">{formData.estado}</div>
+                    <ViewValue>{formData.ubicacion}</ViewValue>
+                  ) : (
+                    <textarea
+                      value={formData.ubicacion}
+                      onChange={(e) => handleChange('ubicacion', e.target.value)}
+                      rows={2}
+                      className={inputClass(!!errors.ubicacion)}
+                    />
+                  )}
+                </Field>
+              </div>
+              <div className="grid grid-cols-3 gap-4 mt-3">
+                <Field label="Estado">
+                  {isView ? (
+                    <ViewValue>{formData.estado}</ViewValue>
                   ) : (
                     <select
                       value={formData.estado}
                       onChange={(e) => handleChange('estado', e.target.value)}
-                      className="flex-1 px-2 py-0.5 text-xs border border-gray-300 rounded"
+                      className={inputClass(false)}
                     >
                       <option value="">Seleccione...</option>
                       {ESTADOS_MEXICO.map((estado) => (
@@ -828,41 +855,102 @@ export function GarantiaForm({
                       ))}
                     </select>
                   )}
-                </div>
-                <div className="flex items-center gap-2">
-                  <label className="text-xs w-32 flex-shrink-0 text-gray-700">Municipio</label>
-                  {isView ? (
-                    <div className="flex-1 px-2 py-1 text-xs text-gray-700">{formData.municipio}</div>
-                  ) : (
-                    <div className="flex-1">
+                </Field>
+                <div className="col-span-2">
+                  <Field label="Municipio" error={errors.municipio}>
+                    {isView ? (
+                      <ViewValue>{formData.municipio}</ViewValue>
+                    ) : (
                       <input
                         type="text"
                         value={formData.municipio}
                         onChange={(e) => handleChange('municipio', e.target.value)}
                         maxLength={30}
-                        className={`w-full px-2 py-0.5 text-xs border rounded ${errors.municipio ? 'border-red-500' : 'border-gray-300'}`}
+                        className={inputClass(!!errors.municipio)}
                       />
-                      {errors.municipio && <span className="text-xs text-red-500">{errors.municipio}</span>}
-                    </div>
-                  )}
-                </div>
-                <div className="flex items-center gap-2">
-                  {/* Columna vacía */}
+                    )}
+                  </Field>
                 </div>
               </div>
+            </section>
 
-              {/* Fila 5b — Monto a Cubrir Garantía y % Aforo */}
-              <div className="grid grid-cols-3 gap-x-4">
-                <div className="flex items-center gap-2">
-                  <label className="text-xs w-32 flex-shrink-0 text-gray-700">Monto a Cubrir</label>
+            {/* ═══ Valores y Tasación ═══ */}
+            <section>
+              <div className="bg-[#D9E2F3] px-3 py-1.5 mb-3 text-sm font-medium text-gray-800 border-l-4 border-[#4A6FA5]">
+                Valores y Tasación
+              </div>
+              <div className="grid grid-cols-4 gap-4">
+                <Field label="Valor Nominal" required error={errors.valorNominal}>
                   {isView ? (
-                    <div className="flex-1 px-2 py-1 text-xs text-gray-700">
-                      {formData.montoCubrirGarantia != null
-                        ? new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 2 }).format(formData.montoCubrirGarantia)
-                        : '—'}
-                    </div>
+                    <ViewValue>{formatCurrencyMXN(formData.valorNominal)}</ViewValue>
                   ) : (
-                    <div className="flex-1 relative">
+                    <input
+                      type="number"
+                      value={formData.valorNominal === 0 ? '' : formData.valorNominal}
+                      onChange={(e) => handleChange('valorNominal', e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
+                      step="0.01"
+                      placeholder="0.00"
+                      className={inputClass(!!errors.valorNominal)}
+                    />
+                  )}
+                </Field>
+                <Field label="Valor de Tasación">
+                  {isView ? (
+                    <ViewValue>{formData.valorTasacion ? formatCurrencyMXN(formData.valorTasacion) : '—'}</ViewValue>
+                  ) : (
+                    <input
+                      type="number"
+                      value={formData.valorTasacion || ''}
+                      onChange={(e) => handleChange('valorTasacion', parseFloat(e.target.value) || 0)}
+                      step="0.01"
+                      className={inputClass(false)}
+                    />
+                  )}
+                </Field>
+                <Field label="Fecha de Tasación">
+                  {isView ? (
+                    <ViewValue>{formatDate(formData.fechaTasacion)}</ViewValue>
+                  ) : (
+                    <DatePicker
+                      value={formData.fechaTasacion}
+                      onChange={(date) => handleChange('fechaTasacion', date)}
+                    />
+                  )}
+                </Field>
+                <Field label="Notario / Perito Tasador" error={errors.peritaTasador}>
+                  {isView ? (
+                    <ViewValue>{formData.peritaTasador}</ViewValue>
+                  ) : (
+                    <input
+                      type="text"
+                      value={formData.peritaTasador}
+                      onChange={(e) => handleChange('peritaTasador', e.target.value)}
+                      maxLength={150}
+                      className={inputClass(!!errors.peritaTasador)}
+                    />
+                  )}
+                </Field>
+              </div>
+              <div className="grid grid-cols-4 gap-4 mt-3">
+                <Field label="Tasa de Interés" error={errors.tasaInteres}>
+                  {isView ? (
+                    <ViewValue>{formData.tasaInteres}</ViewValue>
+                  ) : (
+                    <input
+                      type="text"
+                      value={formData.tasaInteres}
+                      onChange={(e) => handleChange('tasaInteres', e.target.value)}
+                      placeholder="%"
+                      maxLength={5}
+                      className={inputClass(!!errors.tasaInteres)}
+                    />
+                  )}
+                </Field>
+                <Field label="Monto a Cubrir">
+                  {isView ? (
+                    <ViewValue>{formData.montoCubrirGarantia != null ? formatCurrencyMXN(formData.montoCubrirGarantia) : '—'}</ViewValue>
+                  ) : (
+                    <div className="relative">
                       <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-400">$</span>
                       <input
                         type="number"
@@ -870,19 +958,16 @@ export function GarantiaForm({
                         onChange={(e) => handleChange('montoCubrirGarantia', e.target.value === '' ? (undefined as any) : parseFloat(e.target.value) || 0)}
                         step="0.01"
                         placeholder="0.00"
-                        className="w-full pl-5 pr-2 py-0.5 text-xs border border-gray-300 rounded"
+                        className={`${inputClass(false)} pl-5`}
                       />
                     </div>
                   )}
-                </div>
-                <div className="flex items-center gap-2">
-                  <label className="text-xs w-32 flex-shrink-0 text-gray-700">% Aforo</label>
+                </Field>
+                <Field label="% Aforo">
                   {isView ? (
-                    <div className="flex-1 px-2 py-1 text-xs text-gray-700">
-                      {formData.porcentajeAforo != null ? `${formData.porcentajeAforo}%` : '—'}
-                    </div>
+                    <ViewValue>{formData.porcentajeAforo != null ? `${formData.porcentajeAforo}%` : '—'}</ViewValue>
                   ) : (
-                    <div className="flex-1 relative">
+                    <div className="relative">
                       <input
                         type="number"
                         value={formData.porcentajeAforo ?? ''}
@@ -891,73 +976,68 @@ export function GarantiaForm({
                         min="0"
                         max="100"
                         placeholder="0"
-                        className="w-full pr-6 pl-2 py-0.5 text-xs border border-gray-300 rounded"
+                        className={`${inputClass(false)} pr-6`}
                       />
                       <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-400">%</span>
                     </div>
                   )}
-                </div>
-                <div className="flex items-center gap-2">{/* vacío */}</div>
-              </div>
-
-              {/* Fila 6 - 1 columna completa (textarea) */}
-              <div className="grid grid-cols-1 gap-x-4">
-                <div className="flex items-start gap-2">
-                  <label className="text-xs w-32 flex-shrink-0 text-gray-700 pt-1">Ubicación <span className="text-red-500">*</span></label>
+                </Field>
+                <Field label="Fecha de Vencimiento">
                   {isView ? (
-                    <div className="flex-1 px-2 py-1 text-xs text-gray-700">{formData.ubicacion}</div>
+                    <ViewValue>{formatDate(formData.fechaVencimiento)}</ViewValue>
                   ) : (
-                    <div className="flex-1">
-                      <textarea
-                        value={formData.ubicacion}
-                        onChange={(e) => handleChange('ubicacion', e.target.value)}
-                        rows={2}
-                        className={`w-full px-2 py-0.5 text-xs border rounded ${errors.ubicacion ? 'border-red-500' : 'border-gray-300'}`}
-                      />
-                      {errors.ubicacion && <span className="text-xs text-red-500">{errors.ubicacion}</span>}
-                    </div>
+                    <DatePicker
+                      value={formData.fechaVencimiento}
+                      onChange={(date) => handleChange('fechaVencimiento', date)}
+                    />
                   )}
-                </div>
+                </Field>
               </div>
+            </section>
 
-              {/* Fila 7 - 1 columna completa (textarea) */}
-              <div className="grid grid-cols-1 gap-x-4">
-                <div className="flex items-start gap-2">
-                  <label className="text-xs w-32 flex-shrink-0 text-gray-700 pt-1">Descripción</label>
+            {/* ═══ Notas ═══ */}
+            <section>
+              <div className="bg-[#D9E2F3] px-3 py-1.5 mb-3 text-sm font-medium text-gray-800 border-l-4 border-[#4A6FA5]">
+                Notas
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <Field label="Descripción">
                   {isView ? (
-                    <div className="flex-1 px-2 py-1 text-xs text-gray-700">{formData.descripcion}</div>
+                    <ViewValue>{formData.descripcion}</ViewValue>
                   ) : (
                     <textarea
                       value={formData.descripcion}
                       onChange={(e) => handleChange('descripcion', e.target.value)}
                       rows={3}
-                      className="flex-1 px-2 py-0.5 text-xs border border-gray-300 rounded"
+                      className={inputClass(false)}
                     />
                   )}
-                </div>
-              </div>
-
-              {/* Fila 8 - 1 columna completa (textarea) */}
-              <div className="grid grid-cols-1 gap-x-4">
-                <div className="flex items-start gap-2">
-                  <label className="text-xs w-32 flex-shrink-0 text-gray-700 pt-1">Observaciones</label>
+                </Field>
+                <Field label="Observaciones" error={errors.observaciones}>
                   {isView ? (
-                    <div className="flex-1 px-2 py-1 text-xs text-gray-700">{formData.observaciones}</div>
+                    <ViewValue>{formData.observaciones}</ViewValue>
                   ) : (
-                    <div className="flex-1">
-                      <textarea
-                        value={formData.observaciones}
-                        onChange={(e) => handleChange('observaciones', e.target.value)}
-                        maxLength={255}
-                        rows={2}
-                        className={`w-full px-2 py-0.5 text-xs border rounded ${errors.observaciones ? 'border-red-500' : 'border-gray-300'}`}
-                      />
-                      {errors.observaciones && <span className="text-xs text-red-500">{errors.observaciones}</span>}
-                    </div>
+                    <textarea
+                      value={formData.observaciones}
+                      onChange={(e) => handleChange('observaciones', e.target.value)}
+                      maxLength={255}
+                      rows={3}
+                      className={inputClass(!!errors.observaciones)}
+                    />
                   )}
-                </div>
+                </Field>
               </div>
-            </div>
+              <div className="mt-3">
+                <Field label="Fecha de Registro">
+                  <input
+                    type="text"
+                    value={formatDateTime(formData.fechaRegistro)}
+                    disabled
+                    className="w-48 px-2 py-1.5 text-xs border border-gray-300 rounded bg-gray-100 text-gray-600"
+                  />
+                </Field>
+              </div>
+            </section>
           </div>
 
           {/* Tabs Navigation */}
@@ -992,407 +1072,6 @@ export function GarantiaForm({
 
           {/* Tab Content */}
           <div className="p-4">
-            {activeTab === 'default' && (
-              <div>
-                {/* Datos Garantía - COPIA EXACTA */}
-                <div className="space-y-1">
-                  {/* Fila 1 - 3 columnas */}
-                  <div className="grid grid-cols-3 gap-x-4">
-                    <div className="flex items-center gap-2">
-                      <label className="text-xs w-32 flex-shrink-0 text-gray-700">ID Garantía <span className="text-red-500">*</span></label>
-                      <input 
-                        type="text" 
-                        value={formData.id}
-                        disabled 
-                        className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded bg-gray-100 text-gray-600" 
-                      />
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <label className="text-xs w-32 flex-shrink-0 text-gray-700">Tipo <span className="text-red-500">*</span></label>
-                      {isView ? (
-                        <div className="flex-1 px-2 py-1 text-xs text-gray-700">{formData.tipo}</div>
-                      ) : (
-                        <div className="flex-1">
-                          <select 
-                            value={formData.tipo}
-                            onChange={(e) => handleChange('tipo', e.target.value)}
-                            className={`w-full px-2 py-0.5 text-xs border rounded ${errors.tipo ? 'border-red-500' : 'border-gray-300'}`}
-                          >
-                            <option value="">Seleccione...</option>
-                            {TIPOS_GARANTIA.map((tipo) => (
-                              <option key={tipo} value={tipo}>{tipo}</option>
-                            ))}
-                          </select>
-                          {errors.tipo && <span className="text-xs text-red-500">{errors.tipo}</span>}
-                        </div>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <label className="text-xs w-32 flex-shrink-0 text-gray-700">Subtipo <span className="text-red-500">*</span></label>
-                      {isView ? (
-                        <div className="flex-1 px-2 py-1 text-xs text-gray-700">{formData.subtipo}</div>
-                      ) : (
-                        <div className="flex-1">
-                          <select 
-                            value={formData.subtipo}
-                            onChange={(e) => handleChange('subtipo', e.target.value)}
-                            className={`w-full px-2 py-0.5 text-xs border rounded ${errors.subtipo ? 'border-red-500' : 'border-gray-300'}`}
-                          >
-                            <option value="">Seleccione...</option>
-                            {SUBTIPOS_GARANTIA.map((subtipo) => (
-                              <option key={subtipo} value={subtipo}>{subtipo}</option>
-                            ))}
-                          </select>
-                          {errors.subtipo && <span className="text-xs text-red-500">{errors.subtipo}</span>}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Fila Cliente (Tab Default) */}
-                  <div className="grid grid-cols-3 gap-x-4">
-                    <div className="flex items-center gap-2 col-span-2">
-                      <label className="text-xs w-32 flex-shrink-0 text-gray-700">
-                        <Users className="inline w-3.5 h-3.5 mr-1 text-blue-500" />
-                        Cliente <span className="text-red-500">*</span>
-                      </label>
-                      {isView ? (
-                        <div className="flex-1 px-2 py-1 text-xs text-gray-700">{formData.clienteNombre || '—'}</div>
-                      ) : (
-                        <div className="flex-1 flex items-center gap-1">
-                          <div
-                            onClick={() => !isView && setShowClienteModal(true)}
-                            className={`flex-1 flex items-center justify-between px-2 py-1 text-xs border rounded cursor-pointer hover:border-blue-400 ${
-                              errors.cliente_id ? 'border-red-500 bg-red-50' : 'border-gray-300'
-                            }`}
-                          >
-                            <span className={formData.clienteNombre ? 'text-gray-800' : 'text-gray-400'}>
-                              {formData.clienteNombre || 'Seleccionar cliente...'}
-                            </span>
-                            <Search className="w-3.5 h-3.5 text-gray-400" />
-                          </div>
-                          {formData.cliente_id && (
-                            <button type="button" onClick={handleClearCliente} className="p-0.5 text-red-400 hover:text-red-600" title="Quitar cliente">
-                              <X className="w-3.5 h-3.5" />
-                            </button>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                    {formData.cliente_id && (
-                      <div className="flex items-center gap-2">
-                        <label className="text-xs w-32 flex-shrink-0 text-gray-500">UUID</label>
-                        <input type="text" value={formData.cliente_id} disabled className="flex-1 px-2 py-1 text-[10px] border border-gray-300 rounded bg-gray-100 text-gray-500 font-mono truncate" />
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Fila 2 - 3 columnas */}
-                  <div className="grid grid-cols-3 gap-x-4">
-                    <div className="flex items-center gap-2">
-                      <label className="text-xs w-32 flex-shrink-0 text-gray-700">Garantía <span className="text-red-500">*</span></label>
-                      {isView ? (
-                        <div className="flex-1 px-2 py-1 text-xs text-gray-700">{formData.garantia}</div>
-                      ) : (
-                        <div className="flex-1">
-                          <input 
-                            type="text" 
-                            value={formData.garantia}
-                            onChange={(e) => handleChange('garantia', e.target.value)}
-                            maxLength={50}
-                            className={`w-full px-2 py-0.5 text-xs border rounded ${errors.garantia ? 'border-red-500' : 'border-gray-300'}`}
-                          />
-                          {errors.garantia && <span className="text-xs text-red-500">{errors.garantia}</span>}
-                        </div>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <label className="text-xs w-32 flex-shrink-0 text-gray-700">Valor Nominal <span className="text-red-500">*</span></label>
-                      {isView ? (
-                        <div className="flex-1 px-2 py-1 text-xs text-gray-700">
-                          {new Intl.NumberFormat('es-MX', {
-                            style: 'currency',
-                            currency: 'MXN',
-                            minimumFractionDigits: 2,
-                            maximumFractionDigits: 2,
-                          }).format(formData.valorNominal)}
-                        </div>
-                      ) : (
-                        <div className="flex-1">
-                          <input 
-                            type="number" 
-                            value={formData.valorNominal}
-                            onChange={(e) => handleChange('valorNominal', parseFloat(e.target.value) || 0)}
-                            step="0.01"
-                            className={`w-full px-2 py-0.5 text-xs border rounded ${errors.valorNominal ? 'border-red-500' : 'border-gray-300'}`}
-                          />
-                          {errors.valorNominal && <span className="text-xs text-red-500">{errors.valorNominal}</span>}
-                        </div>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <label className="text-xs w-32 flex-shrink-0 text-gray-700">Fecha de Tasación</label>
-                      {isView ? (
-                        <div className="flex-1 px-2 py-1 text-xs text-gray-700">{formatDate(formData.fechaTasacion)}</div>
-                      ) : (
-                        <DatePicker 
-                          value={formData.fechaTasacion}
-                          onChange={(date) => handleChange('fechaTasacion', date)}
-                        />
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Fila 3 - 3 columnas */}
-                  <div className="grid grid-cols-3 gap-x-4">
-                    <div className="flex items-center gap-2">
-                      <label className="text-xs w-32 flex-shrink-0 text-gray-700">Valor de Tasación</label>
-                      {isView ? (
-                        <div className="flex-1 px-2 py-1 text-xs text-gray-700">
-                          {formData.valorTasacion ? new Intl.NumberFormat('es-MX', {
-                            style: 'currency',
-                            currency: 'MXN',
-                            minimumFractionDigits: 2,
-                            maximumFractionDigits: 2,
-                          }).format(formData.valorTasacion) : ''}
-                        </div>
-                      ) : (
-                        <input 
-                          type="number" 
-                          value={formData.valorTasacion || ''}
-                          onChange={(e) => handleChange('valorTasacion', parseFloat(e.target.value) || 0)}
-                          step="0.01"
-                          className="flex-1 px-2 py-0.5 text-xs border border-gray-300 rounded" 
-                        />
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <label className="text-xs w-32 flex-shrink-0 text-gray-700">Notario o Perito Tasador</label>
-                      {isView ? (
-                        <div className="flex-1 px-2 py-1 text-xs text-gray-700">{formData.peritaTasador}</div>
-                      ) : (
-                        <div className="flex-1">
-                          <input 
-                            type="text" 
-                            value={formData.peritaTasador}
-                            onChange={(e) => handleChange('peritaTasador', e.target.value)}
-                            maxLength={150}
-                            className={`w-full px-2 py-0.5 text-xs border rounded ${errors.peritaTasador ? 'border-red-500' : 'border-gray-300'}`}
-                          />
-                          {errors.peritaTasador && <span className="text-xs text-red-500">{errors.peritaTasador}</span>}
-                        </div>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <label className="text-xs w-32 flex-shrink-0 text-gray-700">Tasa de Interés</label>
-                      {isView ? (
-                        <div className="flex-1 px-2 py-1 text-xs text-gray-700">{formData.tasaInteres}</div>
-                      ) : (
-                        <div className="flex-1">
-                          <input 
-                            type="text" 
-                            value={formData.tasaInteres}
-                            onChange={(e) => handleChange('tasaInteres', e.target.value)}
-                            placeholder="%"
-                            maxLength={5}
-                            className={`w-full px-2 py-0.5 text-xs border rounded ${errors.tasaInteres ? 'border-red-500' : 'border-gray-300'}`}
-                          />
-                          {errors.tasaInteres && <span className="text-xs text-red-500">{errors.tasaInteres}</span>}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Fila 4 - 3 columnas */}
-                  <div className="grid grid-cols-3 gap-x-4">
-                    <div className="flex items-center gap-2">
-                      <label className="text-xs w-32 flex-shrink-0 text-gray-700">Fecha de Vencimiento</label>
-                      {isView ? (
-                        <div className="flex-1 px-2 py-1 text-xs text-gray-700">{formatDate(formData.fechaVencimiento)}</div>
-                      ) : (
-                        <DatePicker 
-                          value={formData.fechaVencimiento}
-                          onChange={(date) => handleChange('fechaVencimiento', date)}
-                        />
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <label className="text-xs w-32 flex-shrink-0 text-gray-700">Fecha Registro</label>
-                      <input 
-                        type="text" 
-                        value={formatDateTime(formData.fechaRegistro)}
-                        disabled 
-                        className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded bg-gray-100 text-gray-600" 
-                      />
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <label className="text-xs w-32 flex-shrink-0 text-gray-700">Estatus</label>
-                      {isView ? (
-                        <div className="flex-1 px-2 py-1 text-xs text-gray-700">{formData.estatus}</div>
-                      ) : (
-                        <select 
-                          value={formData.estatus}
-                          onChange={(e) => handleChange('estatus', e.target.value)}
-                          className="flex-1 px-2 py-0.5 text-xs border border-gray-300 rounded"
-                        >
-                          <option value="">Seleccione...</option>
-                          {ESTATUS_GARANTIA.map((estatus) => (
-                            <option key={estatus} value={estatus}>{estatus}</option>
-                          ))}
-                        </select>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Fila 5 - 3 columnas */}
-                  <div className="grid grid-cols-3 gap-x-4">
-                    <div className="flex items-center gap-2">
-                      <label className="text-xs w-32 flex-shrink-0 text-gray-700">Estado</label>
-                      {isView ? (
-                        <div className="flex-1 px-2 py-1 text-xs text-gray-700">{formData.estado}</div>
-                      ) : (
-                        <select
-                          value={formData.estado}
-                          onChange={(e) => handleChange('estado', e.target.value)}
-                          className="flex-1 px-2 py-0.5 text-xs border border-gray-300 rounded"
-                        >
-                          <option value="">Seleccione...</option>
-                          {ESTADOS_MEXICO.map((estado) => (
-                            <option key={estado} value={estado}>{estado}</option>
-                          ))}
-                        </select>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <label className="text-xs w-32 flex-shrink-0 text-gray-700">Municipio</label>
-                      {isView ? (
-                        <div className="flex-1 px-2 py-1 text-xs text-gray-700">{formData.municipio}</div>
-                      ) : (
-                        <div className="flex-1">
-                          <input
-                            type="text"
-                            value={formData.municipio}
-                            onChange={(e) => handleChange('municipio', e.target.value)}
-                            maxLength={30}
-                            className={`w-full px-2 py-0.5 text-xs border rounded ${errors.municipio ? 'border-red-500' : 'border-gray-300'}`}
-                          />
-                          {errors.municipio && <span className="text-xs text-red-500">{errors.municipio}</span>}
-                        </div>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2">{/* vacío */}</div>
-                  </div>
-
-                  {/* Fila 5b — Monto a Cubrir Garantía y % Aforo */}
-                  <div className="grid grid-cols-3 gap-x-4">
-                    <div className="flex items-center gap-2">
-                      <label className="text-xs w-32 flex-shrink-0 text-gray-700">Monto a Cubrir</label>
-                      {isView ? (
-                        <div className="flex-1 px-2 py-1 text-xs text-gray-700">
-                          {formData.montoCubrirGarantia != null
-                            ? new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 2 }).format(formData.montoCubrirGarantia)
-                            : '—'}
-                        </div>
-                      ) : (
-                        <div className="flex-1 relative">
-                          <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-400">$</span>
-                          <input
-                            type="number"
-                            value={formData.montoCubrirGarantia ?? ''}
-                            onChange={(e) => handleChange('montoCubrirGarantia', e.target.value === '' ? (undefined as any) : parseFloat(e.target.value) || 0)}
-                            step="0.01"
-                            placeholder="0.00"
-                            className="w-full pl-5 pr-2 py-0.5 text-xs border border-gray-300 rounded"
-                          />
-                        </div>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <label className="text-xs w-32 flex-shrink-0 text-gray-700">% Aforo</label>
-                      {isView ? (
-                        <div className="flex-1 px-2 py-1 text-xs text-gray-700">
-                          {formData.porcentajeAforo != null ? `${formData.porcentajeAforo}%` : '—'}
-                        </div>
-                      ) : (
-                        <div className="flex-1 relative">
-                          <input
-                            type="number"
-                            value={formData.porcentajeAforo ?? ''}
-                            onChange={(e) => handleChange('porcentajeAforo', e.target.value === '' ? (undefined as any) : parseFloat(e.target.value) || 0)}
-                            step="0.01"
-                            min="0"
-                            max="100"
-                            placeholder="0"
-                            className="w-full pr-6 pl-2 py-0.5 text-xs border border-gray-300 rounded"
-                          />
-                          <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-400">%</span>
-                        </div>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2">{/* vacío */}</div>
-                  </div>
-
-                  {/* Fila 6 - 1 columna completa (textarea) */}
-                  <div className="grid grid-cols-1 gap-x-4">
-                    <div className="flex items-start gap-2">
-                      <label className="text-xs w-32 flex-shrink-0 text-gray-700 pt-1">Ubicación <span className="text-red-500">*</span></label>
-                      {isView ? (
-                        <div className="flex-1 px-2 py-1 text-xs text-gray-700">{formData.ubicacion}</div>
-                      ) : (
-                        <div className="flex-1">
-                          <textarea 
-                            value={formData.ubicacion}
-                            onChange={(e) => handleChange('ubicacion', e.target.value)}
-                            rows={2}
-                            className={`w-full px-2 py-0.5 text-xs border rounded ${errors.ubicacion ? 'border-red-500' : 'border-gray-300'}`}
-                          />
-                          {errors.ubicacion && <span className="text-xs text-red-500">{errors.ubicacion}</span>}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Fila 7 - 1 columna completa (textarea) */}
-                  <div className="grid grid-cols-1 gap-x-4">
-                    <div className="flex items-start gap-2">
-                      <label className="text-xs w-32 flex-shrink-0 text-gray-700 pt-1">Descripción</label>
-                      {isView ? (
-                        <div className="flex-1 px-2 py-1 text-xs text-gray-700">{formData.descripcion}</div>
-                      ) : (
-                        <textarea 
-                          value={formData.descripcion}
-                          onChange={(e) => handleChange('descripcion', e.target.value)}
-                          rows={3}
-                          className="flex-1 px-2 py-0.5 text-xs border border-gray-300 rounded"
-                        />
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Fila 8 - 1 columna completa (textarea) */}
-                  <div className="grid grid-cols-1 gap-x-4">
-                    <div className="flex items-start gap-2">
-                      <label className="text-xs w-32 flex-shrink-0 text-gray-700 pt-1">Observaciones</label>
-                      {isView ? (
-                        <div className="flex-1 px-2 py-1 text-xs text-gray-700">{formData.observaciones}</div>
-                      ) : (
-                        <div className="flex-1">
-                          <textarea 
-                            value={formData.observaciones}
-                            onChange={(e) => handleChange('observaciones', e.target.value)}
-                            maxLength={255}
-                            rows={2}
-                            className={`w-full px-2 py-0.5 text-xs border rounded ${errors.observaciones ? 'border-red-500' : 'border-gray-300'}`}
-                          />
-                          {errors.observaciones && <span className="text-xs text-red-500">{errors.observaciones}</span>}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
             {activeTab === 'expediente' && (
               <div>
                 <h4 className="text-xs font-semibold text-gray-800 mb-2">Expediente electrónico</h4>
@@ -1702,6 +1381,105 @@ export function GarantiaForm({
             <div className="px-5 py-3 border-t border-gray-200 bg-gray-50 flex justify-end">
               <button
                 onClick={() => { setShowClienteModal(false); setClienteSearch(''); }}
+                className="px-4 py-1.5 text-xs border border-gray-400 rounded hover:bg-gray-100"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ Modal Selección de Proveedor — Personas con type='Proveedor' ═══ */}
+      {showProveedorModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[80vh] flex flex-col">
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200 bg-amber-50">
+              <div className="flex items-center gap-2">
+                <Users className="w-4 h-4 text-amber-600" />
+                <h3 className="text-sm font-semibold text-gray-800">Seleccionar Proveedor</h3>
+              </div>
+              <button onClick={() => { setShowProveedorModal(false); setProveedorSearch(''); }} className="text-gray-500 hover:text-gray-700">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Search */}
+            <div className="px-5 py-3 border-b border-gray-200">
+              <div className="relative">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <input
+                  type="text"
+                  value={proveedorSearch}
+                  onChange={e => setProveedorSearch(e.target.value)}
+                  placeholder="Buscar por nombre, ID o RFC..."
+                  className="w-full pl-8 pr-3 py-2 text-xs border border-gray-300 rounded focus:border-amber-400 focus:outline-none"
+                  autoFocus
+                />
+              </div>
+              <p className="text-[10px] text-gray-500 mt-1">
+                {loadingPersonas ? 'Cargando proveedores...' : `${filteredProveedores.length} proveedor(es) encontrado(s)`}
+              </p>
+            </div>
+
+            {/* Table */}
+            <div className="flex-1 overflow-auto">
+              <table className="w-full text-xs">
+                <thead className="bg-gray-100 sticky top-0">
+                  <tr>
+                    <th className="px-3 py-2 text-left font-semibold text-gray-700 border-b">ID</th>
+                    <th className="px-3 py-2 text-left font-semibold text-gray-700 border-b">Nombre Completo</th>
+                    <th className="px-3 py-2 text-left font-semibold text-gray-700 border-b">RFC</th>
+                    <th className="px-3 py-2 text-left font-semibold text-gray-700 border-b">Estatus</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {loadingPersonas ? (
+                    <tr>
+                      <td colSpan={4} className="px-3 py-8 text-center text-gray-500">
+                        <div className="flex items-center justify-center gap-2">
+                          <div className="w-4 h-4 border-2 border-amber-400 border-t-transparent rounded-full animate-spin" />
+                          Cargando desde J_CLIENTES...
+                        </div>
+                      </td>
+                    </tr>
+                  ) : filteredProveedores.length === 0 ? (
+                    <tr>
+                      <td colSpan={4} className="px-3 py-8 text-center text-gray-500">
+                        No hay proveedores registrados. Los proveedores se dan de alta en el módulo <strong>Personas</strong> con tipo "Proveedor".
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredProveedores.slice(0, 100).map((c: ClienteDB) => (
+                      <tr
+                        key={c.dbUuid}
+                        onClick={() => handleSelectProveedor(c)}
+                        className="border-b border-gray-100 hover:bg-amber-50 cursor-pointer transition-colors"
+                      >
+                        <td className="px-3 py-2 font-mono text-[10px] text-amber-700">{c.idCliente}</td>
+                        <td className="px-3 py-2 font-medium">{c.nombreCompleto}</td>
+                        <td className="px-3 py-2 text-gray-600">{c.rfc || '—'}</td>
+                        <td className="px-3 py-2">
+                          <span className={`px-1.5 py-0.5 rounded text-[9px] ${
+                            c.estatus === 'Activo' ? 'bg-green-100 text-green-700' :
+                            c.estatus === 'Inactivo' ? 'bg-red-100 text-red-700' :
+                            'bg-gray-100 text-gray-600'
+                          }`}>
+                            {c.estatus || 'N/A'}
+                          </span>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Footer */}
+            <div className="px-5 py-3 border-t border-gray-200 bg-gray-50 flex justify-end">
+              <button
+                onClick={() => { setShowProveedorModal(false); setProveedorSearch(''); }}
                 className="px-4 py-1.5 text-xs border border-gray-400 rounded hover:bg-gray-100"
               >
                 Cancelar

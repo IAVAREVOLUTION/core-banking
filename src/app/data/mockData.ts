@@ -1288,6 +1288,8 @@ export const sublineProducts = [
   { id: 4, lineId: 2, name: 'Cuenta Ahorro Emprendedor' },
   { id: 5, lineId: 2, name: 'Cuenta Ahorro Personal' },
   { id: 6, lineId: 3, name: 'Inversión a plazo fijo' },
+  { id: 7, lineId: 1, name: 'Arrendamiento Puro' },
+  { id: 8, lineId: 1, name: 'Arrendamiento Financiero' },
 ];
 
 export const statusOptions = ['Activo', 'Inactivo', 'Pendiente'];
