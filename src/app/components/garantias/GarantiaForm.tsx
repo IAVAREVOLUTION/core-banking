@@ -635,7 +635,7 @@ export function GarantiaForm({
                 Clasificación del Bien
               </div>
               <div className="grid grid-cols-4 gap-4">
-                <Field label="ID Garantía">
+                <Field label="ID Bien">
                   <input
                     type="text"
                     value={formData.id}
@@ -795,7 +795,7 @@ export function GarantiaForm({
                 Identificación del Bien
               </div>
               <div className="grid grid-cols-2 gap-4">
-                <Field label="Nombre / Garantía" required error={errors.garantia}>
+                <Field label="Nombre / Bien" required error={errors.garantia}>
                   {isView ? (
                     <ViewValue>{formData.garantia}</ViewValue>
                   ) : (

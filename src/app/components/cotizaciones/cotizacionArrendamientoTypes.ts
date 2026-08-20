@@ -21,6 +21,16 @@ export interface RentaArrendamientoRow {
   iva: number;
   pagoPeriodo: number;
   estatus: 'Pendiente' | 'Pagado' | 'Vencido';
+  // ── Sólo Arrendamiento Financiero ──
+  // Se guardan en el MISMO contenedor que el calendario de Puro para que
+  // Cartera de Arrendamiento, el Anexo de Rentas y Cobranza sigan leyendo
+  // `rentaSinIva`/`pagoPeriodo`/`estatus` sin cambio alguno.
+  /** Saldo insoluto AL INICIO del periodo (base del interés del mes). */
+  saldoInsoluto?: number;
+  /** Amortización de capital implícita del periodo. */
+  capital?: number;
+  /** Interés implícito del periodo = saldoInsoluto × i. */
+  interes?: number;
 }
 
 export interface SimulacionArrendamiento {
@@ -104,8 +114,116 @@ export function generarTablaArrendamiento(params: {
   }
 
   const numAnticipadas = Math.max(0, Math.min(numRentasAnticipadas, todasLasRentas.length));
+
+  // Las rentas anticipadas se cobran en el desembolso inicial (subtab Cargos),
+  // por lo que siguen exponiéndose aquí para ese cálculo.
   const rentasAnticipadasDescontadas = todasLasRentas.slice(0, numAnticipadas);
-  const calendario = todasLasRentas.slice(numAnticipadas).map((r, idx) => ({ ...r, noRenta: idx + 1 }));
+
+  // El calendario conserva TODAS las rentas con su numeración original; las
+  // primeras N (las anticipadas) se marcan como 'Pagado' porque ya se
+  // liquidaron por adelantado. Antes se eliminaban del calendario y las
+  // restantes se renumeraban desde 1, lo que ocultaba esos periodos.
+  const calendario = todasLasRentas.map((r, idx) => (
+    idx < numAnticipadas ? { ...r, estatus: 'Pagado' as const } : r
+  ));
+
+  return { rentaSinIvaBase, calendario, rentasAnticipadasDescontadas };
+}
+
+/**
+ * Genera la TABLA DE AMORTIZACIÓN de Arrendamiento Financiero.
+ *
+ * Difiere del calendario de Arrendamiento Puro en dos cosas:
+ *
+ *  1. Desglosa saldo insoluto, capital e interés implícitos — el saldo decrece
+ *     y converge al Valor Residual (opción de compra), no a cero.
+ *  2. El IVA grava la RENTA BASE COMPLETA (capital + interés), no sólo el
+ *     interés como en Crédito Simple. Como la renta base es fija, el IVA es
+ *     constante todo el contrato en vez de decrecer.
+ *
+ * OJO: aquí el IVA NO incluye el seguro (`iva = rentaSinIva × 0.16`), a
+ * diferencia de `generarTablaArrendamiento` (Puro), donde la base es
+ * `rentaSinIva + seguro`. El seguro se suma al Pago del Periodo, no a la base.
+ *
+ * Renta (Subtotal) = ((ValorActivo − Enganche) − ValorResidual/(1+i)^n)
+ *                    ÷ ((1 − (1+i)^(−n)) / i)
+ *
+ * `montoAutorizado` ya viene neteado del enganche (Términos y Condiciones lo
+ * calcula como montoSolicitado × (1 − %enganche/100)), así que corresponde a
+ * (ValorActivo − Enganche) de la fórmula.
+ */
+export function generarTablaArrendamientoFinanciero(params: {
+  montoAutorizado: number;
+  montoResidual: number;
+  tasaAnual: number;
+  plazoMeses: number;
+  frecuencia: string;
+  fechaPrimerPago: string;
+  seguroPorPeriodo?: number;
+  numRentasAnticipadas?: number;
+}): SimulacionArrendamiento {
+  const {
+    montoAutorizado, montoResidual, tasaAnual, plazoMeses, frecuencia,
+    fechaPrimerPago, seguroPorPeriodo = 0, numRentasAnticipadas = 0,
+  } = params;
+
+  if (montoAutorizado <= 0 || tasaAnual <= 0 || plazoMeses <= 0 || !fechaPrimerPago) {
+    return { rentaSinIvaBase: 0, calendario: [], rentasAnticipadasDescontadas: [] };
+  }
+
+  // Misma anualidad con valor futuro que usa Puro — no se duplica la fórmula.
+  const rentaSinIvaBase = calcularRentaSinIva(montoAutorizado, montoResidual, tasaAnual, plazoMeses);
+  const renta = Math.round(rentaSinIvaBase * 100) / 100;
+
+  const i = tasaAnual / 100 / 12;
+  const freq = FRECUENCIAS_PAGO.find(f => f.label === frecuencia);
+  const diasPeriodo = freq?.dias || 30;
+  const seguro = Math.round(seguroPorPeriodo * 100) / 100;
+
+  // El IVA es constante: la renta base no cambia en todo el plazo.
+  const iva = Math.round(renta * IVA_RATE * 100) / 100;
+  const pagoPeriodo = Math.round((renta + iva + seguro) * 100) / 100;
+
+  const r2 = (n: number) => Math.round(n * 100) / 100;
+
+  const todasLasRentas: RentaArrendamientoRow[] = [];
+  let fecha = new Date(fechaPrimerPago + 'T00:00:00');
+  let saldo = montoAutorizado;
+
+  for (let k = 0; k < plazoMeses; k++) {
+    const interes = r2(saldo * i);
+    const esUltima = k === plazoMeses - 1;
+    // En la última renta el capital cierra el saldo EXACTAMENTE contra el Valor
+    // Residual, absorbiendo el residuo de centavos que deja redondear la renta
+    // y el capital en cada periodo (si no, el saldo final queda en 0.01 / 3000.02).
+    // La renta, el IVA y el pago del periodo se mantienen constantes.
+    const capital = esUltima ? r2(saldo - montoResidual) : r2(renta - interes);
+    const saldoInicial = r2(saldo);
+
+    todasLasRentas.push({
+      noRenta: k + 1,
+      fechaPago: fecha.toISOString().split('T')[0],
+      saldoInsoluto: saldoInicial,
+      capital,
+      interes,
+      rentaSinIva: renta,
+      seguro,
+      iva,
+      pagoPeriodo,
+      estatus: 'Pendiente',
+    });
+
+    saldo = saldo - capital;
+    fecha = new Date(fecha.getTime() + diasPeriodo * 86400000);
+  }
+
+  // Mismo tratamiento de rentas anticipadas que Puro: se conservan en el
+  // calendario con su numeración original y se marcan como pagadas.
+  const numAnticipadas = Math.max(0, Math.min(numRentasAnticipadas, todasLasRentas.length));
+  const rentasAnticipadasDescontadas = todasLasRentas.slice(0, numAnticipadas);
+  const calendario = todasLasRentas.map((r, idx) => (
+    idx < numAnticipadas ? { ...r, estatus: 'Pagado' as const } : r
+  ));
 
   return { rentaSinIvaBase, calendario, rentasAnticipadasDescontadas };
 }

@@ -148,8 +148,16 @@ export function preloadSubtabsFromDBData(
       tipoCalculo: rawTerminos.tipoCalculo || '',
       moneda: rawTerminos.moneda || '',
       montoGarantia: rawTerminos.montoGarantia || '',
+      // Estado del checkbox "Bien" — sin esto sólo se reconstruía de forma
+      // indirecta cuando porcentajeAforo > 0 (ver TerminosCondicionesTab).
+      _garantiaActiva: rawTerminos._garantiaActiva ?? undefined,
       seguroFinanciado: rawTerminos.seguroFinanciado ?? false,
       montoSeguro: rawTerminos.montoSeguro || '',
+      // Qué seguro y qué fila de su matriz se eligieron.
+      seguroProductoId: rawTerminos.seguroProductoId || '',
+      seguroMatrizFila: rawTerminos.seguroMatrizFila ?? undefined,
+      pagoSeguro: rawTerminos.pagoSeguro ?? 0,
+      pagoTotal: rawTerminos.pagoTotal ?? 0,
       // Arrendamiento — Parámetros de Arrendamiento
       porcentajeEnganche: rawTerminos.porcentajeEnganche || '',
       montoEnganche: rawTerminos.montoEnganche || 0,
@@ -165,6 +173,10 @@ export function preloadSubtabsFromDBData(
       porcentajeAforo: rowExtras?.porcentajeAforo != null
         ? Number(rowExtras.porcentajeAforo)
         : (rawTerminos.porcentajeAforo != null ? Number(rawTerminos.porcentajeAforo) : undefined),
+      // Bien elegido en Términos — permite volver a marcarlo al reabrir sin
+      // tener que adivinarlo por el aforo.
+      tipoGarantia: rawTerminos.tipoGarantia || undefined,
+      subtipoGarantia: rawTerminos.subtipoGarantia || undefined,
       // Captación — Rendimientos
       rendimientos: rawTerminos.rendimientos || [],
       // Captación — Perfil del Inversionista
@@ -211,6 +223,16 @@ export function preloadSubtabsFromDBData(
   const calFromDB = sim.calendario_aportaciones?.length > 0 ? sim.calendario_aportaciones : null;
   saveToSession(storageId, 'simulacion_cal', calFromDB);
   saveToSavedStore(storageId, 'simulacion_cal', calFromDB);
+  // Arrendamiento Puro: calendario de rentas (lo consumen el subtab Simulación,
+  // el desglose de Cargos y el Anexo de Rentas del Kit Legal).
+  const arrFromDB = sim.calendario_arrendamiento || null;
+  saveToSession(storageId, 'simulacion_arrendamiento', arrFromDB);
+  saveToSavedStore(storageId, 'simulacion_arrendamiento', arrFromDB);
+  // Facturas de arrendamiento (Fases 4 y 5). Las consumen el botón de factura
+  // inicial, el módulo Avisos de Vencimiento y el cierre del proceso en Fase 6.
+  const facturasFromDB = Array.isArray(sol.facturas) ? sol.facturas : [];
+  saveToSession(storageId, 'facturas', facturasFromDB);
+  saveToSavedStore(storageId, 'facturas', facturasFromDB);
   const exp = sol.expediente_electronico || {};
   // Claves de documentos auto-generados por el sistema que ya no deben aparecer
   // (fueron creados por una versión anterior del código y guardados en BD por error).
@@ -268,6 +290,8 @@ export function preloadSubtabsFromDBData(
       porcentajeAforo: g.porcentaje_aforo != null ? Number(g.porcentaje_aforo) : undefined,
       ubicacion: g.ubicacion || '', estatus: g.estatus || '', nota: g.observaciones || '',
       fase: g.fase || '', faseId: g.fase_id || 0, area: g.area || '',
+      proveedorId: g.proveedor_id || null, proveedorNombre: g.proveedor_nombre || '',
+      proveedorRfc: g.proveedor_rfc || '', garantiaId: g.garantia_id || null,
     })));
   }
   if (sol.comisiones?.length > 0) {
@@ -662,6 +686,8 @@ estatusSolicitud: s.estatusSolicitud || d.estatusSolicitud || 'Pendiente',
         descripcion: g.descripcion || '', valorNominal: g.valor_garantia || 0,
         ubicacion: g.ubicacion || '', estatus: g.estatus || '', nota: g.observaciones || '',
         fase: g.fase || '', faseId: g.fase_id || 0, area: g.area || '',
+      proveedorId: g.proveedor_id || null, proveedorNombre: g.proveedor_nombre || '',
+      proveedorRfc: g.proveedor_rfc || '', garantiaId: g.garantia_id || null,
       })));
     }
 

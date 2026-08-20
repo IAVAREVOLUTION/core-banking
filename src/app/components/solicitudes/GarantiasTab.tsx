@@ -15,6 +15,7 @@ import {
   Garantia,
   saveToSession, loadFromSession, loadFromSavedStore, generateId,
   formatCurrency,
+  esArrendamiento,
 } from './solicitudCreditoStore';
 import { useGarantiasDB } from '../../hooks/useGarantiasDB';
 import { useCategoriaBienDB } from '../../hooks/useCategoriaBienDB';
@@ -22,11 +23,11 @@ import { useCategoriaBienDB } from '../../hooks/useCategoriaBienDB';
 const LOG = '[GarantiasTab]';
 const CURRENT_USER = '(sesión pendiente)';
 
-// Categoría default según tipo de producto: arrendamiento puro → Activo Fijo,
-// cualquier otro (crédito tradicional, etc.) → Garantía.
+// Categoría default según tipo de producto: arrendamiento (Puro o Financiero)
+// → Activo Fijo, cualquier otro (crédito tradicional, etc.) → Garantía.
+// En ambos arrendamientos el banco compra el bien, así que entra como activo.
 function defaultCategoriaPorProducto(tipoProducto: string | undefined): string {
-  const t = (tipoProducto || '').toLowerCase();
-  if (t.includes('arrendamiento') && t.includes('puro')) return 'ACTIVO_FIJO';
+  if (esArrendamiento(undefined, tipoProducto)) return 'ACTIVO_FIJO';
   return 'GARANTIA';
 }
 
@@ -372,7 +373,7 @@ export function GarantiasTab({ mode, solicitudId, montoSolicitado, clienteId, fa
             <div className="flex-1">
               <div className="flex items-center justify-between mb-1">
                 <span>
-                  Total garantías: <strong>{formatCurrency(totalSeleccionadas)}</strong>
+                  Total bienes: <strong>{formatCurrency(totalSeleccionadas)}</strong>
                   {' '}/ Monto a cubrir: <strong>{formatCurrency(montoACubrir)}</strong>
                   {porcentajeAforo ? ` (${porcentajeAforo}% aforo sobre ${formatCurrency(montoReq)})` : ''}
                 </span>

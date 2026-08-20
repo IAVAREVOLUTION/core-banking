@@ -117,7 +117,7 @@ export function ProductForm({
     { id: 'default', label: 'Default' },
     { id: 'aplicar-cobranza', label: 'Aplicar Cobranza' },
     { id: 'iva', label: 'IVA %' },
-    { id: 'garantias', label: 'Garantías' },
+    { id: 'garantias', label: 'Bienes' },
     { id: 'jerarquia-productos', label: 'Jerarquía de Productos' },
     { id: 'productos-relacionados', label: 'Productos relacionados' },
     { id: 'comites-credito', label: 'Comites de crédito' },

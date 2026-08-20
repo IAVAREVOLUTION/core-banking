@@ -271,6 +271,112 @@ export async function crearAvisoVencimiento(payload: {
   } catch (e: any) { return { ok: false, error: e.message }; }
 }
 
+// ─── Arrendamiento: facturas del ciclo (Fases 4 y 5) ─────────────────────────
+
+/**
+ * sub_tipo de las facturas de Arrendamiento Puro en Cobranza.
+ * Separado de 'Amortizacion' (crédito) y 'Aportacion' (captación) para que
+ * cada panel de CobranzaModule liste lo suyo.
+ */
+export const SUB_TIPO_ARRENDAMIENTO = 'Arrendamiento';
+
+/** Concepto de una factura de arrendamiento, tal como se guarda en el detalle de Cobranza. */
+export interface ConceptoCobranza {
+  cve: string;
+  desc: string;
+  monto: number;
+}
+
+/**
+ * Da de alta en Cobranza (Avisos de Vencimiento — Créditos) una factura del
+ * ciclo de arrendamiento.
+ *
+ * Usa el mismo POST /cartera/facturas que el resto de la cartera, enviando una
+ * sola "amortización" que transporta los conceptos propios del arrendamiento
+ * (Enganche, Comisión, Rentas anticipadas o los conceptos del CFDI). El
+ * backend crea una línea de J_FACTURAS_DETALLE por concepto.
+ */
+export async function crearFacturaArrendamientoCobranza(payload: {
+  solicitud_id: string;
+  cliente: string;
+  conceptos: ConceptoCobranza[];
+  total: number;
+  fecha_compromiso?: string;
+  referencia?: string;
+  moneda?: string;
+  /**
+   * 'Por Cobrar' (default): el cliente le paga a la institución — Pago Inicial.
+   * 'Por Pagar': la institución le paga a la contraparte — cuenta al proveedor
+   * del bien.
+   */
+  tipo?: 'Por Cobrar' | 'Por Pagar';
+  forma_pago?: string;
+}): Promise<{ ok: boolean; error?: string; factura_id?: string; no_docto?: string }> {
+  const { solicitud_id, cliente, conceptos, total, fecha_compromiso, referencia, moneda = 'MXN', tipo = 'Por Cobrar', forma_pago } = payload;
+
+  if (!conceptos.length) return { ok: false, error: 'La factura no tiene conceptos con monto mayor a cero' };
+
+  try {
+    const res = await window.fetch(`${API_BASE}/cartera/facturas`, {
+      method: 'POST',
+      headers: HDR,
+      body: JSON.stringify({
+        solicitud_id,
+        tipo,
+        // sub_tipo propio: el panel "Facturación — Arrendamiento Puro" de Cobranza
+        // filtra por él, para que estas facturas no se mezclen con las
+        // amortizaciones de crédito del panel de Créditos.
+        sub_tipo: SUB_TIPO_ARRENDAMIENTO,
+        cliente,
+        moneda,
+        forma_pago: forma_pago || null,
+        referencia: referencia || null,
+        fecha_compromiso: fecha_compromiso || null,
+        amortizaciones: [{
+          id: `arr-${Date.now()}`,
+          fecha_pago: fecha_compromiso || null,
+          pago_total: total,
+          conceptos,
+        }],
+      }),
+    });
+    const json = await res.json();
+    if (!res.ok || json.error) return { ok: false, error: json.error || `HTTP ${res.status}` };
+    return { ok: true, factura_id: json.id, no_docto: json.no_docto };
+  } catch (e: any) {
+    return { ok: false, error: e.message };
+  }
+}
+
+/**
+ * Lee el estatus real de una factura en Cobranza.
+ *
+ * La Fase 6 no puede confiar en la copia guardada en data.solicitud.facturas:
+ * el pago se aplica desde Cobranza (PATCH /cartera/facturas/:id/pagar) y ese
+ * cambio no vuelve solo a la solicitud.
+ */
+export async function fetchEstatusFacturaCobranza(
+  facturaId: string,
+): Promise<{ ok: boolean; estatus?: string; noDocto?: string; monto?: number; error?: string }> {
+  try {
+    const res = await window.fetch(`${API_BASE}/cartera/cobranza?sub_tipo=${SUB_TIPO_ARRENDAMIENTO}`, { headers: HDR });
+    const json = await res.json();
+    if (!res.ok) return { ok: false, error: json.error || `HTTP ${res.status}` };
+
+    const row = (json.data || []).find((r: any) => String(r.id) === String(facturaId));
+    if (!row) return { ok: false, error: 'La factura ya no existe en Cobranza' };
+
+    return {
+      ok: true,
+      estatus: row.estatus,
+      noDocto: row.numero_documento || row.no_docto,
+      monto: Number.parseFloat(String(row.monto_transaccion || '0').replace(/[$,\s]/g, '')) || 0,
+    };
+  } catch (e: any) {
+    return { ok: false, error: e.message };
+  }
+}
+
 export async function crearSolicitudExt(payload: {
   solicitud_id: string;
   tipo_id: string;

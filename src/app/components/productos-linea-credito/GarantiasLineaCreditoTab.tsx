@@ -63,12 +63,12 @@ export function GarantiasLineaCreditoTab({ mode, garantias, onGarantiasChange }:
       const newData = [...data, newItem];
       setData(newData);
       onGarantiasChange(newData);
-      toast.success('Garantía creada');
+      toast.success('Bien creado');
     } else if (formMode === 'edit') {
       const newData = data.map(d => d.id === selectedItem?.id ? { ...d, ...formData } : d);
       setData(newData);
       onGarantiasChange(newData);
-      toast.success('Garantía actualizada');
+      toast.success('Bien actualizado');
     }
     setShowFormModal(false);
   };
@@ -98,7 +98,7 @@ export function GarantiasLineaCreditoTab({ mode, garantias, onGarantiasChange }:
     <>
       <div className="bg-white">
         <div className="mb-3">
-          <span className="text-sm font-medium text-gray-800">Garantías</span>
+          <span className="text-sm font-medium text-gray-800">Bienes</span>
         </div>
 
         <div className="flex items-center gap-2 mb-3">
@@ -308,7 +308,7 @@ function FormModal({ mode, item, onSave, onClose }: FormModalProps) {
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
       <div className="bg-white shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-hidden flex flex-col border-2 border-gray-400" onClick={(e) => e.stopPropagation()}>
         <div className="bg-[#2E5C91] px-4 py-2.5 border-b-2 border-gray-400 flex items-center justify-between">
-          <h3 className="text-sm font-medium text-white">{mode === 'create' ? 'Nueva Garantía' : mode === 'edit' ? 'Editar Garantía' : 'Ver Garantía'}</h3>
+          <h3 className="text-sm font-medium text-white">{mode === 'create' ? 'Nuevo Bien' : mode === 'edit' ? 'Editar Bien' : 'Ver Bien'}</h3>
           <button onClick={onClose} className="text-white hover:text-gray-300 font-bold text-lg leading-none">&times;</button>
         </div>
 
@@ -316,7 +316,7 @@ function FormModal({ mode, item, onSave, onClose }: FormModalProps) {
           <form onSubmit={handleSubmit}>
             <div className="mb-4">
               <div className="bg-[#E7E6E6] px-3 py-1.5 mb-3 border-l-4 border-[#2E5C91]">
-                <span className="text-xs font-medium text-gray-800">INFORMACIÓN DE GARANTÍA</span>
+                <span className="text-xs font-medium text-gray-800">INFORMACIÓN DEL BIEN</span>
               </div>
 
               <div className="grid grid-cols-2 gap-x-6 gap-y-3">

@@ -63,6 +63,8 @@ export interface TerminosCondiciones {
   _garantiaActiva?: boolean;  // persiste el estado del checkbox de garantía
   seguroFinanciado: boolean;
   montoSeguro: string;
+  seguroProductoId?: string; // qué producto de seguro se eligió (dbUuid o id)
+  seguroMatrizFila?: any;    // fila elegida de la matriz del seguro
   pagoSeguro?: number;       // pago por período de seguro financiado
   pagoTotal?: number;        // pago mensual + pagoSeguro
   pagoMensual?: string;      // pago calculado de amortización
@@ -71,6 +73,11 @@ export interface TerminosCondiciones {
   // Crédito / Línea de Crédito — columnas top-level en J_CUENTAS_CORP_CLIENTES
   montoCubrirGarantia?: number;  // monto_cubrir_garantia
   porcentajeAforo?: number;      // porcentaje_aforo (ej: 70 = 70%)
+  // Identidad del bien/garantía elegido en Términos. Sin esto, al reabrir la
+  // solicitud había que adivinarlo buscando el primero del producto con el
+  // mismo aforo — si dos bienes comparten aforo, se restauraba el equivocado.
+  tipoGarantia?: string;
+  subtipoGarantia?: string;
   // Captación — Rendimientos (tabla de tasas por plazo)
   rendimientos?: RendimientoRow[];
   // Captación — perfil del inversionista
@@ -451,6 +458,300 @@ export function calcularCargosArrendamiento(params: {
   return conceptos;
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// FACTURAS DE ARRENDAMIENTO (Fases 4, 5 y 6)
+//
+// Viven en el subtab 'facturas' de la solicitud y se persisten en
+// data.solicitud.facturas. No hay tabla propia: la factura pertenece a la
+// solicitud que la origina, por eso "no persiste hasta enviar a originación"
+// — se guarda con el resto de la solicitud.
+//
+// El módulo Avisos de Vencimiento — Créditos las lee de ahí, y la Fase 6
+// valida contra el estatus de la factura, no contra un PDF del expediente.
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * Estatus de una factura de arrendamiento.
+ *
+ * Las dos facturas del ciclo viven en módulos distintos y cada uno tiene su
+ * propio catálogo, así que este tipo cubre ambos:
+ *   · Pago Inicial      → Cobranza ('Pagado' se normaliza a 'Pagada').
+ *   · Compra a Proveedor→ Solicitudes de Activación ('Pagado', 'Autorizada',
+ *     'Activada', 'Activo', 'Enviada', 'Rechazada').
+ */
+export type EstatusFactura =
+  | 'Pendiente' | 'Pagada' | 'Cancelada'
+  | 'Enviada' | 'Autorizada' | 'Activada' | 'Activo' | 'Rechazada';
+
+/** Estatus que cuentan como liquidada: ya no hay nada que esperar. */
+export const ESTATUS_FACTURA_LIQUIDADA: EstatusFactura[] = ['Pagada', 'Autorizada', 'Activada', 'Activo'];
+
+/**
+ * Razón social de la institución — beneficiaria de las facturas "Por Cobrar"
+ * (el cliente le paga a la institución) y receptora en el CFDI del proveedor.
+ */
+// ─────────────────────────────────────────────────────────────────────────────
+// Detección de tipo de operación
+//
+// Arrendamiento Puro y Arrendamiento Financiero comparten TODO el flujo: las
+// mismas 6 fases, los mismos requisitos de expediente, el desembolso inicial
+// (enganche + comisión + rentas anticipadas), el bien como Activo Fijo, el
+// ciclo de facturación de Fases 4-5 y la Cartera de Arrendamiento.
+//
+// Lo ÚNICO que difiere es la tabla que genera "Simular": Puro produce un
+// calendario de rentas y Financiero una tabla de amortización cuyo saldo
+// converge al Valor Residual, con IVA sobre la renta completa.
+//
+// Por eso el resto del sistema debe usar `esArrendamiento()`; `esArrendamientoPuro()`
+// se reserva para ese único punto de divergencia (ver SimulacionTab).
+// ─────────────────────────────────────────────────────────────────────────────
+
+const _normProd = (s?: string) =>
+  (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+
+/** true si el producto es Arrendamiento — Puro o Financiero. */
+export function esArrendamiento(lineaProducto?: string, tipoProducto?: string): boolean {
+  return `${_normProd(lineaProducto)} ${_normProd(tipoProducto)}`.includes('arrendamiento');
+}
+
+/**
+ * true SÓLO para Arrendamiento Puro. Usar exclusivamente donde Puro y Financiero
+ * se comportan distinto de verdad (hoy: la tabla de Simulación). En cualquier
+ * otro lugar usar `esArrendamiento()`, o Financiero se cae del flujo.
+ */
+export function esArrendamientoPuro(lineaProducto?: string, tipoProducto?: string): boolean {
+  const s = `${_normProd(lineaProducto)} ${_normProd(tipoProducto)}`;
+  return s.includes('arrendamiento') && s.includes('puro');
+}
+
+export const INSTITUCION_RAZON_SOCIAL = 'eFinanciaNet SA de CV';
+
+/**
+ * DESEMBOLSO_INICIAL — Fase 4, lo que el cliente debe pagar para arrancar.
+ * COMPRA_PROVEEDOR   — Fase 5, la factura del proveedor del bien; es una
+ *                      cuenta por pagar de la institución.
+ */
+export type TipoFacturaArrendamiento = 'DESEMBOLSO_INICIAL' | 'COMPRA_PROVEEDOR';
+
+export interface ConceptoFactura {
+  concepto: string;
+  descripcion: string;
+  monto: number;
+}
+
+export interface FacturaArrendamiento {
+  id: string;
+  tipo: TipoFacturaArrendamiento;
+  /** Título que se muestra en el detalle de Cobranza. */
+  titulo: string;
+  noFactura: string;
+  fechaEmision: string;
+  fechaVencimiento: string;
+  /** Cliente en el desembolso inicial; proveedor del bien en la compra. */
+  contraparte: string;
+  rfcContraparte: string;
+  estatus: EstatusFactura;
+  conceptos: ConceptoFactura[];
+  subtotal: number;
+  iva: number;
+  total: number;
+  faseId: number;
+  /** true en COMPRA_PROVEEDOR: la institución es quien paga. */
+  esCuentaPorPagar: boolean;
+  /** CFDI simulado (Fase 5). */
+  uuid?: string;
+  xml?: string;
+  /** id del registro real en Cobranza (J_FACTURAS). Es lo que permite consultar su estatus de pago. */
+  facturaIdCobranza?: string;
+  noSolicitud?: string;
+  solicitudId?: string;
+}
+
+export const IVA_FACTURA = 0.16;
+
+function folioFactura(prefijo: string, noSol: string): string {
+  const seed = String(noSol || '').split('').reduce((s, c) => s + c.charCodeAt(0), 0);
+  const anio = new Date().getFullYear();
+  return `${prefijo}-${anio}-${String((seed % 90000) + 10000)}`;
+}
+
+function sumaConceptos(conceptos: ConceptoFactura[]): number {
+  return Math.round(conceptos.reduce((s, c) => s + c.monto, 0) * 100) / 100;
+}
+
+/**
+ * Factura de Pago Inicial (Fase 4 — Recaudación Inicial y Compra).
+ *
+ * Reutiliza los conceptos que ya calcula calcularCargosArrendamiento para que
+ * la factura y el subtab Cargos cuadren por construcción: se descarta la fila
+ * TOTAL_PAGO_INICIAL porque el total se recalcula aquí.
+ */
+export function generarFacturaDesembolsoInicial(params: {
+  noSol: string;
+  solicitudId: string;
+  cliente: string;
+  rfcCliente?: string;
+  conceptosCargos: ConceptoCargoArrendamiento[];
+}): FacturaArrendamiento {
+  const { noSol, solicitudId, cliente, rfcCliente, conceptosCargos } = params;
+
+  const conceptos: ConceptoFactura[] = conceptosCargos
+    .filter(c => c.concepto !== 'TOTAL_PAGO_INICIAL' && c.monto > 0)
+    .map(c => ({ concepto: c.concepto, descripcion: c.descripcion, monto: c.monto }));
+
+  const total = sumaConceptos(conceptos);
+  // El IVA ya viene desglosado como conceptos propios (IVA_COMISION,
+  // IVA_RENTA_SEGURO_MESn); no se vuelve a calcular sobre el total.
+  const iva = Math.round(
+    conceptos.filter(c => c.concepto.startsWith('IVA_')).reduce((s, c) => s + c.monto, 0) * 100
+  ) / 100;
+
+  const hoy = new Date();
+  const vence = new Date(hoy.getTime() + 5 * 86400000);
+
+  return {
+    id: `FI-${Date.now()}`,
+    tipo: 'DESEMBOLSO_INICIAL',
+    titulo: 'DESEMBOLSO INICIAL — VISTA PREVIA',
+    noFactura: folioFactura('FAC', noSol),
+    fechaEmision: hoy.toISOString().split('T')[0],
+    fechaVencimiento: vence.toISOString().split('T')[0],
+    contraparte: cliente,
+    rfcContraparte: rfcCliente || '',
+    estatus: 'Pendiente',
+    conceptos,
+    subtotal: Math.round((total - iva) * 100) / 100,
+    iva,
+    total,
+    faseId: 4,
+    esCuentaPorPagar: false,
+    noSolicitud: noSol,
+    solicitudId,
+  };
+}
+
+/**
+ * CFDI simulado del proveedor del bien (Fase 5 — Recepción del Activo).
+ *
+ * Se genera el XML y se lee de vuelta para armar la cuenta por pagar, de modo
+ * que los datos del detalle en Cobranza provengan del XML y no del formulario.
+ */
+export function generarXMLProveedor(params: {
+  noSol: string;
+  proveedor: string;
+  rfcProveedor: string;
+  descripcionBien: string;
+  importe: number;
+}): { xml: string; uuid: string } {
+  const { noSol, proveedor, rfcProveedor, descripcionBien, importe } = params;
+  // Desglose institucional sobre el monto autorizado:
+  //   IVA     = importe × 16 %
+  //   Capital = importe × (1 − 16 %)
+  // (No se netea dividiendo entre 1.16 — el importe se reparte 84/16.)
+  const iva = Math.round(importe * IVA_FACTURA * 100) / 100;
+  const subtotal = Math.round((importe - iva) * 100) / 100;
+  const seed = String(noSol || '').split('').reduce((s, c) => s + c.charCodeAt(0), 0);
+  const hex = (n: number, len: number) => String(Math.abs(n)).padStart(len, '0').slice(0, len);
+  const uuid = `${hex(seed * 7, 8)}-${hex(seed * 3, 4)}-${hex(seed * 5, 4)}-${hex(seed * 11, 4)}-${hex(seed * 13, 12)}`;
+  const fecha = new Date().toISOString().split('.')[0];
+
+  const esc = (s: string) => String(s || '')
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+  const xml =
+    `<?xml version="1.0" encoding="UTF-8"?>\n` +
+    `<cfdi:Comprobante xmlns:cfdi="http://www.sat.gob.mx/cfd/4" Version="4.0" ` +
+    `Serie="A" Folio="${esc(folioFactura('PROV', noSol))}" Fecha="${fecha}" ` +
+    `SubTotal="${subtotal.toFixed(2)}" Total="${importe.toFixed(2)}" Moneda="MXN" ` +
+    `TipoDeComprobante="I" MetodoPago="PUE" LugarExpedicion="01000">\n` +
+    `  <cfdi:Emisor Rfc="${esc(rfcProveedor)}" Nombre="${esc(proveedor)}" RegimenFiscal="601"/>\n` +
+    `  <cfdi:Receptor Rfc="XAXX010101000" Nombre="INSTITUCION FINANCIERA" ` +
+    `UsoCFDI="G03" DomicilioFiscalReceptor="01000" RegimenFiscalReceptor="601"/>\n` +
+    `  <cfdi:Conceptos>\n` +
+    `    <cfdi:Concepto ClaveProdServ="25101500" Cantidad="1" ClaveUnidad="H87" ` +
+    `Descripcion="${esc(descripcionBien)}" ValorUnitario="${subtotal.toFixed(2)}" Importe="${subtotal.toFixed(2)}">\n` +
+    `      <cfdi:Impuestos>\n` +
+    `        <cfdi:Traslados>\n` +
+    `          <cfdi:Traslado Base="${subtotal.toFixed(2)}" Impuesto="002" TipoFactor="Tasa" ` +
+    `TasaOCuota="0.160000" Importe="${iva.toFixed(2)}"/>\n` +
+    `        </cfdi:Traslados>\n` +
+    `      </cfdi:Impuestos>\n` +
+    `    </cfdi:Concepto>\n` +
+    `  </cfdi:Conceptos>\n` +
+    `  <cfdi:Impuestos TotalImpuestosTrasladados="${iva.toFixed(2)}"/>\n` +
+    `  <cfdi:Complemento>\n` +
+    `    <tfd:TimbreFiscalDigital xmlns:tfd="http://www.sat.gob.mx/TimbreFiscalDigital" ` +
+    `Version="1.1" UUID="${uuid}" FechaTimbrado="${fecha}"/>\n` +
+    `  </cfdi:Complemento>\n` +
+    `</cfdi:Comprobante>`;
+
+  return { xml, uuid };
+}
+
+/**
+ * Lee un CFDI XML y arma la cuenta por pagar del proveedor.
+ *
+ * Usa DOMParser para que los datos del detalle salgan realmente del XML —
+ * si el XML cambia, la factura cambia.
+ */
+export function leerXMLProveedor(
+  xml: string,
+  ctx: { noSol: string; solicitudId: string },
+): FacturaArrendamiento | null {
+  try {
+    const doc = new DOMParser().parseFromString(xml, 'application/xml');
+    if (doc.querySelector('parsererror')) return null;
+
+    const comp = doc.documentElement;
+    const emisor = doc.getElementsByTagName('cfdi:Emisor')[0];
+    const tfd = doc.getElementsByTagName('tfd:TimbreFiscalDigital')[0];
+    const conceptoNodes = Array.from(doc.getElementsByTagName('cfdi:Concepto'));
+
+    const total = parseFloat(comp.getAttribute('Total') || '0');
+    const subtotal = parseFloat(comp.getAttribute('SubTotal') || '0');
+    const iva = Math.round((total - subtotal) * 100) / 100;
+
+    // Conceptos con la misma nomenclatura que el desglose de crédito
+    // (CAPITAL / IVA): el usuario nunca debe ver claves técnicas del CFDI como
+    // "CFDI_CONCEPTO_1" o "IVA_CFDI" en la columna SUBPRODUCTO de Cobranza.
+    const conceptos: ConceptoFactura[] = conceptoNodes.map((n, i) => ({
+      concepto: i === 0 ? 'CAPITAL' : `CAPITAL_${i + 1}`,
+      descripcion: 'Capital',
+      monto: parseFloat(n.getAttribute('Importe') || '0'),
+    }));
+    if (iva > 0) {
+      conceptos.push({ concepto: 'IVA', descripcion: 'IVA', monto: iva });
+    }
+
+    const hoy = new Date();
+    const vence = new Date(hoy.getTime() + 30 * 86400000);
+
+    return {
+      id: `CP-${Date.now()}`,
+      tipo: 'COMPRA_PROVEEDOR',
+      titulo: 'COMPRA DEL ACTIVO — CUENTA POR PAGAR',
+      noFactura: `${comp.getAttribute('Serie') || 'A'}-${comp.getAttribute('Folio') || ''}`,
+      fechaEmision: (comp.getAttribute('Fecha') || hoy.toISOString()).split('T')[0],
+      fechaVencimiento: vence.toISOString().split('T')[0],
+      contraparte: emisor?.getAttribute('Nombre') || 'Proveedor',
+      rfcContraparte: emisor?.getAttribute('Rfc') || '',
+      estatus: 'Pendiente',
+      conceptos,
+      subtotal,
+      iva,
+      total,
+      faseId: 5,
+      esCuentaPorPagar: true,
+      uuid: tfd?.getAttribute('UUID') || undefined,
+      xml,
+      noSolicitud: ctx.noSol,
+      solicitudId: ctx.solicitudId,
+    };
+  } catch {
+    return null;
+  }
+}
+
 // ---- N° Solicitud: BAN-DIGITAL-AAAAMMDD-999999 ----
 let _dailyConsecutivo = 1;
 
@@ -727,6 +1028,8 @@ export const EMPTY_TERMINOS: TerminosCondiciones = {
   montoAutorizado: '',
   seguroFinanciado: false,
   montoSeguro: '',
+  seguroProductoId: '',
+  seguroMatrizFila: undefined,
   pagoSeguro: 0,
   pagoTotal: 0,
   pagoMensual: '',

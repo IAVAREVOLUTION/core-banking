@@ -17,6 +17,7 @@ import { ProductoCaptacionForm } from './components/productos/ProductoCaptacionF
 import { ProductoForm } from './components/productos/ProductoForm';
 import { ProductosLineaCreditoModule } from './components/productos-linea-credito/ProductosLineaCreditoModule';
 import { Garantias } from './components/garantias/Garantias';
+import { CarteraArrendamientoList } from './components/cartera/CarteraArrendamientoList';
 import { Cliente, mockClientes } from './data/mockClientesData';
 import { ClientesList } from './components/clientes/ClientesList';
 import { ClientesDashboard } from './components/clientes/ClientesDashboard';
@@ -67,7 +68,7 @@ import { useProductosCaptacionDB } from './hooks/useProductosCaptacionDB';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 
 type View = 'list' | 'form' | 'direccion';
-type Module = 'dashboard' | 'configuracion' | 'productos' | 'garantias' | 'prospectos' | 'clientes' | 'cotizaciones' | 'cuentas-ahorro' | 'solicitudes-creditos' | 'solicitudes-activacion' | 'originacion' | 'creditos' | 'inversiones' | 'cartera-credito' | 'cartera-inversion' | 'cartera-ahorro' | 'avisos-vencimiento' | 'pld' | 'pagos-referenciados' | 'casos-cobranza' | 'cobranza' | 'ejec-reportes' | 'polizas-contables' | 'gestion-riesgos' | 'une';
+type Module = 'dashboard' | 'configuracion' | 'productos' | 'garantias' | 'prospectos' | 'clientes' | 'cotizaciones' | 'cuentas-ahorro' | 'solicitudes-creditos' | 'solicitudes-activacion' | 'originacion' | 'creditos' | 'inversiones' | 'cartera-credito' | 'cartera-arrendamiento' | 'cartera-inversion' | 'cartera-ahorro' | 'avisos-vencimiento' | 'pld' | 'pagos-referenciados' | 'casos-cobranza' | 'cobranza' | 'ejec-reportes' | 'polizas-contables' | 'gestion-riesgos' | 'une';
 type ClienteView = 'dashboard' | 'list' | 'form' | 'direccion';
 type ProspectoView = 'dashboard' | 'list' | 'form';
 type SolicitudView = 'dashboard' | 'list' | 'form';
@@ -690,6 +691,7 @@ function App() {
     { id: 'cobranza', label: 'Cobranza' },
     { id: 'avisos-vencimiento', label: 'Avisos de Vencimiento' },
     { id: 'cartera-credito', label: 'Cartera crédito' },
+    { id: 'cartera-arrendamiento', label: 'Cartera Arrendamiento' },
     { id: 'cartera-inversion', label: 'Cartera inversión' },
     { id: 'cartera-ahorro', label: 'Cartera ahorro' },
     { id: 'ejec-reportes', label: 'Ejec. Reportes Regulatorios' },
@@ -1430,6 +1432,8 @@ function App() {
           <CobranzaModule />
         ) : currentModule === 'cartera-credito' ? (
           <CarteraModule />
+        ) : currentModule === 'cartera-arrendamiento' ? (
+          <CarteraArrendamientoList />
         ) : currentModule === 'cartera-inversion' ? (
           <AportacionesModule />
         ) : currentModule === 'cartera-ahorro' ? (

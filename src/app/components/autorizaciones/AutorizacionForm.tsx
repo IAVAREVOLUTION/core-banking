@@ -74,7 +74,7 @@ export function AutorizacionForm({ mode, autorizacion, onBack, onSave, nextId, s
       <div className="bg-[#2E5C91] px-6 py-0 flex items-center gap-6 text-white text-xs overflow-x-auto">
         <button className="px-3 py-2 hover:bg-[#1E4C81] whitespace-nowrap">Configuración</button>
         <button className="px-3 py-2 hover:bg-[#1E4C81] whitespace-nowrap">Productos</button>
-        <button className="px-3 py-2 hover:bg-[#1E4C81] whitespace-nowrap">Garantías</button>
+        <button className="px-3 py-2 hover:bg-[#1E4C81] whitespace-nowrap">Bienes</button>
         <button className="px-3 py-2 hover:bg-[#1E4C81] whitespace-nowrap">Prospectos</button>
         <button className="px-3 py-2 hover:bg-[#1E4C81] whitespace-nowrap">Clientes</button>
         <button className="px-3 py-2 hover:bg-[#1E4C81] whitespace-nowrap">Cuentas ahorro</button>

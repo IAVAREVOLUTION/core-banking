@@ -54,8 +54,20 @@ function deepMergeData(
     if (incomingValue === null || incomingValue === undefined || incomingValue === '') {
       continue;
     }
-    // Arrays se reemplazan atómicamente
+    // Arrays se reemplazan atómicamente — salvo que el incoming venga vacío
+    // y ya exista un array con datos en BD: eso normalmente significa que el
+    // subtab no se cargó/tocó en esta sesión (getData() cayó a su default []),
+    // no que el usuario haya borrado deliberadamente los registros. Sobrescribir
+    // en ese caso perdería datos ya guardados (p. ej. Plantillas, Garantías).
     if (Array.isArray(incomingValue)) {
+      const existingValue = existing[key];
+      if (
+        incomingValue.length === 0 &&
+        Array.isArray(existingValue) &&
+        existingValue.length > 0
+      ) {
+        continue;
+      }
       merged[key] = incomingValue;
       continue;
     }

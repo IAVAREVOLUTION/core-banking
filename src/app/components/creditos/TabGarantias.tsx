@@ -99,7 +99,7 @@ export function TabGarantias({ mode, camposEditables }: TabGarantiasProps) {
               <tr className="bg-[#D3D3D3]">
                 <th className="border border-gray-400 px-2 py-1.5 text-left font-normal text-gray-800">Tipo *</th>
                 <th className="border border-gray-400 px-2 py-1.5 text-left font-normal text-gray-800">Subtipo *</th>
-                <th className="border border-gray-400 px-2 py-1.5 text-left font-normal text-gray-800">Garantía *</th>
+                <th className="border border-gray-400 px-2 py-1.5 text-left font-normal text-gray-800">Bien *</th>
                 <th className="border border-gray-400 px-2 py-1.5 text-left font-normal text-gray-800">Valor Nominal</th>
                 <th className="border border-gray-400 px-2 py-1.5 text-left font-normal text-gray-800">Descripción</th>
                 <th className="border border-gray-400 px-2 py-1.5 text-left font-normal text-gray-800">Ubicación</th>
@@ -243,7 +243,7 @@ function FormModal({ onClose }: FormModalProps) {
       <div className="bg-white shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-hidden flex flex-col border-2 border-gray-400" onClick={(e) => e.stopPropagation()}>
         {/* Header */}
         <div className="bg-[#2E5C91] px-4 py-2.5 border-b-2 border-gray-400 flex items-center justify-between">
-          <h3 className="text-sm font-medium text-white">Nueva Garantía</h3>
+          <h3 className="text-sm font-medium text-white">Nuevo Bien</h3>
           <button 
             onClick={onClose}
             className="text-white hover:text-gray-300 font-bold text-lg leading-none"
@@ -256,7 +256,7 @@ function FormModal({ onClose }: FormModalProps) {
         <div className="px-6 py-4 overflow-auto bg-white">
           <div className="mb-4">
             <div className="bg-[#E7E6E6] px-3 py-1.5 mb-3 border-l-4 border-[#2E5C91]">
-              <span className="text-xs font-medium text-gray-800">INFORMACIÓN DE GARANTÍA</span>
+              <span className="text-xs font-medium text-gray-800">INFORMACIÓN DEL BIEN</span>
             </div>
 
             <div className="grid grid-cols-2 gap-x-6 gap-y-3">
@@ -297,7 +297,7 @@ function FormModal({ onClose }: FormModalProps) {
               {/* Garantía */}
               <div className="col-span-2">
                 <label className="block text-xs text-gray-700 mb-1 font-medium">
-                  Garantía <span className="text-red-600">*</span>
+                  Bien <span className="text-red-600">*</span>
                 </label>
                 <div className="flex gap-2">
                   <select className="flex-1 px-2 py-1 text-xs border border-gray-400">

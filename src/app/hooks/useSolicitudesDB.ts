@@ -240,6 +240,12 @@ function mapRowToListItem(row: SolicitudDBRow): SolicitudListItem {
     _fechaFin: row.fecha_fin_cu || null,
     _montoCubrirGarantia: row.monto_cubrir_garantia ?? null,
     _porcentajeAforo: row.porcentaje_aforo ?? null,
+    // ── Fase 6 — Tesorería (columnas físicas + detalle en jsonb) ──
+    _estatusDispersion: row.estatus_disp || d.solicitud?.tesoreria?.estatusDispersion || null,
+    _estatusCartera: row.estatus_cart || d.solicitud?.tesoreria?.estatusCartera || null,
+    _montoDispersado: row.monto_disp != null ? parseMoney(row.monto_disp) : null,
+    _fechaDispersion: row.fecha_disper || null,
+    _tesoreria: d.solicitud?.tesoreria || null,
   } as SolicitudListItem & Record<string, any>;
 }
 
@@ -358,9 +364,25 @@ function formToDBPayload(form: SolicitudFormData, allSubtabs?: Record<string, an
   if (terminos.tipoTasa) coreTerminosRaw.tipoTasa = terminos.tipoTasa;
   if (terminos.tipoCalculo) coreTerminosRaw.tipoCalculo = terminos.tipoCalculo;
   if (terminos.moneda) coreTerminosRaw.moneda = terminos.moneda;
-  if (terminos.montoGarantia) coreTerminosRaw.montoGarantia = terminos.montoGarantia;
+  // Guardas por !== undefined, no truthy: el servidor hace deep merge, así que
+  // con `if (valor)` un campo limpiado a ''/false/0 nunca se envía y el valor
+  // viejo sobrevive en BD — desmarcar en la UI no borraría nada.
+  if (terminos.montoGarantia !== undefined) coreTerminosRaw.montoGarantia = terminos.montoGarantia;
+  // Estado del checkbox "Bien". Sin esto sólo se recuperaba de forma indirecta
+  // cuando porcentajeAforo > 0, así que marcarlo sin elegir bien se perdía.
+  if (terminos._garantiaActiva !== undefined) coreTerminosRaw._garantiaActiva = terminos._garantiaActiva;
+  // Identidad del bien elegido en Términos: el aforo y los montos ya viajan en
+  // columnas top-level, pero sin esto no se sabe CUÁL bien se seleccionó.
+  if (terminos.tipoGarantia !== undefined) coreTerminosRaw.tipoGarantia = terminos.tipoGarantia;
+  if (terminos.subtipoGarantia !== undefined) coreTerminosRaw.subtipoGarantia = terminos.subtipoGarantia;
   if (terminos.seguroFinanciado !== undefined) coreTerminosRaw.seguroFinanciado = terminos.seguroFinanciado;
-  if (terminos.montoSeguro) coreTerminosRaw.montoSeguro = terminos.montoSeguro;
+  if (terminos.montoSeguro !== undefined) coreTerminosRaw.montoSeguro = terminos.montoSeguro;
+  // Sin estos dos, al reabrir volvía el check de Seguro palomeado pero con el
+  // combo en "-- Seleccionar seguro --" y la matriz sin fila elegida.
+  if (terminos.seguroProductoId !== undefined) coreTerminosRaw.seguroProductoId = terminos.seguroProductoId;
+  if (terminos.seguroMatrizFila !== undefined) coreTerminosRaw.seguroMatrizFila = terminos.seguroMatrizFila;
+  if (terminos.pagoSeguro !== undefined) coreTerminosRaw.pagoSeguro = terminos.pagoSeguro;
+  if (terminos.pagoTotal !== undefined) coreTerminosRaw.pagoTotal = terminos.pagoTotal;
   if (terminos.rendimientos?.length) coreTerminosRaw.rendimientos = terminos.rendimientos;
   if (terminos.perfilInversionista) coreTerminosRaw.perfilInversionista = terminos.perfilInversionista;
   if (terminos.riesgoInversionista) coreTerminosRaw.riesgoInversionista = terminos.riesgoInversionista;
@@ -436,6 +458,13 @@ function formToDBPayload(form: SolicitudFormData, allSubtabs?: Record<string, an
             return (form as any)._calendarioAportaciones;
           return origSol.simulacion?.calendario_aportaciones || [];
         })(),
+        // Arrendamiento Puro: calendario de rentas fijas. Sin esto sólo vivía en
+        // sessionStorage y se perdía al recargar (y el Anexo de Rentas salía vacío).
+        calendario_arrendamiento: (() => {
+          const arr = allSubtabs?.simulacion_arrendamiento;
+          if (arr && typeof arr === 'object') return arr;
+          return origSol.simulacion?.calendario_arrendamiento || null;
+        })(),
       };
     })(),
     expediente_electronico: {
@@ -469,6 +498,12 @@ function formToDBPayload(form: SolicitudFormData, allSubtabs?: Record<string, an
       ubicacion: g.ubicacion || null, estatus: g.estatus || null,
       observaciones: g.nota || null, fase: g.fase || null,
       fase_id: g.faseId || null, area: g.area || null,
+      // Proveedor del bien — lo necesita la Fase 5 para emitir el CFDI de
+      // compra. Sin esto se perdía al guardar y la factura no se podía generar.
+      proveedor_id: g.proveedorId || g.proveedor_id || null,
+      proveedor_nombre: g.proveedorNombre || g.proveedor_nombre || null,
+      proveedor_rfc: g.proveedorRfc || g.proveedor_rfc || null,
+      garantia_id: g.garantiaId || g.id || null,
     })),
     comisiones: comisiones.map((c: any) => ({
       tipo_comision: c.tipoComision ?? null, descripcion: c.descripcion ?? null,
@@ -504,6 +539,13 @@ function formToDBPayload(form: SolicitudFormData, allSubtabs?: Record<string, an
       monto: c.monto ?? null, fecha_cargo: c.fechaCargo || null,
       estatus: c.estatus || null, notas: c.notas || null,
     })),
+    // Facturas de arrendamiento (Fases 4 y 5). Pertenecen a la solicitud: por
+    // eso la vista previa no persiste hasta que se guarda/envía a originación.
+    facturas: (() => {
+      const f = allSubtabs?.facturas;
+      if (Array.isArray(f)) return f;
+      return origSol.facturas || [];
+    })(),
   };
 
   // Deep merge Core solicitud on top of original — preserves ALL banca móvil fields not managed by Core
@@ -521,6 +563,15 @@ function formToDBPayload(form: SolicitudFormData, allSubtabs?: Record<string, an
   const noReferenc1 = form.cotizacionId && form.cotizacionId.length <= 30
     ? form.cotizacionId
     : null;
+
+  // Fase 6 — resumen de dispersión que se refleja en columnas físicas
+  const tesoreriaSub: Record<string, any> = (allSubtabs?.tesoreria || origSol.tesoreria || {}) as Record<string, any>;
+  const tesoreriaPayload = {
+    estatus_disp: tesoreriaSub.estatusDispersion || null,
+    estatus_cart: tesoreriaSub.estatusCartera || null,
+    monto_disp: tesoreriaSub.montoDispersado != null ? Number(tesoreriaSub.montoDispersado) : null,
+    fecha_disper: tesoreriaSub.fechaDispersion || null,
+  };
 
   // Leer monto_cubrir_garantia y porcentaje_aforo desde terminos (columnas top-level de J_CUENTAS_CORP_CLIENTES)
   const montoCubrirGarantia = terminos.montoCubrirGarantia != null ? Number(terminos.montoCubrirGarantia) : null;
@@ -543,6 +594,13 @@ function formToDBPayload(form: SolicitudFormData, allSubtabs?: Record<string, an
     fases: form.faseId || '1',
     monto_cubrir_garantia: montoCubrirGarantia,
     porcentaje_aforo: porcentajeAforo,
+    // ── Fase 6 — Dispersión (columnas físicas de J_CUENTAS_CORP_CLIENTES) ──
+    // Solo se envían cuando ya hay un valor; null en el payload sobrescribiría
+    // lo que Tesorería haya registrado desde su propia bandeja.
+    ...(tesoreriaPayload.estatus_disp ? { estatus_disp: tesoreriaPayload.estatus_disp } : {}),
+    ...(tesoreriaPayload.estatus_cart ? { estatus_cart: tesoreriaPayload.estatus_cart } : {}),
+    ...(tesoreriaPayload.monto_disp != null ? { monto_disp: tesoreriaPayload.monto_disp } : {}),
+    ...(tesoreriaPayload.fecha_disper ? { fecha_disper: tesoreriaPayload.fecha_disper } : {}),
     data: mergedData,
   };
 }
@@ -1392,6 +1450,267 @@ export async function actualizarEstatusSolicitudDB(
 // ══════════════════════════════════════════════════════════════════
 // HOOK PRINCIPAL
 // ═══════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════
+// FASE 6 — Tesorería: Fila de Pagos y dispersión
+// ═══════════════════════════════════════════════════════════════════
+
+/** Estatus de la solicitud dentro de la Fila de Pagos de Tesorería. */
+export type EstatusDispersion = 'Pendiente' | 'Autorizado' | 'Dispersado' | 'Rechazado';
+
+export interface DatosTesoreria {
+  estatusDispersion?: EstatusDispersion;
+  /** Estatus de cartera del contrato — 'Vigente' una vez dispersado. */
+  estatusCartera?: string;
+  montoDispersado?: number;
+  fechaDispersion?: string;
+  fechaAutorizacion?: string;
+  claveRastreo?: string;
+  proveedor?: string;
+  bancoProveedor?: string;
+  clabeProveedor?: string;
+  usuarioAutoriza?: string;
+  motivoRechazo?: string;
+  contratoActivado?: boolean;
+}
+
+/**
+ * Lee el estado de dispersión directo de BD.
+ *
+ * Se consulta en vivo (no desde _originalData) porque Tesorería dispersa desde
+ * su propio módulo: la copia que tiene abierta el formulario de la solicitud
+ * puede ser anterior a la transferencia.
+ */
+export async function fetchDispersionDB(
+  id: string,
+): Promise<{ ok: boolean; datos?: DatosTesoreria; error?: string }> {
+  if (!DB_AVAILABLE) return { ok: false, error: 'DB no disponible' };
+  if (!UUID_RE.test(id)) return { ok: false, error: 'ID inválido (no UUID)' };
+
+  try {
+    const { data: row, error } = await supabase
+      .from('J_CUENTAS_CORP_CLIENTES')
+      .select('estatus_disp, estatus_cart, monto_disp, fecha_disper, data')
+      .eq('id', id)
+      .single();
+    if (error) return { ok: false, error: error.message };
+
+    const detalle: Record<string, any> = (row?.data as any)?.solicitud?.tesoreria || {};
+    return {
+      ok: true,
+      datos: {
+        ...detalle,
+        estatusDispersion: (row?.estatus_disp || detalle.estatusDispersion || 'Pendiente') as EstatusDispersion,
+        estatusCartera: row?.estatus_cart || detalle.estatusCartera || undefined,
+        montoDispersado: row?.monto_disp != null ? Number(row.monto_disp) : detalle.montoDispersado,
+        fechaDispersion: row?.fecha_disper || detalle.fechaDispersion,
+      },
+    };
+  } catch (err: any) {
+    return { ok: false, error: err?.message || String(err) };
+  }
+}
+
+/**
+ * Actualiza el estado de dispersión de una solicitud (Fase 6).
+ *
+ * Escribe en las columnas físicas (estatus_disp, estatus_cart, monto_disp,
+ * fecha_disper) y en data.solicitud.tesoreria, que guarda el detalle operativo.
+ *
+ * Se apoya en el deep merge server-side del PUT; si el Edge Function no
+ * responde, cae a Supabase directo leyendo y re-mezclando data para no pisar
+ * lo que ya tenía la solicitud.
+ */
+export async function actualizarDispersionDB(
+  id: string,
+  patch: DatosTesoreria,
+): Promise<{ ok: boolean; error?: string }> {
+  if (!DB_AVAILABLE) return { ok: false, error: 'DB no disponible' };
+  if (!UUID_RE.test(id)) return { ok: false, error: 'ID inválido (no UUID)' };
+
+  const columnas: Record<string, any> = {};
+  if (patch.estatusDispersion) columnas.estatus_disp = patch.estatusDispersion;
+  if (patch.estatusCartera) columnas.estatus_cart = patch.estatusCartera;
+  if (patch.montoDispersado != null) columnas.monto_disp = patch.montoDispersado;
+  if (patch.fechaDispersion) columnas.fecha_disper = patch.fechaDispersion;
+
+  // ── Intento 1: Edge Function PUT (deep merge server-side) ──
+  try {
+    const res = await fetch(`${API_BASE}/solicitudes-credito/${id}`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${publicAnonKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...columnas, data: { solicitud: { tesoreria: patch } } }),
+    });
+    if (res.ok) {
+      console.log('[SolicDB] actualizarDispersion Edge OK —', patch.estatusDispersion || '(sin cambio de estatus)');
+      return { ok: true };
+    }
+    const json = await res.json().catch(() => ({}));
+    console.warn('[SolicDB] actualizarDispersion Edge FALLÓ:', json.error || `HTTP ${res.status}`);
+  } catch (err: any) {
+    console.warn('[SolicDB] actualizarDispersion Edge EXCEPCIÓN:', err?.message);
+  }
+
+  // ── Intento 2: Supabase directo (leer + merge + update) ──
+  try {
+    const { data: row, error: selErr } = await supabase
+      .from('J_CUENTAS_CORP_CLIENTES')
+      .select('data')
+      .eq('id', id)
+      .single();
+    if (selErr) return { ok: false, error: selErr.message };
+
+    const dataActual: Record<string, any> = (row?.data as Record<string, any>) || {};
+    const solActual: Record<string, any> = dataActual.solicitud || {};
+    const dataNueva = {
+      ...dataActual,
+      solicitud: { ...solActual, tesoreria: { ...(solActual.tesoreria || {}), ...patch } },
+    };
+
+    const { error: updErr } = await supabase
+      .from('J_CUENTAS_CORP_CLIENTES')
+      .update({ ...columnas, data: dataNueva })
+      .eq('id', id);
+    if (updErr) return { ok: false, error: updErr.message };
+
+    console.log('[SolicDB] actualizarDispersion Supabase directo OK');
+    return { ok: true };
+  } catch (err: any) {
+    return { ok: false, error: err?.message || String(err) };
+  }
+}
+
+/**
+ * Persiste el array `facturas` (Arrendamiento Puro, Fases 4-5) directamente a
+ * BD, sin esperar al botón "Guardar" manual de la solicitud.
+ *
+ * Sin esto, generar la factura solo la deja en sessionStorage local — el
+ * "Detail" de Cobranza (fallback cuando J_FACTURAS_DETALLE viene vacío) lee
+ * los conceptos desde data.solicitud.facturas en BD y no los encuentra hasta
+ * que alguien guarda la solicitud completa por separado.
+ */
+export async function actualizarFacturasDB(
+  id: string,
+  facturas: any[],
+): Promise<{ ok: boolean; error?: string }> {
+  if (!DB_AVAILABLE) return { ok: false, error: 'DB no disponible' };
+  if (!UUID_RE.test(id)) return { ok: false, error: 'ID inválido (no UUID)' };
+
+  // ── Intento 1: Edge Function PUT (deep merge server-side) ──
+  try {
+    const res = await fetch(`${API_BASE}/solicitudes-credito/${id}`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${publicAnonKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ data: { solicitud: { facturas } } }),
+    });
+    if (res.ok) {
+      console.log('[SolicDB] actualizarFacturas Edge OK —', facturas.length, 'factura(s)');
+      return { ok: true };
+    }
+    const json = await res.json().catch(() => ({}));
+    console.warn('[SolicDB] actualizarFacturas Edge FALLÓ:', json.error || `HTTP ${res.status}`);
+  } catch (err: any) {
+    console.warn('[SolicDB] actualizarFacturas Edge EXCEPCIÓN:', err?.message);
+  }
+
+  // ── Intento 2: Supabase directo (leer + merge + update) ──
+  try {
+    const { data: row, error: selErr } = await supabase
+      .from('J_CUENTAS_CORP_CLIENTES')
+      .select('data')
+      .eq('id', id)
+      .single();
+    if (selErr) return { ok: false, error: selErr.message };
+
+    const dataActual: Record<string, any> = (row?.data as Record<string, any>) || {};
+    const solActual: Record<string, any> = dataActual.solicitud || {};
+    const dataNueva = {
+      ...dataActual,
+      solicitud: { ...solActual, facturas },
+    };
+
+    const { error: updErr } = await supabase
+      .from('J_CUENTAS_CORP_CLIENTES')
+      .update({ data: dataNueva })
+      .eq('id', id);
+    if (updErr) return { ok: false, error: updErr.message };
+
+    console.log('[SolicDB] actualizarFacturas Supabase directo OK');
+    return { ok: true };
+  } catch (err: any) {
+    return { ok: false, error: err?.message || String(err) };
+  }
+}
+
+/**
+ * Persiste el calendario de rentas de Arrendamiento Puro.
+ *
+ * Se usa al generar un Aviso de Vencimiento desde Cartera: las rentas incluidas
+ * quedan marcadas como "Facturada" con el id de la factura en Cobranza, que es
+ * lo que después permite saber si ya se pagaron.
+ */
+export async function actualizarCalendarioArrendamientoDB(
+  id: string,
+  calendario: any[],
+): Promise<{ ok: boolean; error?: string }> {
+  if (!DB_AVAILABLE) return { ok: false, error: 'DB no disponible' };
+  if (!UUID_RE.test(id)) return { ok: false, error: 'ID inválido (no UUID)' };
+
+  // ── Intento 1: Edge Function PUT (deep merge server-side) ──
+  try {
+    const res = await fetch(`${API_BASE}/solicitudes-credito/${id}`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${publicAnonKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        data: { solicitud: { simulacion: { calendario_arrendamiento: { calendario } } } },
+      }),
+    });
+    if (res.ok) {
+      console.log('[SolicDB] actualizarCalendarioArrendamiento Edge OK —', calendario.length, 'renta(s)');
+      return { ok: true };
+    }
+    const json = await res.json().catch(() => ({}));
+    console.warn('[SolicDB] actualizarCalendarioArrendamiento Edge FALLÓ:', json.error || `HTTP ${res.status}`);
+  } catch (err: any) {
+    console.warn('[SolicDB] actualizarCalendarioArrendamiento Edge EXCEPCIÓN:', err?.message);
+  }
+
+  // ── Intento 2: Supabase directo (leer + merge + update) ──
+  try {
+    const { data: row, error: selErr } = await supabase
+      .from('J_CUENTAS_CORP_CLIENTES')
+      .select('data')
+      .eq('id', id)
+      .single();
+    if (selErr) return { ok: false, error: selErr.message };
+
+    const dataActual: Record<string, any> = (row?.data as Record<string, any>) || {};
+    const solActual: Record<string, any> = dataActual.solicitud || {};
+    const simActual: Record<string, any> = solActual.simulacion || {};
+    const calActual: Record<string, any> = simActual.calendario_arrendamiento || {};
+    const dataNueva = {
+      ...dataActual,
+      solicitud: {
+        ...solActual,
+        simulacion: {
+          ...simActual,
+          calendario_arrendamiento: { ...calActual, calendario },
+        },
+      },
+    };
+
+    const { error: updErr } = await supabase
+      .from('J_CUENTAS_CORP_CLIENTES')
+      .update({ data: dataNueva })
+      .eq('id', id);
+    if (updErr) return { ok: false, error: updErr.message };
+
+    console.log('[SolicDB] actualizarCalendarioArrendamiento Supabase directo OK');
+    return { ok: true };
+  } catch (err: any) {
+    return { ok: false, error: err?.message || String(err) };
+  }
+}
+
 export function useSolicitudesDB(active: boolean) {
   const [solicitudes, setSolicitudes] = useState<SolicitudListItem[]>([]);
   const [loading, setLoading] = useState(false);

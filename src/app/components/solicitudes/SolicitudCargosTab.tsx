@@ -5,6 +5,7 @@ import {
   CargoSolicitud, TerminosCondiciones, EMPTY_TERMINOS, SimulacionRow,
   saveToSession, loadFromSession, loadFromSavedStore, generateId, MOCK_CARGOS, CAT_TIPO_CARGO, CAT_ESTATUS_CARGO, formatCurrency,
   calcularCargosArrendamiento,
+  esArrendamiento,
 } from './solicitudCreditoStore';
 import type { SimulacionArrendamiento } from '../cotizaciones/cotizacionArrendamientoTypes';
 
@@ -24,10 +25,12 @@ export function SolicitudCargosTab({ mode, solicitudId, lineaProducto, tipoProdu
     const t = (tipoProducto || lineaProducto || '').toLowerCase();
     return t.includes('arrendamiento');
   }, [lineaProducto, tipoProducto]);
-  const isArrendamientoPuro = useMemo(() => {
-    const t = (tipoProducto || lineaProducto || '').toLowerCase();
-    return t.includes('arrendamiento') && t.includes('puro');
-  }, [lineaProducto, tipoProducto]);
+  // Puro y Financiero comparten el desembolso inicial (enganche + comisión de
+  // apertura + rentas anticipadas), así que ambos entran aquí.
+  const isArrendamientoPuro = useMemo(
+    () => esArrendamiento(lineaProducto, tipoProducto),
+    [lineaProducto, tipoProducto]
+  );
 
   // ── Desglose de desembolso inicial (vista previa — no persiste hasta enviar a originación) ──
   const cargosArrendamiento = useMemo(() => {

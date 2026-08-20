@@ -137,12 +137,12 @@ export const GarantiaTab = forwardRef<{ getData: () => Garantia[] }, GarantiaTab
           ...formData
         };
         setData([...data, newItem]);
-        toast.success('Garantía creada', {
+        toast.success('Bien creado', {
           description: 'La garantía ha sido agregada correctamente',
         });
       } else if (formMode === 'edit') {
         setData(data.map(d => d.id === selectedItem?.id ? { ...d, ...formData } : d));
-        toast.success('Garantía actualizada', {
+        toast.success('Bien actualizado', {
           description: 'Los cambios han sido guardados correctamente',
         });
       }
@@ -179,7 +179,7 @@ export const GarantiaTab = forwardRef<{ getData: () => Garantia[] }, GarantiaTab
         <div className="bg-white">
           {/* Header con título */}
           <div className="mb-3">
-            <span className="text-sm font-medium text-gray-800">Garantías</span>
+            <span className="text-sm font-medium text-gray-800">Bienes</span>
           </div>
 
           {/* Barra de botones de acciones */}
@@ -405,9 +405,9 @@ function FormModal({ mode, item, onSave, onClose }: FormModalProps) {
   };
 
   const getTitle = () => {
-    if (mode === 'create') return 'Nueva Garantía';
-    if (mode === 'edit') return 'Editar Garantía';
-    return 'Ver Garantía';
+    if (mode === 'create') return 'Nuevo Bien';
+    if (mode === 'edit') return 'Editar Bien';
+    return 'Ver Bien';
   };
 
   const inputClassName = (fieldName: string) => {
@@ -447,7 +447,7 @@ function FormModal({ mode, item, onSave, onClose }: FormModalProps) {
           <form onSubmit={handleSubmit}>
             <div className="mb-4">
               <div className="bg-primary-tint-theme px-3 py-1.5 mb-3 border-l-4 border-primary-theme">
-                <span className="text-xs font-medium text-gray-800">INFORMACIÓN DE GARANTÍA</span>
+                <span className="text-xs font-medium text-gray-800">INFORMACIÓN DEL BIEN</span>
               </div>
 
               <div className="grid grid-cols-2 gap-x-6 gap-y-3">
@@ -537,7 +537,7 @@ function FormModal({ mode, item, onSave, onClose }: FormModalProps) {
             <div className="flex items-center gap-2 pt-4 border-t border-gray-300">
               {!isViewMode && (
                 <button type="submit" className="px-5 py-1.5 btn-accent-theme rounded text-xs hover:bg-accent-hover-theme font-medium transition-colors shadow-sm">
-                  {mode === 'edit' ? 'Guardar Cambios' : 'Crear Garantía'}
+                  {mode === 'edit' ? 'Guardar Cambios' : 'Crear Bien'}
                 </button>
               )}
               <button type="button" onClick={onClose} className="px-4 py-1.5 rounded text-xs font-medium text-gray-600 border border-gray-300 hover:bg-gray-100 transition-colors">

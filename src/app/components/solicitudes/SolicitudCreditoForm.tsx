@@ -13,13 +13,17 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { toast } from 'sonner';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
+import { supabase } from '../../lib/supabaseClient';
 import {
   SolicitudFormData, EMPTY_FORM, MOCK_FORMS, SOLICITUDES_LISTA,
   saveToSession, loadFromSession, loadFromSavedStore, saveToSavedStore, commitAndClearSession, clearSession,
   formatCurrency, parseCurrency, generateNoSol, consumeNoSol, getFechaSolicitudNow,
   CAT_LINEA_PRODUCTO, CAT_TIPO_PRODUCTO, CAT_TIPO_PERSONA, CAT_PRODUCTOS,
   CAT_FASES, CAT_SUCURSAL, CAT_ESTATUS_SOLICITUD,
-  type DocumentoCargado, type RequisitoProducto,
+  calcularCargosArrendamiento, generarFacturaDesembolsoInicial,
+  generarXMLProveedor, leerXMLProveedor,
+  type DocumentoCargado, type RequisitoProducto, type FacturaArrendamiento,
+  esArrendamiento,
 } from './solicitudCreditoStore';
 import { TerminosCondicionesTab } from './TerminosCondicionesTab';
 import { SimulacionTab, calcularNumeroPeriodos } from './SimulacionTab';
@@ -33,26 +37,32 @@ import { FasesSolicitudTab } from './tabs/FasesSolicitudTab';
 import { SeleccionarClienteModal } from './SeleccionarClienteModal';
 import { PartesRelacionadasTab } from './tabs/PartesRelacionadasTab';
 import { useProductosCatalogoDB, type ProductoCatalogo } from '../../hooks/useProductosCatalogoDB';
-import { fetchNextNoSol, updateFaseSolicitudDB, avanzarFaseSolicitudDB, regresarFaseSolicitudDB, formalizarContratoSolicitudDB, activarCuentaDB, actualizarEstatusSolicitudDB, crearCuentaDesdeSolicitudDB } from '../../hooks/useSolicitudesDB';
+import { fetchNextNoSol, updateFaseSolicitudDB, avanzarFaseSolicitudDB, regresarFaseSolicitudDB, formalizarContratoSolicitudDB, activarCuentaDB, actualizarEstatusSolicitudDB, crearCuentaDesdeSolicitudDB, actualizarDispersionDB, actualizarFacturasDB } from '../../hooks/useSolicitudesDB';
 import {
   validarDocumentosFase, validarDocumentosPorFase, validarNotaReciente, validarFormalizarContrato,
   validarContratosYPagares, validarFase4Envio, validarFase6, leerRequisitosProducto,
   getRequisitosFromRawData, validarResultadoActivacion,
 } from '../../hooks/useOriginacionValidaciones';
-import { useSolicitudesActivacionDB } from '../../hooks/useSolicitudesActivacionDB';
+import { useSolicitudesActivacionDB, crearFacturaProveedorActivacion, fetchEstatusSolicitudActivacion } from '../../hooks/useSolicitudesActivacionDB';
 import type { SolicitudActivacionListItem } from '../solicitudes-activacion/solicitudActivacionStore';
 import { calcularFechaPrimerPago } from '../solicitudes-activacion/solicitudActivacionStore';
 import {
   generarContratoPDF, generarPagePDF, generarSolicitudPDF,
   autoCrearDocumentosFase2, CLAVE_SOLICITUD_BASE,
+  autoCrearReporteBuro,
   htmlToPdfBlobUrl, sustituirPlaceholders, decodificarArchivoData,
   type DatosSolicitud,
 } from '../../hooks/generarDocumentosFase4';
 import { SolicitudActivacionModal } from '../originacion/SolicitudActivacionModal';
 import { FaseActionsComponent } from '../shared/FaseActionsComponent';
+import { crearFacturaArrendamientoCobranza, fetchEstatusFacturaCobranza } from '../../hooks/useCarteraDB';
+
+/** UUID de solicitud requerido para dar de alta facturas en Cobranza. */
+const UUID_RE_FACTURA = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 import { addOriginacionItem, CAT_AREA } from '../originacion/originacionStore';
 import { FlujoTrabajo } from '../originacion/FlujoTrabajo';
 import { SolicitudCargosTab } from './SolicitudCargosTab';
+import { FacturasArrendamientoTab } from './FacturasArrendamientoTab';
 import { ComitesTab } from '../shared/ComitesTab';
 
 // ── Helper: inferir AreaActual según el nombre de la fase ──
@@ -367,17 +377,31 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
     if (filaMatrizSeleccionada) return;
     const plazoNum = parseInt(formData.plazo || '0', 10);
     if (!plazoNum || matrizTasaFijaProducto.length === 0) return;
-    const fila = matrizTasaFijaProducto.find(f =>
-      plazoNum >= (f.plazoMinimo || 0) && plazoNum <= (f.plazoMaximo || Infinity)
-    );
+    // Los rangos de plazo de distintas filas se traslapan (p.ej. 12–36 y 24–60),
+    // así que buscar sólo por plazo devolvía SIEMPRE la primera coincidencia y
+    // aplicaba su tasa default aunque el monto no cupiera en esa fila.
+    // Se filtra también por monto; si ninguna fila cuadra con ambos, se cae al
+    // criterio anterior (sólo plazo) para no dejar al usuario sin matriz.
+    const montoNum = parseFloat(parseCurrency(formData.montoSolicitado || '0')) || 0;
+    const enRango = (v: number, min?: number, max?: number) =>
+      v <= 0 || ((!min || v >= min) && (!max || v <= max));
+    const porPlazo = (f: FilaMatriz) =>
+      plazoNum >= (f.plazoMinimo || 0) && plazoNum <= (f.plazoMaximo || Infinity);
+
+    const fila =
+      matrizTasaFijaProducto.find(f => porPlazo(f) && enRango(montoNum, f.montoMinimo, f.montoMaximo))
+      ?? matrizTasaFijaProducto.find(porPlazo);
     if (!fila) return;
     const tasaAnual = parseFloat(String(fila.tasaMinima ?? fila.tasaAplicable ?? '0')) || 0;
     const tasaDefault = parseFloat(String(fila.tasaDefault ?? '')) || tasaAnual;
-    if (tasaDefault > 0) setTasaSeleccionadaHeader(tasaDefault.toFixed(4));
+    // Sólo sembrar el default cuando NO hay tasa capturada. Antes se pisaba la
+    // tasa guardada en cada re-montaje del formulario, porque la fila de matriz
+    // no se persiste y este efecto vuelve a correr desde cero al recargar.
+    if (tasaDefault > 0 && !tasaSeleccionadaHeader) setTasaSeleccionadaHeader(tasaDefault.toFixed(4));
     if (fila.periodo) setFrecuenciaSeleccionadaHeader(fila.periodo);
     setFilaMatrizSeleccionada(fila);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [formData.plazo, matrizTasaFijaProducto, filaMatrizSeleccionada]);
+  }, [formData.plazo, formData.montoSolicitado, matrizTasaFijaProducto, filaMatrizSeleccionada]);
 
   // Validación en tiempo real: Monto y Plazo del encabezado deben permanecer
   // dentro del rango de la fila de Matriz vigente.
@@ -656,9 +680,26 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
         }
       }
 
+      // ── Detección Arrendamiento Puro + nombre de fase normalizado ──
+      // Se calcula aquí (antes del paso 3a) porque la Fase 4 de Arrendamiento
+      // Puro necesita saltar la validación IA genérica: esa IA sólo ve
+      // documentos del Expediente Electrónico y nunca tuvo visibilidad de las
+      // facturas de Cobranza, así que siempre reporta "falta la factura"
+      // aunque ya esté generada y pagada (paso 3b-bis, más abajo, es la
+      // validación real para esa fase).
+      const faseNombreNorm = (faseActualReal?.fase || formData.descripcionFase || '')
+        .toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+      const tpNorm = (formData.tipoProducto || '').toLowerCase();
+      // Puro y Financiero: misma fase de Recaudación, misma omisión de validación.
+      const esArrPuro = esArrendamiento(formData.lineaProducto, formData.tipoProducto);
+      const esFaseRecaudacionArrPuro = esArrPuro && faseNombreNorm.includes('recaudacion') && faseNombreNorm.includes('compra');
+      console.log('[DIAG Fase4] tipoProducto:', JSON.stringify(formData.tipoProducto), '| tpNorm:', JSON.stringify(tpNorm), '| esArrPuro:', esArrPuro, '| faseActualReal?.fase:', JSON.stringify(faseActualReal?.fase), '| descripcionFase:', JSON.stringify(formData.descripcionFase), '| faseNombreNorm:', JSON.stringify(faseNombreNorm), '| esFaseRecaudacionArrPuro:', esFaseRecaudacionArrPuro, '| seqActual:', seqActual);
+
       // ── 3a. Validación IA con el prompt de la fase ──
       // Usa faseActualReal.promptIA; si no resuelve (faseActualReal nulo), usa formData.promptIAFase.
-      const fasePromptIA = faseActualReal?.promptIA || (formData as any).promptIAFase || '';
+      // Se omite por completo en la fase de Recaudación de Arrendamiento Puro:
+      // esa fase se valida en el paso 3b-bis contra el registro real de Cobranza.
+      const fasePromptIA = esFaseRecaudacionArrPuro ? '' : (faseActualReal?.promptIA || (formData as any).promptIAFase || '');
 
       // Si todos los documentos requeridos de esta fase ya están validados por IA,
       // la validación de fase es redundante — saltar directo al avance.
@@ -917,8 +958,57 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
         }
       }
 
+      // ── 3b-bis. Arrendamiento Puro: la fase de Recaudación exige la factura
+      // del pago inicial REGISTRADA EN COBRANZA, no un PDF del expediente.
+      // esArrPuro/faseNombreNorm/esFaseRecaudacionArrPuro ya se calcularon
+      // arriba (antes del paso 3a) para poder saltar la IA en esta fase.
+      if (esFaseRecaudacionArrPuro) {
+        const facturasFase4: FacturaArrendamiento[] =
+          loadFromSession<FacturaArrendamiento[]>(storageId, 'facturas') ||
+          loadFromSavedStore<FacturaArrendamiento[]>(storageId, 'facturas') || [];
+        const facturaInicial = facturasFase4.find(f => f.tipo === 'DESEMBOLSO_INICIAL');
+
+        if (!facturaInicial || !facturaInicial.facturaIdCobranza) {
+          toast.error('Falta la Factura de Pago Inicial', {
+            description: 'Pulse "Generar Factura de Pago Inicial" en esta fase: debe existir el registro en Cobranza — Avisos de Vencimiento — Créditos antes de avanzar.',
+            duration: 10000,
+          });
+          return;
+        }
+
+        const existeEnCobranza = await fetchEstatusFacturaCobranza(facturaInicial.facturaIdCobranza);
+        if (!existeEnCobranza.ok) {
+          toast.error('La Factura de Pago Inicial no está en Cobranza', {
+            description: existeEnCobranza.error || 'Vuelva a generarla.',
+            duration: 10000,
+          });
+          return;
+        }
+
+        // Cobranza marca 'Pagado'; la factura local usa 'Pagada' — sincronizar
+        // la copia local con lo que diga Cobranza (misma convención que Fase 6).
+        const estatusRealInicial = existeEnCobranza.estatus === 'Pagado' ? 'Pagada' : existeEnCobranza.estatus;
+        if (estatusRealInicial !== facturaInicial.estatus) {
+          const sincronizadasFase4 = facturasFase4.map(f =>
+            f.id === facturaInicial.id ? { ...f, estatus: estatusRealInicial as any } : f
+          );
+          saveToSession(storageId, 'facturas', sincronizadasFase4);
+          saveToSavedStore(storageId, 'facturas', sincronizadasFase4);
+        }
+
+        if (estatusRealInicial !== 'Pagada') {
+          toast.error('La Factura de Pago Inicial no está pagada', {
+            description: `${existeEnCobranza.noDocto || facturaInicial.noFactura} está en estatus "${estatusRealInicial}". Aplíquele el pago en Cobranza → Avisos de Vencimiento — Créditos y vuelva a intentar.`,
+            duration: 10000,
+          });
+          return;
+        }
+      }
+
       // ── 3c. Fase 5: validar contratos y pagarés (Sección D) ──
-      if (seqActual === 5) {
+      // Sólo aplica al flujo de crédito: en arrendamiento la fase 5 emite el
+      // CFDI del proveedor y no exige pagarés.
+      if (seqActual === 5 && !esArrPuro) {
         const resultContratos = validarContratosYPagares(documentos);
         if (!resultContratos.valid) {
           toast.error('Contratos y pagarés pendientes', {
@@ -930,17 +1020,159 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
 
       // ── 4. Buscar faseSiguiente por numero_consecutivo ──
       const sigFase = fasesDelProducto.find(f => f.seq === seqActual + 1);
+      console.log('[handleEnviarFase] DEBUG llegó al punto 4 — seqActual:', seqActual, '| sigFase:', sigFase);
       if (!sigFase) {
         // Para "Activación Cuenta Financiera" el prompt ya corrió arriba; solo notificar completado.
         if (esActivacionCuentaFinanciera) {
           toast.success('Proceso completado', { description: faseNombre });
-        } else {
-          toast.info('Esta es la última fase del flujo', { description: faseActualReal?.fase || formData.descripcionFase });
+          return;
         }
+
+        // ── Última fase: cerrar el proceso ────────────────────────────────
+        // Antes esta rama solo informaba y hacía return, por lo que el flujo
+        // no se podía terminar. El cierre exige que Tesorería ya haya
+        // dispersado (Fase 6 — Liberación y Dispersión).
+        const UUID_R_CIERRE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        const dbIdCierre = UUID_R_CIERRE.test(String(formData.id || ''))
+          ? String(formData.id)
+          : UUID_R_CIERRE.test(String(storageId)) ? String(storageId) : '';
+
+        if (!dbIdCierre) {
+          toast.error('No se puede cerrar el proceso', {
+            description: 'La solicitud aún no está guardada en base de datos.',
+          });
+          return;
+        }
+
+        // La Fase 6 (Liberación y Dispersión) no valida documentos: valida que
+        // la factura del proveedor (cuenta por pagar de la Fase 5) ya esté
+        // marcada como Pagada. Con eso se cierra el flujo y pasa a cartera.
+        const facturasCierre: FacturaArrendamiento[] =
+          loadFromSession<FacturaArrendamiento[]>(storageId, 'facturas') ||
+          loadFromSavedStore<FacturaArrendamiento[]>(storageId, 'facturas') || [];
+
+        const facturaProveedor = facturasCierre.find(f => f.tipo === 'COMPRA_PROVEEDOR');
+        if (!facturaProveedor) {
+          toast.error('No se puede cerrar el proceso', {
+            description: 'Falta la factura del proveedor. Genérela en la fase "Recepción del Activo y Cierre".',
+            duration: 9000,
+          });
+          return;
+        }
+        // El estatus se lee del registro REAL de Solicitud de Activación: el
+        // pago se aplica ahí (botón "Activar" → estatus 'Pagado') y ese cambio
+        // no vuelve solo a la solicitud. La copia local se sincroniza con lo
+        // que diga Solicitud de Activación.
+        let estatusReal = facturaProveedor.estatus;
+        if (facturaProveedor.facturaIdCobranza) {
+          const enActivacion = await fetchEstatusSolicitudActivacion(facturaProveedor.facturaIdCobranza);
+          if (!enActivacion.ok) {
+            toast.error('No se pudo verificar la cuenta por pagar en Solicitud de Activación', {
+              description: enActivacion.error || 'Intente de nuevo.',
+              duration: 9000,
+            });
+            return;
+          }
+          // Solicitud de Activación marca 'Pagado'; la factura local usa 'Pagada'.
+          estatusReal = enActivacion.estatus === 'Pagado' ? 'Pagada' : (enActivacion.estatus as any);
+          const sincronizadas = facturasCierre.map(f =>
+            f.id === facturaProveedor.id ? { ...f, estatus: estatusReal } : f
+          );
+          saveToSession(storageId, 'facturas', sincronizadas);
+          saveToSavedStore(storageId, 'facturas', sincronizadas);
+        }
+
+        if (estatusReal !== 'Pagada') {
+          toast.error('La cuenta por pagar al proveedor no está pagada', {
+            description: `${facturaProveedor.contraparte} está en estatus "${estatusReal}". Márquela como Pagada en Solicitud de Activación y vuelva a intentar.`,
+            duration: 10000,
+          });
+          return;
+        }
+
+        // Pasa a cartera: el contrato queda Vigente y aparece en Cartera de Arrendamiento.
+        const act = await actualizarDispersionDB(dbIdCierre, {
+          estatusCartera: 'Vigente',
+          montoDispersado: facturaProveedor.total,
+          fechaDispersion: new Date().toISOString(),
+          contratoActivado: true,
+        });
+        if (!act.ok) {
+          toast.error('No se pudo pasar el contrato a cartera', {
+            description: act.error || 'El contrato no quedó en estatus Vigente.',
+            duration: 9000,
+          });
+          return;
+        }
+
+        const cierre = await actualizarEstatusSolicitudDB(dbIdCierre, 'Autorizada');
+        if (!cierre.ok) {
+          toast.error('No se pudo cerrar la solicitud', {
+            description: cierre.error || 'El estatus no se actualizó en base de datos.',
+            duration: 9000,
+          });
+          return;
+        }
+
+        setFormData(prev => ({ ...prev, estatusSolicitud: 'Autorizada' }));
+        toast.success('Proceso completado — contrato en cartera', {
+          description: `${formData.noSol}: factura del proveedor pagada. El contrato pasó a Cartera de Arrendamiento con estatus Vigente.`,
+          duration: 9000,
+        });
         return;
       }
 
       const nuevaAreaActual = sigFase.area || inferirAreaFase(sigFase.fase);
+
+      // ── Generación automática de documentos al ENTRAR a una fase ──
+      // Fase 2 (Análisis y Dictaminación): Reporte de Buró simulado, adjuntado
+      // automáticamente al Expediente Electrónico. No bloquea el avance de fase
+      // si falla — solo se registra el error en consola.
+      if (String(sigFase.faseId) === '2') {
+        try {
+          const terminosBuro: any = loadFromSession<any>(storageId, 'terminos') || loadFromSavedStore<any>(storageId, 'terminos') || {};
+          const clienteBuro = [formData.nombrePersona, formData.apellidoPaternoPersona, formData.apellidoMaternoPersona]
+            .filter(Boolean).join(' ').trim() || 'Cliente';
+          const clienteExtraBuro = await obtenerDatosCliente();
+          const resultBuro = await autoCrearReporteBuro({
+            storageId,
+            datos: {
+              noSol: formData.noSol,
+              cliente: clienteBuro,
+              lineaProducto: formData.lineaProducto,
+              tipoProducto: formData.tipoProducto,
+              productoNombre: productoSeleccionado?.nombreProducto || formData.nombreProducto || formData.tipoProducto || '',
+              terminos: terminosBuro,
+              ...clienteExtraBuro,
+              sucursal: formData.sucursal || '',
+            },
+            supabase,
+            projectId,
+          });
+          if (resultBuro.exito && resultBuro.documentosCreados.length > 0) {
+            // `exito` sólo indica que el PDF se generó. Si no se persistió en BD
+            // el documento vive únicamente en sessionStorage y desaparece al
+            // recargar — avisar en vez de reportar un éxito que no ocurrió.
+            if (resultBuro.registradosEnExpediente) {
+              toast.success('Reporte de Buró generado', {
+                description: `Adjuntado automáticamente al Expediente Electrónico${resultBuro.subidosASupabase ? '' : ' (guardado local, sin conexión a Storage)'}.`,
+                duration: 6000,
+              });
+            } else {
+              toast.warning('Reporte de Buró generado, pero NO se guardó en base de datos', {
+                description: `${resultBuro.error || 'Error desconocido al persistir.'} El documento se perderá al recargar; genérelo de nuevo desde el Expediente Electrónico.`,
+                duration: 12000,
+              });
+            }
+          } else if (resultBuro.exito) {
+            toast.info('Reporte de Buró ya existía', { description: 'No se generó uno nuevo (ya estaba en el Expediente).', duration: 5000 });
+          } else {
+            toast.warning('No se pudo generar el Reporte de Buró', { description: resultBuro.error || 'Error desconocido', duration: 8000 });
+          }
+        } catch (buroErr: any) {
+          toast.error('Error al generar el Reporte de Buró', { description: buroErr?.message || String(buroErr), duration: 8000 });
+        }
+      }
 
       // ── 5. Actualizar estado local ──
       setFormData(prev => ({
@@ -967,7 +1199,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
         // Guardar el estado completo de la solicitud para no perder datos al cambiar de fase
         try {
           const subtabsAutoSave: Record<string, any> = {};
-          const subtabKeys = ['terminos', 'simulacion', 'simulacion_cal', 'simulacion_inv', 'documentos', 'garantias', 'comisiones', 'autorizaciones', 'notas', 'partesRelacionadas', '_originalData'];
+          const subtabKeys = ['terminos', 'simulacion', 'simulacion_cal', 'simulacion_inv', 'simulacion_arrendamiento', 'documentos', 'garantias', 'comisiones', 'autorizaciones', 'notas', 'partesRelacionadas', 'facturas', '_originalData'];
           for (const key of subtabKeys) {
             const data = loadFromSession(storageId, key) ?? loadFromSavedStore(storageId, key);
             if (data) subtabsAutoSave[key] = data;
@@ -980,7 +1212,12 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
             estatusSolicitud: formData.estatusSolicitud === 'Pendiente' ? 'En proceso' : formData.estatusSolicitud,
           };
           await onSave?.({ ...formDataConFase, _allSubtabs: subtabsAutoSave });
-        } catch (autoSaveErr) {
+        } catch (autoSaveErr: any) {
+          console.error('[handleEnviarFase] Auto-guardado falló al avanzar de fase — los datos de esta fase (incluyendo documentos generados) NO se persistieron en BD:', autoSaveErr);
+          toast.error('No se guardaron los cambios de esta fase en la base de datos', {
+            description: autoSaveErr?.message || 'El avance de fase se ve localmente, pero se perderá al recargar. Intente guardar manualmente.',
+            duration: 10000,
+          });
         }
       } else {
         toast.success('Fase avanzada', { description: `${faseActualReal?.fase || formData.descripcionFase} → ${sigFase.fase}. Guarda para persistir.` });
@@ -989,6 +1226,335 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
       setEnviandoFase(false);
     }
   }, [isRO, modo, enviandoFase, formData, fasesDelProducto, storageId, productoSeleccionado]);
+
+  // ══════════════════════════════════════════════════════════════════
+  // FACTURAS DE ARRENDAMIENTO PURO (Fases 4 y 5)
+  //
+  // Las facturas viven en el subtab 'facturas' de la solicitud. No se
+  // persisten aquí: se guardan con el resto de la solicitud al enviar a
+  // originación, que es justo lo que pide la regla "no persiste hasta
+  // enviar a originación".
+  // ══════════════════════════════════════════════════════════════════
+
+  // Puro y Financiero: mismo subtab Facturas y mismos botones de factura por
+  // fase (pago inicial en Fase 4, CFDI del proveedor en Fase 5).
+  const esArrendamientoPuro = useMemo(
+    () => esArrendamiento(formData.lineaProducto, formData.tipoProducto),
+    [formData.lineaProducto, formData.tipoProducto]
+  );
+
+  const leerFacturas = useCallback((): FacturaArrendamiento[] => {
+    return loadFromSession<FacturaArrendamiento[]>(storageId, 'facturas')
+      || loadFromSavedStore<FacturaArrendamiento[]>(storageId, 'facturas')
+      || [];
+  }, [storageId]);
+
+  const [facturasVersion, setFacturasVersion] = useState(0);
+  const facturasActuales = useMemo(() => leerFacturas(), [leerFacturas, facturasVersion]);
+  // Una factura sólo cuenta como generada si llegó a Cobranza. Si existe la
+  // copia local pero sin facturaIdCobranza (se creó antes de conectar Cobranza,
+  // o el alta falló), el botón debe seguir disponible para reintentar — si no,
+  // queda oculto para siempre y el registro nunca se crea.
+  const facturaInicialGenerada = facturasActuales.some(
+    f => f.tipo === 'DESEMBOLSO_INICIAL' && !!f.facturaIdCobranza
+  );
+  const facturaProveedorGenerada = facturasActuales.some(
+    f => f.tipo === 'COMPRA_PROVEEDOR' && !!f.facturaIdCobranza
+  );
+
+  const guardarFacturas = useCallback((facturas: FacturaArrendamiento[]) => {
+    saveToSession(storageId, 'facturas', facturas);
+    saveToSavedStore(storageId, 'facturas', facturas);
+    setFacturasVersion(v => v + 1);
+
+    // Persistir a BD de inmediato — sin esto, el Detail de Cobranza (fallback
+    // cuando J_FACTURAS_DETALLE viene vacío) no encuentra los conceptos hasta
+    // que alguien guarda la solicitud completa por separado.
+    const dbIdFacturas = UUID_RE_FACTURA.test(String(formData.id || ''))
+      ? String(formData.id)
+      : UUID_RE_FACTURA.test(String(storageId)) ? String(storageId) : '';
+    if (dbIdFacturas) {
+      actualizarFacturasDB(dbIdFacturas, facturas).then(r => {
+        if (!r.ok) console.warn('[guardarFacturas] No se pudo persistir a BD:', r.error);
+      });
+    }
+  }, [storageId, formData.id]);
+
+  /** Fase "Recaudación Inicial y Compra" — Factura del Pago Inicial. */
+  const handleGenerarFacturaInicial = useCallback(async () => {
+    const terminos: any = loadFromSession<any>(storageId, 'terminos')
+      || loadFromSavedStore<any>(storageId, 'terminos') || {};
+
+    const montoAutorizado = parseFloat(String(
+      terminos.montoAutorizado || formData.montoAutorizado || formData.montoSolicitado || 0
+    ).replace(/[^0-9.-]/g, '')) || 0;
+    const montoEnganche = parseFloat(String(terminos.montoEnganche || (formData as any).montoEnganche || 0)
+      .replace(/[^0-9.-]/g, '')) || 0;
+
+    // Las rentas anticipadas salen del calendario simulado: así la factura y el
+    // subtab Cargos usan exactamente los mismos importes.
+    const simArr: any = loadFromSession<any>(storageId, 'simulacion_arrendamiento')
+      || loadFromSavedStore<any>(storageId, 'simulacion_arrendamiento');
+    const anticipadas = (simArr?.rentasAnticipadasDescontadas || []).map((r: any) => ({
+      rentaSinIva: Number(r.rentaSinIva) || 0,
+      seguro: Number(r.seguro) || 0,
+    }));
+
+    const conceptosCargos = calcularCargosArrendamiento({
+      montoSolicitado: parseFloat(String(formData.montoSolicitado || 0).replace(/[^0-9.-]/g, '')) || 0,
+      montoAutorizado,
+      porcentajeEnganche: parseFloat(String(terminos.porcentajeEnganche || formData.porcentajeEnganche || 0)) || 0,
+      porcentajeComisionApertura: parseFloat(String(terminos.comisionApertura || 0)) || 0,
+      montoEnganche,
+      rentasAnticipadas: anticipadas,
+    });
+
+    const totalCalculado = conceptosCargos.find(c => c.concepto === 'TOTAL_PAGO_INICIAL')?.monto || 0;
+    if (totalCalculado <= 0) {
+      toast.error('No se puede generar la factura', {
+        description: 'El desembolso inicial es cero. Complete Términos y Condiciones y ejecute Simular.',
+        duration: 8000,
+      });
+      return;
+    }
+
+    const factura = generarFacturaDesembolsoInicial({
+      noSol: formData.noSol || '',
+      solicitudId: String(storageId),
+      cliente: [formData.nombrePersona, formData.apellidoPaternoPersona, formData.apellidoMaternoPersona]
+        .filter(Boolean).join(' ').trim() || 'Cliente',
+      rfcCliente: (formData as any).rfcPersona || '',
+      conceptosCargos,
+    });
+
+    // Alta del registro REAL en Cobranza — Avisos de Vencimiento — Créditos.
+    // La factura sólo se marca como generada si el alta tuvo éxito: si falla,
+    // el botón sigue disponible para reintentar.
+    const dbIdFac = UUID_RE_FACTURA.test(String(formData.id || ''))
+      ? String(formData.id)
+      : UUID_RE_FACTURA.test(String(storageId)) ? String(storageId) : '';
+
+    if (!dbIdFac) {
+      toast.error('Guarde la solicitud antes de generar la factura', {
+        description: 'El registro de Cobranza necesita el id de la solicitud en base de datos.',
+        duration: 8000,
+      });
+      return;
+    }
+
+    const alta = await crearFacturaArrendamientoCobranza({
+      solicitud_id: dbIdFac,
+      cliente: factura.contraparte,
+      // Pago Inicial: el cliente le paga a la institución — Por Cobrar.
+      tipo: 'Por Cobrar',
+      conceptos: factura.conceptos.map(c => ({ cve: c.concepto, desc: c.descripcion, monto: c.monto })),
+      total: factura.total,
+      fecha_compromiso: factura.fechaVencimiento,
+      referencia: formData.noSol || undefined,
+    });
+
+    if (!alta.ok) {
+      toast.error('No se pudo crear el registro en Cobranza', {
+        description: alta.error || 'La factura NO se generó. Reintente.',
+        duration: 10000,
+      });
+      return;
+    }
+
+    const facturaConCobranza: FacturaArrendamiento = {
+      ...factura,
+      facturaIdCobranza: alta.factura_id,
+      noFactura: alta.no_docto || factura.noFactura,
+    };
+
+    guardarFacturas([...leerFacturas().filter(f => f.tipo !== 'DESEMBOLSO_INICIAL'), facturaConCobranza]);
+
+    toast.success('Factura de Pago Inicial generada', {
+      description: `${facturaConCobranza.noFactura} · Total ${formatCurrency(factura.total)}. Ya aparece en Cobranza → Avisos de Vencimiento — Créditos.`,
+      duration: 9000,
+    });
+  }, [storageId, formData, guardarFacturas, leerFacturas]);
+
+  /** Fase "Recepción del Activo y Cierre" — CFDI del proveedor (cuenta por pagar). */
+  const handleGenerarFacturaProveedor = useCallback(async () => {
+    // El proveedor sale del BIEN seleccionado en la solicitud (subtab Bienes),
+    // que es donde se captura con GarantiaForm → proveedorNombre/proveedor_id.
+    const bienes: any[] =
+      loadFromSession<any[]>(storageId, 'garantias')
+      || loadFromSavedStore<any[]>(storageId, 'garantias') || [];
+
+    if (bienes.length === 0) {
+      toast.error('La solicitud no tiene Bienes', {
+        description: 'Agregue el bien objeto del arrendamiento en el subtab Bienes.',
+        duration: 9000,
+      });
+      return;
+    }
+
+    let bienConProveedor = bienes.find(b =>
+      b?.proveedorNombre || b?.proveedor_nombre || b?.proveedorId || b?.proveedor_id
+    );
+
+    // Fallback al catálogo de Bienes (J_GARANTIAS): las solicitudes guardadas
+    // antes de que el proveedor viajara en el payload no lo tienen en su copia,
+    // pero el bien original sí. Se busca por id y, si no, por descripción.
+    if (!bienConProveedor) {
+      try {
+        const { data: catalogo } = await supabase.rpc('get_all_jgarantias');
+        const norm = (v: any) => String(v ?? '').trim().toLowerCase();
+
+        for (const b of bienes) {
+          const match = (catalogo || []).find((c: any) => {
+            const d = c.data?.default || {};
+            if (b.garantiaId && String(c.uuid) === String(b.garantiaId)) return true;
+            // En el catálogo el nombre del bien vive en `garantia`; `descripcion`
+            // suele venir vacío, y la solicitud guarda ese nombre en `descripcion`.
+            const nombresCat = [c.garantia, d.garantia, c.descripcion, d.descripcion].map(norm).filter(Boolean);
+            return nombresCat.includes(norm(b.descripcion));
+          });
+          const d = match?.data?.default || {};
+          const nombreProv = d.proveedorNombre || d.proveedor_nombre;
+          if (nombreProv) {
+            bienConProveedor = {
+              ...b,
+              proveedorNombre: nombreProv,
+              proveedorId: d.proveedor_id || null,
+              proveedorRfc: d.proveedorRfc || d.proveedor_rfc || '',
+              descripcion: b.descripcion || match?.garantia || '',
+            };
+            break;
+          }
+        }
+      } catch { /* si el catálogo no responde, cae al mensaje de abajo */ }
+    }
+
+    if (!bienConProveedor) {
+      toast.error('El bien no tiene proveedor capturado', {
+        description: 'Abra el bien en el módulo Bienes, seleccione el Proveedor y vuelva a guardar la solicitud.',
+        duration: 10000,
+      });
+      return;
+    }
+
+    const proveedor = String(
+      bienConProveedor.proveedorNombre || bienConProveedor.proveedor_nombre || ''
+    ).trim();
+    if (!proveedor) {
+      toast.error('El proveedor del bien no tiene nombre', {
+        description: 'Revise el Proveedor seleccionado en el subtab Bienes.',
+        duration: 9000,
+      });
+      return;
+    }
+    const rfcProveedor = String(
+      bienConProveedor.proveedorRfc || bienConProveedor.proveedor_rfc || ''
+    ).trim() || 'XAXX010101000';
+
+    // El proveedor es una Persona en J_CLIENTES (type='Proveedor'); su UUID es
+    // el cliente_id de la cuenta por pagar — la columna es NOT NULL.
+    const proveedorId = String(
+      bienConProveedor.proveedorId || bienConProveedor.proveedor_id || ''
+    ).trim();
+    if (!UUID_RE_FACTURA.test(proveedorId)) {
+      toast.error('El proveedor del bien no está ligado a una Persona', {
+        description: `"${proveedor}" no tiene un registro de Proveedor válido. Abra el bien en el módulo Bienes, seleccione el Proveedor desde el catálogo de Personas y vuelva a guardar la solicitud.`,
+        duration: 11000,
+      });
+      return;
+    }
+
+    const terminos: any = loadFromSession<any>(storageId, 'terminos')
+      || loadFromSavedStore<any>(storageId, 'terminos') || {};
+    // La factura del proveedor va por el VALOR DEL BIEN que capturó el usuario
+    // (Monto Solicitado), NO por el Monto Autorizado (que es el calculado
+    // montoSolicitado × (1 − %enganche)).
+    //
+    // El banco le compra el activo al proveedor por su precio completo: el
+    // enganche es una aportación del cliente que ya se le cobra aparte en la
+    // Fase 4 (Recaudación Inicial). Descontarlo también de lo que se le paga al
+    // proveedor lo contaría dos veces y dejaría el activo pagado de menos.
+    const importe = parseFloat(String(
+      formData.montoSolicitado || terminos.montoSolicitado || 0
+    ).replace(/[^0-9.-]/g, '')) || 0;
+
+    if (importe <= 0) {
+      toast.error('No se puede generar la factura del proveedor', {
+        description: 'El Monto Solicitado (Valor del Bien) es cero — captúrelo en Plazos y Montos.',
+      });
+      return;
+    }
+
+    const descripcionBien =
+      bienConProveedor.descripcion || bienConProveedor.tipo || 'Bien objeto del arrendamiento';
+
+    const { xml } = generarXMLProveedor({
+      noSol: formData.noSol || '',
+      proveedor,
+      rfcProveedor,
+      descripcionBien,
+      importe,
+    });
+
+    // Se lee el XML recién generado: los datos del detalle vienen del CFDI.
+    const factura = leerXMLProveedor(xml, {
+      noSol: formData.noSol || '',
+      solicitudId: String(storageId),
+    });
+
+    if (!factura) {
+      toast.error('No se pudo leer el CFDI generado', {
+        description: 'El XML no se pudo parsear.',
+        duration: 8000,
+      });
+      return;
+    }
+
+    const dbIdProv = UUID_RE_FACTURA.test(String(formData.id || ''))
+      ? String(formData.id)
+      : UUID_RE_FACTURA.test(String(storageId)) ? String(storageId) : '';
+
+    if (!dbIdProv) {
+      toast.error('Guarde la solicitud antes de generar la factura', {
+        description: 'El registro de Cobranza necesita el id de la solicitud en base de datos.',
+        duration: 8000,
+      });
+      return;
+    }
+
+    // Cuenta por pagar al proveedor: NO va a Cobranza (ese panel es solo para
+    // lo que el cliente le debe a la institución). El proveedor no es cliente
+    // del banco, así que se registra como Solicitud de Activación tipo "Por
+    // Pagar" — mismo criterio de Tipo que usa ese módulo (lineaProdToTipo).
+    const alta = await crearFacturaProveedorActivacion({
+      solicitudId: dbIdProv,
+      proveedorId,
+      proveedor: factura.contraparte,
+      rfcProveedor: factura.rfcContraparte,
+      monto: factura.total,
+      fechaCompromiso: factura.fechaVencimiento,
+      referencia: factura.uuid || formData.noSol || undefined,
+    });
+
+    if (!alta.ok) {
+      toast.error('No se pudo crear la cuenta por pagar en Solicitud de Activación', {
+        description: alta.error || 'La factura NO se generó. Reintente.',
+        duration: 10000,
+      });
+      return;
+    }
+
+    const facturaConCobranza: FacturaArrendamiento = {
+      ...factura,
+      facturaIdCobranza: alta.id,
+    };
+
+    guardarFacturas([...leerFacturas().filter(f => f.tipo !== 'COMPRA_PROVEEDOR'), facturaConCobranza]);
+
+    toast.success('Cuenta por pagar creada', {
+      description: `${factura.contraparte} · ${formatCurrency(factura.total)}. Márquela como Pagada en Solicitud de Activación para poder cerrar el proceso.`,
+      duration: 10000,
+    });
+  }, [storageId, formData, guardarFacturas, leerFacturas]);
 
   /** Regresar de Fase — requiere nota reciente (≤30 min). */
   const handleRegresarFase = useCallback(async () => {
@@ -1198,6 +1764,8 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
             ? _rawDataProducto.plantillas
             : null)
           ?? [];
+
+        console.log('[DIAG Solicitud] productoId:', formData.productoId, '| productoSeleccionado.id:', productoSeleccionado?.id, '| productoSeleccionado.plantillas:', productoSeleccionado?.plantillas, '| rawData.plantillas:', _rawDataProducto?.plantillas, '| plantillasProducto FINAL:', plantillasProducto);
 
         const cliente = [formData.nombrePersona, formData.apellidoPaternoPersona, formData.apellidoMaternoPersona]
           .filter(Boolean).join(' ').trim() || 'Cliente';
@@ -1565,7 +2133,6 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
         // Para activaciones, usar 'Aprobado' como estatus final del flujo
         const estatusFinal         = esFasesFinal ? 'Aprobado' : nuevoEstatusLocal;
 
-
         setFormData(prev => ({
           ...prev,
           faseId:           nuevaFaseId,
@@ -1894,7 +2461,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
 
     // ── Recopilar datos de TODAS las subtabs ANTES de commitAndClearSession ──
     const allSubtabs: Record<string, any> = {};
-    const subtabKeys = ['terminos', 'simulacion', 'simulacion_cal', 'simulacion_inv', 'documentos', 'garantias', 'comisiones', 'autorizaciones', 'notas', 'partesRelacionadas', '_originalData'];
+    const subtabKeys = ['terminos', 'simulacion', 'simulacion_cal', 'simulacion_inv', 'simulacion_arrendamiento', 'documentos', 'garantias', 'comisiones', 'autorizaciones', 'notas', 'partesRelacionadas', 'facturas', '_originalData'];
     for (const key of subtabKeys) {
       // _originalData puede haber sido limpiado de session por commitAndClearSession en el save anterior;
       // usar savedStore como fallback para no perder los datos de banca móvil al hacer deep merge
@@ -1969,9 +2536,10 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
            : isLineaCreditoForm ? 'Tabla de Amortización'
            :                      'Simulación',
     },
+    ...(esArrendamientoPuro ? [{ id: 'facturas', label: 'Facturas' }] : []),
     { id: 'expediente',        label: 'Expediente Electrónico' },
     { id: 'partesRelacionadas',label: 'Partes Relacionadas' },
-    ...(!isCaptacionForm  ? [{ id: 'garantias', label: 'Garantías' }] : []),
+    ...(!isCaptacionForm  ? [{ id: 'garantias', label: 'Bienes' }] : []),
     { id: 'comites',           label: 'Comités' },
     { id: 'autorizaciones',    label: 'Autorizaciones' },
     { id: 'fases',             label: 'Fases' },
@@ -2053,6 +2621,11 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
           storageId={storageId}
           modo={modo}
           onEnviarFase={handleEnviarFase}
+                  onGenerarFacturaInicial={handleGenerarFacturaInicial}
+                  onGenerarFacturaProveedor={handleGenerarFacturaProveedor}
+                  esArrendamientoPuro={esArrendamientoPuro}
+                  facturaInicialGenerada={facturaInicialGenerada}
+                  facturaProveedorGenerada={facturaProveedorGenerada}
           onRegresarFase={handleRegresarFase}
           onGenerarSolicitud={handleGenerarSolicitud}
           onFormalizarContrato={handleFormalizarContrato}
@@ -2631,6 +3204,11 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
                       storageId={storageId}
                       modo={modo}
                       onEnviarFase={handleEnviarFase}
+                  onGenerarFacturaInicial={handleGenerarFacturaInicial}
+                  onGenerarFacturaProveedor={handleGenerarFacturaProveedor}
+                  esArrendamientoPuro={esArrendamientoPuro}
+                  facturaInicialGenerada={facturaInicialGenerada}
+                  facturaProveedorGenerada={facturaProveedorGenerada}
                       onRegresarFase={handleRegresarFase}
                       onGenerarSolicitud={handleGenerarSolicitud}
                       onFormalizarContrato={handleFormalizarContrato}
@@ -2681,6 +3259,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
                     cotizacionTerminos={(cotizacionData as any)?._terminosCondiciones}
                     onFechaPrimeraAportacionChange={v => set('fechaInicio', v)}
                     onMontoAutorizadoChange={v => set('montoAutorizado', v)}
+                    onTasaChange={v => setTasaSeleccionadaHeader(v)}
                     porcentajeEngancheHeader={formData.porcentajeEnganche}
                     plazoHeader={formData.plazo}
                     onPlazoLoaded={v => set('plazo', v)}
@@ -2706,9 +3285,20 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
                     onFechaFinChange={v => set('fechaFin', v)}
                   />
                 )}
+                {sec.id === 'facturas' && (
+                  <FacturasArrendamientoTab
+                    mode={mode}
+                    solicitudId={storageId}
+                    esArrendamientoPuro={esArrendamientoPuro}
+                    facturaInicialGenerada={facturaInicialGenerada}
+                    facturaProveedorGenerada={facturaProveedorGenerada}
+                    onGenerarFacturaInicial={handleGenerarFacturaInicial}
+                    onGenerarFacturaProveedor={handleGenerarFacturaProveedor}
+                  />
+                )}
                 {sec.id === 'expediente' && (
                   <ExpedienteElectronicoTab
-                    key={`exp-${storageId}-${expedienteKey}`}
+                    key={`exp-${storageId}-${expedienteKey}-${formData.faseId}`}
                     mode={mode}
                     solicitudId={storageId}
                     faseIdActual={parseInt(formData.faseId) || 1}
@@ -2721,6 +3311,14 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
                     lineaProducto={formData.lineaProducto || ''}
                     descripcionFase={formData.descripcionFase || ''}
                     onEnviarSolicitud={modo === 'originacion' ? handleEnviarSolicitud : undefined}
+                    noSolicitud={formData.noSol || ''}
+                    tipoProducto={formData.tipoProducto || ''}
+                    nombreProducto={productoSeleccionado?.nombreProducto || formData.nombreProducto || ''}
+                    plantillasProducto={
+                      (Array.isArray(productoSeleccionado?.plantillas) && productoSeleccionado.plantillas.length > 0
+                        ? productoSeleccionado.plantillas
+                        : (productoSeleccionado?.rawData as any)?.plantillas) || []
+                    }
                   />
                 )}
                 {sec.id === 'garantias' && (

@@ -35,6 +35,12 @@ interface Props {
   onValidationChange?: (hasErrors: boolean) => void;
   /** Callback cuando Monto Autorizado se recalcula (Arrendamiento) — sincroniza el campo del header, que Simular usa */
   onMontoAutorizadoChange?: (monto: string) => void;
+  /**
+   * Sincroniza la Tasa capturada aquí hacia el encabezado. Sin esto, Simular
+   * seguía usando `tasaHeader` (el default de la Matriz) y la tasa tecleada
+   * por el usuario no tenía efecto — mismo motivo que onMontoAutorizadoChange.
+   */
+  onTasaChange?: (tasa: string) => void;
   /** % Enganche seleccionado en el encabezado (Arrendamiento) — fuente de verdad; Términos lo usa para calcular Monto Autorizado/Enganche */
   porcentajeEngancheHeader?: string;
   /** Plazo capturado en el encabezado (junto al producto) — fuente de verdad; Términos lo usa en sus cálculos internos (tasa, seguro, validaciones de rango) */
@@ -278,7 +284,7 @@ function extractTerminosFromProduct(prod: ProductoCatalogo): Partial<TerminosCon
   return result;
 }
 
-export function TerminosCondicionesTab({ mode, solicitudId, lineaProducto, tipoProducto, productoSeleccionado, montoSolicitadoHeader, fechaInicioHeader, tasaCotizacion, plazoCotizacion, cotizacionTerminos, onFechaPrimeraAportacionChange, onValidationChange, onMontoAutorizadoChange, porcentajeEngancheHeader, plazoHeader, onPlazoLoaded, tasaHeader, frecuenciaHeader, tasaRangoMatriz, plazoRangoMatriz }: Props) {
+export function TerminosCondicionesTab({ mode, solicitudId, lineaProducto, tipoProducto, productoSeleccionado, montoSolicitadoHeader, fechaInicioHeader, tasaCotizacion, plazoCotizacion, cotizacionTerminos, onFechaPrimeraAportacionChange, onValidationChange, onMontoAutorizadoChange, onTasaChange, porcentajeEngancheHeader, plazoHeader, onPlazoLoaded, tasaHeader, frecuenciaHeader, tasaRangoMatriz, plazoRangoMatriz }: Props) {
   console.log('[TerminosTab] MOUNT - productoSeleccionado:', productoSeleccionado?.nombreProducto, '| productoId:', productoSeleccionado?.id);
   // Track which productoId was last applied to avoid re-applying
   const lastAppliedProductoId = useRef<string>('');
@@ -472,33 +478,82 @@ export function TerminosCondicionesTab({ mode, solicitudId, lineaProducto, tipoP
   const [garantiaActiva, setGarantiaActiva] = useState<boolean>(
     () => !!(data._garantiaActiva || (data.porcentajeAforo && data.porcentajeAforo > 0))
   );
-  const [garantiaSeleccionada, setGarantiaSeleccionada] = useState<GarantiaProducto | null>(() => {
-    if (!data.porcentajeAforo) return null;
-    const g = (productoSeleccionado?.rawData?.garantias as GarantiaProducto[] | undefined) || [];
-    return g.find(x => parseFloat(String(x.aforo ?? '')) === data.porcentajeAforo) || null;
-  });
+  /**
+   * Ubica el bien guardado dentro de las garantías del producto.
+   * Prefiere la identidad (tipo + subtipo); el match por aforo queda sólo como
+   * respaldo para solicitudes anteriores a que esa identidad se persistiera.
+   */
+  const ubicarGarantiaGuardada = (
+    lista: GarantiaProducto[],
+    d: Pick<TerminosCondiciones, 'tipoGarantia' | 'subtipoGarantia' | 'porcentajeAforo'>,
+  ): GarantiaProducto | null => {
+    if (lista.length === 0) return null;
+    if (d.tipoGarantia) {
+      const exacta = lista.find(x =>
+        x.tipo === d.tipoGarantia && (x.subtipo || '') === (d.subtipoGarantia || '')
+      );
+      if (exacta) return exacta;
+    }
+    if (!d.porcentajeAforo) return null;
+    return lista.find(x => parseFloat(String(x.aforo ?? '')) === d.porcentajeAforo) || null;
+  };
+
+  const [garantiaSeleccionada, setGarantiaSeleccionada] = useState<GarantiaProducto | null>(
+    () => ubicarGarantiaGuardada(
+      (productoSeleccionado?.rawData?.garantias as GarantiaProducto[] | undefined) || [],
+      data,
+    )
+  );
+
+  // Las garantías del producto llegan por fetch: al montar el tab suelen estar
+  // vacías, y como el estado de arriba sólo se calcula una vez, el bien
+  // guardado quedaba sin marcar. Al llegar la lista se vuelve a ubicar.
+  useEffect(() => {
+    if (garantiaSeleccionada || garantiasProducto.length === 0) return;
+    const encontrada = ubicarGarantiaGuardada(garantiasProducto, data);
+    if (encontrada) {
+      setGarantiaSeleccionada(encontrada);
+      setGarantiaActiva(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [garantiasProducto, data.tipoGarantia, data.subtipoGarantia, data.porcentajeAforo]);
 
   // Al seleccionar garantía:
   //   montoGarantia (Monto Autorizado) = Monto Solicitado × (1 − % Enganche / 100)
-  //   montoCubrirGarantia              = montoGarantia × (aforo / 100)
+  //   montoCubrirGarantia              = Monto Solicitado × (aforo / 100)
+  // montoCubrirGarantia usa Monto Solicitado (no Monto Autorizado) para que
+  // coincida con el "MONTO A CUBRIR" que ya muestra la tabla de selección de
+  // garantías (montoEfectivo × aforo), evitando que el valor mostrado antes de
+  // seleccionar difiera del valor persistido después de seleccionar.
   useEffect(() => {
     if (!garantiaActiva || !garantiaSeleccionada) return;
     const aforo = parseFloat(String(garantiaSeleccionada.aforo ?? '')) || 0;
-    const montoACubrir = montoAutorizadoNum > 0 && aforo > 0 ? montoAutorizadoNum * aforo / 100 : 0;
+    const montoACubrir = montoEfectivo > 0 && aforo > 0 ? montoEfectivo * aforo / 100 : 0;
     setData(prev => ({
       ...prev,
       montoGarantia: montoAutorizadoNum.toFixed(2),
       montoCubrirGarantia: montoACubrir,
       porcentajeAforo: aforo,
+      // Guardar cuál bien se eligió, no sólo su aforo.
+      tipoGarantia: garantiaSeleccionada.tipo || '',
+      subtipoGarantia: garantiaSeleccionada.subtipo || '',
+      _garantiaActiva: true,
     }));
-  }, [garantiaActiva, garantiaSeleccionada, montoAutorizadoNum]);
+  }, [garantiaActiva, garantiaSeleccionada, montoEfectivo, montoAutorizadoNum]);
 
   // ── Seguros financiados ──
   const isSegurosActive = !!(data.seguroFinanciado);
   const { productos: productosSeguros, loading: loadingSeguros } = useProductosSeguros(isSegurosActive);
 
-  const [seguroSeleccionadoId, setSeguroSeleccionadoId] = useState<string>('');
-  const [matrizFilaSeleccionada, setMatrizFilaSeleccionada] = useState<MatrizSeguroFila | null>(null);
+  // Ambos se restauran desde data persistido: antes eran useState vacíos, así
+  // que al reabrir la solicitud el check de Seguro volvía palomeado pero sin
+  // seguro elegido ni fila de matriz.
+  const [seguroSeleccionadoId, setSeguroSeleccionadoId] = useState<string>(
+    () => data.seguroProductoId || ''
+  );
+  const [matrizFilaSeleccionada, setMatrizFilaSeleccionada] = useState<MatrizSeguroFila | null>(
+    () => (data.seguroMatrizFila as MatrizSeguroFila) || null
+  );
 
   const seguroActual = useMemo(() => {
     if (!seguroSeleccionadoId) return null;
@@ -518,6 +573,20 @@ export function TerminosCondicionesTab({ mode, solicitudId, lineaProducto, tipoP
       return (min <= 0 || montoEfectivo >= min) && (max <= 0 || montoEfectivo <= max);
     });
   }, [seguroActual, montoEfectivo]);
+
+  // La fila restaurada viene de JSON, así que NO es el mismo objeto que el de
+  // matrizFiltrada y la tabla la compara por identidad (`matrizFilaSeleccionada === f`).
+  // Al cargar la matriz se re-apunta a la fila equivalente para que aparezca marcada.
+  useEffect(() => {
+    if (!matrizFilaSeleccionada || matrizFiltrada.length === 0) return;
+    if (matrizFiltrada.includes(matrizFilaSeleccionada)) return; // ya es la misma referencia
+    const equivalente = matrizFiltrada.find(f =>
+      String(f.montoDefault) === String(matrizFilaSeleccionada.montoDefault) &&
+      String(f.tasaDefault) === String(matrizFilaSeleccionada.tasaDefault) &&
+      String((f as any).periodo ?? '') === String((matrizFilaSeleccionada as any).periodo ?? '')
+    );
+    if (equivalente) setMatrizFilaSeleccionada(equivalente);
+  }, [matrizFiltrada]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Al seleccionar fila de matriz → calcular totalSeguro = monto + monto * (tasa/100)
   useEffect(() => {
@@ -963,7 +1032,13 @@ export function TerminosCondicionesTab({ mode, solicitudId, lineaProducto, tipoP
               type="text" inputMode="decimal"
               value={data.tasa}
               onChange={e => handleNumeric('tasa', e.target.value)}
-              onBlur={() => handlePercentBlur('tasa')}
+              onBlur={() => {
+                handlePercentBlur('tasa');
+                // Subir la tasa al encabezado: es de donde la lee Simular.
+                const raw = String(data.tasa || '').replace(/[^0-9.-]/g, '');
+                const num = parseFloat(raw);
+                if (!isNaN(num)) onTasaChange?.(Math.min(100, Math.max(0, num)).toFixed(4));
+              }}
               // Editable dentro del rango de la fila de Matriz de Tasa Fija vigente
               // (tasaRangoMatriz); sin matriz o en Captación sigue de solo lectura.
               disabled={isRO || isCaptacion || (!!productoSeleccionado && !tasaRangoMatriz)}
@@ -1157,7 +1232,7 @@ export function TerminosCondicionesTab({ mode, solicitudId, lineaProducto, tipoP
                   setGarantiaActiva(e.target.checked);
                   if (!e.target.checked) {
                     setGarantiaSeleccionada(null);
-                    setData(prev => ({ ...prev, montoGarantia: '', montoCubrirGarantia: undefined, porcentajeAforo: undefined, _garantiaActiva: false }));
+                    setData(prev => ({ ...prev, montoGarantia: '', montoCubrirGarantia: undefined, porcentajeAforo: undefined, tipoGarantia: undefined, subtipoGarantia: undefined, _garantiaActiva: false }));
                   } else {
                     setData(prev => ({ ...prev, _garantiaActiva: true }));
                   }
@@ -1277,7 +1352,11 @@ export function TerminosCondicionesTab({ mode, solicitudId, lineaProducto, tipoP
                   if (!e.target.checked) {
                     setSeguroSeleccionadoId('');
                     setMatrizFilaSeleccionada(null);
-                    setData(prev => ({ ...prev, montoSeguro: '', pagoSeguro: 0, pagoTotal: 0 }));
+                    setData(prev => ({
+                      ...prev,
+                      montoSeguro: '', pagoSeguro: 0, pagoTotal: 0,
+                      seguroProductoId: '', seguroMatrizFila: undefined,
+                    }));
                   }
                 }}
                 disabled={isRO}
@@ -1299,7 +1378,16 @@ export function TerminosCondicionesTab({ mode, solicitudId, lineaProducto, tipoP
                 ) : (
                   <select
                     value={seguroSeleccionadoId}
-                    onChange={e => { setSeguroSeleccionadoId(e.target.value); setMatrizFilaSeleccionada(null); }}
+                    onChange={e => {
+                      setSeguroSeleccionadoId(e.target.value);
+                      setMatrizFilaSeleccionada(null);
+                      setData(prev => ({
+                        ...prev,
+                        seguroProductoId: e.target.value,
+                        seguroMatrizFila: undefined,
+                        montoSeguro: '', pagoSeguro: 0, pagoTotal: 0,
+                      }));
+                    }}
                     disabled={isRO}
                     className={sc()}
                   >
@@ -1356,7 +1444,11 @@ export function TerminosCondicionesTab({ mode, solicitudId, lineaProducto, tipoP
                                     </svg>
                                   ) : (
                                     <button
-                                      onClick={() => !isRO && setMatrizFilaSeleccionada(f)}
+                                      onClick={() => {
+                                        if (isRO) return;
+                                        setMatrizFilaSeleccionada(f);
+                                        setData(prev => ({ ...prev, seguroMatrizFila: f }));
+                                      }}
                                       disabled={isRO}
                                       className="px-2 py-0.5 bg-[#4A6FA5] text-white text-[10px] rounded hover:bg-[#3E5C91] disabled:opacity-40"
                                     >

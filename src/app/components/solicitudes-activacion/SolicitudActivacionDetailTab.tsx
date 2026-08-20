@@ -1,14 +1,18 @@
 /**
  * SolicitudActivacionDetailTab.tsx
  *
- * Sub-tab "Detail" — fila única pre-poblada desde JOINs.
+ * Sub-tab "Detail" — desglose de la solicitud en Capital + IVA.
+ *
+ * `monto` es el importe TOTAL de la operación (el monto autorizado) y
+ * `pctImpuesto` la tasa de IVA. De ahí se derivan las dos líneas:
+ *
+ *   Capital = Monto × (1 − % IVA)
+ *   IVA     = Monto × % IVA
+ *   Total   = Capital + IVA = Monto
  *
  * Clave Producto  → J_CUENTAS_CORP_CLIENTES.producto_id          (read-only)
  * Cantidad        → editable (default 1)
- * Monto           → igual a Monto Transacción                     (read-only)
- * % Impuesto      → J_CUENTAS_CORP_CLIENTES...tasa_interes        (read-only)
  * Moneda          → igual a Moneda del header                     (read-only)
- * Sub Total       → Cantidad × Monto × (1 + % Impuesto)          (calculado)
  * Estatus         → fijo "Pendiente"
  *
  * Storage: los campos sin columna explícita → data.detail
@@ -18,12 +22,15 @@ interface SolicitudActivacionDetailTabProps {
   storageId: string | number;   // reservado — la persistencia ocurre en el padre
   isRO: boolean;
   claveProducto: string;
+  /** Importe total de la operación (monto autorizado), IVA incluido. */
   monto: number;
   pctImpuesto: number;          // decimal, ej. 0.16 = 16 %
   moneda: string;
   cantidad: number;
   onCantidadChange: (n: number) => void;
 }
+
+import { IVA_FACTURA } from '../solicitudes/solicitudCreditoStore';
 
 const fmt = (n: number) =>
   `$${n.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -39,7 +46,21 @@ export function SolicitudActivacionDetailTab({
   cantidad,
   onCantidadChange,
 }: SolicitudActivacionDetailTabProps) {
-  const subTotal = cantidad * monto * (1 + pctImpuesto);
+  // El desglose Capital/IVA aplica a la cuenta por pagar del proveedor de
+  // Arrendamiento. En crédito/captación este campo transporta la tasa de
+  // interés (no IVA), así que ahí se conserva la línea única de siempre.
+  const esArrendamiento = claveProducto === 'ARRENDAMIENTO_PROVEEDOR';
+  // Registros creados antes de guardarse la tasa quedaron en 0: sin este
+  // respaldo el IVA se mostraría en $0.00.
+  const tasaIva = esArrendamiento && !pctImpuesto ? IVA_FACTURA : pctImpuesto;
+
+  // Capital = Monto × (1 − % IVA)   ·   IVA = Monto × % IVA
+  const redondear = (n: number) => Math.round(n * 100) / 100;
+  const capital = redondear(cantidad * monto * (1 - tasaIva));
+  const iva = redondear(cantidad * monto * tasaIva);
+  const totalGeneral = redondear(capital + iva);
+  // Línea única (no arrendamiento): fórmula original.
+  const subTotalSimple = redondear(cantidad * monto * (1 + pctImpuesto));
 
   const handleCantidadChange = (raw: string) => {
     if (isRO) return;
@@ -52,7 +73,7 @@ export function SolicitudActivacionDetailTab({
       {/* Section header */}
       <div className="bg-blue-50 border-l-4 border-primary-theme px-3 py-2 mb-3 flex items-center justify-between">
         <span className="text-sm font-medium text-gray-800">DETALLE DE SOLICITUD</span>
-        <span className="text-xs text-gray-500">1 línea</span>
+        <span className="text-xs text-gray-500">{esArrendamiento ? '2 líneas' : '1 línea'}</span>
       </div>
 
       <div className="border border-gray-300">
@@ -73,18 +94,17 @@ export function SolicitudActivacionDetailTab({
             </tr>
           </thead>
           <tbody className="bg-white">
+            {/* ── Capital = Monto × (1 − % IVA) ── */}
             <tr className="border-b border-gray-200">
-              {/* Tipo Producto — fijo */}
               <td className="px-3 py-2 border-r border-gray-200 font-medium text-gray-800">
                 CAPITAL
               </td>
 
-              {/* Clave Producto — read-only */}
               <td className="px-3 py-2 border-r border-gray-200 font-medium text-gray-800">
                 {claveProducto || <span className="text-gray-400 italic">Sin clave</span>}
               </td>
 
-              {/* Cantidad — editable */}
+              {/* Cantidad — editable (aplica a ambas líneas) */}
               <td className="px-3 py-2 border-r border-gray-200 text-right">
                 {isRO ? (
                   <span className="text-gray-700">{cantidad.toLocaleString('es-MX')}</span>
@@ -100,33 +120,67 @@ export function SolicitudActivacionDetailTab({
                 )}
               </td>
 
-              {/* Monto — read-only */}
               <td className="px-3 py-2 border-r border-gray-200 text-right text-gray-700">
                 {fmt(monto)}
               </td>
 
-              {/* % Impuesto — read-only */}
               <td className="px-3 py-2 border-r border-gray-200 text-right text-gray-700">
-                {pctFmt(pctImpuesto)}
+                {pctFmt(esArrendamiento ? 1 - tasaIva : pctImpuesto)}
               </td>
 
-              {/* Moneda — read-only */}
               <td className="px-3 py-2 border-r border-gray-200 text-gray-700">
                 {moneda || 'MXN'}
               </td>
 
-              {/* Sub Total — calculado */}
               <td className="px-3 py-2 border-r border-gray-200 text-right font-semibold text-gray-900">
-                {fmt(subTotal)}
+                {fmt(esArrendamiento ? capital : subTotalSimple)}
               </td>
 
-              {/* Estatus — fijo */}
               <td className="px-3 py-2">
                 <span className="inline-flex px-2 py-0.5 rounded text-[10px] border text-amber-700 bg-amber-50 border-amber-200">
                   Pendiente
                 </span>
               </td>
             </tr>
+
+            {/* ── IVA = Monto × % IVA — sólo en el desglose de arrendamiento ── */}
+            {esArrendamiento && (
+              <tr className="border-b border-gray-200">
+                <td className="px-3 py-2 border-r border-gray-200 font-medium text-gray-800">
+                  IVA
+                </td>
+
+                <td className="px-3 py-2 border-r border-gray-200 font-medium text-gray-800">
+                  IVA
+                </td>
+
+                <td className="px-3 py-2 border-r border-gray-200 text-right text-gray-700">
+                  {cantidad.toLocaleString('es-MX')}
+                </td>
+
+                <td className="px-3 py-2 border-r border-gray-200 text-right text-gray-700">
+                  {fmt(monto)}
+                </td>
+
+                <td className="px-3 py-2 border-r border-gray-200 text-right text-gray-700">
+                  {pctFmt(tasaIva)}
+                </td>
+
+                <td className="px-3 py-2 border-r border-gray-200 text-gray-700">
+                  {moneda || 'MXN'}
+                </td>
+
+                <td className="px-3 py-2 border-r border-gray-200 text-right font-semibold text-gray-900">
+                  {fmt(iva)}
+                </td>
+
+                <td className="px-3 py-2">
+                  <span className="inline-flex px-2 py-0.5 rounded text-[10px] border text-amber-700 bg-amber-50 border-amber-200">
+                    Pendiente
+                  </span>
+                </td>
+              </tr>
+            )}
           </tbody>
 
           <tfoot>
@@ -135,7 +189,7 @@ export function SolicitudActivacionDetailTab({
                 TOTAL GENERAL:
               </td>
               <td className="px-3 py-2 text-right text-xs font-bold text-gray-900">
-                {fmt(subTotal)}
+                {fmt(esArrendamiento ? totalGeneral : subTotalSimple)}
               </td>
               <td />
             </tr>
@@ -144,7 +198,9 @@ export function SolicitudActivacionDetailTab({
       </div>
 
       <p className="mt-2 text-[10px] text-gray-400">
-        Sub Total = Cantidad × Monto × (1 + % Impuesto)
+        {esArrendamiento
+          ? 'Capital = Cantidad × Monto × (1 − % IVA) · IVA = Cantidad × Monto × % IVA'
+          : 'Sub Total = Cantidad × Monto × (1 + % Impuesto)'}
       </p>
     </div>
   );

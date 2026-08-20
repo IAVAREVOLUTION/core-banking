@@ -7,6 +7,7 @@ import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Toolti
 import { CarteraForm, type CarteraCredito } from './CarteraForm';
 import { SolicitudesExtGestion } from './SolicitudesExtGestion';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
+import { esArrendamientoPuroRow } from './CarteraArrendamientoList';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-7e2d13d9`;
 const HDR = { Authorization: `Bearer ${publicAnonKey}` };
@@ -34,7 +35,17 @@ function useCreditos() {
       const res = await window.fetch(`${API_BASE}/solicitudes-credito`, { headers: HDR });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
-      const mapped: CarteraCredito[] = (json.data || []).map((r: any) => {
+      // Arrendamiento Puro tiene su propia cartera (Cartera de Arrendamiento):
+      // sin este filtro esas solicitudes aparecían mezcladas aquí.
+      const mapped: CarteraCredito[] = (json.data || [])
+        .filter((r: any) => {
+          const h = r.data?.solicitud?.header || {};
+          return !esArrendamientoPuroRow(
+            r.linea_produc || h.linea_producto || '',
+            r.tipo_produc || h.tipo_producto || '',
+          );
+        })
+        .map((r: any) => {
         const h = r.data?.solicitud?.header || {};
         const t = r.data?.solicitud?.terminos_condiciones?._raw || {};
         return {

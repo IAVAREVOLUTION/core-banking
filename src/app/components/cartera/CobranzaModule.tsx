@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { GeneracionContableTab } from './GeneracionContableTab';
 import { toast } from 'sonner';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
+import { INSTITUCION_RAZON_SOCIAL } from '../solicitudes/solicitudCreditoStore';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-7e2d13d9`;
 const HDR = { Authorization: `Bearer ${publicAnonKey}` };
@@ -85,13 +86,18 @@ function DatosAviso({ aviso, edit, onChange }: {
       <div className="grid grid-cols-3 gap-x-4 gap-y-1.5 text-xs">
         <div className="space-y-1.5">
           <Field label="No. Documento"   value={aviso.no_docto}      isRO />
-          <Field label="Tipo"            value={aviso.sub_tipo || aviso.tipo} isRO />
+          {/* Tipo: siempre Por Cobrar / Por Pagar — no el sub_tipo (Arrendamiento,
+              Amortizacion, Aportacion), que es solo la clasificación del panel. */}
+          <Field label="Tipo"            value={aviso.tipo} isRO />
           <Field label="Monto"           value={fmtMoney(aviso.monto_transaccion)} isRO />
         </div>
         <div className="space-y-1.5">
           <Field label="F. Compromiso"   value={aviso.fecha_compromiso?.split('T')[0] || ''}
             type="date" isRO={RO} onChange={v => onChange('fecha_compromiso', v)} />
-          <Field label="Inst. Gobierno"  value={aviso.gobierno || ''} isRO />
+          {/* Inst. Gobierno no aplica a Arrendamiento — se oculta ese campo. */}
+          {aviso.sub_tipo !== 'Arrendamiento' && (
+            <Field label="Inst. Gobierno"  value={aviso.gobierno || ''} isRO />
+          )}
           <Field label="Moneda"          value={aviso.moneda || 'MXN'} isRO />
         </div>
         <div className="space-y-1.5">
@@ -197,9 +203,19 @@ function CobranzaDetailTable({ aviso, detalle, loading }: {
           <div><span className="text-gray-500">Moneda:</span>{' '}
             <span className="text-gray-800">{aviso.moneda || 'MXN'}</span>
           </div>
-          <div><span className="text-gray-500">Inst. Gobierno:</span>{' '}
-            <span className="text-gray-800">{aviso.gobierno || '—'}</span>
-          </div>
+          {/* Contraparte: en Arrendamiento la institución es la contraparte
+              formal del cobro (el cliente le paga a ella) — la cuenta por
+              pagar al proveedor ya no pasa por Cobranza, vive en Solicitud de
+              Activación. Fuera de Arrendamiento se conserva Inst. Gobierno. */}
+          {aviso.sub_tipo === 'Arrendamiento' ? (
+            <div><span className="text-gray-500">Contraparte:</span>{' '}
+              <span className="text-gray-800">{INSTITUCION_RAZON_SOCIAL}</span>
+            </div>
+          ) : (
+            <div><span className="text-gray-500">Inst. Gobierno:</span>{' '}
+              <span className="text-gray-800">{aviso.gobierno || '—'}</span>
+            </div>
+          )}
         </div>
       </div>
 
@@ -294,8 +310,39 @@ function AvisoForm({ aviso: inicial, mode, onBack, onPagado }: {
     setLoadingDetalle(true);
     fetch(`${API_BASE}/cartera/facturas/${aviso.id}/detalle`, { headers: HDR })
       .then(r => r.json())
-      .then(json => {
-        if (json.detalle) setDetalle(json.detalle);
+      .then(async json => {
+        const lineas: DetalleRow[] = Array.isArray(json.detalle) ? json.detalle : [];
+        if (lineas.length > 0) { setDetalle(lineas); return; }
+
+        // Sin líneas en J_FACTURAS_DETALLE: reconstruir el desglose desde la
+        // factura guardada en la solicitud (data.solicitud.facturas). Aplica a
+        // las facturas de Arrendamiento (Puro y Financiero), cuyos conceptos propios
+        // (Enganche, Comisión, Rentas anticipadas / conceptos del CFDI) sólo se
+        // materializan como líneas si la Edge Function acepta `conceptos`.
+        if (!aviso.solicitud_id) { setDetalle([]); return; }
+        try {
+          const res = await fetch(`${API_BASE}/solicitudes-credito`, { headers: HDR });
+          const sols = await res.json();
+          const sol = (sols.data || []).find((s: any) => String(s.id) === String(aviso.solicitud_id));
+          const facturas: any[] = sol?.data?.solicitud?.facturas || [];
+          const fac = facturas.find(f => String(f.facturaIdCobranza) === String(aviso.id))
+            || facturas.find(f => f.noFactura === aviso.no_docto);
+          if (!fac?.conceptos?.length) { setDetalle([]); return; }
+
+          setDetalle(fac.conceptos.map((c: any, i: number) => ({
+            id: `local-${i}`,
+            cve_subproducto: c.concepto,
+            descripcion_subproducto: c.descripcion,
+            cantidad: 1,
+            monto: Number(c.monto) || 0,
+            porcentaje_impuesto: 0,
+            moneda: aviso.moneda || 'MXN',
+            subtotal: Number(c.monto) || 0,
+            estatus: aviso.estatus === 'Pagado' ? 'Pagado' : 'Pendiente',
+          })));
+        } catch {
+          setDetalle([]);
+        }
       })
       .catch(() => {})
       .finally(() => setLoadingDetalle(false));
@@ -518,6 +565,10 @@ function AvisosVencimientoPanel({ subTipoFijo, titulo }: { subTipoFijo?: string;
   const ITEMS_PER_PAGE = 10;
   const tableRef  = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
+  // Inst. Gobierno no aplica al arrendamiento: la contraparte es la institución
+  // o el proveedor del bien, no la dependencia de gobierno del cliente.
+  const muestraGobierno = subTipoFijo !== 'Arrendamiento';
+  const NUM_COLS = muestraGobierno ? 10 : 9;
 
   const cargar = useCallback(async () => {
     setLoading(true);
@@ -565,8 +616,8 @@ function AvisosVencimientoPanel({ subTipoFijo, titulo }: { subTipoFijo?: string;
       <tr>
         <td>${r.no_docto || '—'}</td>
         <td>${fmtDate(r.fecha_compromiso)}</td>
-        <td>${r.sub_tipo || r.tipo || '—'}</td>
-        <td>${r.gobierno || '—'}</td>
+        <td>${r.tipo || r.sub_tipo || '—'}</td>
+        ${muestraGobierno ? `<td>${r.gobierno || '—'}</td>` : ''}
         <td>${r.cliente || '—'}</td>
         <td>${r.referencia || '—'}</td>
         <td style="text-align:right">${fmtMoney(r.monto_transaccion)}</td>
@@ -590,7 +641,7 @@ function AvisosVencimientoPanel({ subTipoFijo, titulo }: { subTipoFijo?: string;
       <table>
         <thead><tr>
           <th>NO. DOCUMENTO</th><th>F. COMPROMISO</th><th>TIPO</th>
-          <th>INST. GOBIERNO</th><th>CLIENTE</th><th>REFERENCIA</th>
+          ${muestraGobierno ? '<th>INST. GOBIERNO</th>' : ''}<th>CLIENTE</th><th>REFERENCIA</th>
           <th>MONTO</th><th>MONEDA</th><th>ESTATUS</th>
         </tr></thead>
         <tbody>${rows}</tbody>
@@ -619,10 +670,15 @@ function AvisosVencimientoPanel({ subTipoFijo, titulo }: { subTipoFijo?: string;
   };
 
   const exportCSV = () => {
-    const headers = ['No. Documento','F. Compromiso','Tipo','Inst. Gobierno','Cliente','Referencia','Monto','Moneda','Estatus'];
+    const headers = [
+      'No. Documento','F. Compromiso','Tipo',
+      ...(muestraGobierno ? ['Inst. Gobierno'] : []),
+      'Cliente','Referencia','Monto','Moneda','Estatus',
+    ];
     const lines = filtered.map(r => [
-      r.no_docto, fmtDate(r.fecha_compromiso), r.sub_tipo || r.tipo,
-      r.gobierno || '', r.cliente || '', r.referencia || '',
+      r.no_docto, fmtDate(r.fecha_compromiso), r.tipo || r.sub_tipo,
+      ...(muestraGobierno ? [r.gobierno || ''] : []),
+      r.cliente || '', r.referencia || '',
       r.monto_transaccion, r.moneda, r.estatus,
     ].map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(','));
     const csv  = '﻿' + [headers.join(','), ...lines].join('\r\n');
@@ -776,7 +832,9 @@ function AvisosVencimientoPanel({ subTipoFijo, titulo }: { subTipoFijo?: string;
                 <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700">NO. DOCUMENTO</th>
                 <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700">F. COMPROMISO</th>
                 <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700">TIPO</th>
-                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700">INST. GOBIERNO</th>
+                {muestraGobierno && (
+                  <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700">INST. GOBIERNO</th>
+                )}
                 <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700">CLIENTE</th>
                 <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700">REFERENCIA</th>
                 <th className="px-2 py-2.5 text-right font-medium text-xs text-gray-700">MONTO TRANSACCIÓN</th>
@@ -786,7 +844,7 @@ function AvisosVencimientoPanel({ subTipoFijo, titulo }: { subTipoFijo?: string;
             </thead>
             <tbody>
               {loading && rows.length === 0 ? (
-                <tr><td colSpan={10} className="px-3 py-8 text-center text-gray-500">
+                <tr><td colSpan={NUM_COLS} className="px-3 py-8 text-center text-gray-500">
                   <div className="flex items-center justify-center gap-2">
                     <svg className="animate-spin" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#666" strokeWidth="2">
                       <circle cx="8" cy="8" r="6" strokeDasharray="24" strokeDashoffset="12"/>
@@ -795,7 +853,7 @@ function AvisosVencimientoPanel({ subTipoFijo, titulo }: { subTipoFijo?: string;
                   </div>
                 </td></tr>
               ) : currentItems.length === 0 ? (
-                <tr><td colSpan={10} className="px-3 py-8 text-center text-gray-500">
+                <tr><td colSpan={NUM_COLS} className="px-3 py-8 text-center text-gray-500">
                   No se encontraron avisos de vencimiento
                 </td></tr>
               ) : currentItems.map((r, idx) => (
@@ -814,8 +872,12 @@ function AvisosVencimientoPanel({ subTipoFijo, titulo }: { subTipoFijo?: string;
                   </td>
                   <td className="px-2 py-2.5 text-xs font-mono text-[#0066CC]">{r.no_docto || '—'}</td>
                   <td className="px-2 py-2.5 text-xs text-gray-700 whitespace-nowrap">{fmtDate(r.fecha_compromiso)}</td>
-                  <td className="px-2 py-2.5 text-xs text-gray-700">{r.sub_tipo || r.tipo}</td>
-                  <td className="px-2 py-2.5 text-xs text-gray-700 max-w-[120px] truncate" title={r.gobierno}>{r.gobierno || '—'}</td>
+                  {/* TIPO es el tipo de cuenta (Por Cobrar / Por Pagar); el
+                      sub_tipo ya lo define la pestaña y sólo sirve de respaldo. */}
+                  <td className="px-2 py-2.5 text-xs text-gray-700">{r.tipo || r.sub_tipo}</td>
+                  {muestraGobierno && (
+                    <td className="px-2 py-2.5 text-xs text-gray-700 max-w-[120px] truncate" title={r.gobierno}>{r.gobierno || '—'}</td>
+                  )}
                   <td className="px-2 py-2.5 text-xs text-gray-700 max-w-[140px] truncate" title={r.cliente}>{r.cliente || '—'}</td>
                   <td className="px-2 py-2.5 text-xs text-gray-600 max-w-[120px] truncate" title={r.referencia}>{r.referencia || '—'}</td>
                   <td className="px-2 py-2.5 text-xs text-right text-gray-700 font-mono">{fmtMoney(r.monto_transaccion)}</td>
@@ -862,7 +924,7 @@ function AvisosVencimientoPanel({ subTipoFijo, titulo }: { subTipoFijo?: string;
 
 // ─── Módulo principal ─────────────────────────────────────────────────────────
 export function CobranzaModule() {
-  const [activeTab, setActiveTab] = useState<'creditos' | 'aportaciones'>('creditos');
+  const [activeTab, setActiveTab] = useState<'creditos' | 'arrendamiento' | 'aportaciones'>('creditos');
 
   return (
     <>
@@ -874,6 +936,13 @@ export function CobranzaModule() {
               <rect x="2" y="3" width="12" height="10" rx="1"/><path d="M2 7h12M5 3V2M11 3V2"/>
             </svg>
             Avisos de Vencimiento — Créditos
+          </button>
+          <button onClick={() => setActiveTab('arrendamiento')}
+            className={`flex items-center gap-2 px-3 py-1.5 rounded text-sm transition-colors ${activeTab === 'arrendamiento' ? 'tab-active' : 'tab-inactive'}`}>
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+              <path d="M2 4h9l3 3v5H2z"/><path d="M11 4v3h3"/><circle cx="5" cy="12" r="1.3"/><circle cx="11" cy="12" r="1.3"/>
+            </svg>
+            Facturación — Arrendamiento
           </button>
           <button onClick={() => setActiveTab('aportaciones')}
             className={`flex items-center gap-2 px-3 py-1.5 rounded text-sm transition-colors ${activeTab === 'aportaciones' ? 'tab-active' : 'tab-inactive'}`}>
@@ -887,6 +956,9 @@ export function CobranzaModule() {
 
       {activeTab === 'creditos' && (
         <AvisosVencimientoPanel key="creditos"  subTipoFijo="Amortizacion" titulo="Avisos de Vencimiento — Créditos" />
+      )}
+      {activeTab === 'arrendamiento' && (
+        <AvisosVencimientoPanel key="arrendamiento" subTipoFijo="Arrendamiento" titulo="Facturación — Arrendamiento" />
       )}
       {activeTab === 'aportaciones' && (
         <AvisosVencimientoPanel key="aportaciones" subTipoFijo="Aportacion" titulo="Avisos de Aportación — Captación" />

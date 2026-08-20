@@ -18,7 +18,7 @@ export function CreditoForm({ mode, onCancel }: CreditoFormProps) {
     { id: 'amortizaciones', label: 'Amortizaciones' },
     { id: 'expedientes', label: 'Expedientes Electrónicos' },
     { id: 'autorizacion', label: 'Autorización' },
-    { id: 'garantias', label: 'Garantías' },
+    { id: 'garantias', label: 'Bienes' },
     { id: 'cargos', label: 'Cargos' },
     { id: 'avisos', label: 'Avisos' },
     { id: 'solicitudes', label: 'Solicitudes Extraordinarias' },

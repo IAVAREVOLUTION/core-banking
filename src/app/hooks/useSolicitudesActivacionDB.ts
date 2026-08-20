@@ -20,6 +20,7 @@ import type {
   SolicitudActivacionListItem,
   SolicitudActivacionFormData,
 } from '../components/solicitudes-activacion/solicitudActivacionStore';
+import { INSTITUCION_RAZON_SOCIAL, IVA_FACTURA } from '../components/solicitudes/solicitudCreditoStore';
 
 // ═══════════════════════════════════════════════════════════════════
 const SS_KEY = 'solicitudes_activacion_db';
@@ -63,6 +64,9 @@ export function parsePct(val: unknown): number {
   return isNaN(n) ? 0 : n;
 }
 
+/** Únicos tipos de cuenta válidos en Solicitud de Activación. */
+export const TIPOS_CUENTA = ['Por Cobrar', 'Por Pagar'];
+
 /** Maps J_CUENTAS_CORP_CLIENTES.linea_produc → TIPO display value */
 export function lineaProdToTipo(linea: string | null | undefined): string {
   if (!linea) return '';
@@ -71,6 +75,159 @@ export function lineaProdToTipo(linea: string | null | undefined): string {
   if (normalized === 'captacion') return 'Por Cobrar';
   if (normalized === 'credito')   return 'Por Pagar';
   return '';
+}
+
+/**
+ * Crea una Solicitud de Activación "Por Pagar" para la cuenta al proveedor
+ * del bien en Arrendamiento Puro (Fase 5 — Recepción del Activo).
+ *
+ * El proveedor no es un cliente del banco (no tiene fila en J_CLIENTES), por
+ * lo que cliente_id queda null — el nombre/RFC del proveedor se guarda como
+ * texto libre en data.header, igual que ya hace crearFacturaArrendamientoCobranza
+ * con la columna `cliente` de J_FACTURAS. No usa el hook de React para poder
+ * invocarse desde un handler fuera de un componente montado con este hook.
+ */
+export async function crearFacturaProveedorActivacion(params: {
+  solicitudId: string;
+  /** UUID del proveedor en J_CLIENTES (type='Proveedor') — cliente_id es NOT NULL. */
+  proveedorId: string;
+  proveedor: string;
+  rfcProveedor: string;
+  /** Monto autorizado — importe total de la factura, IVA incluido. */
+  monto: number;
+  moneda?: string;
+  referencia?: string;
+  fechaCompromiso?: string;
+}): Promise<{ ok: boolean; id?: string; error?: string }> {
+  const { solicitudId, proveedorId, proveedor, rfcProveedor, monto, moneda = 'MXN', referencia, fechaCompromiso } = params;
+
+  // El Detail desglosa la operación en dos líneas a partir del importe TOTAL
+  // (el monto autorizado) y la tasa de IVA:
+  //   Capital = monto × (1 − IVA)   ·   IVA = monto × IVA
+  // Por eso aquí se guarda el total y la tasa, no el importe ya neteado.
+  const pctImpuesto = IVA_FACTURA;
+
+  const form: SolicitudActivacionFormData = {
+    id: '',
+    solicitudId,
+    // El proveedor ES el cliente de esta cuenta por pagar: vive en J_CLIENTES
+    // con type='Proveedor' (GarantiaForm lo selecciona desde ahí), así que su
+    // UUID satisface el FK/NOT NULL de cliente_id sin registros ficticios.
+    clienteId: proveedorId,
+    type: 'Por Pagar',
+    fechaSolicitud: '',
+    fechaCompromiso: fechaCompromiso || '',
+    estatus: 'Pendiente',
+    numeroDocumento: rfcProveedor,
+    cliente: proveedor,
+    cuentaBancaria: '',
+    formaDePago: 'Banca por internet',
+    // Quien paga al proveedor es la institución.
+    institucionFinanciera: INSTITUCION_RAZON_SOCIAL,
+    referencia: referencia || '',
+    montoTransaccion: monto.toFixed(2),
+    moneda,
+    nota: 'Cuenta por pagar al proveedor del bien — generada desde Originación (Fase 5).',
+    usuarioNota: 'Sistema',
+    detailClaveProducto: 'ARRENDAMIENTO_PROVEEDOR',
+    detailCantidad: 1,
+    detailMonto: monto,
+    detailPctImpuesto: pctImpuesto,
+    detailMoneda: moneda,
+    detailSubTotal: monto,
+    detailEstatus: 'Pendiente',
+  };
+
+  const payload = formToDBPayload(form);
+
+  // Vía Edge Function (cliente con permisos de servidor) — el rol público no
+  // tiene GRANT sobre J_SOLICITUDES_ACTIVACION, así que un INSERT directo vía
+  // supabase.schema(...) falla con "permission denied". Mismo patrón que el
+  // PUT existente (putSolicitudActivacionHandler).
+  try {
+    const res = await fetch(`${API_BASE}/solicitudes-activacion`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${publicAnonKey}` },
+      body: JSON.stringify(payload),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok || json.error) return { ok: false, error: json.error || `HTTP ${res.status}` };
+    return { ok: true, id: json.id };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { ok: false, error: msg };
+  }
+}
+
+/**
+ * Mapa `id → estatus` de TODAS las solicitudes de activación, en una sola
+ * consulta.
+ *
+ * Para vistas que reconcilian muchos registros de golpe (Cartera de
+ * Arrendamiento lista todos los contratos) en vez de pedir uno por factura.
+ * Devuelve mapa vacío ante cualquier fallo: quien lo use debe conservar el
+ * estatus guardado, no asumir 'Pendiente'.
+ */
+export async function fetchEstatusActivacionMap(): Promise<Map<string, string>> {
+  const mapa = new Map<string, string>();
+  try {
+    const { data, error } = await supabase.rpc('get_solicitudes_activacion');
+    if (error || !data) return mapa;
+    for (const r of data as Record<string, any>[]) {
+      if (r?.id) mapa.set(String(r.id), String(r.estatus || ''));
+    }
+  } catch { /* sin conexión se conserva el estatus guardado */ }
+  return mapa;
+}
+
+/**
+ * Lee el estatus real de una Solicitud de Activación por id.
+ *
+ * La Fase 6 de Arrendamiento Puro no puede confiar en la copia local de la
+ * factura del proveedor: el pago se aplica desde el módulo Solicitud de
+ * Activación y ese cambio no vuelve solo a la solicitud de crédito.
+ */
+export async function fetchEstatusSolicitudActivacion(
+  id: string,
+): Promise<{ ok: boolean; estatus?: string; noDocto?: string; monto?: number; error?: string }> {
+  const mapear = (row: Record<string, any>) => {
+    const header = (row.data?.header || {}) as Record<string, unknown>;
+    return {
+      ok: true as const,
+      estatus: row.estatus as string,
+      noDocto: String(header.referencia || ''),
+      monto: Number.parseFloat(String(header.montoTransaccion || '0').replace(/[$,\s]/g, '')) || 0,
+    };
+  };
+
+  // Intento 1: RPC con JOINs — es la vía que ya usa el listado del módulo y la
+  // única con permisos para el rol público (el SELECT directo al schema y el
+  // INSERT están denegados por RLS sobre J_SOLICITUDES_ACTIVACION).
+  try {
+    const { data, error } = await supabase.rpc('get_solicitudes_activacion');
+    if (!error) {
+      const row = (data as Record<string, any>[] | null || []).find(r => String(r.id) === String(id));
+      if (!row) return { ok: false, error: 'La solicitud de activación ya no existe' };
+      return mapear(row);
+    }
+  } catch { /* cae al intento 2 */ }
+
+  // Intento 2: schema directo — sólo funciona donde el rol sí tenga SELECT.
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data, error } = await (supabase as any)
+      .schema('EFINANCIANET_DB')
+      .from('J_SOLICITUDES_ACTIVACION')
+      .select('id, estatus, data')
+      .eq('id', id)
+      .single();
+    if (error) return { ok: false, error: error.message };
+    if (!data) return { ok: false, error: 'La solicitud de activación ya no existe' };
+    return mapear(data);
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return { ok: false, error: msg };
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -146,7 +303,13 @@ function mapRowToListItem(row: SolicitudActivacionDBRow): SolicitudActivacionLis
     solicitudId:     row.solicitud_id || '',
     cliente:         clienteNombre,
     numeroDocumento: row.cliente_curp || (header.numeroDocumento as string) || '',
-    tipo:            lineaProdToTipo(row.solicitud_linea_produc) || row.type || row.solicitud_type || '',
+    // La columna `type` manda cuando ya trae un tipo de cuenta explícito
+    // ('Por Cobrar'/'Por Pagar'). lineaProdToTipo sólo es un derivado para
+    // registros legacy que no lo tienen guardado — si se evalúa primero, pisa
+    // el tipo real (ej. la cuenta por pagar al proveedor de Arrendamiento).
+    tipo:            (TIPOS_CUENTA.includes(String(row.type)) ? row.type : '')
+                     || lineaProdToTipo(row.solicitud_linea_produc)
+                     || row.type || row.solicitud_type || '',
     fechaSolicitud:  parseISOToDisplay(row.created_at || ''),
     estatus:         row.estatus || 'Pendiente',
     montoTransaccion: montoStr,

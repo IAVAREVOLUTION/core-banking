@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { toast } from 'sonner';
 import {
   SimulacionRow, TerminosCondiciones, EMPTY_TERMINOS,
@@ -7,7 +7,7 @@ import {
   CAT_FRECUENCIA,
 } from './solicitudCreditoStore';
 import { FlujInversionRow, calcularFlujInversion, TASA_ISR_ANUAL } from '../cotizaciones/cotizacionCaptacionTypes';
-import { generarTablaArrendamiento, type SimulacionArrendamiento } from '../cotizaciones/cotizacionArrendamientoTypes';
+import { generarTablaArrendamiento, generarTablaArrendamientoFinanciero, type SimulacionArrendamiento } from '../cotizaciones/cotizacionArrendamientoTypes';
 
 interface AportacionRow {
   noAportacion: number;
@@ -171,7 +171,12 @@ export function SimulacionTab({ mode, solicitudId, lineaProducto, tipoProducto, 
   const isCap = esCaptacion(lineaProducto, tipoProducto);
   const _tpRaw = (tipoProducto || lineaProducto || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
   const isInversion = isCap && _tpRaw.includes('invers');
-  const isArrendamiento = !isCap && _tpRaw.includes('arrendamiento') && _tpRaw.includes('puro');
+  // Puro y Financiero comparten TODA la maquinaria de calendario (estado,
+  // persistencia en `simulacion_arrendamiento` → `calendario_arrendamiento`,
+  // rentas anticipadas, Cartera de Arrendamiento). Lo único que cambia es qué
+  // motor lo genera y qué columnas se pintan.
+  const isArrendamiento = !isCap && _tpRaw.includes('arrendamiento');
+  const isArrFinanciero = isArrendamiento && !_tpRaw.includes('puro');
 
   // ── Amortización (solo crédito) ──
   const getInitRows = (): SimulacionRow[] => {
@@ -326,6 +331,31 @@ export function SimulacionTab({ mode, solicitudId, lineaProducto, tipoProducto, 
     if (last?.fechaPago) onFechaFinChange(last.fechaPago);
   }, [arrRows]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // El parámetro Rentas Anticipadas es la fuente de verdad del estatus de las
+  // primeras N rentas. Se reaplica aquí sobre el calendario ya generado para que
+  // cambiar el parámetro en Términos y Condiciones se refleje al volver a este
+  // subtab, sin obligar al usuario a simular de nuevo.
+  const arrRowsView = useMemo<SimulacionArrendamiento | null>(() => {
+    if (!isArrendamiento || !arrRows) return arrRows;
+    const n = Math.max(0, Math.min(
+      parseInt(String(readTerminos().rentasAnticipadas || '0'), 10) || 0,
+      arrRows.calendario.length
+    ));
+    const yaAplicado = arrRows.calendario.every((r, idx) =>
+      idx < n ? r.estatus === 'Pagado' : r.estatus !== 'Pagado'
+    );
+    if (yaAplicado) return arrRows;
+    return {
+      ...arrRows,
+      calendario: arrRows.calendario.map((r, idx) =>
+        idx < n
+          ? { ...r, estatus: 'Pagado' as const }
+          : (r.estatus === 'Pagado' ? { ...r, estatus: 'Pendiente' as const } : r)
+      ),
+      rentasAnticipadasDescontadas: arrRows.calendario.slice(0, n),
+    };
+  }, [arrRows, isArrendamiento]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const handleSimularInversion = () => {
     const terminos = readTerminos();
     const montoBase = (montoAutorizado && montoAutorizado > 0) ? montoAutorizado : parseFloat(parseCurrency(montoSolicitadoHeader || terminos.montoSolicitado || '0'));
@@ -417,7 +447,12 @@ export function SimulacionTab({ mode, solicitudId, lineaProducto, tipoProducto, 
       return;
     }
 
-    const resultado = generarTablaArrendamiento({
+    // Arrendamiento Financiero usa su propio motor: tabla de amortización con
+    // saldo insoluto que converge al Valor Residual e IVA sobre la renta
+    // completa. Puro conserva el calendario de rentas de siempre.
+    const generar = isArrFinanciero ? generarTablaArrendamientoFinanciero : generarTablaArrendamiento;
+
+    const resultado = generar({
       montoAutorizado: monto,
       montoResidual,
       tasaAnual: tasa,
@@ -429,7 +464,7 @@ export function SimulacionTab({ mode, solicitudId, lineaProducto, tipoProducto, 
     });
     setArrRows(resultado);
     saveToSession(solicitudId, 'simulacion_arrendamiento', resultado);
-    toast.success('Simulación generada', {
+    toast.success(isArrFinanciero ? 'Tabla de amortización generada' : 'Simulación generada', {
       description: `${resultado.calendario.length} rentas · Monto Autorizado: ${formatCurrency(monto)}${numRentasAnticipadas > 0 ? ` · ${numRentasAnticipadas} renta(s) anticipada(s) en Cargos` : ''}`,
       duration: 3500,
     });
@@ -578,21 +613,27 @@ export function SimulacionTab({ mode, solicitudId, lineaProducto, tipoProducto, 
   // ARRENDAMIENTO PURO
   // ════════════════════════════════════════════════
   if (isArrendamiento) {
-    const totalPago = arrRows ? arrRows.calendario.reduce((s, r) => s + r.pagoPeriodo, 0) : 0;
+    const totalPago = arrRowsView ? arrRowsView.calendario.reduce((s, r) => s + r.pagoPeriodo, 0) : 0;
 
     const estatusBadge = (estatus: string) => {
       const cls =
         estatus === 'Pagado' ? 'bg-green-50 text-green-700 border-green-200' :
         estatus === 'Vencido' ? 'bg-red-50 text-red-700 border-red-200' :
         'bg-amber-50 text-amber-700 border-amber-200';
-      return <span className={`px-1.5 py-0.5 text-[9px] border rounded ${cls}`}>{estatus}</span>;
+      // "Renta" es femenino: se etiqueta "Pagada" sin cambiar el valor interno 'Pagado'.
+      const label = estatus === 'Pagado' ? 'Pagada' : estatus;
+      return <span className={`px-1.5 py-0.5 text-[9px] border rounded ${cls}`}>{label}</span>;
     };
 
     return (
       <div className="border border-gray-200 bg-white p-0">
         <div className="border-t border-gray-300">
           <div className="bg-primary-tint-theme border-l-4 border-primary-theme px-3 py-2 flex items-center justify-between">
-            <span className="text-sm font-medium text-gray-800">CALENDARIO DE PAGOS — ARRENDAMIENTO PURO</span>
+            <span className="text-sm font-medium text-gray-800">
+              {isArrFinanciero
+                ? 'TABLA DE AMORTIZACIÓN — ARRENDAMIENTO FINANCIERO'
+                : 'CALENDARIO DE PAGOS — ARRENDAMIENTO PURO'}
+            </span>
             {!isRO && (
               <button
                 onClick={handleSimularArrendamiento}
@@ -607,39 +648,63 @@ export function SimulacionTab({ mode, solicitudId, lineaProducto, tipoProducto, 
             )}
           </div>
 
-          {!arrRows || arrRows.calendario.length === 0 ? (
+          {!arrRowsView || arrRowsView.calendario.length === 0 ? (
             <div className="p-8 text-center text-gray-500 text-sm">
               No hay simulación generada. Complete los Términos y Condiciones y presione "Simular".
             </div>
           ) : (
             <div className="p-4">
-              {arrRows.rentasAnticipadasDescontadas.length > 0 && (
+              {arrRowsView.rentasAnticipadasDescontadas.length > 0 && (
                 <div className="mb-3 px-3 py-2 bg-blue-50 border border-blue-200 text-xs text-blue-800">
-                  {arrRows.rentasAnticipadasDescontadas.length} renta(s) anticipada(s) descontada(s) del calendario —
-                  se muestran en el subtab <strong>Cargos</strong> como parte del desembolso inicial.
+                  Las primeras {arrRowsView.rentasAnticipadasDescontadas.length} renta(s) aparecen como <strong>Pagada</strong> por
+                  tratarse de rentas anticipadas — se cobran en el subtab <strong>Cargos</strong> como parte del desembolso inicial.
                 </div>
               )}
               <div className="border border-gray-300 overflow-x-auto">
                 <table className="w-full text-xs">
                   <thead>
                     <tr style={{ backgroundColor: '#D0D0D0' }} className="border-b border-gray-300">
-                      <th className="px-3 py-2 text-center text-[10px] text-gray-700 font-semibold border-r border-gray-300">NO. RENTA</th>
+                      <th className="px-3 py-2 text-center text-[10px] text-gray-700 font-semibold border-r border-gray-300">{isArrFinanciero ? 'N° PAGO' : 'NO. RENTA'}</th>
                       <th className="px-3 py-2 text-left text-[10px] text-gray-700 font-semibold border-r border-gray-300">FECHA</th>
-                      <th className="px-3 py-2 text-right text-[10px] text-gray-700 font-semibold border-r border-gray-300">RENTA SIN IVA</th>
-                      <th className="px-3 py-2 text-right text-[10px] text-gray-700 font-semibold border-r border-gray-300">SEGURO</th>
-                      <th className="px-3 py-2 text-right text-[10px] text-gray-700 font-semibold border-r border-gray-300">IVA</th>
-                      <th className="px-3 py-2 text-right text-[10px] text-gray-700 font-semibold border-r border-gray-300">PAGO PERIODO</th>
+                      {isArrFinanciero && <>
+                        <th className="px-3 py-2 text-right text-[10px] text-gray-700 font-semibold border-r border-gray-300">SALDO INSOLUTO</th>
+                        <th className="px-3 py-2 text-right text-[10px] text-gray-700 font-semibold border-r border-gray-300">CAPITAL</th>
+                        <th className="px-3 py-2 text-right text-[10px] text-gray-700 font-semibold border-r border-gray-300">INTERÉS</th>
+                      </>}
+                      <th className="px-3 py-2 text-right text-[10px] text-gray-700 font-semibold border-r border-gray-300">{isArrFinanciero ? 'RENTA BASE' : 'RENTA SIN IVA'}</th>
+                      {isArrFinanciero
+                        ? <>
+                            <th className="px-3 py-2 text-right text-[10px] text-gray-700 font-semibold border-r border-gray-300">IVA DE LA RENTA</th>
+                            <th className="px-3 py-2 text-right text-[10px] text-gray-700 font-semibold border-r border-gray-300">SEGURO</th>
+                          </>
+                        : <>
+                            <th className="px-3 py-2 text-right text-[10px] text-gray-700 font-semibold border-r border-gray-300">SEGURO</th>
+                            <th className="px-3 py-2 text-right text-[10px] text-gray-700 font-semibold border-r border-gray-300">IVA</th>
+                          </>}
+                      <th className="px-3 py-2 text-right text-[10px] text-gray-700 font-semibold border-r border-gray-300">{isArrFinanciero ? 'PAGO DEL PERIODO' : 'PAGO PERIODO'}</th>
                       <th className="px-3 py-2 text-center text-[10px] text-gray-700 font-semibold">ESTATUS</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {arrRows.calendario.map((r, idx) => (
+                    {arrRowsView.calendario.map((r, idx) => (
                       <tr key={r.noRenta} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
                         <td className="px-3 py-1.5 text-center border-r border-gray-200">{r.noRenta}</td>
                         <td className="px-3 py-1.5 border-r border-gray-200">{formatDateCalendar(r.fechaPago)}</td>
+                        {isArrFinanciero && <>
+                          <td className="px-3 py-1.5 text-right border-r border-gray-200 font-mono">{formatCurrency(r.saldoInsoluto ?? 0)}</td>
+                          <td className="px-3 py-1.5 text-right border-r border-gray-200 font-mono">{formatCurrency(r.capital ?? 0)}</td>
+                          <td className="px-3 py-1.5 text-right border-r border-gray-200 font-mono">{formatCurrency(r.interes ?? 0)}</td>
+                        </>}
                         <td className="px-3 py-1.5 text-right border-r border-gray-200 font-mono">{formatCurrency(r.rentaSinIva)}</td>
-                        <td className="px-3 py-1.5 text-right border-r border-gray-200 font-mono">{formatCurrency(r.seguro)}</td>
-                        <td className="px-3 py-1.5 text-right border-r border-gray-200 font-mono">{formatCurrency(r.iva)}</td>
+                        {isArrFinanciero
+                          ? <>
+                              <td className="px-3 py-1.5 text-right border-r border-gray-200 font-mono">{formatCurrency(r.iva)}</td>
+                              <td className="px-3 py-1.5 text-right border-r border-gray-200 font-mono">{formatCurrency(r.seguro)}</td>
+                            </>
+                          : <>
+                              <td className="px-3 py-1.5 text-right border-r border-gray-200 font-mono">{formatCurrency(r.seguro)}</td>
+                              <td className="px-3 py-1.5 text-right border-r border-gray-200 font-mono">{formatCurrency(r.iva)}</td>
+                            </>}
                         <td className="px-3 py-1.5 text-right border-r border-gray-200 font-mono font-medium">{formatCurrency(r.pagoPeriodo)}</td>
                         <td className="px-3 py-1.5 text-center">{estatusBadge(r.estatus)}</td>
                       </tr>
@@ -647,7 +712,9 @@ export function SimulacionTab({ mode, solicitudId, lineaProducto, tipoProducto, 
                   </tbody>
                   <tfoot>
                     <tr className="bg-gray-100 border-t-2 border-gray-400 font-medium">
-                      <td colSpan={5} className="px-3 py-2.5 text-xs text-gray-800">TOTAL CALENDARIO</td>
+                      <td colSpan={isArrFinanciero ? 8 : 5} className="px-3 py-2.5 text-xs text-gray-800">
+                        {isArrFinanciero ? 'TOTAL DE LA TABLA' : 'TOTAL CALENDARIO'}
+                      </td>
                       <td className="px-3 py-2.5 text-xs text-right text-gray-800 font-mono">{formatCurrency(totalPago)}</td>
                       <td />
                     </tr>

@@ -24,13 +24,16 @@
  */
 
 import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import html2canvas from 'html2canvas';
+import logoSrc from '../../assets/7b6cb23c00b7817818c638af3eae0a416e1e9f57.png';
 import type { DocumentoCargado } from '../components/solicitudes/solicitudCreditoStore';
 import {
   loadFromSession, loadFromSavedStore, saveToSession, generateId,
 } from '../components/solicitudes/solicitudCreditoStore';
 import type { PlantillaInstitucional } from '../types/product';
 import { getTipoPlantillaMeta } from '../types/product';
+import { projectId as SUPA_PROJECT_ID, publicAnonKey } from '/utils/supabase/info';
 
 type SolId = number | string;
 
@@ -42,9 +45,94 @@ export const CLAVE_CONTRATO_BASE    = 'CONTRATO_BASE';
 export const CLAVE_PAGARE_BASE      = 'PAGARE_BASE';
 export const CLAVE_CONTRATO_FIRMADO = 'CONTRATO_FIRMADO';
 export const CLAVE_PAGARE_FIRMADO   = 'PAGARE_FIRMADO';
+/**
+ * Debe coincidir EXACTAMENTE con el `tipo` del requisito configurado en el
+ * producto (expedientesElectronicos → clave DOC-BURO), porque el expediente
+ * empareja documentos con requisitos por nombre de tipo. Si no coincide, la
+ * validación IA lo rechaza con "se esperaba X, se encontró Y".
+ */
+export const CLAVE_REPORTE_BURO     = 'Autorización Buró de Crédito';
+
+/**
+ * Fase 3 — Contratación e Instrumentación. Igual que el Buró, estos nombres
+ * deben coincidir EXACTAMENTE con el `tipo` de los requisitos del producto
+ * (DOC-CONTRATO-FIRMADO, DOC-PAGARE, DOC-ANXREN).
+ */
+export const CLAVE_CONTRATO_REQ = 'Contrato Firmado';
+export const CLAVE_PAGARE_REQ   = 'Pagaré de Respaldo';
+export const CLAVE_ANEXO_RENTAS = 'Anexo de Rentas';
+
+/**
+ * Fase 6 — Liberación y Dispersión (Tesorería). Debe coincidir EXACTAMENTE con
+ * el requisito DOC-SPEI del producto; la validación IA compara por nombre.
+ */
+export const CLAVE_COMPROBANTE_SPEI = 'Comprobante de Transferencia SPEI';
 
 /** Bucket de Supabase Storage para expedientes electrónicos */
 const BUCKET_EXPEDIENTES = 'make-7e2d13d9-expedientes-electronicos-prospectos';
+
+const API_BASE_DOCS = `https://${SUPA_PROJECT_ID}.supabase.co/functions/v1/make-server-7e2d13d9`;
+const UUID_RE_DOCS = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Persiste el arreglo completo de documentos del expediente en la BD
+ * (J_CUENTAS_CORP_CLIENTES.data.solicitud.expediente_electronico.documentos).
+ *
+ * Se llama directamente desde los generadores automáticos porque el
+ * auto-guardado general del formulario no siempre alcanza a correr (o falla
+ * en silencio) cuando el documento se crea fuera de un "Guardar" explícito.
+ * El endpoint PUT hace deep merge del lado del servidor, así que sólo se
+ * envía la rama del expediente y el resto del JSON queda intacto.
+ */
+async function persistirDocumentosEnBD(
+  solicitudId: SolId,
+  documentos: DocumentoCargado[],
+): Promise<{ ok: boolean; error?: string }> {
+  const id = String(solicitudId);
+  if (!UUID_RE_DOCS.test(id)) {
+    return { ok: false, error: 'La solicitud aún no tiene ID de BD (guarde la solicitud primero).' };
+  }
+
+  // camelCase (front) → snake_case (columna JSONB), mismo shape que lee
+  // preloadSubtabsFromDBData al reabrir la solicitud.
+  const docsDB = documentos.map(d => ({
+    id: d.id,
+    fecha_creacion: d.fecha,
+    usuario: d.usuario || '',
+    tipo_documento: d.tipoDocumento || '',
+    archivo_adjunto: d.archivo || '',
+    tipo_archivo: d.tipoArchivo || '',
+    nota: d.nota || '',
+    area: d.area || '',
+    fase: d.fase || '',
+    fase_id: d.faseId ?? 0,
+    estatus: d.estatus || '',
+    validado_ia: d.validadoIA ?? false,
+    url: d.url || '',
+    storage_path: (d as any).storagePath || '',
+    storage_bucket: (d as any).storageBucket || BUCKET_EXPEDIENTES,
+    mime: d.mime || '',
+    tamano_kb: d.tamanoKB ?? 0,
+  }));
+
+  try {
+    const res = await fetch(`${API_BASE_DOCS}/solicitudes-credito/${id}`, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${publicAnonKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        data: { solicitud: { expediente_electronico: { documentos: docsDB } } },
+      }),
+    });
+    if (res.ok) return { ok: true };
+    const json = await res.json().catch(() => ({} as any));
+    return { ok: false, error: json.error || `HTTP ${res.status}` };
+  } catch (err: any) {
+    return { ok: false, error: err?.message || String(err) };
+  }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Resultado de validación de plantillas
@@ -256,6 +344,12 @@ export interface DatosSolicitud {
   telefono?: string;
   email?: string;
   fechaNacimiento?: string;
+  // ── Fase 6 — Dispersión al proveedor (Tesorería) ──
+  proveedor?: string;
+  bancoProveedor?: string;
+  clabeProveedor?: string;
+  montoDispersar?: number;
+  claveRastreo?: string;
 }
 
 /** Genera el PDF base del Contrato de Crédito (no firmado). */
@@ -320,6 +414,196 @@ export function generarPagePDF(datos: DatosSolicitud): string {
     ['conforme a la Ley General de Titulos y Operaciones', ''],
     ['de Credito vigente.', ''],
   ]);
+}
+
+const BURO_PRIMARY = [30, 64, 120] as [number, number, number];
+const BURO_LIGHT    = [245, 247, 250] as [number, number, number];
+const BURO_BORDER   = [200, 208, 220] as [number, number, number];
+const BURO_GREEN    = [34, 139, 84] as [number, number, number];
+const BURO_AMBER    = [180, 130, 20] as [number, number, number];
+
+/**
+ * Genera el PDF de "Autorización Buró de Crédito" (Fase 2 — Análisis y
+ * Dictaminación), con el mismo lenguaje visual institucional que el resto de
+ * los documentos generados (jsPDF + autoTable + logo, ver
+ * solicitudActivacionPDF.ts).
+ *
+ * El título y el tipo deben coincidir con el requisito DOC-BURO del producto
+ * ("Autorización Buró de Crédito"); incluye además el resultado simulado de la
+ * consulta. No hay integración real con una Sociedad de Información Crediticia.
+ */
+export function generarReporteBuroPDF(datos: DatosSolicitud): string {
+  const fecha = new Date().toLocaleString('es-MX');
+  // Score determinístico por solicitud (600-780) para que no sea siempre idéntico.
+  const seed = String(datos.noSol || '').split('').reduce((s, c) => s + c.charCodeAt(0), 0);
+  const score = 600 + (seed % 181);
+  const folio = `SIC-${new Date().getFullYear()}${String(seed % 900000 + 100000)}`;
+  const calificacion = score >= 700 ? 'Excelente' : score >= 650 ? 'Bueno' : 'Aceptable';
+  const scoreColor = score >= 700 ? BURO_GREEN : score >= 650 ? BURO_PRIMARY : BURO_AMBER;
+
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true });
+  const W = doc.internal.pageSize.getWidth();
+  let y = 15;
+
+  // ── Header bar ──
+  const HEADER_H = 28;
+  doc.setFillColor(...BURO_PRIMARY);
+  doc.rect(0, 0, W, HEADER_H, 'F');
+
+  const LOGO_W = 30;
+  const LOGO_H = 20;
+  const LOGO_Y = (HEADER_H - LOGO_H) / 2;
+  const PAD = 2;
+  doc.setFillColor(255, 255, 255);
+  doc.roundedRect(14 - PAD, LOGO_Y - PAD, LOGO_W + PAD * 2, LOGO_H + PAD * 2, 2, 2, 'F');
+  try { doc.addImage(logoSrc as string, 'PNG', 14, LOGO_Y, LOGO_W, LOGO_H); } catch { /* logo opcional */ }
+
+  doc.setTextColor(255, 255, 255);
+  doc.setFontSize(12);
+  doc.setFont('helvetica', 'bold');
+  doc.text('AUTORIZACIÓN BURÓ DE CRÉDITO', 14 + LOGO_W + 5, 13);
+
+  doc.setFontSize(7.5);
+  doc.setFont('helvetica', 'normal');
+  doc.text(`Folio: ${folio}`, W - 14, 9, { align: 'right' });
+  doc.text(`Consulta: ${fecha}`, W - 14, 15, { align: 'right' });
+  doc.text(`No. Solicitud: ${datos.noSol || '—'}`, W - 14, 21, { align: 'right' });
+
+  y = HEADER_H + 8;
+
+  // ── DATOS DEL CONSULTADO ──
+  doc.setFillColor(...BURO_LIGHT);
+  doc.setDrawColor(...BURO_BORDER);
+  doc.rect(14, y, W - 28, 7, 'FD');
+  doc.setTextColor(...BURO_PRIMARY);
+  doc.setFontSize(8);
+  doc.setFont('helvetica', 'bold');
+  doc.text('DATOS DEL TITULAR', 17, y + 5);
+  y += 10;
+
+  autoTable(doc, {
+    startY: y,
+    margin: { left: 14, right: 14 },
+    styles: { fontSize: 8, cellPadding: 2.5, textColor: [50, 50, 50] },
+    headStyles: { fillColor: BURO_PRIMARY, textColor: 255, fontStyle: 'bold', fontSize: 7.5 },
+    alternateRowStyles: { fillColor: [250, 251, 253] },
+    columnStyles: { 0: { fontStyle: 'bold', cellWidth: 50 } },
+    head: [['Campo', 'Valor', 'Campo', 'Valor']],
+    body: [
+      ['Nombre / Razón Social', datos.cliente || '—', 'RFC', datos.rfc || '—'],
+      ['CURP', datos.curp || '—', 'Domicilio', datos.domicilio || '—'],
+      ['Producto', datos.productoNombre || datos.tipoProducto || '—', 'Sociedad Consultante', 'Sociedad de Información Crediticia'],
+    ],
+  });
+  y = (doc as jsPDF & { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 8;
+
+  // ── TEXTO DE AUTORIZACIÓN ──
+  doc.setFillColor(...BURO_LIGHT);
+  doc.setDrawColor(...BURO_BORDER);
+  doc.rect(14, y, W - 28, 7, 'FD');
+  doc.setTextColor(...BURO_PRIMARY);
+  doc.setFontSize(8);
+  doc.setFont('helvetica', 'bold');
+  doc.text('AUTORIZACIÓN DE CONSULTA', 17, y + 5);
+  y += 11;
+
+  doc.setTextColor(50, 50, 50);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  const textoAutorizacion =
+    `Por este conducto autorizo expresamente a la institución financiera para que, por conducto de sus ` +
+    `funcionarios facultados, lleve a cabo investigaciones sobre mi comportamiento crediticio en las ` +
+    `Sociedades de Información Crediticia que estime conveniente. Declaro que conozco la naturaleza y ` +
+    `alcance de la información que se solicitará, del uso que se le dará y que podrá realizarse consultas ` +
+    `periódicas durante la vigencia de la operación de arrendamiento solicitada. Acepto que este documento ` +
+    `quede bajo propiedad de la institución para efectos de control y cumplimiento del artículo 28 de la ` +
+    `Ley para Regular las Sociedades de Información Crediticia.`;
+  const lineasAut = doc.splitTextToSize(textoAutorizacion, W - 28);
+  doc.text(lineasAut, 14, y);
+  y += lineasAut.length * 4 + 8;
+
+  // ── RESULTADO DE LA CONSULTA ──
+  doc.setFillColor(...BURO_LIGHT);
+  doc.setDrawColor(...BURO_BORDER);
+  doc.rect(14, y, W - 28, 7, 'FD');
+  doc.setTextColor(...BURO_PRIMARY);
+  doc.setFontSize(8);
+  doc.setFont('helvetica', 'bold');
+  doc.text('RESULTADO DE LA CONSULTA', 17, y + 5);
+  y += 10;
+
+  // Score destacado en tarjeta a la izquierda
+  const CARD_W = 55;
+  const CARD_H = 30;
+  doc.setFillColor(...BURO_LIGHT);
+  doc.setDrawColor(...scoreColor);
+  doc.roundedRect(14, y, CARD_W, CARD_H, 2, 2, 'FD');
+  doc.setTextColor(...scoreColor);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(20);
+  doc.text(String(score), 14 + CARD_W / 2, y + 15, { align: 'center' });
+  doc.setFontSize(7.5);
+  doc.setFont('helvetica', 'normal');
+  doc.text('SCORE CREDITICIO', 14 + CARD_W / 2, y + 21, { align: 'center' });
+  doc.setTextColor(...scoreColor);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8);
+  doc.text(calificacion.toUpperCase(), 14 + CARD_W / 2, y + 26.5, { align: 'center' });
+
+  autoTable(doc, {
+    startY: y,
+    margin: { left: 14 + CARD_W + 6, right: 14 },
+    styles: { fontSize: 8, cellPadding: 2.5, textColor: [50, 50, 50] },
+    headStyles: { fillColor: BURO_PRIMARY, textColor: 255, fontStyle: 'bold', fontSize: 7.5 },
+    alternateRowStyles: { fillColor: [250, 251, 253] },
+    columnStyles: { 0: { fontStyle: 'bold', cellWidth: 38 } },
+    head: [['Indicador', 'Resultado']],
+    body: [
+      ['Estatus de la consulta', 'Consulta exitosa'],
+      ['Resultado del dictamen', 'Aprobado'],
+      ['Rango de score', '600 – 780 (escala simulada)'],
+    ],
+  });
+  y = Math.max(
+    (doc as jsPDF & { lastAutoTable: { finalY: number } }).lastAutoTable.finalY,
+    y + CARD_H
+  ) + 8;
+
+  // ── AVISO ──
+  doc.setFillColor(...BURO_LIGHT);
+  doc.setDrawColor(...BURO_BORDER);
+  doc.rect(14, y, W - 28, 7, 'FD');
+  doc.setTextColor(...BURO_PRIMARY);
+  doc.setFontSize(8);
+  doc.setFont('helvetica', 'bold');
+  doc.text('AVISO', 17, y + 5);
+  y += 10;
+
+  doc.setTextColor(100, 100, 100);
+  doc.setFont('helvetica', 'italic');
+  doc.setFontSize(7.5);
+  const avisoLines = doc.splitTextToSize(
+    'Documento simulado generado automáticamente por el sistema para efectos de flujo interno de análisis y dictaminación. No constituye una consulta real ante una Sociedad de Información Crediticia (SIC) conforme a la Ley para Regular las Sociedades de Información Crediticia.',
+    W - 28
+  );
+  doc.text(avisoLines, 14, y);
+  y += avisoLines.length * 4 + 16;
+
+  // ── FIRMA DEL TITULAR ──
+  const SIG_W = 70;
+  const sigX = (W - SIG_W) / 2;
+  doc.setDrawColor(90, 90, 90);
+  doc.line(sigX, y, sigX + SIG_W, y);
+  doc.setTextColor(60, 60, 60);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.text(datos.cliente || 'Titular', W / 2, y + 5, { align: 'center' });
+  doc.setFontSize(7);
+  doc.setTextColor(120, 120, 120);
+  doc.text('Nombre y firma del titular', W / 2, y + 10, { align: 'center' });
+  doc.text(`Fecha: ${new Date().toLocaleDateString('es-MX')}`, W / 2, y + 15, { align: 'center' });
+
+  return doc.output('datauristring');
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -425,6 +709,14 @@ export interface AutoCrearResult {
   error?: string;
   validacionPlantillas: ValidacionPlantillasResult;
   fileData?: string;
+  /** id (DocumentoCargado.id) del documento recién creado — para abrir su vista previa de inmediato */
+  documentoCreadoId?: number;
+  /**
+   * PDFs recién generados, con su contenido, para abrir/descargar de inmediato.
+   * Se entregan aquí y no vía storage porque los PDFs render­izados desde
+   * plantilla HTML son pesados y sessionStorage puede rechazarlos por cuota.
+   */
+  documentosGenerados?: Array<{ tipo: string; archivo: string; fileData: string }>;
 }
 
 /**
@@ -656,6 +948,434 @@ export async function autoCrearDocumentosFase4(opts: AutoCrearOpts): Promise<Aut
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Fase 2 — Análisis y Dictaminación: Reporte de Buró (simulado)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Crea automáticamente en el Expediente Electrónico:
+ *   - REPORTE_BURO (Fase 2, PDF simulado, Pendiente de Validación IA)
+ *
+ * No requiere plantilla — el reporte de buró siempre se genera con el
+ * formato nativo (Score y consulta simulados como exitosos).
+ * Respeta la regla de NO DUPLICAR: si ya existe (por clave) → se omite.
+ */
+export async function autoCrearReporteBuro(opts: AutoCrearOpts): Promise<AutoCrearResult> {
+  const { storageId, datos, supabase, projectId: pid } = opts;
+  const fecha = new Date().toLocaleString('es-MX');
+
+  const docsPrevios: DocumentoCargado[] =
+    loadFromSession<DocumentoCargado[]>(storageId, 'documentos') ??
+    loadFromSavedStore<DocumentoCargado[]>(storageId, 'documentos') ??
+    [];
+
+  const existe = docsPrevios.some(d =>
+    d.tipoDocumento === CLAVE_REPORTE_BURO || (d as any).claveDocumento === CLAVE_REPORTE_BURO
+  );
+
+  if (existe) {
+    return {
+      exito: true,
+      documentosCreados: [],
+      pdfGenerados: [],
+      subidosASupabase: false,
+      registradosEnExpediente: true,
+      error: undefined,
+      validacionPlantillas: { valido: true, motivos: [], faltantes: [], plantillasDetectadas: [], puedeGenerarDocumentos: true },
+    };
+  }
+
+  const fileData = generarReporteBuroPDF(datos);
+  let uploadInfo: UploadResult | null = null;
+  let subidosASupabase = false;
+
+  if (supabase && pid) {
+    uploadInfo = await uploadGeneratedPDF(supabase, fileData, 'autorizacion_buro_credito.pdf', String(storageId), pid);
+    if (uploadInfo) subidosASupabase = true;
+  }
+
+  const nuevo: DocumentoCargado = {
+    id: generateId(),
+    fecha,
+    usuario: 'Sistema',
+    tipoDocumento: CLAVE_REPORTE_BURO,
+    archivo: 'autorizacion_buro_credito.pdf',
+    tipoArchivo: 'pdf',
+    nota: 'Autorización Buró de Crédito generada automáticamente (simulada). Consulta exitosa, score aprobado. Pendiente de Validación IA.',
+    // area/fase deben coincidir con el requisito DOC-BURO del producto.
+    area: 'Comercial',
+    fase: 'Análisis y Dictaminación',
+    faseId: 2,
+    estatus: 'Pendiente Validación IA',
+    validadoIA: false,
+    fileData,
+    url: uploadInfo?.url,
+    storagePath: uploadInfo?.storagePath,
+    mime: 'application/pdf',
+    tamanoKB: uploadInfo?.tamanoKB || Math.round((fileData.length * 3) / 4 / 1024) || 1,
+  } as DocumentoCargado & { storagePath?: string };
+
+  const docsActualizados = [...docsPrevios, nuevo];
+  saveToSession(storageId, 'documentos', docsActualizados);
+
+  // Persistir en BD de inmediato — no depender del auto-guardado del formulario,
+  // que puede no ejecutarse (o fallar en silencio) al generar fuera de un "Guardar".
+  const persist = await persistirDocumentosEnBD(storageId, docsActualizados);
+
+  console.log(
+    `[autoCrearReporteBuro] Reporte de Buró creado para solicitud ${storageId} | Storage: ${subidosASupabase ? 'OK' : 'local'} | BD: ${persist.ok ? 'OK' : `FALLÓ (${persist.error})`}`
+  );
+
+  return {
+    exito: true,
+    documentosCreados: [CLAVE_REPORTE_BURO],
+    pdfGenerados: ['autorizacion_buro_credito.pdf'],
+    subidosASupabase,
+    registradosEnExpediente: persist.ok,
+    error: persist.ok ? undefined : `Documento generado pero NO persistido en BD: ${persist.error}`,
+    validacionPlantillas: { valido: true, motivos: [], faltantes: [], plantillasDetectadas: [], puedeGenerarDocumentos: true },
+    documentoCreadoId: nuevo.id,
+    fileData,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Fase 3 — Contratación e Instrumentación (Kit Legal)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Fila de renta/amortización normalizada para el Anexo de Rentas. */
+interface FilaAnexo {
+  no: number;
+  fecha: string;
+  rentaSinIva: number;
+  seguro: number;
+  iva: number;
+  total: number;
+}
+
+/**
+ * Lee el calendario de rentas (Arrendamiento Puro) o la tabla de amortización
+ * (Crédito / Arrendamiento Financiero) desde el almacenamiento de la solicitud
+ * y la normaliza para el Anexo de Rentas.
+ */
+function leerFilasAnexo(storageId: SolId): FilaAnexo[] {
+  // Arrendamiento Puro: calendario de rentas fijas
+  const arr: any =
+    loadFromSession<any>(storageId, 'simulacion_arrendamiento') ??
+    loadFromSavedStore<any>(storageId, 'simulacion_arrendamiento');
+  if (arr?.calendario?.length > 0) {
+    return arr.calendario.map((r: any) => ({
+      no: r.noRenta,
+      fecha: r.fechaPago || '',
+      rentaSinIva: r.rentaSinIva || 0,
+      seguro: r.seguro || 0,
+      iva: r.iva || 0,
+      total: r.pagoPeriodo || 0,
+    }));
+  }
+
+  // Crédito / Arrendamiento Financiero: tabla de amortización
+  const sim: any[] =
+    loadFromSession<any[]>(storageId, 'simulacion') ??
+    loadFromSavedStore<any[]>(storageId, 'simulacion') ??
+    [];
+  return sim.map((r: any) => {
+    const capital = r.pagoCapital || 0;
+    const interes = r.pagoInteres || 0;
+    const iva = r.ivaInteres || 0;
+    const seguro = r.pagoSeguro || 0;
+    return {
+      no: r.noPago,
+      fecha: r.fechaPago || '',
+      rentaSinIva: capital + interes,
+      seguro,
+      iva,
+      total: r.pagoPeriodo ?? capital + interes + iva + seguro,
+    };
+  });
+}
+
+function money(n: number): string {
+  return (n || 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+/**
+ * Genera el PDF del Anexo de Rentas — la tabla de rentas/amortización que se
+ * firma de conformidad y que acompaña al contrato de arrendamiento.
+ */
+export function generarAnexoRentasPDF(datos: DatosSolicitud, filas: FilaAnexo[]): string {
+  const t = datos.terminos ?? {};
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true });
+  const W = doc.internal.pageSize.getWidth();
+
+  const HEADER_H = 28;
+  doc.setFillColor(...BURO_PRIMARY);
+  doc.rect(0, 0, W, HEADER_H, 'F');
+  const LOGO_W = 30, LOGO_H = 20, LOGO_Y = (HEADER_H - LOGO_H) / 2, PAD = 2;
+  doc.setFillColor(255, 255, 255);
+  doc.roundedRect(14 - PAD, LOGO_Y - PAD, LOGO_W + PAD * 2, LOGO_H + PAD * 2, 2, 2, 'F');
+  try { doc.addImage(logoSrc as string, 'PNG', 14, LOGO_Y, LOGO_W, LOGO_H); } catch { /* opcional */ }
+
+  doc.setTextColor(255, 255, 255);
+  doc.setFontSize(12);
+  doc.setFont('helvetica', 'bold');
+  doc.text('ANEXO DE RENTAS', 14 + LOGO_W + 5, 13);
+  doc.setFontSize(7.5);
+  doc.setFont('helvetica', 'normal');
+  doc.text(`Contrato: ${datos.noSol || '—'}`, W - 14, 9, { align: 'right' });
+  doc.text(`Fecha: ${new Date().toLocaleDateString('es-MX')}`, W - 14, 15, { align: 'right' });
+  doc.text(`Arrendatario: ${datos.cliente || '—'}`, W - 14, 21, { align: 'right' });
+
+  let y = HEADER_H + 8;
+
+  // Condiciones generales
+  doc.setFillColor(...BURO_LIGHT);
+  doc.setDrawColor(...BURO_BORDER);
+  doc.rect(14, y, W - 28, 7, 'FD');
+  doc.setTextColor(...BURO_PRIMARY);
+  doc.setFontSize(8);
+  doc.setFont('helvetica', 'bold');
+  doc.text('CONDICIONES DE LA OPERACIÓN', 17, y + 5);
+  y += 10;
+
+  autoTable(doc, {
+    startY: y,
+    margin: { left: 14, right: 14 },
+    styles: { fontSize: 8, cellPadding: 2.5, textColor: [50, 50, 50] },
+    headStyles: { fillColor: BURO_PRIMARY, textColor: 255, fontStyle: 'bold', fontSize: 7.5 },
+    alternateRowStyles: { fillColor: [250, 251, 253] },
+    columnStyles: { 0: { fontStyle: 'bold', cellWidth: 45 }, 2: { fontStyle: 'bold', cellWidth: 45 } },
+    head: [['Campo', 'Valor', 'Campo', 'Valor']],
+    body: [
+      ['Producto', datos.productoNombre || datos.tipoProducto || '—', 'Moneda', String(t.moneda || 'MXN')],
+      ['Monto Autorizado', money(parseFloat(String(t.montoAutorizado || t.montoSolicitado || 0))), 'Plazo', `${t.plazo || '—'}`],
+      ['Tasa Anual', `${t.tasa || '—'}%`, 'Frecuencia', String(t.frecuencia || '—')],
+      ['No. de Rentas', String(filas.length), 'Primer Pago', String(t.fechaPrimerPago || '—')],
+    ],
+  });
+  y = (doc as jsPDF & { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 8;
+
+  // Tabla de rentas
+  doc.setFillColor(...BURO_LIGHT);
+  doc.setDrawColor(...BURO_BORDER);
+  doc.rect(14, y, W - 28, 7, 'FD');
+  doc.setTextColor(...BURO_PRIMARY);
+  doc.setFontSize(8);
+  doc.setFont('helvetica', 'bold');
+  doc.text('CALENDARIO DE RENTAS', 17, y + 5);
+  y += 10;
+
+  const totRenta = filas.reduce((s, f) => s + f.rentaSinIva, 0);
+  const totSeguro = filas.reduce((s, f) => s + f.seguro, 0);
+  const totIva = filas.reduce((s, f) => s + f.iva, 0);
+  const totPago = filas.reduce((s, f) => s + f.total, 0);
+
+  autoTable(doc, {
+    startY: y,
+    margin: { left: 14, right: 14 },
+    styles: { fontSize: 7.5, cellPadding: 2, textColor: [50, 50, 50] },
+    headStyles: { fillColor: BURO_PRIMARY, textColor: 255, fontStyle: 'bold', fontSize: 7 },
+    alternateRowStyles: { fillColor: [250, 251, 253] },
+    columnStyles: {
+      0: { halign: 'center', cellWidth: 16 },
+      1: { cellWidth: 30 },
+      2: { halign: 'right' },
+      3: { halign: 'right' },
+      4: { halign: 'right' },
+      5: { halign: 'right', fontStyle: 'bold' },
+    },
+    head: [['No.', 'Fecha', 'Renta sin IVA', 'Seguro', 'IVA', 'Pago Periodo']],
+    body: filas.length > 0
+      ? filas.map(f => [String(f.no), f.fecha, money(f.rentaSinIva), money(f.seguro), money(f.iva), money(f.total)])
+      : [[{ content: 'Sin calendario generado — ejecute "Simular" en la solicitud.', colSpan: 6, styles: { halign: 'center', textColor: [150, 150, 150] } } as any]],
+    foot: filas.length > 0
+      ? [[
+          { content: 'TOTALES', colSpan: 2, styles: { halign: 'right', fontStyle: 'bold' } },
+          { content: money(totRenta), styles: { halign: 'right', fontStyle: 'bold' } },
+          { content: money(totSeguro), styles: { halign: 'right', fontStyle: 'bold' } },
+          { content: money(totIva), styles: { halign: 'right', fontStyle: 'bold' } },
+          { content: money(totPago), styles: { halign: 'right', fontStyle: 'bold' } },
+        ]]
+      : undefined,
+    footStyles: { fillColor: [235, 238, 245], textColor: [30, 30, 30] },
+  });
+  y = (doc as jsPDF & { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 14;
+
+  // Firma de conformidad
+  const pageH = doc.internal.pageSize.getHeight();
+  if (y > pageH - 40) { doc.addPage(); y = 25; }
+  const SIG_W = 70;
+  const sigX = (W - SIG_W) / 2;
+  doc.setDrawColor(90, 90, 90);
+  doc.line(sigX, y, sigX + SIG_W, y);
+  doc.setTextColor(60, 60, 60);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.text(datos.cliente || 'Arrendatario', W / 2, y + 5, { align: 'center' });
+  doc.setFontSize(7);
+  doc.setTextColor(120, 120, 120);
+  doc.text('Firma de conformidad del arrendatario', W / 2, y + 10, { align: 'center' });
+
+  return doc.output('datauristring');
+}
+
+/**
+ * Crea el "Kit Legal" de la Fase 3 (Contratación e Instrumentación):
+ *   - Contrato Firmado   — desde la plantilla tipo "contrato" del producto
+ *   - Pagaré de Respaldo — desde la plantilla tipo "pagare" del producto
+ *   - Anexo de Rentas    — calendario de rentas/amortización de la solicitud
+ *
+ * Los tres se suben a Storage, se registran en el expediente y se persisten
+ * en BD. Respeta la regla de NO DUPLICAR (por tipo de documento).
+ */
+export async function autoCrearKitLegal(opts: AutoCrearOpts): Promise<AutoCrearResult> {
+  const { storageId, datos, plantillas, supabase, projectId: pid } = opts;
+  const fecha = new Date().toLocaleString('es-MX');
+
+  const validacionPlantillas = validarPlantillasRequeridas(plantillas);
+  if (!validacionPlantillas.puedeGenerarDocumentos) {
+    return {
+      exito: false,
+      documentosCreados: [],
+      pdfGenerados: [],
+      subidosASupabase: false,
+      registradosEnExpediente: false,
+      error: validacionPlantillas.motivos.join(' | '),
+      validacionPlantillas,
+    };
+  }
+
+  const plantillaContrato = plantillas!.find(p => p.tipoPlantilla === 'contrato' && p.estatus === 'Activo')!;
+  const plantillaPagare   = plantillas!.find(p => p.tipoPlantilla === 'pagare'   && p.estatus === 'Activo')!;
+
+  const docsPrevios: DocumentoCargado[] =
+    loadFromSession<DocumentoCargado[]>(storageId, 'documentos') ??
+    loadFromSavedStore<DocumentoCargado[]>(storageId, 'documentos') ?? [];
+  const existe = (tipo: string) => docsPrevios.some(d => d.tipoDocumento === tipo);
+
+  const filasAnexo = leerFilasAnexo(storageId);
+
+  // Renderiza una plantilla HTML del producto a PDF (data URI, apto para subir).
+  const desdePlantilla = async (pl: PlantillaInstitucional, fallback: () => string): Promise<string> => {
+    if (pl.archivoData) {
+      try {
+        const html = sustituirPlaceholders(decodificarArchivoData(pl.archivoData), datos);
+        return await htmlToPdfBlobUrl(html, 'datauri');
+      } catch (e) {
+        console.warn('[autoCrearKitLegal] Falló el render de la plantilla, usando fallback:', e);
+      }
+    }
+    return fallback();
+  };
+
+  const nuevos: DocumentoCargado[] = [];
+  const pdfGenerados: string[] = [];
+  const documentosGenerados: Array<{ tipo: string; archivo: string; fileData: string }> = [];
+  let subidosASupabase = false;
+  let primerFileData: string | undefined;
+  let primerId: number | undefined;
+
+  const agregar = async (tipo: string, archivo: string, fileData: string, nota: string) => {
+    let uploadInfo: UploadResult | null = null;
+    if (supabase && pid) {
+      uploadInfo = await uploadGeneratedPDF(supabase, fileData, archivo, String(storageId), pid);
+      if (uploadInfo) subidosASupabase = true;
+    }
+    const doc: DocumentoCargado = {
+      id: generateId(),
+      fecha,
+      usuario: 'Sistema',
+      tipoDocumento: tipo,
+      archivo,
+      tipoArchivo: 'pdf',
+      nota,
+      area: 'Comercial',
+      fase: 'Contratación e Instrumentación',
+      faseId: 3,
+      estatus: 'Pendiente Validación IA',
+      validadoIA: false,
+      // Sólo conservar el PDF embebido si NO se pudo subir a Storage: estos PDFs
+      // pesan varios MB y guardarlos en sessionStorage revienta la cuota,
+      // haciendo que se pierda TODO el arreglo de documentos.
+      fileData: uploadInfo?.url ? undefined : fileData,
+      url: uploadInfo?.url,
+      storagePath: uploadInfo?.storagePath,
+      mime: 'application/pdf',
+      tamanoKB: uploadInfo?.tamanoKB || Math.round((fileData.length * 3) / 4 / 1024) || 1,
+    } as DocumentoCargado & { storagePath?: string };
+    nuevos.push(doc);
+    pdfGenerados.push(archivo);
+    documentosGenerados.push({ tipo, archivo, fileData });
+    if (primerFileData === undefined) { primerFileData = fileData; primerId = doc.id; }
+  };
+
+  if (!existe(CLAVE_CONTRATO_REQ)) {
+    const fd = await desdePlantilla(plantillaContrato, () => generarContratoPDF(datos));
+    await agregar(
+      CLAVE_CONTRATO_REQ,
+      'contrato_arrendamiento.pdf',
+      fd,
+      `Generado desde la plantilla "${plantillaContrato.nombre}" (v${plantillaContrato.version}). Pendiente de firma y Validación IA.`,
+    );
+  }
+
+  if (!existe(CLAVE_ANEXO_RENTAS)) {
+    const fd = generarAnexoRentasPDF(datos, filasAnexo);
+    await agregar(
+      CLAVE_ANEXO_RENTAS,
+      'anexo_de_rentas.pdf',
+      fd,
+      filasAnexo.length > 0
+        ? `Calendario de ${filasAnexo.length} renta(s) generado desde la simulación de la solicitud. Pendiente de firma de conformidad.`
+        : 'Sin calendario: ejecute "Simular" en la solicitud y vuelva a generar para incluir la tabla de rentas.',
+    );
+  }
+
+  if (!existe(CLAVE_PAGARE_REQ)) {
+    const fd = await desdePlantilla(plantillaPagare, () => generarPagePDF(datos));
+    await agregar(
+      CLAVE_PAGARE_REQ,
+      'pagare_arrendamiento.pdf',
+      fd,
+      `Generado desde la plantilla "${plantillaPagare.nombre}" (v${plantillaPagare.version}). Pendiente de firma y Validación IA.`,
+    );
+  }
+
+  if (nuevos.length === 0) {
+    return {
+      exito: true,
+      documentosCreados: [],
+      pdfGenerados: [],
+      subidosASupabase: false,
+      registradosEnExpediente: true,
+      validacionPlantillas,
+    };
+  }
+
+  const docsActualizados = [...docsPrevios, ...nuevos];
+  saveToSession(storageId, 'documentos', docsActualizados);
+  const persist = await persistirDocumentosEnBD(storageId, docsActualizados);
+
+  console.log(
+    `[autoCrearKitLegal] ${nuevos.length} documento(s) creados para ${storageId}:`,
+    nuevos.map(d => d.tipoDocumento).join(', '),
+    `| Storage: ${subidosASupabase ? 'OK' : 'local'} | BD: ${persist.ok ? 'OK' : `FALLÓ (${persist.error})`}`,
+  );
+
+  return {
+    exito: true,
+    documentosCreados: nuevos.map(d => d.tipoDocumento),
+    pdfGenerados,
+    subidosASupabase,
+    registradosEnExpediente: persist.ok,
+    error: persist.ok ? undefined : `Documentos generados pero NO persistidos en BD: ${persist.error}`,
+    validacionPlantillas,
+    documentoCreadoId: primerId,
+    fileData: primerFileData,
+    documentosGenerados,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Fase 2 — Solicitud de Crédito
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -750,6 +1470,8 @@ export function sustituirPlaceholders(html: string, datos: DatosSolicitud): stri
   const tasaValor = String(t.tasa || t.tasaAnual || t.tasaMinInteres || '');
   const catValor = String(t.cat || '');
   const garantiaValor = String(t.montoGarantia || '');
+  const montoResidualValor = String(t.montoResidual || '');
+  const descripcionBienValor = String(t.descripcionBien || (t as any).bienDescripcion || 'N/A');
   const seguroValor = String(t.montoSeguro || '');
   const freqValor = String(t.frecuencia || '');
   const tipoTasaValor = String(t.tipoTasa || '');
@@ -779,9 +1501,18 @@ export function sustituirPlaceholders(html: string, datos: DatosSolicitud): stri
   })();
 
   // Pago periódico (pagoMensual, primerPago, pagoPeriodico, etc.)
+  const pagoPeriodicoNum = Number(
+    t.pagoMensual || t.primerPago || t.pagoPeriodico || t.pago || 0
+  );
   const pagoPeriodico = String(
     t.pagoMensual || t.primerPago || t.pagoPeriodico || t.pago || ''
   ) || 'N/A';
+
+  // Suma total de rentas del plazo (para el Pagaré de Arrendamiento Puro,
+  // que ampara el total de rentas pactadas y no el valor del bien).
+  const montoTotalRentasValor = mesesPlazo > 0 && pagoPeriodicoNum > 0
+    ? (pagoPeriodicoNum * mesesPlazo).toFixed(2)
+    : '';
 
   return html
     // ── Fechas ──
@@ -855,6 +1586,12 @@ export function sustituirPlaceholders(html: string, datos: DatosSolicitud): stri
     .replace(/\{\{monto_letra\}\}/g, monto)
     .replace(/\{\{monto_garantia\}\}/g, garantiaValor || 'N/A')
     .replace(/\{\{monto_seguro\}\}/g, seguroValor || 'N/A')
+    .replace(/\{\{monto_residual\}\}/g, montoResidualValor || 'N/A')
+    .replace(/\{\{montoResidual\}\}/g, montoResidualValor || 'N/A')
+    .replace(/\{\{valor_residual\}\}/g, montoResidualValor || 'N/A')
+    .replace(/\{\{descripcionBien\}\}/g, descripcionBienValor)
+    .replace(/\{\{descripcion_bien\}\}/g, descripcionBienValor)
+    .replace(/\{\{monto_total_rentas\}\}/g, montoTotalRentasValor || monto || 'N/A')
     .replace(/\{\{montoPago\}\}/g, pagoPeriodico)
     .replace(/\{\{monto_pago\}\}/g, pagoPeriodico)
     // ── Plazo ──
@@ -942,7 +1679,7 @@ export function decodificarArchivoData(raw: string): string {
  * en blanco. Los estilos se inyectan dentro del contenedor para que se eliminen
  * junto con él sin afectar de forma persistente el CSS de la aplicación.
  */
-export async function htmlToPdfBlobUrl(html: string): Promise<string> {
+export async function htmlToPdfBlobUrl(html: string, salida: 'blob' | 'datauri' = 'blob'): Promise<string> {
   // ── 1. Extraer <style> y contenido del <body> ─────────────────────────────
   const styleBlocks: string[] = [];
   const styleRegex = /<style[^>]*>([\s\S]*?)<\/style>/gi;
@@ -988,8 +1725,10 @@ export async function htmlToPdfBlobUrl(html: string): Promise<string> {
     const elW = CAPTURE_W;
     const elH = Math.max(pageEl.scrollHeight, pageEl.offsetHeight, minHPx, 100);
 
+    // Escala 1.5 (antes 2): a 850px de captura da ~1275px de ancho, suficiente
+    // para texto nítido en A4, y reduce ~44% los píxeles a codificar.
     const canvas = await html2canvas(pageEl, {
-      scale: 2,
+      scale: 1.5,
       useCORS: true,
       allowTaint: true,
       logging: false,
@@ -1000,27 +1739,43 @@ export async function htmlToPdfBlobUrl(html: string): Promise<string> {
       windowHeight: elH,
     });
 
-    const imgData = canvas.toDataURL('image/jpeg', 0.92);
+    // Calidad 0.8 (antes 0.92): en documentos de texto la diferencia visual es
+    // imperceptible y el peso baja de forma notable.
+    const imgData = canvas.toDataURL('image/jpeg', 0.8);
     const PAGE_W = 210;
     const PAGE_H = 297;
-    const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    // compress: activa la compresión de streams del PDF.
+    const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true });
 
     const imgW = PAGE_W;
     const imgH = (canvas.height / canvas.width) * PAGE_W;
     let yLeft = imgH;
     let yOffset = 0;
 
-    pdf.addImage(imgData, 'JPEG', 0, yOffset, imgW, imgH);
+    // Alias fijo ('doc') en todas las páginas: sin él, jsPDF incrusta una copia
+    // completa de la MISMA imagen por cada página, multiplicando el tamaño del
+    // archivo en documentos de varias páginas. Con alias se almacena una vez y
+    // las demás páginas la referencian.
+    const ALIAS = 'doc';
+    pdf.addImage(imgData, 'JPEG', 0, yOffset, imgW, imgH, ALIAS, 'FAST');
     yLeft -= PAGE_H;
 
     while (yLeft > 0) {
       yOffset -= PAGE_H;
       pdf.addPage();
-      pdf.addImage(imgData, 'JPEG', 0, yOffset, imgW, imgH);
+      pdf.addImage(imgData, 'JPEG', 0, yOffset, imgW, imgH, ALIAS, 'FAST');
       yLeft -= PAGE_H;
     }
 
-    return URL.createObjectURL(pdf.output('blob'));
+    // Liberar el canvas: en documentos largos ocupa decenas de MB en memoria.
+    canvas.width = 0;
+    canvas.height = 0;
+
+    // 'datauri' es necesario cuando el PDF se va a subir a Storage: la utilidad
+    // de subida convierte data URL → File, y un blob URL no es parseable ahí.
+    return salida === 'datauri'
+      ? pdf.output('datauristring')
+      : URL.createObjectURL(pdf.output('blob'));
   } finally {
     try { document.body.removeChild(container); } catch (_) {}
   }
@@ -1110,5 +1865,278 @@ export async function autoCrearDocumentosFase2(opts: AutoCrearOpts): Promise<Aut
     error: undefined,
     validacionPlantillas,
     fileData,
+  };
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// FASE 6 — Liberación y Dispersión (Tesorería)
+// ═════════════════════════════════════════════════════════════════════════════
+
+const SPEI_PRIMARY = [17, 61, 110] as [number, number, number];
+const SPEI_LIGHT   = [244, 247, 251] as [number, number, number];
+const SPEI_BORDER  = [198, 208, 222] as [number, number, number];
+const SPEI_GREEN   = [21, 128, 61] as [number, number, number];
+
+/**
+ * Clave de rastreo SPEI determinística por solicitud.
+ *
+ * Determinística a propósito: regenerar el comprobante de la misma solicitud
+ * debe producir la misma clave, igual que un banco no reasigna la clave de una
+ * transferencia ya ejecutada.
+ */
+export function generarClaveRastreo(noSol: string): string {
+  const seed = String(noSol || '').split('').reduce((s, c) => s + c.charCodeAt(0), 0);
+  const hoy = new Date();
+  const ymd = `${hoy.getFullYear()}${String(hoy.getMonth() + 1).padStart(2, '0')}${String(hoy.getDate()).padStart(2, '0')}`;
+  return `MBAN${ymd}${String((seed * 7919) % 1000000).padStart(6, '0')}`;
+}
+
+/** Enmascara una CLABE dejando visibles solo los últimos 4 dígitos. */
+function enmascararClabe(clabe: string): string {
+  const limpia = String(clabe || '').replace(/\D/g, '');
+  if (limpia.length < 4) return '—';
+  return `${'*'.repeat(Math.max(0, limpia.length - 4))}${limpia.slice(-4)}`;
+}
+
+/**
+ * Genera el Comprobante de Transferencia SPEI de la dispersión al proveedor
+ * (Fase 6 — Liberación y Dispersión).
+ *
+ * Vectorial (jsPDF + autoTable), no html2canvas: el comprobante debe pesar
+ * pocos KB porque se adjunta al Expediente Electrónico y luego se convierte a
+ * imagen para la validación IA.
+ *
+ * La transferencia es SIMULADA — no hay conexión con el SPEI de Banxico.
+ */
+export function generarComprobanteSPEIPDF(datos: DatosSolicitud): string {
+  const ahora = new Date();
+  const fechaHora = ahora.toLocaleString('es-MX');
+  const claveRastreo = datos.claveRastreo || generarClaveRastreo(datos.noSol || '');
+  const seed = String(datos.noSol || '').split('').reduce((s, c) => s + c.charCodeAt(0), 0);
+  const referencia = String((seed % 9000000) + 1000000);
+  const monto = Number(datos.montoDispersar || 0);
+
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true });
+  const W = doc.internal.pageSize.getWidth();
+  let y = 15;
+
+  // ── Header ──
+  const HEADER_H = 28;
+  doc.setFillColor(...SPEI_PRIMARY);
+  doc.rect(0, 0, W, HEADER_H, 'F');
+
+  const LOGO_W = 30;
+  const LOGO_H = 20;
+  const LOGO_Y = (HEADER_H - LOGO_H) / 2;
+  const PAD = 2;
+  doc.setFillColor(255, 255, 255);
+  doc.roundedRect(14 - PAD, LOGO_Y - PAD, LOGO_W + PAD * 2, LOGO_H + PAD * 2, 2, 2, 'F');
+  try { doc.addImage(logoSrc as string, 'PNG', 14, LOGO_Y, LOGO_W, LOGO_H); } catch { /* logo opcional */ }
+
+  doc.setTextColor(255, 255, 255);
+  doc.setFontSize(12);
+  doc.setFont('helvetica', 'bold');
+  doc.text('COMPROBANTE DE TRANSFERENCIA SPEI', 14 + LOGO_W + 5, 13);
+  doc.setFontSize(7.5);
+  doc.setFont('helvetica', 'normal');
+  doc.text('Sistema de Pagos Electrónicos Interbancarios', 14 + LOGO_W + 5, 19);
+
+  doc.text(`Fecha: ${fechaHora}`, W - 14, 9, { align: 'right' });
+  doc.text(`No. Solicitud: ${datos.noSol || '—'}`, W - 14, 15, { align: 'right' });
+  doc.text(`Ref: ${referencia}`, W - 14, 21, { align: 'right' });
+
+  y = HEADER_H + 10;
+
+  // ── Banda de operación exitosa ──
+  doc.setFillColor(240, 253, 244);
+  doc.setDrawColor(...SPEI_GREEN);
+  doc.roundedRect(14, y, W - 28, 16, 2, 2, 'FD');
+  doc.setTextColor(...SPEI_GREEN);
+  doc.setFontSize(11);
+  doc.setFont('helvetica', 'bold');
+  doc.text('TRANSFERENCIA EXITOSA', 20, y + 7);
+  doc.setFontSize(8);
+  doc.setFont('helvetica', 'normal');
+  doc.text('La operación fue liquidada y acreditada al beneficiario.', 20, y + 12.5);
+  doc.setFontSize(14);
+  doc.setFont('helvetica', 'bold');
+  doc.text(`$${money(monto)} MXN`, W - 20, y + 10, { align: 'right' });
+  y += 24;
+
+  // ── Datos de la operación ──
+  doc.setFillColor(...SPEI_LIGHT);
+  doc.setDrawColor(...SPEI_BORDER);
+  doc.rect(14, y, W - 28, 7, 'FD');
+  doc.setTextColor(...SPEI_PRIMARY);
+  doc.setFontSize(8);
+  doc.setFont('helvetica', 'bold');
+  doc.text('DATOS DE LA OPERACIÓN', 17, y + 5);
+  y += 10;
+
+  autoTable(doc, {
+    startY: y,
+    margin: { left: 14, right: 14 },
+    styles: { fontSize: 8, cellPadding: 2.5, textColor: [50, 50, 50] },
+    headStyles: { fillColor: SPEI_PRIMARY, textColor: 255, fontStyle: 'bold', fontSize: 7.5 },
+    alternateRowStyles: { fillColor: [250, 251, 253] },
+    columnStyles: { 0: { fontStyle: 'bold', cellWidth: 45 }, 2: { fontStyle: 'bold', cellWidth: 40 } },
+    head: [['Campo', 'Valor', 'Campo', 'Valor']],
+    body: [
+      ['Clave de rastreo', claveRastreo, 'Referencia numérica', referencia],
+      ['Fecha de operación', ahora.toLocaleDateString('es-MX'), 'Hora', ahora.toLocaleTimeString('es-MX')],
+      ['Tipo de pago', 'Transferencia SPEI (Tercero a Tercero)', 'Divisa', 'MXN'],
+      ['Estado', 'Liquidada', 'Medio de entrega', 'Electrónico'],
+    ],
+  });
+  y = (doc as jsPDF & { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 8;
+
+  // ── Ordenante / Beneficiario ──
+  doc.setFillColor(...SPEI_LIGHT);
+  doc.setDrawColor(...SPEI_BORDER);
+  doc.rect(14, y, W - 28, 7, 'FD');
+  doc.setTextColor(...SPEI_PRIMARY);
+  doc.setFontSize(8);
+  doc.setFont('helvetica', 'bold');
+  doc.text('ORDENANTE Y BENEFICIARIO', 17, y + 5);
+  y += 10;
+
+  autoTable(doc, {
+    startY: y,
+    margin: { left: 14, right: 14 },
+    styles: { fontSize: 8, cellPadding: 2.5, textColor: [50, 50, 50] },
+    headStyles: { fillColor: SPEI_PRIMARY, textColor: 255, fontStyle: 'bold', fontSize: 7.5 },
+    alternateRowStyles: { fillColor: [250, 251, 253] },
+    columnStyles: { 0: { fontStyle: 'bold', cellWidth: 45 } },
+    head: [['', 'Ordenante', 'Beneficiario']],
+    body: [
+      ['Nombre / Razón Social', 'Institución Financiera (Tesorería)', datos.proveedor || '—'],
+      ['Institución bancaria', 'Banco Emisor', datos.bancoProveedor || '—'],
+      ['Cuenta CLABE', enmascararClabe('012180001234567890'), enmascararClabe(datos.clabeProveedor || '')],
+    ],
+  });
+  y = (doc as jsPDF & { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 8;
+
+  // ── Concepto ──
+  doc.setFillColor(...SPEI_LIGHT);
+  doc.setDrawColor(...SPEI_BORDER);
+  doc.rect(14, y, W - 28, 7, 'FD');
+  doc.setTextColor(...SPEI_PRIMARY);
+  doc.setFontSize(8);
+  doc.setFont('helvetica', 'bold');
+  doc.text('CONCEPTO DE PAGO', 17, y + 5);
+  y += 11;
+
+  doc.setTextColor(50, 50, 50);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  const concepto =
+    `Dispersión de recursos por adquisición del bien objeto del contrato de ` +
+    `${datos.productoNombre || datos.tipoProducto || 'arrendamiento'} correspondiente a la solicitud ` +
+    `${datos.noSol || '—'} a nombre de ${datos.cliente || '—'}. Pago liberado por Tesorería previa ` +
+    `autorización en la Fila de Pagos.`;
+  const lineasConcepto = doc.splitTextToSize(concepto, W - 28);
+  doc.text(lineasConcepto, 14, y);
+  y += lineasConcepto.length * 4 + 8;
+
+  // ── Aviso ──
+  doc.setTextColor(120, 120, 120);
+  doc.setFont('helvetica', 'italic');
+  doc.setFontSize(7.5);
+  const aviso = doc.splitTextToSize(
+    'Comprobante simulado generado automáticamente por el sistema para efectos de flujo interno de ' +
+    'liberación y dispersión. No constituye un comprobante emitido por el Sistema de Pagos Electrónicos ' +
+    'Interbancarios (SPEI) de Banco de México ni sustituye el estado de cuenta de la institución.',
+    W - 28
+  );
+  doc.text(aviso, 14, y);
+
+  return doc.output('datauristring');
+}
+
+/**
+ * Crea el Comprobante de Transferencia SPEI en el Expediente Electrónico.
+ *
+ * Mismo contrato que autoCrearReporteBuro: no duplica si ya existe, sube a
+ * Storage cuando hay cliente Supabase y persiste en BD de inmediato sin
+ * depender del auto-guardado del formulario.
+ */
+export async function autoCrearComprobanteSPEI(opts: AutoCrearOpts): Promise<AutoCrearResult> {
+  const { storageId, datos, supabase, projectId: pid } = opts;
+  const fecha = new Date().toLocaleString('es-MX');
+  const sinPlantillas: ValidacionPlantillasResult = {
+    valido: true, motivos: [], faltantes: [], plantillasDetectadas: [], puedeGenerarDocumentos: true,
+  };
+
+  const docsPrevios: DocumentoCargado[] =
+    loadFromSession<DocumentoCargado[]>(storageId, 'documentos') ??
+    loadFromSavedStore<DocumentoCargado[]>(storageId, 'documentos') ??
+    [];
+
+  const existe = docsPrevios.some(d =>
+    d.tipoDocumento === CLAVE_COMPROBANTE_SPEI || (d as any).claveDocumento === CLAVE_COMPROBANTE_SPEI
+  );
+
+  if (existe) {
+    return {
+      exito: true,
+      documentosCreados: [],
+      pdfGenerados: [],
+      subidosASupabase: false,
+      registradosEnExpediente: true,
+      validacionPlantillas: sinPlantillas,
+    };
+  }
+
+  const fileData = generarComprobanteSPEIPDF(datos);
+  const nombreArchivo = 'comprobante_transferencia_spei.pdf';
+  let uploadInfo: UploadResult | null = null;
+  let subidosASupabase = false;
+
+  if (supabase && pid) {
+    uploadInfo = await uploadGeneratedPDF(supabase, fileData, nombreArchivo, String(storageId), pid);
+    if (uploadInfo) subidosASupabase = true;
+  }
+
+  const nuevo: DocumentoCargado = {
+    id: generateId(),
+    fecha,
+    usuario: 'Sistema',
+    tipoDocumento: CLAVE_COMPROBANTE_SPEI,
+    archivo: nombreArchivo,
+    tipoArchivo: 'pdf',
+    nota: 'Comprobante de dispersión al proveedor generado automáticamente (simulado). Pendiente de Validación IA.',
+    // area/fase deben coincidir con el requisito DOC-SPEI del producto.
+    area: 'Tesorería',
+    fase: 'Liberación y Dispersión',
+    faseId: 6,
+    estatus: 'Pendiente Validación IA',
+    validadoIA: false,
+    fileData,
+    url: uploadInfo?.url,
+    storagePath: uploadInfo?.storagePath,
+    mime: 'application/pdf',
+    tamanoKB: uploadInfo?.tamanoKB || Math.round((fileData.length * 3) / 4 / 1024) || 1,
+  } as DocumentoCargado & { storagePath?: string };
+
+  const docsActualizados = [...docsPrevios, nuevo];
+  saveToSession(storageId, 'documentos', docsActualizados);
+
+  const persist = await persistirDocumentosEnBD(storageId, docsActualizados);
+
+  console.log(
+    `[autoCrearComprobanteSPEI] Comprobante SPEI creado para solicitud ${storageId} | Storage: ${subidosASupabase ? 'OK' : 'local'} | BD: ${persist.ok ? 'OK' : `FALLO (${persist.error})`}`
+  );
+
+  return {
+    exito: true,
+    documentosCreados: [CLAVE_COMPROBANTE_SPEI],
+    pdfGenerados: [nombreArchivo],
+    subidosASupabase,
+    registradosEnExpediente: persist.ok,
+    error: persist.ok ? undefined : `Documento generado pero NO persistido en BD: ${persist.error}`,
+    validacionPlantillas: sinPlantillas,
+    documentoCreadoId: nuevo.id,
+    fileData,
+    documentosGenerados: [{ tipo: CLAVE_COMPROBANTE_SPEI, archivo: nombreArchivo, fileData }],
   };
 }

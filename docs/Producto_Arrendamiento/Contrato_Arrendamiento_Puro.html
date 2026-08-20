@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<title>Contrato de Arrendamiento Puro</title>
+
+<style>
+  body {
+    font-family: "Helvetica Neue", Arial, sans-serif;
+    margin: 0;
+    color: #1a1a1a;
+    font-size: 9px;
+  }
+
+  .page {
+    width: 210mm;
+    height: 297mm;
+    padding: 12mm 16mm 10mm 16mm;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    overflow: hidden;
+  }
+
+  /* HEADER */
+  .header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+  }
+
+  .brand { display: flex; align-items: center; gap: 7px; }
+  .logo  { height: 26px; }
+  .brand-text { line-height: 1.2; }
+  .brand-name { font-weight: 700; font-size: 11px; }
+  .brand small { font-size: 8px; color: #666; }
+
+  .doc-meta { text-align: right; font-size: 8px; line-height: 1.4; }
+
+  /* TITLE */
+  .title {
+    text-align: center;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    margin: 4px 0 6px 0;
+    border-top: 1px solid #000;
+    border-bottom: 1px solid #000;
+    padding: 3px 0;
+  }
+
+  /* TEXT */
+  .text { text-align: justify; line-height: 1.4; }
+
+  .section { margin-bottom: 6px; }
+
+  .section-title {
+    font-size: 8px;
+    font-weight: 700;
+    text-transform: uppercase;
+    border-bottom: 1px solid #000;
+    margin-bottom: 3px;
+    padding-bottom: 1px;
+  }
+
+  .highlight { font-weight: 600; }
+
+  /* LAYOUT: declaraciones + cláusulas en dos columnas */
+  .two-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+
+  /* TABLE */
+  table { width: 100%; border-collapse: collapse; margin: 3px 0; }
+
+  td { padding: 2px 2px; vertical-align: top; }
+
+  .label { width: 38%; font-size: 8px; color: #555; }
+
+  .value { border-bottom: 1px solid #bbb; font-weight: 500; font-size: 8.5px; }
+
+  /* CLAUSES */
+  .clause { margin-bottom: 4px; text-align: justify; }
+  .clause strong { display: inline; font-weight: 700; }
+
+  /* SIGNATURE */
+  .signature-block {
+    margin-top: 8px;
+    display: flex;
+    justify-content: space-between;
+  }
+
+  .signature { width: 44%; text-align: center; }
+
+  .line {
+    margin-top: 28px;
+    border-top: 1px solid #000;
+    padding-top: 4px;
+    font-size: 8px;
+  }
+
+  /* FOOTER */
+  .footer { font-size: 7.5px; color: #666; }
+
+  .footer-line { width: 100%; height: 1px; background: #ccc; margin-bottom: 4px; }
+
+  .footer-content { display: flex; justify-content: space-between; }
+
+</style>
+</head>
+
+<body>
+<div class="page">
+
+  <div>
+
+    <!-- HEADER -->
+    <div class="header">
+      <div class="brand">
+        <img class="logo" src="/src/assets/7b6cb23c00b7817818c638af3eae0a416e1e9f57.png"/>
+        <div class="brand-text">
+          <div class="brand-name">{{institucionNombre}}</div>
+          <small>{{empresa_razon_social}}</small>
+        </div>
+      </div>
+
+      <div class="doc-meta">
+        <div><strong>Contrato No.:</strong> {{numeroSolicitud}}</div>
+        <div><strong>Fecha:</strong> {{fechaFirmaLarga}}</div>
+        <div><strong>Lugar:</strong> {{ciudadFirma}}</div>
+      </div>
+    </div>
+
+    <!-- TITLE -->
+    <div class="title">CONTRATO DE ARRENDAMIENTO PURO</div>
+
+    <!-- INTRO -->
+    <div class="text section">
+      En {{ciudadFirma}}, a {{fechaFirmaLarga}}, comparecen <span class="highlight">{{institucionNombre}}</span>
+      (<span class="highlight">"EL ARRENDADOR"</span>) y <span class="highlight">{{clienteNombreCompleto}}</span>
+      (<span class="highlight">"EL ARRENDATARIO"</span>), quienes celebran el presente Contrato de Arrendamiento
+      Puro conforme a la Ley General de Organizaciones y Actividades Auxiliares del Crédito y las declaraciones
+      y cláusulas siguientes:
+    </div>
+
+    <div class="two-col">
+
+      <!-- DECLARACIONES -->
+      <div class="section">
+        <div class="section-title">Declaraciones</div>
+        <div class="text">
+          <strong>I. EL ARRENDADOR:</strong> entidad legalmente constituida con facultades para celebrar operaciones
+          de arrendamiento y propietaria del Bien objeto de este contrato.<br>
+          <strong>II. EL ARRENDATARIO:</strong> {{clienteTipoPersonaDescripcion}} con capacidad legal, que declara
+          conocer y aceptar el estado y especificaciones del Bien arrendado.
+        </div>
+        <table>
+          <tr><td class="label">Nombre</td><td class="value">{{clienteNombreCompleto}}</td></tr>
+          <tr><td class="label">RFC</td><td class="value">{{clienteRFC}}</td></tr>
+          <tr><td class="label">CURP</td><td class="value">{{clienteCURP}}</td></tr>
+          <tr><td class="label">Domicilio</td><td class="value">{{clienteDomicilio}}</td></tr>
+          <tr><td class="label">Nacimiento</td><td class="value">{{clienteFechaNacimientoConstitucion}}</td></tr>
+        </table>
+        <div class="section-title" style="margin-top:6px">Condiciones del Arrendamiento</div>
+        <table>
+          <tr><td class="label">Producto</td><td class="value">{{productoNombre}}</td></tr>
+          <tr><td class="label">Bien arrendado</td><td class="value">{{descripcionBien}}</td></tr>
+          <tr><td class="label">Valor del Bien</td><td class="value">{{montoCredito}} {{moneda}}</td></tr>
+          <tr><td class="label">Valor Residual</td><td class="value">{{monto_residual}} {{moneda}}</td></tr>
+          <tr><td class="label">Plazo</td><td class="value">{{plazoDescripcion}}</td></tr>
+          <tr><td class="label">Tasa anual</td><td class="value">{{tasaInteres}}%</td></tr>
+          <tr><td class="label">CAT</td><td class="value">{{cat}}%</td></tr>
+          <tr><td class="label">Rentas</td><td class="value">{{numeroPagos}} de {{montoPago}} {{moneda}} + IVA</td></tr>
+        </table>
+      </div>
+
+      <!-- CLAUSULAS -->
+      <div class="section">
+        <div class="section-title">Cláusulas</div>
+        <div class="clause"><strong>PRIMERA. Objeto —</strong> El arrendador se obliga a otorgar el uso y goce
+          del Bien descrito en este contrato al arrendatario, con valor de {{montoCredito}} {{moneda}}, a cambio
+          del pago de las rentas pactadas, conforme al artículo 408 de la Ley General de Títulos y Operaciones
+          de Crédito.</div>
+        <div class="clause"><strong>SEGUNDA. Entrega y uso del Bien —</strong> El arrendatario recibe el Bien
+          a su entera satisfacción y se obliga a usarlo exclusivamente para los fines convenidos, corriendo
+          por su cuenta el mantenimiento, conservación y riesgos inherentes a su uso.</div>
+        <div class="clause"><strong>TERCERA. Rentas —</strong> {{numeroPagos}} rentas de {{montoPago}} {{moneda}}
+          más el Impuesto al Valor Agregado correspondiente, pagaderas en las fechas señaladas en el calendario
+          de pagos anexo.</div>
+        <div class="clause"><strong>CUARTA. Tasa y determinación de la renta —</strong> La renta se calculó
+          conforme a una tasa anual de {{tasaInteres}}% sobre el valor del Bien, considerando el Valor Residual
+          pactado de {{monto_residual}} {{moneda}}.</div>
+        <div class="clause"><strong>QUINTA. Opción al término del plazo —</strong> Al vencimiento del plazo
+          forzoso, el arrendatario podrá optar por: (a) la compra del Bien al Valor Residual pactado; (b) prorrogar
+          el plazo del contrato; o (c) participar en la venta del Bien a un tercero, conforme al artículo 410 de
+          la Ley General de Títulos y Operaciones de Crédito.</div>
+        <div class="clause"><strong>SEXTA. Mora —</strong> El incumplimiento en el pago de una o más rentas
+          generará intereses moratorios sobre el saldo insoluto, sin perjuicio de las demás acciones que
+          correspondan al arrendador.</div>
+        <div class="clause"><strong>SÉPTIMA. Seguro —</strong> El arrendatario se obliga a mantener vigente,
+          durante la vigencia del contrato, una póliza de seguro que ampare el Bien contra los riesgos usuales,
+          designando al arrendador como beneficiario preferente.</div>
+        <div class="clause"><strong>OCTAVA. Terminación anticipada —</strong> El arrendador podrá dar por
+          vencido anticipadamente el plazo y exigir la devolución del Bien o el pago total de las rentas
+          pendientes ante el incumplimiento del arrendatario.</div>
+        <div class="clause"><strong>NOVENA. Jurisdicción —</strong> Para la interpretación y cumplimiento del
+          presente contrato, las partes se someten a los tribunales de {{jurisdiccion}}.</div>
+      </div>
+
+    </div>
+
+    <!-- CIERRE -->
+    <div class="text" style="margin-top:4px">
+      Leído y enteradas las partes del contenido y alcance legal del presente Contrato de Arrendamiento Puro,
+      lo firman de conformidad para constancia.
+    </div>
+
+    <!-- FIRMAS -->
+    <div class="signature-block">
+      <div class="signature">
+        <div class="line">{{clienteNombreCompleto}}</div>
+        EL ARRENDATARIO
+      </div>
+
+      <div class="signature">
+        <div class="line">{{institucionNombre}}</div>
+        EL ARRENDADOR
+      </div>
+    </div>
+
+  </div>
+
+  <!-- FOOTER -->
+  <div class="footer">
+    <div class="footer-line"></div>
+    <div class="footer-content">
+      <span>{{institucionNombre}}</span>
+      <span>Documento confidencial · Contrato legal</span>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

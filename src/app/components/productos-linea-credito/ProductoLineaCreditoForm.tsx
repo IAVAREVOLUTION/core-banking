@@ -217,7 +217,7 @@ export function ProductoLineaCreditoForm({
         { field: 'formaDisposicion', label: 'Forma de disposición' },
         // renovable: excluido — booleano, siempre tiene valor (false por defecto)
         { field: 'frecuenciaRevision', label: 'Frecuencia de revisión' },
-        { field: 'tipoGarantia', label: 'Garantía' },
+        { field: 'tipoGarantia', label: 'Bien' },
         { field: 'destino', label: 'Destino' },
       ];
 
@@ -580,7 +580,7 @@ export function ProductoLineaCreditoForm({
     { id: 'productos-disposicion', label: 'Productos Disposición' },
     { id: 'parametros-calculo', label: 'Parámetro de Cálculo' },
     { id: 'sucursal', label: 'Sucursal' },
-    { id: 'garantias', label: 'Garantías' },
+    { id: 'garantias', label: 'Bienes' },
     { id: 'motor-contable', label: 'Motor Contable' },
     // === Tabs adicionales ===
     { id: 'plantillas', label: 'Plantillas' },

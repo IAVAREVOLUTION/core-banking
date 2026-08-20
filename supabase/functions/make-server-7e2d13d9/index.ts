@@ -4051,6 +4051,11 @@ const carteraCrearFacturaHandler = async (c: any) => {
     const {
       solicitud_id, amortizaciones,
       sub_tipo = 'Amortizacion',
+      // 'Por Cobrar': el cliente/beneficiario le debe a la institución (default,
+      // retrocompatible con todos los llamadores existentes).
+      // 'Por Pagar': la institución le debe a la contraparte (ej. proveedor del
+      // bien en Arrendamiento) — la única variación aceptada.
+      tipo: tipoRaw = 'Por Cobrar',
       cliente = null,
       forma_pago = null,
       fecha_compromiso = null,
@@ -4059,6 +4064,7 @@ const carteraCrearFacturaHandler = async (c: any) => {
       cuenta_bancaria = null,
       referencia = null,
     } = body;
+    const tipo = tipoRaw === 'Por Pagar' ? 'Por Pagar' : 'Por Cobrar';
     if (!solicitud_id || !amortizaciones?.length) return c.json({ error: 'solicitud_id y amortizaciones son requeridos' }, 400);
 
     const fecha = new Date().toISOString().split('T')[0];
@@ -4107,7 +4113,7 @@ const carteraCrearFacturaHandler = async (c: any) => {
            institucion_financiera, cuenta_bancaria, referencia, gobierno,
            monto_transaccion, estatus)
         VALUES (
-          ${solicitud_id}::uuid, ${amortizaId}::uuid, ${no_docto}, ${fecha}::date, 'Por Cobrar',
+          ${solicitud_id}::uuid, ${amortizaId}::uuid, ${no_docto}, ${fecha}::date, ${tipo},
           ${sub_tipo}, ${cliente}, ${forma_pago},
           ${fechaComp}::date,
           ${moneda}, ${institucion_financiera}, ${cuenta_bancaria}, ${referencia}, ${gobierno},
@@ -4117,13 +4123,25 @@ const carteraCrearFacturaHandler = async (c: any) => {
       `;
       if (!primeraFactura) primeraFactura = factura;
 
-      const subproductos = [
-        { cve: 'CAPITAL', desc: 'Capital',     monto: parseFloat(amort.pago_capital) || 0 },
-        { cve: 'INTERES', desc: 'Interés',     monto: parseFloat(amort.pago_interes) || 0 },
-        { cve: 'IVA_INT', desc: 'IVA Interés', monto: parseFloat(amort.iva_interes)  || 0 },
-        { cve: 'SEGURO',  desc: 'Seguro',      monto: parseFloat(amort.pago_seguro)  || 0 },
-        { cve: 'IVA_SEG', desc: 'IVA Seguro',  monto: parseFloat(amort.iva_seguro)   || 0 },
-      ].filter(sp => sp.monto > 0);
+      // Conceptos propios (arrendamiento: Enganche, Comisión, Rentas anticipadas;
+      // CFDI de proveedor: conceptos del XML). Si la amortización trae
+      // `conceptos`, se usan tal cual; si no, se cae al desglose clásico de
+      // crédito. Aditivo: los llamadores existentes no cambian.
+      const subproductos = Array.isArray(amort.conceptos) && amort.conceptos.length > 0
+        ? amort.conceptos
+            .map((cp: any) => ({
+              cve: String(cp.cve || cp.concepto || 'CONCEPTO').slice(0, 30),
+              desc: String(cp.desc || cp.descripcion || 'Concepto'),
+              monto: parseFloat(cp.monto) || 0,
+            }))
+            .filter((sp: any) => sp.monto > 0)
+        : [
+            { cve: 'CAPITAL', desc: 'Capital',     monto: parseFloat(amort.pago_capital) || 0 },
+            { cve: 'INTERES', desc: 'Interés',     monto: parseFloat(amort.pago_interes) || 0 },
+            { cve: 'IVA_INT', desc: 'IVA Interés', monto: parseFloat(amort.iva_interes)  || 0 },
+            { cve: 'SEGURO',  desc: 'Seguro',      monto: parseFloat(amort.pago_seguro)  || 0 },
+            { cve: 'IVA_SEG', desc: 'IVA Seguro',  monto: parseFloat(amort.iva_seguro)   || 0 },
+          ].filter(sp => sp.monto > 0);
 
       for (const sp of subproductos) {
         await sql`
@@ -7130,8 +7148,41 @@ app.onError((err, c) => {
 
 // ═══════════════════════════════════════════════════════════════════
 // SOLICITUDES DE ACTIVACIÓN — J_SOLICITUDES_ACTIVACION
-// PUT /solicitudes-activacion/:id  → actualiza estatus + data
+// POST /solicitudes-activacion     → crea un registro nuevo
+// PUT  /solicitudes-activacion/:id → actualiza estatus + data
 // ═══════════════════════════════════════════════════════════════════
+const postSolicitudActivacionHandler = async (c: any) => {
+  try {
+    const body = await c.req.json();
+    console.log(`[SOL-ACTIVACION] POST /solicitudes-activacion`, JSON.stringify(body).substring(0, 400));
+
+    const cliente_id       = toNullUuid(body.cliente_id);
+    const solicitud_id     = toNullUuid(body.solicitud_id);
+    const tipo             = toNullStr(body.type);
+    const fecha_compromiso = toNullStr(body.fecha_compromiso);
+    const estatus          = toNullStr(body.estatus) || 'Pendiente';
+    const data             = body.data ?? {};
+
+    const [inserted] = await sql`
+      INSERT INTO "EFINANCIANET_DB"."J_SOLICITUDES_ACTIVACION"
+        (cliente_id, solicitud_id, type, fecha_compromiso, estatus, data)
+      VALUES (
+        ${cliente_id}::uuid, ${solicitud_id}::uuid, ${tipo}, ${fecha_compromiso}::date,
+        ${estatus}, ${JSON.stringify(data)}::jsonb
+      )
+      RETURNING id
+    `;
+    console.log(`[SOL-ACTIVACION] INSERT OK — id: ${inserted.id} solicitud_id: ${solicitud_id}`);
+    return c.json({ ok: true, id: inserted.id });
+  } catch (err: any) {
+    console.error(`[SOL-ACTIVACION] Error POST:`, err?.message);
+    return c.json({ error: `Error creando solicitud de activación: ${err?.message}` }, 500);
+  }
+};
+
+app.post(`${PREFIX}/solicitudes-activacion`, postSolicitudActivacionHandler);
+app.post(`/solicitudes-activacion`, postSolicitudActivacionHandler);
+
 const putSolicitudActivacionHandler = async (c: any) => {
   try {
     const id = c.req.param('id');

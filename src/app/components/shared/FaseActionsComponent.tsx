@@ -54,6 +54,15 @@ interface FaseActionsComponentProps {
   enviandoFase?: boolean;
   /** Solicitud de Activación existente (para fase 3+) */
   existingActivacion?: { id: string; estatus: string } | null;
+  /** Generar Factura de Pago Inicial — Arrendamiento Puro, fase "Recaudación Inicial y Compra" */
+  onGenerarFacturaInicial?: () => void;
+  /** Generar Factura del Proveedor (CFDI) — Arrendamiento Puro, fase "Recepción del Activo y Cierre" */
+  onGenerarFacturaProveedor?: () => void;
+  /** true si el producto es Arrendamiento Puro — habilita los botones de factura */
+  esArrendamientoPuro?: boolean;
+  /** true si la factura de la fase ya fue generada (evita duplicar) */
+  facturaInicialGenerada?: boolean;
+  facturaProveedorGenerada?: boolean;
 }
 
 export function FaseActionsComponent({
@@ -70,6 +79,11 @@ export function FaseActionsComponent({
   canActivarCuenta,
   enviandoFase = false,
   existingActivacion,
+  onGenerarFacturaInicial,
+  onGenerarFacturaProveedor,
+  esArrendamientoPuro = false,
+  facturaInicialGenerada = false,
+  facturaProveedorGenerada = false,
 }: FaseActionsComponentProps) {
   // ── Fuente de verdad ─────────────────────────────────────────────────────
   const { faseActualReal, seqActual, faseSiguiente, faseAnterior, isConsistent, inconsistencias } =
@@ -129,9 +143,24 @@ export function FaseActionsComponent({
   const cuentaFinancieraYaFinalizada =
     esCuentaFinanciera && (estatus === 'Autorizada' || estatus === 'Aprobado');
 
+  // Facturas de Arrendamiento Puro — se detectan por nombre de fase, igual que
+  // el resto de los botones, para no depender del número consecutivo.
+  const puedeFacturaInicial =
+    esArrendamientoPuro && !facturaInicialGenerada &&
+    faseContiene('recaudacion') && faseContiene('compra');
+  const puedeFacturaProveedor =
+    esArrendamientoPuro && !facturaProveedorGenerada &&
+    faseContiene('recepcion') && faseContiene('activo');
+
+  // Última fase del flujo (sin fase siguiente) que aún no se ha cerrado.
+  // Sin esto el botón desaparecía al llegar al final y el proceso no se podía
+  // terminar: puedeEnviar exigía faseSiguiente.
+  const procesoYaCerrado = estatus === 'Autorizada' || estatus === 'Aprobado';
+  const esCierreDeProceso = !faseSiguiente && !esCuentaFinanciera && !procesoYaCerrado;
+
   // "Enviar de Fase" — incluye "Activación Cuenta Financiera" solo si aún no está finalizada
   const puedeEnviar =
-    (!!faseSiguiente || (esCuentaFinanciera && !cuentaFinancieraYaFinalizada)) &&
+    (!!faseSiguiente || (esCuentaFinanciera && !cuentaFinancieraYaFinalizada) || esCierreDeProceso) &&
     !puedeSolicitudActivacion &&
     !puedeVerActivacion &&
     !puedeActivarCuenta;
@@ -314,6 +343,38 @@ export function FaseActionsComponent({
           </div>
 
           <div className="flex items-center gap-2 flex-wrap justify-end">
+            {/* ── Arrendamiento Puro · Fase "Recaudación Inicial y Compra" ── */}
+            {puedeFacturaInicial && onGenerarFacturaInicial && (
+              <button
+                onClick={onGenerarFacturaInicial}
+                disabled={enviandoFase}
+                title="Genera la factura del pago inicial y la registra en Avisos de Vencimiento"
+                className="px-4 py-1.5 bg-[#B45309] text-white rounded text-xs hover:bg-[#92400E] flex items-center gap-1.5 disabled:opacity-50"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M4 3h12l4 4v14H4z" />
+                  <path d="M8 11h8M8 15h5" />
+                </svg>
+                Generar Factura de Pago Inicial
+              </button>
+            )}
+
+            {/* ── Arrendamiento Puro · Fase "Recepción del Activo y Cierre" ── */}
+            {puedeFacturaProveedor && onGenerarFacturaProveedor && (
+              <button
+                onClick={onGenerarFacturaProveedor}
+                disabled={enviandoFase}
+                title="Genera el CFDI del proveedor del bien y crea la cuenta por pagar"
+                className="px-4 py-1.5 bg-[#7C3AED] text-white rounded text-xs hover:bg-[#6D28D9] flex items-center gap-1.5 disabled:opacity-50"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M4 3h12l4 4v14H4z" />
+                  <path d="M9 13l2 2 4-4" />
+                </svg>
+                Generar Factura del Proveedor
+              </button>
+            )}
+
             {/* ── Fases 1-5: Enviar de Fase ── */}
             {puedeEnviar && (
               <button
@@ -324,7 +385,13 @@ export function FaseActionsComponent({
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <path d="M5 12h14M12 5l7 7-7 7" />
                 </svg>
-                {enviandoFase ? 'Procesando...' : esCuentaFinanciera ? 'Activar cuenta y finalizar' : 'Enviar de Fase'}
+                {enviandoFase
+                  ? 'Procesando...'
+                  : esCuentaFinanciera
+                    ? 'Activar cuenta y finalizar'
+                    : esCierreDeProceso
+                      ? 'Cerrar proceso'
+                      : 'Enviar de Fase'}
               </button>
             )}
 

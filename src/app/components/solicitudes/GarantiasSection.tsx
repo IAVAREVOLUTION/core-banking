@@ -25,7 +25,7 @@ export function GarantiasSection({ onOpenModal }: GarantiasSectionProps) {
             <tr className="bg-[#D3D3D3]">
               <th className="border border-gray-400 px-2 py-1.5 text-left font-normal text-gray-800">Tipo *</th>
               <th className="border border-gray-400 px-2 py-1.5 text-left font-normal text-gray-800">Subtipo *</th>
-              <th className="border border-gray-400 px-2 py-1.5 text-left font-normal text-gray-800">Garantía *</th>
+              <th className="border border-gray-400 px-2 py-1.5 text-left font-normal text-gray-800">Bien *</th>
               <th className="border border-gray-400 px-2 py-1.5 text-left font-normal text-gray-800">Valor Nominal</th>
               <th className="border border-gray-400 px-2 py-1.5 text-left font-normal text-gray-800">Descripción</th>
               <th className="border border-gray-400 px-2 py-1.5 text-left font-normal text-gray-800">Ubicación</th>

@@ -25,6 +25,10 @@ import {
   MOCK_REQUISITOS_PRODUCTO, MOCK_DOCUMENTOS,
 } from './solicitudCreditoStore';
 import { AgregarDocumentoModal } from '../originacion/AgregarDocumentoModal';
+import {
+  autoCrearReporteBuro, CLAVE_REPORTE_BURO,
+  autoCrearKitLegal, CLAVE_CONTRATO_REQ, CLAVE_PAGARE_REQ, CLAVE_ANEXO_RENTAS,
+} from '../../hooks/generarDocumentosFase4';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-7e2d13d9`;
 const LOG = '[ExpedienteTab]';
@@ -501,9 +505,17 @@ interface Props {
   lineaProducto?: string;
   descripcionFase?: string;
   onEnviarSolicitud?: () => void;
+  /** No. de Solicitud — usado para el PDF del Reporte de Buró generado manualmente */
+  noSolicitud?: string;
+  /** Tipo/Sublínea de producto — usado para el PDF del Reporte de Buró */
+  tipoProducto?: string;
+  /** Nombre comercial del producto — usado para el PDF del Reporte de Buró */
+  nombreProducto?: string;
+  /** Plantillas institucionales del producto — requeridas para el Kit Legal (Fase 3) */
+  plantillasProducto?: any[];
 }
 
-export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, productoId, nombreSolicitante, curpCliente, rfcCliente, fasePromptIA, tipoPersona, lineaProducto, descripcionFase, onEnviarSolicitud }: Props) {
+export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, productoId, nombreSolicitante, curpCliente, rfcCliente, fasePromptIA, tipoPersona, lineaProducto, descripcionFase, onEnviarSolicitud, noSolicitud, tipoProducto, nombreProducto, plantillasProducto }: Props) {
   // ── State: requisitos del producto (desde DB) ──
   const [requisitosDB, setRequisitosDB] = useState<RequisitoProducto[]>([]);
   const [loadingReqs, setLoadingReqs] = useState(false);
@@ -569,6 +581,22 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
   }, [solicitudId, mode]);
 
   const [documentos, setDocumentos] = useState<DocumentoCargado[]>(getInitDocs);
+
+  // Re-sincronizar documentos desde storage cuando cambia de fase (faseIdActual).
+  // El avance de fase (avanzarFase, en el padre) genera documentos automáticos
+  // (ej. Reporte de Buró en Fase 2, Contrato/Pagaré en Fase 4) escribiendo
+  // directamente a sessionStorage — este componente ya estaba montado con el
+  // estado anterior y no se enteraba del cambio sin este efecto.
+  useEffect(() => {
+    // El auto-guardado que corre dentro de handleEnviarFase (padre) puede mover
+    // sessionStorage completo a SAVED_DATA (memoria) vía commitAndClearSession
+    // justo después de generar el documento automático — sin el fallback a
+    // loadFromSavedStore aquí, esta resincronización no lo encontraba.
+    const fresh = loadFromSession<DocumentoCargado[]>(solicitudId, 'documentos')
+      ?? loadFromSavedStore<DocumentoCargado[]>(solicitudId, 'documentos');
+    if (fresh) setDocumentos(fresh);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [faseIdActual]);
   const [showForm, setShowForm] = useState(false);
   const [newDoc, setNewDoc] = useState<Partial<DocumentoCargado>>({});
   const [validatingId, setValidatingId] = useState<number | null>(null);
@@ -844,6 +872,170 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
     [documentos]
   );
 
+  // ── Reporte de Buró (Fase 2) — generación manual bajo demanda ──
+  const [generandoBuro, setGenerandoBuro] = useState(false);
+  const yaExisteReporteBuro = documentos.some(d => d.tipoDocumento === CLAVE_REPORTE_BURO);
+
+  const handleGenerarReporteBuro = async () => {
+    setGenerandoBuro(true);
+    try {
+      const resultado = await autoCrearReporteBuro({
+        storageId: solicitudId,
+        datos: {
+          noSol: noSolicitud || '',
+          cliente: nombreSolicitante || 'Cliente',
+          lineaProducto: lineaProducto || '',
+          tipoProducto: tipoProducto || '',
+          productoNombre: nombreProducto || tipoProducto || '',
+          terminos: loadFromSession<any>(solicitudId, 'terminos') || loadFromSavedStore<any>(solicitudId, 'terminos') || {},
+          rfc: rfcCliente || '',
+          curp: curpCliente || '',
+        },
+        supabase,
+        projectId,
+      });
+      if (resultado.exito && resultado.documentosCreados.length > 0) {
+        const fresh = loadFromSession<DocumentoCargado[]>(solicitudId, 'documentos')
+          ?? loadFromSavedStore<DocumentoCargado[]>(solicitudId, 'documentos');
+        if (fresh) setDocumentos(fresh);
+        if (resultado.registradosEnExpediente) {
+          toast.success('Autorización Buró de Crédito generada y guardada', {
+            description: 'Adjuntado al Expediente Electrónico y persistido en base de datos.',
+            duration: 6000,
+          });
+        } else {
+          toast.warning('Documento generado, pero NO se guardó en base de datos', {
+            description: resultado.error || 'Se perderá al recargar la página.',
+            duration: 10000,
+          });
+        }
+        // Descargar el PDF automáticamente.
+        if (resultado.fileData) {
+          try {
+            const [header, b64] = resultado.fileData.split(',');
+            const mime = header.match(/:(.*?);/)?.[1] ?? 'application/pdf';
+            const bin = atob(b64);
+            const buf = new Uint8Array(bin.length);
+            for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+            const blobUrl = URL.createObjectURL(new Blob([buf], { type: mime }));
+            const a = document.createElement('a');
+            a.href = blobUrl;
+            a.download = `Autorizacion_Buro_Credito_${noSolicitud || solicitudId}.pdf`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+          } catch (dlErr) {
+            console.warn('[ExpedienteTab] No se pudo descargar el PDF automáticamente:', dlErr);
+          }
+        }
+      } else if (resultado.exito) {
+        toast.info('La Autorización Buró de Crédito ya existía en el Expediente.');
+      } else {
+        toast.error('No se pudo generar la Autorización Buró de Crédito', { description: resultado.error, duration: 8000 });
+      }
+    } catch (err: any) {
+      toast.error('Error al generar la Autorización Buró de Crédito', { description: err?.message || String(err), duration: 8000 });
+    } finally {
+      setGenerandoBuro(false);
+    }
+  };
+
+  // ── Kit Legal (Fase 3): Contrato + Anexo de Rentas + Pagaré ──
+  const [generandoKit, setGenerandoKit] = useState(false);
+  const kitLegalCompleto =
+    documentos.some(d => d.tipoDocumento === CLAVE_CONTRATO_REQ) &&
+    documentos.some(d => d.tipoDocumento === CLAVE_PAGARE_REQ) &&
+    documentos.some(d => d.tipoDocumento === CLAVE_ANEXO_RENTAS);
+
+  const handleGenerarKitLegal = async () => {
+    setGenerandoKit(true);
+    try {
+      const resultado = await autoCrearKitLegal({
+        storageId: solicitudId,
+        datos: {
+          noSol: noSolicitud || '',
+          cliente: nombreSolicitante || 'Cliente',
+          lineaProducto: lineaProducto || '',
+          tipoProducto: tipoProducto || '',
+          productoNombre: nombreProducto || tipoProducto || '',
+          terminos: loadFromSession<any>(solicitudId, 'terminos') || loadFromSavedStore<any>(solicitudId, 'terminos') || {},
+          rfc: rfcCliente || '',
+          curp: curpCliente || '',
+        },
+        plantillas: plantillasProducto,
+        supabase,
+        projectId,
+      });
+
+      if (!resultado.exito) {
+        toast.error('No se pudo generar el Kit Legal', { description: resultado.error, duration: 10000 });
+        return;
+      }
+      if (resultado.documentosCreados.length === 0) {
+        toast.info('El Kit Legal ya existía en el Expediente.');
+        return;
+      }
+
+      const fresh = loadFromSession<DocumentoCargado[]>(solicitudId, 'documentos')
+        ?? loadFromSavedStore<DocumentoCargado[]>(solicitudId, 'documentos');
+      if (fresh) setDocumentos(fresh);
+
+      if (resultado.registradosEnExpediente) {
+        toast.success(`Kit Legal generado (${resultado.documentosCreados.length} documento(s))`, {
+          description: resultado.documentosCreados.join(' · '),
+          duration: 7000,
+        });
+      } else {
+        toast.warning('Documentos generados, pero NO se guardaron en base de datos', {
+          description: resultado.error || 'Se perderán al recargar la página.',
+          duration: 10000,
+        });
+      }
+
+      // Abrir en pestañas y descargar — mismo comportamiento que "Formalizar
+      // Contrato" en Crédito. Se usa el PDF que devuelve el generador, no el
+      // que quedó en storage (los PDFs de plantilla son pesados y pueden no
+      // haberse guardado por límite de cuota).
+      const generados = resultado.documentosGenerados || [];
+      let bloqueadas = false;
+      generados.forEach((g, i) => {
+        setTimeout(() => {
+          try {
+            const [header, b64] = g.fileData.split(',');
+            const mime = header.match(/:(.*?);/)?.[1] ?? 'application/pdf';
+            const bin = atob(b64);
+            const buf = new Uint8Array(bin.length);
+            for (let j = 0; j < bin.length; j++) buf[j] = bin.charCodeAt(j);
+            const blobUrl = URL.createObjectURL(new Blob([buf], { type: mime }));
+
+            const tab = window.open(blobUrl, '_blank');
+            if (!tab && !bloqueadas) {
+              bloqueadas = true;
+              toast.warning('El navegador bloqueó las pestañas', {
+                description: 'Permita las ventanas emergentes para ver los documentos; la descarga continúa.',
+              });
+            }
+
+            const a = document.createElement('a');
+            a.href = blobUrl;
+            a.download = g.archivo;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            setTimeout(() => URL.revokeObjectURL(blobUrl), 30000);
+          } catch (dlErr) {
+            console.warn('[ExpedienteTab] No se pudo abrir/descargar', g.tipo, dlErr);
+          }
+        }, i * 500); // separar para que el navegador no bloquee las descargas
+      });
+    } catch (err: any) {
+      toast.error('Error al generar el Kit Legal', { description: err?.message || String(err), duration: 8000 });
+    } finally {
+      setGenerandoKit(false);
+    }
+  };
+
   // ── Handlers ──
   const handleAddDoc = async () => {
     if (!newDoc.tipoDocumento) {
@@ -956,22 +1148,38 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
 
       const pdf = await loadingTask.promise;
       const page = await pdf.getPage(1);
-      const scale = 2.0;
+
+      // Escala adaptativa con tope de ancho: a escala fija 2.0 una hoja A4 daba
+      // ~1190x1684 px y, exportada como PNG (sin compresión), producía un base64
+      // de varios MB. Ese string se mantenía en memoria y se enviaba en el
+      // payload de la IA, lo que agotaba la memoria de la pestaña y la tumbaba
+      // con documentos densos (p. ej. el Anexo de Rentas).
+      const MAX_ANCHO_PX = 1400;
+      const base = page.getViewport({ scale: 1 });
+      const scale = Math.min(2.0, MAX_ANCHO_PX / base.width);
       const viewport = page.getViewport({ scale });
 
       const canvas = document.createElement('canvas');
-      canvas.width = viewport.width;
-      canvas.height = viewport.height;
+      canvas.width = Math.floor(viewport.width);
+      canvas.height = Math.floor(viewport.height);
       const ctx = canvas.getContext('2d');
       if (!ctx) throw new Error('No se pudo crear contexto 2D del canvas');
 
-      await page.render({ canvasContext: ctx, viewport }).promise;
-      const dataUrl = canvas.toDataURL('image/png');
-      console.log(`${LOG} [PDF→IMG] ✅ Página 1 renderizada: ${canvas.width}x${canvas.height}, dataUrl length=${dataUrl.length}`);
+      // Fondo blanco: el JPEG no soporta transparencia y saldría en negro.
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-      // Cleanup
+      await page.render({ canvasContext: ctx, viewport }).promise;
+      // JPEG comprimido en lugar de PNG: mismo contenido legible para la IA con
+      // una fracción del peso.
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+      console.log(`${LOG} [PDF→IMG] ✅ Página 1 renderizada: ${canvas.width}x${canvas.height} (escala ${scale.toFixed(2)}), dataUrl length=${dataUrl.length}`);
+
+      // Cleanup — liberar también el canvas para que el GC recupere la memoria.
       page.cleanup();
       pdf.destroy();
+      canvas.width = 0;
+      canvas.height = 0;
 
       return dataUrl;
     } catch (err: any) {
@@ -1556,6 +1764,37 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
                 🤖 {lastModeloIA.includes('/') ? lastModeloIA.split('/').pop() : lastModeloIA}
               </span>
             )}
+            {/* Acción manual explícita: disponible en cualquier fase. Antes estaba
+                limitada a faseIdActual === 2 y el botón no aparecía nunca si la
+                solicitud no estaba exactamente en esa fase. */}
+            {!isRO && !yaExisteReporteBuro && (
+              <button
+                onClick={handleGenerarReporteBuro}
+                disabled={generandoBuro}
+                className="px-3.5 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all duration-200 shadow-sm bg-[#1E4078] text-white hover:bg-[#16305C] disabled:opacity-60"
+              >
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                  <path d="M2 1h6l2 2v8H2V1z" />
+                  <path d="M6.5 1v2.5H9" />
+                </svg>
+                {generandoBuro ? 'Generando...' : 'Generar Autorización Buró'}
+              </button>
+            )}
+            {!isRO && !kitLegalCompleto && (
+              <button
+                onClick={handleGenerarKitLegal}
+                disabled={generandoKit}
+                title="Genera Contrato, Anexo de Rentas y Pagaré desde las plantillas del producto"
+                className="px-3.5 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all duration-200 shadow-sm bg-[#7C3AED] text-white hover:bg-[#6D28D9] disabled:opacity-60"
+              >
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M2 1.5h5L10 4v6.5H2z" />
+                  <path d="M7 1.5V4h3" />
+                  <path d="M4 6.5h4M4 8.5h4" />
+                </svg>
+                {generandoKit ? 'Generando...' : 'Generar Kit Legal'}
+              </button>
+            )}
             {!isRO && (
               <button
                 onClick={() => setShowAgregarModal(true)}
@@ -1790,9 +2029,13 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
         const doc = documentosFiltrados.find(d => d.id === previewDocId);
         if (!doc) return null;
         return (
-          <PreviewModal 
-            doc={doc} 
-            fileDataUrl={fileDataUrls[previewDocId]}
+          <PreviewModal
+            doc={doc}
+            // fileData: los documentos generados por el sistema (ej. Reporte de
+            // Buró) traen el PDF embebido como data URI y no pasan por el flujo
+            // de carga que llena fileDataUrls — sin este fallback el visor
+            // quedaba en blanco si la subida a Storage no dejó una url usable.
+            fileDataUrl={fileDataUrls[previewDocId] || (doc as any).fileData}
             onClose={() => setPreviewDocId(null)}
             onUrlRefreshed={(newUrl) => {
               setDocumentos(prev => prev.map(d => d.id === doc.id ? { ...d, url: newUrl } : d));

@@ -275,6 +275,10 @@ export function SolicitudActivacionForm({
   const [activeTab, setActiveTab] = useState<string>('default');
   // Estatus con que se abrió el formulario — si ya era Pagado no mostrar botón Activar
   const estatusAlAbrir = useRef<string>(getInitial().estatus);
+  // Activación realizada en esta sesión del formulario. En modo Originación el
+  // formulario NO se cierra tras activar (el padre sólo notifica y regresa), así
+  // que sin esta bandera el botón Activar seguiría disponible indefinidamente.
+  const [yaActivadoEnSesion, setYaActivadoEnSesion] = useState(false);
 
   useEffect(() => {
     setFormData(getInitial());
@@ -369,11 +373,18 @@ export function SolicitudActivacionForm({
     
     // Si hay callback externo (desde SolicitudCreditoForm), usarlo
     if (onEnviar) {
-      onEnviar(dataActivar, dbId);
+      await onEnviar(dataActivar, dbId);
+      // El padre marca el registro como 'Autorizada' (mutando dataActivar) y, en
+      // modo Originación, deja el formulario abierto — reflejarlo en el state
+      // para que el botón Activar desaparezca sin tener que recargar.
+      setYaActivadoEnSesion(true);
+      setFormData(prev => ({ ...prev, estatus: dataActivar.estatus || prev.estatus }));
       return;
     }
     if (onSave) {
-      onSave?.(dataActivar, dbId);
+      await onSave(dataActivar, dbId);
+      setYaActivadoEnSesion(true);
+      setFormData(prev => ({ ...prev, estatus: dataActivar.estatus || prev.estatus }));
       return;
     }
     
@@ -398,8 +409,13 @@ export function SolicitudActivacionForm({
     .toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').includes('linea');
   // No mostrar Activar si el registro ya lleg\u00f3 con estatus Pagado (o superior) desde la BD
   const estatusFinales = ['Pagado', 'Autorizada', 'Activada', 'Activo'];
-  const yaEraActivado  = estatusFinales.includes(estatusAlAbrir.current);
-  const puedeActivar   = !yaEraActivado && (esPagado || esLineaCredito);
+  // Estatus posteriores a la activación: si el registro YA está en alguno de
+  // ellos no hay nada que activar. 'Pagado' queda fuera a propósito — es
+  // justamente el estado desde el que se activa.
+  const estatusPostActivacion = ['Autorizada', 'Activada', 'Activo'];
+  const yaEraActivado  = estatusFinales.includes(estatusAlAbrir.current)
+                      || estatusPostActivacion.includes(formData.estatus);
+  const puedeActivar   = !yaEraActivado && !yaActivadoEnSesion && (esPagado || esLineaCredito);
   // Cualquier estatus "post-enviado" que no sea Pagado: no mostrar bot\u00f3n Enviar
   const yaEnviada = ['Enviada', 'Activo', 'Autorizada', 'Activada'].includes(formData.estatus);
 

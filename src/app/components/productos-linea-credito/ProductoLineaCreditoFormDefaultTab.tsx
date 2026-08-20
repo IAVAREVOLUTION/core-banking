@@ -157,7 +157,7 @@ export function ProductoLineaCreditoFormDefaultTab({
               </div>
             </div>
 
-            {/* Fila 5: Frecuencia de revisión, Garantía */}
+            {/* Fila 5: Frecuencia de revisión, Bien */}
             <div className="grid grid-cols-2 gap-4">
               <div className="flex items-center gap-3">
                 <label className="text-xs text-gray-700 w-48 flex-shrink-0">
@@ -181,7 +181,7 @@ export function ProductoLineaCreditoFormDefaultTab({
 
               <div className="flex items-center gap-3">
                 <label className="text-xs text-gray-700 w-48 flex-shrink-0">
-                  Garantía <span className="text-red-600">*</span>
+                  Bien <span className="text-red-600">*</span>
                 </label>
                 {isView ? (
                   <div className={viewFieldClass}>{formData.tipoGarantia || 'No definido'}</div>
