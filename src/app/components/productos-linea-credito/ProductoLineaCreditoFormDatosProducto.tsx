@@ -96,6 +96,7 @@ export function ProductoLineaCreditoFormDatosProducto({
                 <option value="Quirografario">Quirografario</option>
                 <option value="Simple">Simple</option>
                 <option value="Arrendamiento">Arrendamiento</option>
+                <option value="Global">Global</option>
               </select>
             )}
           </div>
@@ -133,9 +134,7 @@ export function ProductoLineaCreditoFormDatosProducto({
                 className={inputClass}
               >
                 <option value="">Seleccione...</option>
-                <option value="TIIE 28">TIIE 28</option>
-                <option value="TIIE 91">TIIE 91</option>
-                <option value="TIIE 182">TIIE 182</option>
+                <option value="TIIE">TIIE</option>
                 <option value="SOFR">SOFR</option>
                 <option value="Fija">Fija</option>
               </select>
