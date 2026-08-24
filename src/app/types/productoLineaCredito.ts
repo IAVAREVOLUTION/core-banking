@@ -73,6 +73,43 @@ export interface ExentoIvaLineaCredito {
   comentarios: string;
 }
 
+// ══════════════════════════════════════════════════════════════════
+// Garantía Financiera 2o Piso (REQ-8)
+// ══════════════════════════════════════════════════════════════════
+
+/** Escenarios de la cascada de pagos (Cash Flow Waterfall) del fideicomiso. */
+export type EscenarioPrelacion2oPiso = 'OPERACION_NORMAL' | 'BOTON_PANICO';
+
+/**
+ * Un renglón de la cascada de pagos. Se guarda un solo array con
+ * discriminante `escenario` (no dos arrays), para que el motor de cascada
+ * consuma el mismo shape filtrando.
+ */
+export interface PrelacionSegundoPiso {
+  id: number;
+  escenario: EscenarioPrelacion2oPiso;
+  seq: number | string;
+  concepto: string;
+  valor: string;
+}
+
+/** Base sobre la que se calcula un porcentaje de cobertura o comisión. */
+export type BaseCalculo2oPiso = 'Monto Emisión' | 'Saldo Garantizado' | '';
+
+/** Un renglón del subtab Cobertura y Comisiones 2o Piso. */
+export interface CoberturaComisiones2oPiso {
+  id: number;
+  productId: number;
+  porcentajeMinCobertura: number | string;
+  porcentajeDefaultCobertura: number | string;
+  porcentajeMaxCobertura: number | string;
+  sobreCobertura: BaseCalculo2oPiso;
+  porcentajeMinComision: number | string;
+  porcentajeDefaultComision: number | string;
+  porcentajeMaxComision: number | string;
+  sobreComision: BaseCalculo2oPiso;
+}
+
 export interface ProductoLineaCredito {
   id: number;
   /** UUID de la llave primaria en J_PRODUCTOS — para CRUD contra Supabase */
@@ -144,7 +181,10 @@ export interface ProductoLineaCredito {
   expedientes?: any[];
   plantillas?: any[];
   motorContable?: any[];
-  
+  // Subtabs de Garantía Financiera 2o Piso (REQ-8)
+  prelacion2oPiso?: PrelacionSegundoPiso[];
+  cobertura2oPiso?: CoberturaComisiones2oPiso[];
+
   // Campos del sistema (mantener para compatibilidad)
   lineaProducto: string;
   sublineaProducto: string;

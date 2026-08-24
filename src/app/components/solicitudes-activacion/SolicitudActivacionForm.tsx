@@ -33,7 +33,7 @@ import {
 } from './solicitudActivacionStore';
 
 const supabase = createClient(`https://${projectId}.supabase.co`, publicAnonKey);
-import { SolicitudActivacionDetailTab } from './SolicitudActivacionDetailTab';
+import { SolicitudActivacionDetailTab, calcularLineasDetalle } from './SolicitudActivacionDetailTab';
 import { descargarDetallePDF } from './solicitudActivacionPDF';
 import { GeneracionContableTab } from '../cartera/GeneracionContableTab';
 
@@ -611,10 +611,18 @@ export function SolicitudActivacionForm({
                   cliente:  formData.cliente || '',
                   montoAut: parseCurrency(formData.montoTransaccion),
                 }}
-                componentes={formData.detailMonto > 0
-                  ? [{ id_componente: 'CAPITAL', monto: formData.detailMonto }]
-                  : undefined
-                }
+                /* Una línea del Detail = un componente del Motor Contable: se
+                   contabiliza el TIPO PRODUCTO (CAPITAL, IVA — los nombres que
+                   usa el motor) con el sub total de esa línea, no el monto
+                   global en una sola línea "CAPITAL". */
+                componentes={calcularLineasDetalle({
+                  claveProducto: formData.detailClaveProducto,
+                  monto:         formData.detailMonto,
+                  pctImpuesto:   formData.detailPctImpuesto,
+                  cantidad:      formData.detailCantidad,
+                })
+                  .filter(l => l.subTotal > 0)
+                  .map(l => ({ id_componente: l.tipo, monto: l.subTotal }))}
               />
             </div>
           )}

@@ -251,7 +251,7 @@ export interface Comision {
 }
 
 // === Plantillas Institucionales (subtab Plantillas) ===
-export type TipoPlantilla = 'solicitud' | 'contrato' | 'pagare' | 'minuta';
+export type TipoPlantilla = 'solicitud' | 'contrato' | 'pagare' | 'minuta' | 'carta-oferta';
 
 export interface PlantillaInstitucional {
   id: number;
@@ -266,7 +266,7 @@ export interface PlantillaInstitucional {
   fechaModificacion: string;
 }
 
-export const TIPO_PLANTILLA_OPTIONS: TipoPlantilla[] = ['solicitud', 'contrato', 'pagare', 'minuta'];
+export const TIPO_PLANTILLA_OPTIONS: TipoPlantilla[] = ['solicitud', 'contrato', 'pagare', 'minuta', 'carta-oferta'];
 
 export interface TipoPlantillaOption {
   value: TipoPlantilla;
@@ -304,6 +304,14 @@ export const TIPO_PLANTILLA_CATALOGO: TipoPlantillaOption[] = [
     descripcion: 'Registro formal de acuerdos, términos y condiciones pactados entre las partes',
     icon: '📑',
     color: '#9C27B0',
+  },
+  {
+    // HU-CRM-10 — plantilla que consume la Oportunidad para su Carta Oferta
+    value: 'carta-oferta',
+    label: 'Carta Oferta',
+    descripcion: 'Propuesta comercial formal con la estructura bursátil y la cotización de comisiones de la Oportunidad',
+    icon: '📨',
+    color: '#0099CC',
   },
 ];
 
