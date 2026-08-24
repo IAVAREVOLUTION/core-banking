@@ -20,6 +20,29 @@ import { currentUser } from '../../data/mockData';
 // Esto protege campos como contrasena, telefono, curp, etc. que existen
 // en la BD pero NO en el formulario del CORE.
 // ═══════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════
+// HU-CRM-02 — Catálogos de la pestaña Perfil
+// ═══════════════════════════════════════════════════════════════════
+const CAT_SECTOR_INFRAESTRUCTURA = [
+  'Transporte/Carreteras',
+  'Energía',
+  'Agua/Medio Ambiente',
+  'Social/Urbano',
+];
+
+const CAT_TIPO_FINANCIAMIENTO = [
+  'Emisión de Deuda Bursátil',
+  'Crédito Bancario Tradicional',
+];
+
+// Catálogo local: en el repo conviven tres listas de monedas distintas
+// (originacionStore, creditoStore, ComisionesTab) sin una fuente única.
+const CAT_MONEDA_PERFIL = [
+  { value: 'MXN', label: 'MXN - Peso Mexicano' },
+  { value: 'USD', label: 'USD - Dólar Americano' },
+  { value: 'EUR', label: 'EUR - Euro' },
+];
+
 function stripEmptyFieldsForSync(obj: Record<string, any>): Record<string, any> {
   const cleaned: Record<string, any> = {};
   for (const [key, value] of Object.entries(obj)) {
@@ -52,6 +75,8 @@ interface ProspectoFormProps {
   onBack: () => void;
   /** ID consecutivo legible: "PROS-001", "PROS-002", etc. */
   nextId?: string;
+  /** HU-CRM-03 CA-06 — Calificar Lead: abre la Oportunidad heredando el Perfil. */
+  onCalificarLead?: (leadData: any) => void;
 }
 
 interface ConsultaSIC {
@@ -63,7 +88,7 @@ interface ConsultaSIC {
   xmlResultado: string;
 }
 
-export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, nextId }: ProspectoFormProps) {
+export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, nextId, onCalificarLead }: ProspectoFormProps) {
   const isView = mode === 'view';
   const isCreate = mode === 'create';
 
@@ -224,9 +249,12 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
         fechaConstitucion: '',
         giroEmpresa: '',
         representanteLegalNombre: '',
-        representanteLegalCurp: '',
-        representanteLegalRfc: '',
-        representanteLegalIdentificacion: '',
+        // ── HU-CRM-02: Perfil ──
+        sectorInfraestructura: '',
+        montoInversion: '0.00',
+        monedaInversion: 'MXN',
+        tipoFinanciamiento: '',
+        descripcionObra: '',
       };
     }
 
@@ -261,9 +289,12 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
       fechaConstitucion: (prospecto as any)?.fechaConstitucion || '',
       giroEmpresa: (prospecto as any)?.giroEmpresa || '',
       representanteLegalNombre: (prospecto as any)?.representanteLegalNombre || '',
-      representanteLegalCurp: (prospecto as any)?.representanteLegalCurp || '',
-      representanteLegalRfc: (prospecto as any)?.representanteLegalRfc || '',
-      representanteLegalIdentificacion: (prospecto as any)?.representanteLegalIdentificacion || '',
+      // ── HU-CRM-02: Perfil ──
+      sectorInfraestructura: (prospecto as any)?.sectorInfraestructura || '',
+      montoInversion: (prospecto as any)?.montoInversion || '0.00',
+      monedaInversion: (prospecto as any)?.monedaInversion || 'MXN',
+      tipoFinanciamiento: (prospecto as any)?.tipoFinanciamiento || '',
+      descripcionObra: (prospecto as any)?.descripcionObra || '',
     };
   });
 
@@ -302,9 +333,12 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
             fechaConstitucion: (prospecto as any)?.fechaConstitucion || '',
             giroEmpresa: (prospecto as any)?.giroEmpresa || '',
             representanteLegalNombre: (prospecto as any)?.representanteLegalNombre || '',
-            representanteLegalCurp: (prospecto as any)?.representanteLegalCurp || '',
-            representanteLegalRfc: (prospecto as any)?.representanteLegalRfc || '',
-            representanteLegalIdentificacion: (prospecto as any)?.representanteLegalIdentificacion || '',
+            // ── HU-CRM-02: Perfil ──
+            sectorInfraestructura: (prospecto as any)?.sectorInfraestructura || '',
+            montoInversion: (prospecto as any)?.montoInversion || '0.00',
+            monedaInversion: (prospecto as any)?.monedaInversion || 'MXN',
+            tipoFinanciamiento: (prospecto as any)?.tipoFinanciamiento || '',
+            descripcionObra: (prospecto as any)?.descripcionObra || '',
           };
         }
         return prev;
@@ -469,8 +503,18 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
       } else {
         if (!(formData as any).denominacionRazonSocial?.trim()) { toast.error('Razón Social es obligatoria'); return; }
         if (!formData.rfc.trim()) { toast.error('RFC es obligatorio'); return; }
-        if (!(formData as any).representanteLegalNombre?.trim()) { toast.error('Nombre del Representante Legal es obligatorio'); return; }
+        if (!(formData as any).representanteLegalNombre?.trim()) { toast.error('Nombre de Contacto es obligatorio'); return; }
       }
+      // ── HU-CRM-02: campos obligatorios de la pestaña Perfil ──
+      const faltantesPerfil = validarPerfil();
+      if (faltantesPerfil.length > 0) {
+        setActiveTab('perfil');
+        toast.error('Pestaña Perfil incompleta', {
+          description: 'Falta capturar: ' + faltantesPerfil.join(', '),
+        });
+        return;
+      }
+
       setSaving(true);
       try {
       // Limpiar datos persistidos después de guardar exitosamente
@@ -541,6 +585,12 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
           institucionGobierno: formData.institucionGobierno,
           institucionGobiernoId: formData.institucionGobiernoId,
           clasificacionCliente: formData.clasificacionCliente,
+          // ── HU-CRM-02: Perfil ──
+          sectorInfraestructura: (formData as any).sectorInfraestructura,
+          montoInversion: (formData as any).montoInversion,
+          monedaInversion: (formData as any).monedaInversion,
+          tipoFinanciamiento: (formData as any).tipoFinanciamiento,
+          descripcionObra: (formData as any).descripcionObra,
           fechaOriginacion: isCreate
             ? new Date().toISOString().split('T')[0]
             : (prospecto?.fechaOriginacion || new Date().toISOString().split('T')[0]),
@@ -740,8 +790,144 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
     }
   };
 
+  // ── HU-CRM-02: validación de la pestaña Perfil ──
+  // Devuelve la lista de campos obligatorios sin capturar.
+  const validarPerfil = (): string[] => {
+    const f = formData as any;
+    const faltantes: string[] = [];
+    if (!f.sectorInfraestructura?.trim()) faltantes.push('Sector Infraestructura');
+    const monto = parseFloat(String(f.montoInversion ?? '').replace(/,/g, ''));
+    if (isNaN(monto) || monto <= 0) faltantes.push('Monto Inversión');
+    if (!f.monedaInversion?.trim()) faltantes.push('Moneda');
+    if (!f.tipoFinanciamiento?.trim()) faltantes.push('Tipo Financiamiento');
+    if (!f.descripcionObra?.trim()) faltantes.push('Descripción Obra');
+    return faltantes;
+  };
+
+  // ── HU-CRM-03 RN-01 / CA-01 / CA-02 ──
+  // El botón [Calificar Lead] solo se habilita con Sector capturado y Monto > 0.
+  const montoInversionNum = (() => {
+    const n = parseFloat(String((formData as any).montoInversion ?? '').replace(/,/g, ''));
+    return isNaN(n) ? 0 : n;
+  })();
+  const sectorCapturado = !!(formData as any).sectorInfraestructura?.trim();
+
+  // ── HU-CRM-03 RN-03 — idempotencia ──
+  const leadYaCalificado = formData.estatusProspecto === 'Calificado';
+
+  const puedeCalificar = sectorCapturado && montoInversionNum > 0 && !leadYaCalificado;
+
+  const motivoNoCalificable = leadYaCalificado
+    ? 'Este Lead ya fue calificado previamente.'
+    : !sectorCapturado
+      ? 'Capture el Sector Infraestructura para poder calificar.'
+      : montoInversionNum <= 0
+        ? 'El Monto Inversión debe ser mayor a cero.'
+        : '';
+
+  const [calificando, setCalificando] = useState(false);
+
+  const handleCalificarLead = async () => {
+    // Defensa en profundidad: el botón ya está deshabilitado en estos casos.
+    if (!puedeCalificar) {
+      toast.error('No se puede calificar el Lead', { description: motivoNoCalificable });
+      return;
+    }
+    const faltantes = validarPerfil();
+    if (faltantes.length > 0) {
+      toast.error('No se puede calificar el Lead', {
+        description: 'Falta capturar: ' + faltantes.join(', '),
+      });
+      return;
+    }
+
+    const dbUuid = prospecto?.dbUuid || null;
+    if (!dbUuid) {
+      toast.error('Guarde el Lead antes de calificarlo', {
+        description: 'La Oportunidad necesita el identificador del cliente en base de datos.',
+      });
+      return;
+    }
+
+    const f = formData as any;
+    const nombreContacto = f.representanteLegalNombre || '';
+    const nombreCompleto = formData.tipo === 'Persona Moral'
+      ? (formData.denominacionRazonSocial || nombreContacto)
+      : `${formData.nombre} ${formData.apellidoPaterno} ${formData.apellidoMaterno}`.trim();
+
+    setCalificando(true);
+    try {
+      // ── CA-03 + CA-04 ──
+      // Misma fila de J_CLIENTES: el type pasa de 'Prospecto' a 'Clientes'
+      // (la Cuenta de Cliente) y el Lead sale del pipeline como 'Calificado'.
+      // syncToJClientes hace deep merge, así que basta el JSON parcial.
+      await syncToJClientes({
+        type: 'Clientes',
+        tipoFormulario: formData.tipo,
+        estatus: 'Activo',
+        data: {
+          estatusProspecto: 'Calificado',
+          estatusCliente: 'Calificado',
+          // El Perfil se persiste aquí para que la Oportunidad no dependa
+          // de que el usuario haya guardado antes de calificar.
+          sectorInfraestructura: f.sectorInfraestructura,
+          montoInversion: f.montoInversion,
+          monedaInversion: f.monedaInversion,
+          tipoFinanciamiento: f.tipoFinanciamiento,
+          descripcionObra: f.descripcionObra,
+        },
+        label: 'Lead calificado',
+        existingId: dbUuid,
+      });
+
+      setFormData(prev => ({
+        ...prev,
+        estatusProspecto: 'Calificado',
+        estatus: 'Activo',
+      }));
+
+      // ── CA-05: payload de la Oportunidad ──
+      const leadData = {
+        leadOrigenId: dbUuid,
+        clienteId: dbUuid,
+        claveCliente: formData.idProspecto || '',
+        nombreCompleto,
+        nombreContacto,
+        telefono: formData.telefono || '',
+        correoElectronico: formData.correoElectronico || '',
+        institucionGobierno: formData.institucionGobierno || '',
+        sectorInfraestructura: f.sectorInfraestructura || '',
+        montoInversion: f.montoInversion || '0.00',
+        monedaInversion: f.monedaInversion || 'MXN',
+        tipoFinanciamiento: f.tipoFinanciamiento || '',
+        descripcionObra: f.descripcionObra || '',
+      };
+
+      toast.success('Lead calificado', {
+        description: 'Se convirtió en Cliente y se abrió la Oportunidad.',
+      });
+
+      // ── CA-06: redirección ──
+      if (onCalificarLead) {
+        onCalificarLead(leadData);
+      } else {
+        toast.warning('Oportunidad no abierta', {
+          description: 'El módulo no recibió el callback de navegación.',
+        });
+      }
+    } catch (err) {
+      console.error('[ProspectoForm] Error al calificar el Lead:', err);
+      toast.error('No se pudo calificar el Lead', {
+        description: err instanceof Error ? err.message : 'Error desconocido',
+      });
+    } finally {
+      setCalificando(false);
+    }
+  };
+
   const tabs = [
     { id: 'general', label: 'Default' },
+    { id: 'perfil', label: 'Perfil' },
     { id: 'direcciones', label: 'Direcciones' },
     { id: 'expedientes', label: 'Expedientes Electrónicos' },
     { id: 'sic', label: 'SIC' },
@@ -1368,12 +1554,14 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
                     )}
                   </div>
                 </>)}
-                <div className="flex items-center gap-2">
-                  <label className="text-xs w-28 flex-shrink-0 text-gray-700">TELÉFONO <span className="text-red-600">*</span></label>
-                  {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700">{formData.telefono}</div> : (
-                    <input type="text" value={formData.telefono} onChange={(e) => handleChange('telefono', e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" />
-                  )}
-                </div>
+                {isFisica && (
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs w-28 flex-shrink-0 text-gray-700">TELÉFONO <span className="text-red-600">*</span></label>
+                    {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700">{formData.telefono}</div> : (
+                      <input type="text" value={formData.telefono} onChange={(e) => handleChange('telefono', e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" />
+                    )}
+                  </div>
+                )}
                 <CampoInstitucionGobierno
                   value={formData.institucionGobierno || ''}
                   onChange={(value, institucion) => {
@@ -1418,46 +1606,42 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
                     )}
                   </div>
                 </>)}
-                {/* Moral: rep. legal */}
+                {/* Moral: datos de contacto (HU-CRM-01) */}
                 {isMoral && (<>
                   <div className="flex items-center gap-2">
-                    <label className="text-xs w-28 flex-shrink-0 text-gray-700">REP. LEGAL <span className="text-red-600">*</span></label>
+                    <label className="text-xs w-28 flex-shrink-0 text-gray-700">NOMBRE CONTACTO <span className="text-red-600">*</span></label>
                     {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700">{(formData as any).representanteLegalNombre}</div> : (
                       <input type="text" value={(formData as any).representanteLegalNombre} onChange={(e) => handleChange('representanteLegalNombre' as any, e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" placeholder="Nombre completo" />
                     )}
                   </div>
                   <div className="flex items-center gap-2">
-                    <label className="text-xs w-28 flex-shrink-0 text-gray-700">CURP REP. LEGAL</label>
-                    {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700">{(formData as any).representanteLegalCurp}</div> : (
-                      <input type="text" value={(formData as any).representanteLegalCurp} onChange={(e) => handleChange('representanteLegalCurp' as any, e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" />
+                    <label className="text-xs w-28 flex-shrink-0 text-gray-700">TELÉFONO <span className="text-red-600">*</span></label>
+                    {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700">{formData.telefono}</div> : (
+                      <input type="text" value={formData.telefono} onChange={(e) => handleChange('telefono', e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" />
                     )}
                   </div>
                   <div className="flex items-center gap-2">
-                    <label className="text-xs w-28 flex-shrink-0 text-gray-700">RFC REP. LEGAL</label>
-                    {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700">{(formData as any).representanteLegalRfc}</div> : (
-                      <input type="text" value={(formData as any).representanteLegalRfc} onChange={(e) => handleChange('representanteLegalRfc' as any, e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" />
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <label className="text-xs w-28 flex-shrink-0 text-gray-700">ID REP. LEGAL</label>
-                    {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700">{(formData as any).representanteLegalIdentificacion}</div> : (
-                      <input type="text" value={(formData as any).representanteLegalIdentificacion} onChange={(e) => handleChange('representanteLegalIdentificacion' as any, e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" placeholder="No. de identificación" />
+                    <label className="text-xs w-28 flex-shrink-0 text-gray-700">CORREO ELECTRÓNICO <span className="text-red-600">*</span></label>
+                    {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700">{formData.correoElectronico}</div> : (
+                      <input type="email" value={formData.correoElectronico} onChange={(e) => handleChange('correoElectronico', e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" />
                     )}
                   </div>
                 </>)}
-                {/* Ambos tipos: RFC y correo */}
+                {/* Ambos tipos: RFC. El correo va en el grupo de contacto (Moral) o abajo (Física). */}
                 <div className="flex items-center gap-2">
                   <label className="text-xs w-28 flex-shrink-0 text-gray-700">RFC <span className="text-red-600">*</span></label>
                   {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700">{formData.rfc}</div> : (
                     <input type="text" value={formData.rfc} onChange={(e) => handleChange('rfc', e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" />
                   )}
                 </div>
-                <div className="flex items-center gap-2">
-                  <label className="text-xs w-28 flex-shrink-0 text-gray-700">CORREO ELECTRÓNICO <span className="text-red-600">*</span></label>
-                  {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700">{formData.correoElectronico}</div> : (
-                    <input type="email" value={formData.correoElectronico} onChange={(e) => handleChange('correoElectronico', e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" />
-                  )}
-                </div>
+                {isFisica && (
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs w-28 flex-shrink-0 text-gray-700">CORREO ELECTRÓNICO <span className="text-red-600">*</span></label>
+                    {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700">{formData.correoElectronico}</div> : (
+                      <input type="email" value={formData.correoElectronico} onChange={(e) => handleChange('correoElectronico', e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" />
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Columna 3 - 5 campos */}
@@ -1494,6 +1678,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
                       >
                         <option value="Contacto">Contacto</option>
                         <option value="Prospecto">Prospecto</option>
+                        <option value="Calificado">Calificado</option>
                         <option value="Cliente">Cliente</option>
                       </select>
                       <svg className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" width="10" height="10" viewBox="0 0 10 10" fill="#666">
@@ -1633,12 +1818,14 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
                         )}
                       </div>
                     </>)}
-                    <div className="flex items-center gap-2">
-                      <label className="text-xs w-28 flex-shrink-0 text-gray-700">TELÉFONO <span className="text-red-600">*</span></label>
-                      {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100">{formData.telefono}</div> : (
-                        <input type="text" value={formData.telefono} onChange={(e) => handleChange('telefono', e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" />
-                      )}
-                    </div>
+                    {isFisica && (
+                      <div className="flex items-center gap-2">
+                        <label className="text-xs w-28 flex-shrink-0 text-gray-700">TELÉFONO <span className="text-red-600">*</span></label>
+                        {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100">{formData.telefono}</div> : (
+                          <input type="text" value={formData.telefono} onChange={(e) => handleChange('telefono', e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" />
+                        )}
+                      </div>
+                    )}
                     <CampoInstitucionGobierno
                       value={formData.institucionGobierno || ''}
                       onChange={(value, institucion) => {
@@ -1687,27 +1874,21 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
                     </>)}
                     {isMoral && (<>
                       <div className="flex items-center gap-2">
-                        <label className="text-xs w-28 flex-shrink-0 text-gray-700">REP. LEGAL <span className="text-red-600">*</span></label>
+                        <label className="text-xs w-28 flex-shrink-0 text-gray-700">NOMBRE CONTACTO <span className="text-red-600">*</span></label>
                         {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100">{(formData as any).representanteLegalNombre}</div> : (
                           <input type="text" value={(formData as any).representanteLegalNombre} onChange={(e) => handleChange('representanteLegalNombre' as any, e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" placeholder="Nombre completo" />
                         )}
                       </div>
                       <div className="flex items-center gap-2">
-                        <label className="text-xs w-28 flex-shrink-0 text-gray-700">CURP REP. LEGAL</label>
-                        {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100">{(formData as any).representanteLegalCurp}</div> : (
-                          <input type="text" value={(formData as any).representanteLegalCurp} onChange={(e) => handleChange('representanteLegalCurp' as any, e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" />
+                        <label className="text-xs w-28 flex-shrink-0 text-gray-700">TELÉFONO <span className="text-red-600">*</span></label>
+                        {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100">{formData.telefono}</div> : (
+                          <input type="text" value={formData.telefono} onChange={(e) => handleChange('telefono', e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" />
                         )}
                       </div>
                       <div className="flex items-center gap-2">
-                        <label className="text-xs w-28 flex-shrink-0 text-gray-700">RFC REP. LEGAL</label>
-                        {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100">{(formData as any).representanteLegalRfc}</div> : (
-                          <input type="text" value={(formData as any).representanteLegalRfc} onChange={(e) => handleChange('representanteLegalRfc' as any, e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" />
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <label className="text-xs w-28 flex-shrink-0 text-gray-700">ID REP. LEGAL</label>
-                        {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100">{(formData as any).representanteLegalIdentificacion}</div> : (
-                          <input type="text" value={(formData as any).representanteLegalIdentificacion} onChange={(e) => handleChange('representanteLegalIdentificacion' as any, e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" placeholder="No. de identificación" />
+                        <label className="text-xs w-28 flex-shrink-0 text-gray-700">CORREO ELECTRÓNICO <span className="text-red-600">*</span></label>
+                        {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100">{formData.correoElectronico}</div> : (
+                          <input type="email" value={formData.correoElectronico} onChange={(e) => handleChange('correoElectronico', e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" />
                         )}
                       </div>
                     </>)}
@@ -1717,12 +1898,14 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
                         <input type="text" value={formData.rfc} onChange={(e) => handleChange('rfc', e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" maxLength={13} />
                       )}
                     </div>
-                    <div className="flex items-center gap-2">
-                      <label className="text-xs w-28 flex-shrink-0 text-gray-700">CORREO ELECTRÓNICO <span className="text-red-600">*</span></label>
-                      {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100">{formData.correoElectronico}</div> : (
-                        <input type="email" value={formData.correoElectronico} onChange={(e) => handleChange('correoElectronico', e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" />
-                      )}
-                    </div>
+                    {isFisica && (
+                      <div className="flex items-center gap-2">
+                        <label className="text-xs w-28 flex-shrink-0 text-gray-700">CORREO ELECTRÓNICO <span className="text-red-600">*</span></label>
+                        {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100">{formData.correoElectronico}</div> : (
+                          <input type="email" value={formData.correoElectronico} onChange={(e) => handleChange('correoElectronico', e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" />
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   {/* Columna 3 */}
@@ -1748,6 +1931,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
                           >
                             <option value="Contacto">Contacto</option>
                             <option value="Prospecto">Prospecto</option>
+                            <option value="Calificado">Calificado</option>
                             <option value="Cliente">Cliente</option>
                           </select>
                           <svg className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" width="10" height="10" viewBox="0 0 10 10" fill="#666">
@@ -1784,6 +1968,143 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
                 })()}
               </div>
             </>
+          )}
+
+
+          {/* ── HU-CRM-02: Pestaña Perfil ── */}
+          {activeTab === 'perfil' && (
+            <div>
+              <div className="bg-primary-light-theme px-3 py-2 mb-3 text-sm font-medium text-gray-800 border-l-4 border-primary-theme">
+                PERFIL DEL PROYECTO
+              </div>
+
+              <div className="grid grid-cols-2 gap-x-6 gap-y-3 mb-4">
+                {/* Sector Infraestructura */}
+                <div className="flex items-center gap-2">
+                  <label className="text-xs w-40 flex-shrink-0 text-gray-700">SECTOR INFRAESTRUCTURA <span className="text-red-600">*</span></label>
+                  {isView ? (
+                    <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100">{(formData as any).sectorInfraestructura || '—'}</div>
+                  ) : (
+                    <select
+                      value={(formData as any).sectorInfraestructura || ''}
+                      onChange={(e) => handleChange('sectorInfraestructura' as any, e.target.value)}
+                      className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded bg-white"
+                    >
+                      <option value="">-- Seleccione --</option>
+                      {CAT_SECTOR_INFRAESTRUCTURA.map((sec) => (
+                        <option key={sec} value={sec}>{sec}</option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+
+                {/* Tipo Financiamiento */}
+                <div className="flex items-center gap-2">
+                  <label className="text-xs w-40 flex-shrink-0 text-gray-700">TIPO FINANCIAMIENTO <span className="text-red-600">*</span></label>
+                  {isView ? (
+                    <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100">{(formData as any).tipoFinanciamiento || '—'}</div>
+                  ) : (
+                    <select
+                      value={(formData as any).tipoFinanciamiento || ''}
+                      onChange={(e) => handleChange('tipoFinanciamiento' as any, e.target.value)}
+                      className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded bg-white"
+                    >
+                      <option value="">-- Seleccione --</option>
+                      {CAT_TIPO_FINANCIAMIENTO.map((tf) => (
+                        <option key={tf} value={tf}>{tf}</option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+
+                {/* Monto Inversión */}
+                <div className="flex items-center gap-2">
+                  <label className="text-xs w-40 flex-shrink-0 text-gray-700">MONTO INVERSIÓN <span className="text-red-600">*</span></label>
+                  {isView ? (
+                    <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100 text-right font-mono">
+                      {(formData as any).montoInversion || '0.00'}
+                    </div>
+                  ) : (
+                    <div className="relative flex-1">
+                      <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">$</span>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={(formData as any).montoInversion ?? '0.00'}
+                        onChange={(e) => {
+                          const limpio = e.target.value.replace(/[^0-9.]/g, '');
+                          if (limpio.split('.').length > 2) return;
+                          handleChange('montoInversion' as any, limpio);
+                        }}
+                        onBlur={(e) => {
+                          const n = parseFloat(e.target.value);
+                          handleChange('montoInversion' as any, isNaN(n) ? '0.00' : n.toFixed(2));
+                        }}
+                        className="w-full pl-5 pr-2 py-1 text-xs border border-gray-300 rounded text-right font-mono"
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {/* Moneda */}
+                <div className="flex items-center gap-2">
+                  <label className="text-xs w-40 flex-shrink-0 text-gray-700">MONEDA <span className="text-red-600">*</span></label>
+                  {isView ? (
+                    <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100">{(formData as any).monedaInversion || 'MXN'}</div>
+                  ) : (
+                    <select
+                      value={(formData as any).monedaInversion || 'MXN'}
+                      onChange={(e) => handleChange('monedaInversion' as any, e.target.value)}
+                      className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded bg-white"
+                    >
+                      {CAT_MONEDA_PERFIL.map((m) => (
+                        <option key={m.value} value={m.value}>{m.label}</option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+              </div>
+
+              {/* Descripción Obra */}
+              <div className="flex items-start gap-2 mb-4">
+                <label className="text-xs w-40 flex-shrink-0 text-gray-700 pt-1">DESCRIPCIÓN OBRA <span className="text-red-600">*</span></label>
+                {isView ? (
+                  <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100 min-h-[64px] whitespace-pre-wrap">
+                    {(formData as any).descripcionObra || '—'}
+                  </div>
+                ) : (
+                  <textarea
+                    rows={4}
+                    maxLength={1000}
+                    value={(formData as any).descripcionObra || ''}
+                    onChange={(e) => handleChange('descripcionObra' as any, e.target.value)}
+                    placeholder="Descripción breve de la obra de infraestructura..."
+                    className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded resize-y"
+                  />
+                )}
+              </div>
+
+              {/* Calificar Lead — HU-CRM-03 CA-01/CA-02/CA-07 */}
+              {!isView && (
+                <div className="flex items-center justify-end gap-3 pt-3 border-t border-gray-200">
+                  {motivoNoCalificable && (
+                    <span className="text-[11px] text-gray-500 italic">{motivoNoCalificable}</span>
+                  )}
+                  <button
+                    onClick={handleCalificarLead}
+                    disabled={!puedeCalificar || calificando}
+                    title={motivoNoCalificable || 'Calificar el Lead y convertirlo en Oportunidad'}
+                    className={`px-5 py-1.5 rounded text-xs font-medium transition-colors ${
+                      puedeCalificar && !calificando
+                        ? 'bg-[#0099CC] text-white hover:bg-[#0088BB]'
+                        : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                    }`}
+                  >
+                    {calificando ? 'Calificando…' : 'Calificar Lead'}
+                  </button>
+                </div>
+              )}
+            </div>
           )}
 
           {/* Tab Direcciones - Tabla con botones Nuevo/Eliminar */}

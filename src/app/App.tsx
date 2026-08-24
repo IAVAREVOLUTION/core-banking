@@ -27,6 +27,7 @@ import { Prospecto } from './components/prospectos/ProspectosList';
 import { ProspectosList } from './components/prospectos/ProspectosList';
 import { ProspectosDashboard } from './components/prospectos/ProspectosDashboard';
 import { ProspectoForm } from './components/prospectos/ProspectoForm';
+import { OportunidadesModule } from './components/oportunidades/OportunidadesModule';
 import { useProspectosDB } from './hooks/useProspectosDB';
 import { useClientesDB } from './hooks/useClientesDB';
 import { SolicitudCredito } from '@/types/solicitudCredito';
@@ -68,7 +69,7 @@ import { useProductosCaptacionDB } from './hooks/useProductosCaptacionDB';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 
 type View = 'list' | 'form' | 'direccion';
-type Module = 'dashboard' | 'configuracion' | 'productos' | 'garantias' | 'prospectos' | 'clientes' | 'cotizaciones' | 'cuentas-ahorro' | 'solicitudes-creditos' | 'solicitudes-activacion' | 'originacion' | 'creditos' | 'inversiones' | 'cartera-credito' | 'cartera-arrendamiento' | 'cartera-inversion' | 'cartera-ahorro' | 'avisos-vencimiento' | 'pld' | 'pagos-referenciados' | 'casos-cobranza' | 'cobranza' | 'ejec-reportes' | 'polizas-contables' | 'gestion-riesgos' | 'une';
+type Module = 'dashboard' | 'configuracion' | 'productos' | 'garantias' | 'prospectos' | 'clientes' | 'oportunidades' | 'cotizaciones' | 'cuentas-ahorro' | 'solicitudes-creditos' | 'solicitudes-activacion' | 'originacion' | 'creditos' | 'inversiones' | 'cartera-credito' | 'cartera-arrendamiento' | 'cartera-inversion' | 'cartera-ahorro' | 'avisos-vencimiento' | 'pld' | 'pagos-referenciados' | 'casos-cobranza' | 'cobranza' | 'ejec-reportes' | 'polizas-contables' | 'gestion-riesgos' | 'une';
 type ClienteView = 'dashboard' | 'list' | 'form' | 'direccion';
 type ProspectoView = 'dashboard' | 'list' | 'form';
 type SolicitudView = 'dashboard' | 'list' | 'form';
@@ -137,6 +138,15 @@ function App() {
     setSolicitudDeepLink({ dbId: solicitudId, noSol, fromClienteId });
     setCurrentModule('solicitudes-creditos');
     setSolicitudView('list');
+  };
+
+  /** HU-CRM-03 CA-06 — Lead calificado → Oportunidad (Cotización Línea de Crédito) */
+  const [leadParaOportunidad, setLeadParaOportunidad] = useState<any>(null);
+
+  const handleCalificarLead = (leadData: any) => {
+    console.log('[App] Lead calificado → abriendo Oportunidad:', leadData);
+    setLeadParaOportunidad(leadData);
+    setCurrentModule('oportunidades');
   };
 
   /** Flujo "Crear Solicitud desde Cotización" — spec solicitudes-financieras §1–§4 */
@@ -678,6 +688,7 @@ function App() {
     { id: 'garantias', label: 'Bienes' },
     { id: 'prospectos', label: 'Prospectos' },
     { id: 'clientes', label: 'Personas' },
+    { id: 'oportunidades', label: 'Oportunidades' },
     { id: 'cotizaciones', label: 'Cotizaciones' },
     { id: 'cuentas-ahorro', label: 'Cuentas ahorro' },
     { id: 'solicitudes-creditos', label: 'Solicitudes' },
@@ -1268,9 +1279,15 @@ function App() {
                 onSave={handleSaveProspecto}
                 onBack={handleCancel}
                 nextId={nextProspectoId}
+                onCalificarLead={handleCalificarLead}
               />
             )}
           </>
+        ) : currentModule === 'oportunidades' ? (
+          <OportunidadesModule
+            leadParaOportunidad={leadParaOportunidad}
+            onLeadParaOportunidadConsumido={() => setLeadParaOportunidad(null)}
+          />
         ) : currentModule === 'cotizaciones' ? (
           <CotizacionesModule
             deepLinkCotizacionId={cotizacionDeepLink?.id}

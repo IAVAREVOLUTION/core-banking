@@ -24,6 +24,8 @@ import { FasesTab } from '../productos/tabs/FasesTab';
 import { GarantiaTab } from '../productos/tabs/GarantiaTab';
 import { ComisionesTab } from '../productos/tabs/ComisionesTab';
 import { OpcionesConfigTab } from './OpcionesConfigTab';
+import { Prelacion2oPisoTab } from './Prelacion2oPisoTab';
+import { Cobertura2oPisoTab } from './Cobertura2oPisoTab';
 import { ExpedientesProductoTab } from '../productos/tabs/ExpedientesProductoTab';
 import { PlantillasTab } from '../productos/tabs/PlantillasTab';
 import { MotorContableTab } from '../productos/tabs/MotorContableTab';
@@ -404,6 +406,9 @@ export function ProductoLineaCreditoForm({
           parametrosCalculo: formData.parametrosCalculo || [],
           plantillas: plantillasRef.current?.getData() || [],
           motorContable: motorContable,
+          // Subtabs de Garantía Financiera 2o Piso (REQ-8)
+          prelacion2oPiso: prelacion2oPisoRef.current?.getData() || formData.prelacion2oPiso || [],
+          cobertura2oPiso: cobertura2oPisoRef.current?.getData() || formData.cobertura2oPiso || [],
         };
 
         const existingDbUuid = product?.dbUuid || null;
@@ -459,6 +464,9 @@ export function ProductoLineaCreditoForm({
   const expedientesRef = useRef<{ getData: () => any[] }>(null);
   const comitesRef = useRef<{ getData: () => any[] }>(null);
   const plantillasRef = useRef<{ getData: () => any[] }>(null);
+  // Subtabs de Garantía Financiera 2o Piso (REQ-8)
+  const prelacion2oPisoRef = useRef<{ getData: () => any[] }>(null);
+  const cobertura2oPisoRef = useRef<{ getData: () => any[] }>(null);
   const [motorContable, setMotorContable] = useState<any[]>(() =>
     Array.isArray((product as any)?.motorContable) ? (product as any).motorContable : []
   );
@@ -582,9 +590,21 @@ export function ProductoLineaCreditoForm({
     { id: 'sucursal', label: 'Sucursal' },
     { id: 'garantias', label: 'Bienes' },
     { id: 'motor-contable', label: 'Motor Contable' },
+    // === Garantía Financiera 2o Piso ===
+    { id: 'prelacion-2o-piso', label: 'Prelación 2o Piso' },
+    { id: 'cobertura-2o-piso', label: 'Cobertura y Comisiones 2o Piso' },
     // === Tabs adicionales ===
     { id: 'plantillas', label: 'Plantillas' },
   ];
+
+  // Si el tab activo deja de existir al cambiar la sublínea (p.ej. se estaba en
+  // "% Enganche" y el producto deja de ser Arrendamiento), regresar a Default en vez
+  // de dejar el área de contenido en blanco.
+  useEffect(() => {
+    if (!tabs.some(t => t.id === activeTab)) {
+      setActiveTab('default');
+    }
+  }, [isArrendamiento, activeTab]);
 
   return (
     <div className="bg-[#F0F0F0] min-h-screen">
@@ -667,6 +687,7 @@ export function ProductoLineaCreditoForm({
               formData={formData}
               mode={mode}
               handleChange={handleChange}
+              tasasReferencia={tasasReferencia}
             />
           </div>
 
@@ -1055,6 +1076,27 @@ export function ProductoLineaCreditoForm({
                 readOnly={isView}
               />
             )}
+
+            {/* Garantía Financiera 2o Piso */}
+            <div style={{ display: activeTab === 'prelacion-2o-piso' ? 'block' : 'none' }}>
+              <Prelacion2oPisoTab
+                ref={prelacion2oPisoRef}
+                mode={mode}
+                productId={productId}
+                persistToStorage
+                initialData={product?.prelacion2oPiso}
+              />
+            </div>
+
+            <div style={{ display: activeTab === 'cobertura-2o-piso' ? 'block' : 'none' }}>
+              <Cobertura2oPisoTab
+                ref={cobertura2oPisoRef}
+                mode={mode}
+                productId={productId}
+                persistToStorage
+                initialData={product?.cobertura2oPiso}
+              />
+            </div>
 
             <div style={{ display: activeTab === 'plantillas' ? 'block' : 'none' }}>
               <PlantillasTab

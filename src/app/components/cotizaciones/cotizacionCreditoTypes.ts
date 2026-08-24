@@ -99,9 +99,89 @@ export interface CotizacionCreditoData {
   // Línea de Crédito específicos
   tipoLinea?: 'Fija' | 'Revolvente' | '';
 
+  // ── Perfil heredado del Lead (HU-CRM-03 CA-05) ──
+  // Se llenan cuando la Oportunidad nace de calificar un Lead; en una
+  // cotización capturada a mano quedan vacíos.
+  sectorInfraestructura?: string;
+  montoInversion?: string;
+  monedaInversion?: string;
+  tipoFinanciamiento?: string;
+  descripcionObra?: string;
+  /** Trazabilidad: UUID en J_CLIENTES del Lead que originó la Oportunidad. */
+  leadOrigenId?: string;
+
+  // ── Cotización de Comisiones GPO (HU-CRM-05, pestaña Default) ──
+  // Los rangos permitidos se parametrizan en el producto
+  // ("Cobertura y Comisiones 2o Piso", REQ-8); aquí se captura lo pactado.
+  coberturaGPOPorcentaje?: string;
+  coberturaGPOSobre?: string;
+  comisionGPOPorcentaje?: string;
+  comisionGPOSobre?: string;
+  /** HU-CRM-07 — Mensual | Trimestral | Semestral. */
+  periodicidadCobroComision?: string;
+
+  /** HU-CRM-09 CA-03 — Log de auditoría de cambios de estatus. */
+  bitacoraEstatus?: BitacoraEstatusOportunidad[];
+
+  /** HU-CRM-10 CA-04 — Archivos adjuntos de la Oportunidad (Cartas Oferta, etc.). */
+  archivosAdjuntos?: ArchivoAdjuntoOportunidad[];
+
+  // ── Estructura Bursátil (HU-CRM-06) ──
+  // El producto seleccionado vive en `producto` / producto_id; aquí se guarda
+  // el renglón elegido de su Matriz Tasa Fija y lo que se derivó de él.
+  matrizTasaFijaSeleccionId?: string;
+  montoEmision?: string;
+  plazoBonosAnios?: string;
+  tasaBonosAnios?: string;
+  /** Renglón elegido de "Cobertura y Comisiones 2o Piso" del producto (REQ-8). */
+  cobertura2oPisoSeleccionId?: string;
+
   // §10 — Tabla de amortización
   tablaAmortizacion: AmortizacionRow[];
 }
+
+// ═══════════════════════════════════════════════════════════════
+// HU-CRM-10 — Archivo adjunto de la Oportunidad
+//
+// El PDF vive en Supabase Storage; aquí solo va la metadata. Guardar el
+// base64 en el jsonb haría crecer la fila sin control, y RN-03 pide que
+// cada generación agregue un archivo más.
+// ═══════════════════════════════════════════════════════════════
+export interface ArchivoAdjuntoOportunidad {
+  id: string;
+  nombre: string;
+  tipo: string;
+  url: string;
+  storagePath: string;
+  tamanoKB: number;
+  fecha: string;
+  usuario: string;
+  /** Plantilla de la que salió, cuando aplica. */
+  plantilla?: string;
+  /** false = quedó como blob local porque falló la subida a Storage. */
+  enStorage: boolean;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// HU-CRM-09 — Entrada del log de auditoría de estatus
+// ═══════════════════════════════════════════════════════════════
+export interface BitacoraEstatusOportunidad {
+  /** ISO 8601 — fecha y hora del cambio. */
+  fecha: string;
+  usuario: string;
+  estatusAnterior: string;
+  estatusNuevo: string;
+}
+
+/** HU-CRM-09 CA-01 — Estados del pipeline comercial de una Oportunidad. */
+export const CAT_ESTATUS_OPORTUNIDAD = [
+  'En Cotización',
+  'Propuesta Entregada',
+  'Negociación',
+] as const;
+
+/** CA-02 — Estatus con el que nace una Oportunidad. */
+export const ESTATUS_OPORTUNIDAD_INICIAL = 'En Cotización';
 
 // ═══════════════════════════════════════════════════════════════
 // Fila de la tabla de amortización — spec §10

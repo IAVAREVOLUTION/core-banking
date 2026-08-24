@@ -512,21 +512,22 @@ function FormModal({ mode, item, productId, existingData, onSave, onClose }: For
                   <span className="text-[10px] text-gray-400 mt-0.5 block">Secuencia automática</span>
                 </div>
 
-                {/* Fase - Campo abierto de 30 caracteres */}
+                {/* Fase - Campo abierto de 100 caracteres (REQ-8: los nombres de fase
+                    del ciclo GPO de 2o Piso rebasan los 30 originales) */}
                 <div>
                   <label className="block text-[11px] font-semibold text-gray-600 uppercase tracking-wide mb-1.5">
                     Fase <span className="text-red-500">*</span>
                   </label>
                   <input
                     type="text"
-                    maxLength={30}
+                    maxLength={100}
                     value={formData.fase} 
                     onChange={(e) => handleChange('fase', e.target.value)} 
                     disabled={isViewMode} 
                     placeholder="Ingrese nombre de fase..."
                     className={inputClassName()}
                   />
-                  <span className="text-[10px] text-gray-400 mt-0.5 block">Máximo 30 caracteres</span>
+                  <span className="text-[10px] text-gray-400 mt-0.5 block">Máximo 100 caracteres</span>
                 </div>
 
                 {/* Área */}
