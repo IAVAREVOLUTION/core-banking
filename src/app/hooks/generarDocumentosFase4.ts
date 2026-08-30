@@ -29,9 +29,11 @@ import html2canvas from 'html2canvas';
 import logoSrc from '../../assets/7b6cb23c00b7817818c638af3eae0a416e1e9f57.png';
 import type { DocumentoCargado } from '../components/solicitudes/solicitudCreditoStore';
 import {
-  loadFromSession, loadFromSavedStore, saveToSession, generateId,
+  loadFromSession, loadFromSavedStore, saveToSession, generateId, documentosParaSessionStorage,
 } from '../components/solicitudes/solicitudCreditoStore';
 import type { PlantillaInstitucional } from '../types/product';
+import type { Estructura2oPisoData } from '../components/solicitudes/EstructuraOperativa2oPisoTab';
+import type { ValidacionClausulasData } from '../components/solicitudes/ValidacionClausulasFiduciariasTab';
 import { getTipoPlantillaMeta } from '../types/product';
 import { projectId as SUPA_PROJECT_ID, publicAnonKey } from '/utils/supabase/info';
 
@@ -173,7 +175,7 @@ export function validarPlantillasRequeridas(
   const plantillasActivas = plantillas.filter(p => p.estatus === 'Activo');
 
   // Validar tipos de plantilla en el picklist
-  const tiposValidos = ['solicitud', 'contrato', 'pagare', 'minuta'];
+  const tiposValidos = ['solicitud', 'contrato', 'pagare', 'minuta', 'carta-oferta', 'contrato-gpo'];
   const plantillasInvalidas = plantillas.filter(p => !tiposValidos.includes(p.tipoPlantilla));
   if (plantillasInvalidas.length > 0) {
     motivos.push(
@@ -717,6 +719,15 @@ export interface AutoCrearResult {
    * plantilla HTML son pesados y sessionStorage puede rechazarlos por cuota.
    */
   documentosGenerados?: Array<{ tipo: string; archivo: string; fileData: string }>;
+  /**
+   * Lista completa de documentos tras la operación (existentes + el nuevo, si
+   * se creó). Permite al llamador refrescar la vista de Expediente Electrónico
+   * sin depender de sessionStorage: cuando la cuota está agotada,
+   * saveToSession falla en silencio y un remount de ExpedienteElectronicoTab
+   * seguiría leyendo la lista vieja de sessionStorage aunque el guardado en
+   * BD sí haya funcionado.
+   */
+  documentosActualizados?: DocumentoCargado[];
 }
 
 /**
@@ -925,7 +936,7 @@ export async function autoCrearDocumentosFase4(opts: AutoCrearOpts): Promise<Aut
 
   // ── PASO 7: Guardar en session storage ──
   const docsActualizados = [...docsPrevios, ...nuevos];
-  saveToSession(storageId, 'documentos', docsActualizados);
+  saveToSession(storageId, 'documentos', documentosParaSessionStorage(docsActualizados));
 
   const documentosCreados = nuevos.map(d => d.tipoDocumento);
 
@@ -1015,7 +1026,7 @@ export async function autoCrearReporteBuro(opts: AutoCrearOpts): Promise<AutoCre
   } as DocumentoCargado & { storagePath?: string };
 
   const docsActualizados = [...docsPrevios, nuevo];
-  saveToSession(storageId, 'documentos', docsActualizados);
+  saveToSession(storageId, 'documentos', documentosParaSessionStorage(docsActualizados));
 
   // Persistir en BD de inmediato — no depender del auto-guardado del formulario,
   // que puede no ejecutarse (o fallar en silencio) al generar fuera de un "Guardar".
@@ -1352,7 +1363,7 @@ export async function autoCrearKitLegal(opts: AutoCrearOpts): Promise<AutoCrearR
   }
 
   const docsActualizados = [...docsPrevios, ...nuevos];
-  saveToSession(storageId, 'documentos', docsActualizados);
+  saveToSession(storageId, 'documentos', documentosParaSessionStorage(docsActualizados));
   const persist = await persistirDocumentosEnBD(storageId, docsActualizados);
 
   console.log(
@@ -2119,7 +2130,7 @@ export async function autoCrearComprobanteSPEI(opts: AutoCrearOpts): Promise<Aut
   } as DocumentoCargado & { storagePath?: string };
 
   const docsActualizados = [...docsPrevios, nuevo];
-  saveToSession(storageId, 'documentos', docsActualizados);
+  saveToSession(storageId, 'documentos', documentosParaSessionStorage(docsActualizados));
 
   const persist = await persistirDocumentosEnBD(storageId, docsActualizados);
 
@@ -2138,5 +2149,813 @@ export async function autoCrearComprobanteSPEI(opts: AutoCrearOpts): Promise<Aut
     documentoCreadoId: nuevo.id,
     fileData,
     documentosGenerados: [{ tipo: CLAVE_COMPROBANTE_SPEI, archivo: nombreArchivo, fileData }],
+  };
+}
+
+/**
+ * Fase "Dictamen del Comité de Prepago y Crédito" — documentos sistémicos.
+ *
+ * El prompt de la fase exige que, al entrar, el sistema genere y asocie al
+ * expediente —sin carga manual— el Acta de Sesión del Comité y el Certificado
+ * de Pre-Apartado de Cupo. Los nombres deben coincidir EXACTAMENTE con el
+ * `tipo` del requisito del producto: el expediente empareja documento con
+ * requisito por nombre.
+ */
+export const CLAVE_ACTA_COMITE   = 'Acta de Sesión del Comité de Prepago y Crédito';
+export const CLAVE_CERT_PREAPART = 'Certificado de Pre-Apartado de Cupo';
+
+const COMITE_PRIMARY = [30, 64, 120] as [number, number, number];
+
+/** Encabezado común de los documentos sistémicos del Comité. */
+function encabezadoComite(doc: jsPDF, titulo: string, folio: string, datos: DatosSolicitud): number {
+  const W = doc.internal.pageSize.getWidth();
+  const HEADER_H = 28;
+  doc.setFillColor(...COMITE_PRIMARY);
+  doc.rect(0, 0, W, HEADER_H, 'F');
+
+  const LOGO_W = 30, LOGO_H = 20, PAD = 2;
+  const LOGO_Y = (HEADER_H - LOGO_H) / 2;
+  doc.setFillColor(255, 255, 255);
+  doc.roundedRect(14 - PAD, LOGO_Y - PAD, LOGO_W + PAD * 2, LOGO_H + PAD * 2, 2, 2, 'F');
+  try { doc.addImage(logoSrc as string, 'PNG', 14, LOGO_Y, LOGO_W, LOGO_H); } catch { /* logo opcional */ }
+
+  doc.setTextColor(255, 255, 255);
+  doc.setFontSize(11.5);
+  doc.setFont('helvetica', 'bold');
+  doc.text(titulo, 14 + LOGO_W + 5, 13);
+
+  doc.setFontSize(7.5);
+  doc.setFont('helvetica', 'normal');
+  doc.text(`Folio: ${folio}`, W - 14, 9, { align: 'right' });
+  doc.text(`Emisión: ${new Date().toLocaleString('es-MX')}`, W - 14, 15, { align: 'right' });
+  doc.text(`No. Solicitud: ${datos.noSol || '—'}`, W - 14, 21, { align: 'right' });
+  doc.setTextColor(0, 0, 0);
+  return HEADER_H + 10;
+}
+
+/** Folio determinístico por solicitud: reabrir no cambia el folio del acta. */
+function folioComite(prefijo: string, noSol?: string): string {
+  const seed = String(noSol || '').split('').reduce((s, c) => s + c.charCodeAt(0), 0);
+  return `${prefijo}-${new Date().getFullYear()}${String((seed % 900000) + 100000)}`;
+}
+
+export function generarActaComitePDF(datos: DatosSolicitud): string {
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true });
+  const W = doc.internal.pageSize.getWidth();
+  const folio = folioComite('ACTA', datos.noSol);
+  let y = encabezadoComite(doc, 'ACTA DE SESIÓN DEL COMITÉ DE PREPAGO Y CRÉDITO', folio, datos);
+
+  const t: any = datos.terminos || {};
+  autoTable(doc, {
+    startY: y,
+    head: [['Datos de la operación', '']],
+    body: [
+      ['Solicitante', datos.cliente || '—'],
+      ['Producto', datos.productoNombre || datos.tipoProducto || '—'],
+      ['Línea de producto', datos.lineaProducto || '—'],
+      ['Monto garantizado', t.montoGarantizadoGpo ? `$${t.montoGarantizadoGpo}` : (t.montoSolicitado ? `$${t.montoSolicitado}` : '—')],
+      ['Tasa comisión anual pactada', t.tasaComisionAnualPactada ? `${t.tasaComisionAnualPactada}%` : '—'],
+      ['Periodicidad cobro comisión', t.periodicidadCobroGpo || '—'],
+      ['Plazo', t.plazo ? `${t.plazo}` : '—'],
+      ['Sector de infraestructura', t.sectorInfraestructura || '—'],
+    ],
+    theme: 'grid',
+    headStyles: { fillColor: COMITE_PRIMARY, fontSize: 8.5 },
+    bodyStyles: { fontSize: 8 },
+    columnStyles: { 0: { cellWidth: 65, fontStyle: 'bold' } },
+    margin: { left: 14, right: 14 },
+  });
+  y = (doc as jsPDF & { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 8;
+
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'bold');
+  doc.text('Integración para decisión del Comité', 14, y);
+  y += 5;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  const parrafo = doc.splitTextToSize(
+    'Se integran los resultados del análisis de riesgo, la exposición proyectada, la estructura ' +
+    'financiera y jurídica y las condiciones económicas pactadas, a efecto de someter la operación ' +
+    'a la decisión del Comité de Prepago y Crédito. El presente documento se generó de forma ' +
+    'automática por el sistema al iniciar la fase de Dictamen y queda asociado al expediente ' +
+    'electrónico de la solicitud.',
+    W - 28,
+  );
+  doc.text(parrafo, 14, y);
+  y += parrafo.length * 4 + 10;
+
+  doc.setDrawColor(180, 180, 180);
+  doc.line(W / 2 - 40, y, W / 2 + 40, y);
+  doc.setFontSize(7);
+  doc.setTextColor(120, 120, 120);
+  doc.text('Secretario del Comité de Prepago y Crédito', W / 2, y + 5, { align: 'center' });
+
+  return doc.output('datauristring');
+}
+
+export function generarCertificadoPreApartadoPDF(datos: DatosSolicitud): string {
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true });
+  const W = doc.internal.pageSize.getWidth();
+  const folio = folioComite('CPA', datos.noSol);
+  let y = encabezadoComite(doc, 'CERTIFICADO DE PRE-APARTADO DE CUPO', folio, datos);
+
+  const t: any = datos.terminos || {};
+  autoTable(doc, {
+    startY: y,
+    head: [['Concepto', 'Detalle']],
+    body: [
+      ['Solicitante', datos.cliente || '—'],
+      ['Producto', datos.productoNombre || datos.tipoProducto || '—'],
+      ['Cupo pre-apartado', t.montoGarantizadoGpo ? `$${t.montoGarantizadoGpo}` : (t.montoSolicitado ? `$${t.montoSolicitado}` : '—')],
+      ['Monto emisión proyectado', t.montoEmisionProyectado ? `$${t.montoEmisionProyectado}` : '—'],
+      ['% Cobertura', t.porcentajeCoberturaGpo ? `${t.porcentajeCoberturaGpo}%` : '—'],
+      ['Vigencia del pre-apartado', 'Sujeta a la resolución del Comité de Prepago y Crédito'],
+    ],
+    theme: 'grid',
+    headStyles: { fillColor: COMITE_PRIMARY, fontSize: 8.5 },
+    bodyStyles: { fontSize: 8 },
+    columnStyles: { 0: { cellWidth: 65, fontStyle: 'bold' } },
+    margin: { left: 14, right: 14 },
+  });
+  y = (doc as jsPDF & { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 8;
+
+  doc.setFontSize(8);
+  const parrafo = doc.splitTextToSize(
+    'Se certifica que la operación cuenta con cupo pre-apartado dentro de los límites de exposición ' +
+    'vigentes, en tanto el Comité de Prepago y Crédito emite su resolución. Documento generado ' +
+    'automáticamente por el sistema y asociado al expediente electrónico de la solicitud.',
+    W - 28,
+  );
+  doc.text(parrafo, 14, y);
+  y += parrafo.length * 4 + 10;
+
+  doc.setDrawColor(180, 180, 180);
+  doc.line(W / 2 - 40, y, W / 2 + 40, y);
+  doc.setFontSize(7);
+  doc.setTextColor(120, 120, 120);
+  doc.text('Área de Riesgos', W / 2, y + 5, { align: 'center' });
+
+  return doc.output('datauristring');
+}
+
+/**
+ * Genera y asocia los documentos sistémicos del Comité de Prepago y Crédito.
+ *
+ * Es idempotente: si el documento ya está en el expediente no lo duplica, así
+ * que reentrar a la fase no genera copias. Persiste en BD de inmediato — igual
+ * que el Reporte de Buró — para no depender del auto-guardado del formulario.
+ */
+export async function autoCrearDocumentosComitePrepago(opts: AutoCrearOpts & { faseNombre?: string; faseId?: number }): Promise<AutoCrearResult> {
+  const { storageId, datos, supabase, projectId: pid } = opts;
+  const fecha = new Date().toLocaleString('es-MX');
+  const faseNombre = opts.faseNombre || 'Dictamen del Comité de Prepago y Crédito';
+  const faseId = opts.faseId ?? 3;
+
+  const docsPrevios: DocumentoCargado[] =
+    loadFromSession<DocumentoCargado[]>(storageId, 'documentos') ??
+    loadFromSavedStore<DocumentoCargado[]>(storageId, 'documentos') ??
+    [];
+
+  const yaEsta = (clave: string) => docsPrevios.some(d =>
+    d.tipoDocumento === clave || (d as any).claveDocumento === clave
+  );
+
+  const aGenerar: { clave: string; archivo: string; pdf: () => string; area: string }[] = [];
+  if (!yaEsta(CLAVE_ACTA_COMITE)) {
+    aGenerar.push({
+      clave: CLAVE_ACTA_COMITE,
+      archivo: 'acta_sesion_comite_prepago.pdf',
+      pdf: () => generarActaComitePDF(datos),
+      area: 'Jurídico',
+    });
+  }
+  if (!yaEsta(CLAVE_CERT_PREAPART)) {
+    aGenerar.push({
+      clave: CLAVE_CERT_PREAPART,
+      archivo: 'certificado_pre_apartado_cupo.pdf',
+      pdf: () => generarCertificadoPreApartadoPDF(datos),
+      area: 'Riesgos',
+    });
+  }
+
+  if (aGenerar.length === 0) {
+    return {
+      exito: true,
+      documentosCreados: [],
+      pdfGenerados: [],
+      subidosASupabase: false,
+      registradosEnExpediente: true,
+      error: undefined,
+      validacionPlantillas: { valido: true, motivos: [], faltantes: [], plantillasDetectadas: [], puedeGenerarDocumentos: true },
+    };
+  }
+
+  const nuevos: DocumentoCargado[] = [];
+  const pdfGenerados: string[] = [];
+  let subidosASupabase = false;
+
+  for (const g of aGenerar) {
+    const fileData = g.pdf();
+    let uploadInfo: UploadResult | null = null;
+    if (supabase && pid) {
+      uploadInfo = await uploadGeneratedPDF(supabase, fileData, g.archivo, String(storageId), pid);
+      if (uploadInfo) subidosASupabase = true;
+    }
+    nuevos.push({
+      id: generateId(),
+      fecha,
+      usuario: 'Sistema',
+      tipoDocumento: g.clave,
+      archivo: g.archivo,
+      tipoArchivo: 'pdf',
+      nota: 'Generado automáticamente al iniciar la fase de Dictamen del Comité. Pendiente de Validación IA.',
+      area: g.area,
+      fase: faseNombre,
+      faseId,
+      estatus: 'Pendiente Validación IA',
+      validadoIA: false,
+      fileData,
+      url: uploadInfo?.url,
+      storagePath: uploadInfo?.storagePath,
+      mime: 'application/pdf',
+      tamanoKB: uploadInfo?.tamanoKB || Math.round((fileData.length * 3) / 4 / 1024) || 1,
+    } as DocumentoCargado & { storagePath?: string });
+    pdfGenerados.push(g.archivo);
+  }
+
+  const docsActualizados = [...docsPrevios, ...nuevos];
+  saveToSession(storageId, 'documentos', documentosParaSessionStorage(docsActualizados));
+  const persist = await persistirDocumentosEnBD(storageId, docsActualizados);
+
+  console.log(
+    `[autoCrearDocumentosComitePrepago] ${nuevos.length} documento(s) para solicitud ${storageId} | Storage: ${subidosASupabase ? 'OK' : 'local'} | BD: ${persist.ok ? 'OK' : `FALLÓ (${persist.error})`}`
+  );
+
+  return {
+    exito: true,
+    documentosCreados: nuevos.map(d => d.tipoDocumento),
+    pdfGenerados,
+    subidosASupabase,
+    registradosEnExpediente: persist.ok,
+    error: persist.ok ? undefined : `Documentos generados pero NO persistidos en BD: ${persist.error}`,
+    validacionPlantillas: { valido: true, motivos: [], faltantes: [], plantillasDetectadas: [], puedeGenerarDocumentos: true },
+    fileData: nuevos[0]?.fileData,
+  };
+}
+
+/**
+ * Dictamen de Grado de Riesgo — REQ-10, Actividad 5 del BPM.
+ *
+ * El nombre debe coincidir EXACTAMENTE con el `tipo` del requisito del producto:
+ * el expediente empareja documento con requisito por nombre.
+ */
+export const CLAVE_DICTAMEN_RIESGO = 'Dictamen Técnico de Riesgo';
+
+export interface DatosDictamenRiesgo {
+  fuentePrimariaIngreso: string;
+  montoFondoReserva: number;
+  plazoBonosAnios: number;
+  dscrPromedio: number | null;
+  semaforo: string;
+  dictamenTexto: string;
+  proyecciones: { anio: number; ebitda: number; servicioDeuda: number; dscr: number | null }[];
+}
+
+const pesos = (n: number) => `$${n.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+export function generarDictamenRiesgoPDF(datos: DatosSolicitud, r: DatosDictamenRiesgo): string {
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true });
+  const W = doc.internal.pageSize.getWidth();
+  const seed = String(datos.noSol || '').split('').reduce((s, c) => s + c.charCodeAt(0), 0);
+  const folio = `DTR-${new Date().getFullYear()}${String((seed % 900000) + 100000)}`;
+  let y = encabezadoComite(doc, 'DICTAMEN TÉCNICO DE GRADO DE RIESGO', folio, datos);
+
+  autoTable(doc, {
+    startY: y,
+    head: [['Parámetro', 'Valor']],
+    body: [
+      ['Solicitante', datos.cliente || '—'],
+      ['Producto', datos.productoNombre || datos.tipoProducto || '—'],
+      ['Fuente primaria de ingreso', r.fuentePrimariaIngreso || '—'],
+      ['Fondo de Reserva del fideicomiso', pesos(r.montoFondoReserva)],
+      ['Plazo de la emisión (años)', String(r.plazoBonosAnios)],
+      ['DSCR promedio del proyecto', r.dscrPromedio === null ? '—' : r.dscrPromedio.toFixed(2)],
+      ['Semáforo de riesgo interno', r.semaforo],
+    ],
+    theme: 'grid',
+    headStyles: { fillColor: COMITE_PRIMARY, fontSize: 8.5 },
+    bodyStyles: { fontSize: 8 },
+    columnStyles: { 0: { cellWidth: 70, fontStyle: 'bold' } },
+    margin: { left: 14, right: 14 },
+  });
+  y = (doc as jsPDF & { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 8;
+
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'bold');
+  doc.text('Matriz de proyecciones financieras', 14, y);
+  y += 3;
+
+  autoTable(doc, {
+    startY: y,
+    head: [['Año', 'EBITDA Proyectado', 'Servicio Deuda Bursátil', 'DSCR']],
+    body: r.proyecciones.map(p => [
+      String(p.anio),
+      pesos(p.ebitda),
+      pesos(p.servicioDeuda),
+      p.dscr === null ? '—' : p.dscr.toFixed(2),
+    ]),
+    theme: 'striped',
+    headStyles: { fillColor: COMITE_PRIMARY, fontSize: 8 },
+    bodyStyles: { fontSize: 7.5 },
+    columnStyles: { 1: { halign: 'right' }, 2: { halign: 'right' }, 3: { halign: 'right' } },
+    margin: { left: 14, right: 14 },
+  });
+  y = (doc as jsPDF & { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 8;
+
+  if (y > 230) { doc.addPage(); y = 20; }
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'bold');
+  doc.text('Conclusión técnica', 14, y);
+  y += 5;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  const parrafo = doc.splitTextToSize(r.dictamenTexto || '—', W - 28);
+  doc.text(parrafo, 14, y);
+  y += parrafo.length * 4 + 12;
+
+  if (y > 260) { doc.addPage(); y = 30; }
+  doc.setDrawColor(180, 180, 180);
+  doc.line(W / 2 - 40, y, W / 2 + 40, y);
+  doc.setFontSize(7);
+  doc.setTextColor(120, 120, 120);
+  doc.text('Área de Riesgos', W / 2, y + 5, { align: 'center' });
+
+  return doc.output('datauristring');
+}
+
+/**
+ * Genera el Dictamen Técnico de Riesgo y lo adjunta al Expediente.
+ * Idempotente: reprocesar no duplica el documento.
+ */
+export async function autoCrearDictamenRiesgo(
+  opts: AutoCrearOpts & { riesgo: DatosDictamenRiesgo; faseNombre?: string; faseId?: number },
+): Promise<AutoCrearResult> {
+  const { storageId, datos, supabase, projectId: pid, riesgo } = opts;
+  const fecha = new Date().toLocaleString('es-MX');
+
+  const docsPrevios: DocumentoCargado[] =
+    loadFromSession<DocumentoCargado[]>(storageId, 'documentos') ??
+    loadFromSavedStore<DocumentoCargado[]>(storageId, 'documentos') ??
+    [];
+
+  const existe = docsPrevios.some(d =>
+    d.tipoDocumento === CLAVE_DICTAMEN_RIESGO || (d as any).claveDocumento === CLAVE_DICTAMEN_RIESGO
+  );
+  if (existe) {
+    return {
+      exito: true, documentosCreados: [], pdfGenerados: [], subidosASupabase: false,
+      registradosEnExpediente: true, error: undefined,
+      validacionPlantillas: { valido: true, motivos: [], faltantes: [], plantillasDetectadas: [], puedeGenerarDocumentos: true },
+      documentosActualizados: docsPrevios,
+    };
+  }
+
+  const fileData = generarDictamenRiesgoPDF(datos, riesgo);
+  const archivo = 'dictamen_tecnico_riesgo.pdf';
+  let uploadInfo: UploadResult | null = null;
+  let subidosASupabase = false;
+  if (supabase && pid) {
+    uploadInfo = await uploadGeneratedPDF(supabase, fileData, archivo, String(storageId), pid);
+    if (uploadInfo) subidosASupabase = true;
+  }
+
+  const nuevo: DocumentoCargado = {
+    id: generateId(),
+    fecha,
+    usuario: 'Sistema',
+    tipoDocumento: CLAVE_DICTAMEN_RIESGO,
+    archivo,
+    tipoArchivo: 'pdf',
+    nota: `Generado al procesar el Grado de Riesgo. DSCR promedio ${riesgo.dscrPromedio === null ? '—' : riesgo.dscrPromedio.toFixed(2)} · Semáforo ${riesgo.semaforo}.`,
+    area: 'Riesgos',
+    fase: opts.faseNombre || 'Análisis de Grado de Riesgo',
+    faseId: opts.faseId ?? 2,
+    estatus: 'Pendiente Validación IA',
+    validadoIA: false,
+    fileData,
+    url: uploadInfo?.url,
+    storagePath: uploadInfo?.storagePath,
+    mime: 'application/pdf',
+    tamanoKB: uploadInfo?.tamanoKB || Math.round((fileData.length * 3) / 4 / 1024) || 1,
+  } as DocumentoCargado & { storagePath?: string };
+
+  const docsActualizados = [...docsPrevios, nuevo];
+  saveToSession(storageId, 'documentos', documentosParaSessionStorage(docsActualizados));
+  const persist = await persistirDocumentosEnBD(storageId, docsActualizados);
+
+  console.log(`[autoCrearDictamenRiesgo] Dictamen creado para ${storageId} | Storage: ${subidosASupabase ? 'OK' : 'local'} | BD: ${persist.ok ? 'OK' : 'FALLO'}`);
+
+  return {
+    exito: true,
+    documentosCreados: [CLAVE_DICTAMEN_RIESGO],
+    pdfGenerados: [archivo],
+    subidosASupabase,
+    registradosEnExpediente: persist.ok,
+    error: persist.ok ? undefined : `Documento generado pero NO persistido en BD: ${persist.error}`,
+    validacionPlantillas: { valido: true, motivos: [], faltantes: [], plantillasDetectadas: [], puedeGenerarDocumentos: true },
+    documentoCreadoId: nuevo.id,
+    fileData,
+    documentosActualizados: docsActualizados,
+  };
+}
+
+/**
+ * Oficio de Autorización del Comité Interno de Crédito (CIC) — REQ-12, Actividad 6.2.
+ *
+ * El nombre debe coincidir EXACTAMENTE con el `tipo` del requisito del producto, igual
+ * que el resto de documentos sistémicos: el expediente empareja por nombre.
+ */
+export const CLAVE_OFICIO_CIC = 'Oficio de Autorización del Comité Interno de Crédito';
+
+export interface DatosOficioCIC {
+  numeroActaCIC: string;
+  fechaSesionCIC: string;
+  estatusResolucion: string;
+  montoOperacion: number;
+  /** Resultado real del intento de reserva contra el límite global — ver REQ-12 §Decisión #2. */
+  cupoReservado: boolean;
+  cupoMensaje: string;
+  votos: { votante: string; decision: string; comentarios: string; firmaToken: string }[];
+}
+
+export function generarOficioCICPDF(datos: DatosSolicitud, r: DatosOficioCIC): string {
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true });
+  const W = doc.internal.pageSize.getWidth();
+  const seed = String(datos.noSol || '').split('').reduce((s, c) => s + c.charCodeAt(0), 0);
+  const folio = `OF-CIC-${new Date().getFullYear()}${String((seed % 900000) + 100000)}`;
+  let y = encabezadoComite(doc, 'OFICIO DE AUTORIZACIÓN — COMITÉ INTERNO DE CRÉDITO', folio, datos);
+
+  autoTable(doc, {
+    startY: y,
+    head: [['Registro Legal', 'Valor']],
+    body: [
+      ['Solicitante', datos.cliente || '—'],
+      ['Producto', datos.productoNombre || datos.tipoProducto || '—'],
+      ['Número de Acta CIC', r.numeroActaCIC || '—'],
+      ['Fecha de Sesión CIC', r.fechaSesionCIC || '—'],
+      ['Estatus de la Solicitud', r.estatusResolucion || '—'],
+      ['Monto de la operación', pesos(r.montoOperacion)],
+    ],
+    theme: 'grid',
+    headStyles: { fillColor: COMITE_PRIMARY, fontSize: 8.5 },
+    bodyStyles: { fontSize: 8 },
+    columnStyles: { 0: { cellWidth: 60, fontStyle: 'bold' } },
+    margin: { left: 14, right: 14 },
+  });
+  y = (doc as jsPDF & { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 8;
+
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'bold');
+  doc.text('Bloqueo preventivo de cupo', 14, y);
+  y += 5;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(r.cupoReservado ? 34 : 180, r.cupoReservado ? 139 : 40, r.cupoReservado ? 84 : 40);
+  const parrafoCupo = doc.splitTextToSize(r.cupoMensaje || '—', W - 28);
+  doc.text(parrafoCupo, 14, y);
+  doc.setTextColor(0, 0, 0);
+  y += parrafoCupo.length * 4 + 8;
+
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'bold');
+  doc.text('Resumen ejecutivo — votación del Comité de Prepago y Crédito', 14, y);
+  y += 3;
+
+  autoTable(doc, {
+    startY: y,
+    head: [['Votante', 'Decisión', 'Folio de firma']],
+    body: r.votos.map(v => [v.votante, v.decision, v.firmaToken || '—']),
+    theme: 'striped',
+    headStyles: { fillColor: COMITE_PRIMARY, fontSize: 8 },
+    bodyStyles: { fontSize: 7.5 },
+    margin: { left: 14, right: 14 },
+  });
+  y = (doc as jsPDF & { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 12;
+
+  if (y > 260) { doc.addPage(); y = 30; }
+  doc.setDrawColor(180, 180, 180);
+  doc.line(W / 2 - 40, y, W / 2 + 40, y);
+  doc.setFontSize(7);
+  doc.setTextColor(120, 120, 120);
+  doc.text('Comité Interno de Crédito', W / 2, y + 5, { align: 'center' });
+
+  return doc.output('datauristring');
+}
+
+/**
+ * Genera el Oficio de Autorización del CIC y lo adjunta al Expediente.
+ * Idempotente: reprocesar no duplica el documento. NO intenta reservar cupo — eso
+ * lo resuelve el llamador (necesita el cliente de Supabase para el RPC atómico) y
+ * le pasa el resultado ya conocido en `datosOficio.cupoReservado/cupoMensaje`, para
+ * que este generador se quede limpio de esa responsabilidad.
+ */
+export async function autoCrearOficioCIC(
+  opts: AutoCrearOpts & { datosOficio: DatosOficioCIC; faseNombre?: string; faseId?: number },
+): Promise<AutoCrearResult> {
+  const { storageId, datos, supabase, projectId: pid, datosOficio } = opts;
+  const fecha = new Date().toLocaleString('es-MX');
+
+  const docsPrevios: DocumentoCargado[] =
+    loadFromSession<DocumentoCargado[]>(storageId, 'documentos') ??
+    loadFromSavedStore<DocumentoCargado[]>(storageId, 'documentos') ??
+    [];
+
+  const existe = docsPrevios.some(d =>
+    d.tipoDocumento === CLAVE_OFICIO_CIC || (d as any).claveDocumento === CLAVE_OFICIO_CIC
+  );
+  if (existe) {
+    return {
+      exito: true, documentosCreados: [], pdfGenerados: [], subidosASupabase: false,
+      registradosEnExpediente: true, error: undefined,
+      validacionPlantillas: { valido: true, motivos: [], faltantes: [], plantillasDetectadas: [], puedeGenerarDocumentos: true },
+      documentosActualizados: docsPrevios,
+    };
+  }
+
+  const fileData = generarOficioCICPDF(datos, datosOficio);
+  const archivo = 'oficio_autorizacion_cic.pdf';
+  let uploadInfo: UploadResult | null = null;
+  let subidosASupabase = false;
+  if (supabase && pid) {
+    uploadInfo = await uploadGeneratedPDF(supabase, fileData, archivo, String(storageId), pid);
+    if (uploadInfo) subidosASupabase = true;
+  }
+
+  const nuevo: DocumentoCargado = {
+    id: generateId(),
+    fecha,
+    usuario: 'Sistema',
+    tipoDocumento: CLAVE_OFICIO_CIC,
+    archivo,
+    tipoArchivo: 'pdf',
+    nota: `Estatus: ${datosOficio.estatusResolucion}. Cupo: ${datosOficio.cupoReservado ? 'reservado' : 'NO reservado'} — ${datosOficio.cupoMensaje}`,
+    area: 'Jurídico',
+    fase: opts.faseNombre || 'Dictamen del Comité de Prepago y Crédito',
+    faseId: opts.faseId ?? 3,
+    estatus: 'Pendiente Validación IA',
+    validadoIA: false,
+    fileData,
+    url: uploadInfo?.url,
+    storagePath: uploadInfo?.storagePath,
+    mime: 'application/pdf',
+    tamanoKB: uploadInfo?.tamanoKB || Math.round((fileData.length * 3) / 4 / 1024) || 1,
+  } as DocumentoCargado & { storagePath?: string };
+
+  const docsActualizados = [...docsPrevios, nuevo];
+  saveToSession(storageId, 'documentos', documentosParaSessionStorage(docsActualizados));
+  const persist = await persistirDocumentosEnBD(storageId, docsActualizados);
+
+  console.log(`[autoCrearOficioCIC] Oficio creado para ${storageId} | cupo=${datosOficio.cupoReservado} | Storage: ${subidosASupabase ? 'OK' : 'local'} | BD: ${persist.ok ? 'OK' : 'FALLO'}`);
+
+  return {
+    exito: true,
+    documentosCreados: [CLAVE_OFICIO_CIC],
+    pdfGenerados: [archivo],
+    subidosASupabase,
+    registradosEnExpediente: persist.ok,
+    error: persist.ok ? undefined : `Documento generado pero NO persistido en BD: ${persist.error}`,
+    validacionPlantillas: { valido: true, motivos: [], faltantes: [], plantillasDetectadas: [], puedeGenerarDocumentos: true },
+    documentoCreadoId: nuevo.id,
+    fileData,
+    documentosActualizados: docsActualizados,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// REQ-14 — Propuesta de Contrato de Garantía de Pago Oportuno (GPO)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Propuesta de Contrato GPO — REQ-14, Actividad 7.1 del BPM.
+ *
+ * El nombre debe coincidir EXACTAMENTE con el `tipoDocumento` del requisito del
+ * producto: el Expediente empareja documento con requisito por nombre
+ * normalizado (`validarDocumentosPorFase` en useOriginacionValidaciones.ts).
+ */
+export const CLAVE_CONTRATO_GPO_PROPUESTA = 'Propuesta de Contrato de Garantía de Pago Oportuno';
+
+/** Datos que NO viven en `DatosSolicitud.terminos` y hay que pasar aparte. */
+export interface DatosContratoGPO {
+  /** Subtab "Estructura Operativa 2o Piso" */
+  estructura: Partial<Estructura2oPisoData>;
+  /** Subtab "Validación de Cláusulas Fiduciarias" */
+  clausulas: Partial<ValidacionClausulasData>;
+  /** Institución de Gobierno del cliente — viene del alta de Cliente, no de Términos */
+  institucionGobierno?: string;
+}
+
+const fmtImporteGPO = (v: unknown): string => {
+  const n = parseFloat(String(v ?? '').replace(/[$,\s]/g, ''));
+  return isNaN(n) || n === 0
+    ? ''
+    : n.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+};
+
+const fmtFechaGPO = (v: unknown): string => {
+  const s = String(v ?? '').trim();
+  if (!s) return '';
+  const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return iso ? `${iso[3]}/${iso[2]}/${iso[1]}` : s;
+};
+
+/**
+ * Diccionario de placeholders propio del Contrato GPO (REQ-14, decisión #2a).
+ *
+ * Va aparte de `sustituirPlaceholders` a propósito: son claves de un solo
+ * documento y no tienen por qué engordar la cadena compartida por todas las
+ * plantillas de Crédito/Arrendamiento/Captación. Mismo criterio que
+ * `construirDatosCartaOferta` en cartaOfertaPDF.ts.
+ *
+ * IMPORTANTE: se aplica ANTES que `sustituirPlaceholders`, cuyo catch-all
+ * (`\{\{[^}]+\}\}` → '') borraría estas claves sin dejar rastro.
+ */
+export function construirDatosContratoGPO(
+  datos: DatosSolicitud,
+  extra: DatosContratoGPO,
+): Record<string, string> {
+  const t: any = datos.terminos ?? {};
+  const est = extra.estructura ?? {};
+  const cl = extra.clausulas ?? {};
+  const na = (v: string) => (v && v.trim() ? v.trim() : 'N/A');
+
+  return {
+    // ── Solicitud / Cliente ──
+    institucion_gobierno: na(String(extra.institucionGobierno || (datos as any).gobierno || '')),
+    // ── Términos y Condiciones ──
+    sector_infraestructura: na(String(t.sectorInfraestructura || '')),
+    monto_emision: na(fmtImporteGPO(t.montoEmisionProyectado)),
+    plazo_bonos: na(String(t.plazoBonosAnios || '')),
+    porcentaje_cobertura_gpo: na(String(t.porcentajeCoberturaGpo || '')),
+    monto_garantizado: na(fmtImporteGPO(t.montoGarantizadoGpo)),
+    tasa_comision_gpo: na(String(t.tasaComisionAnualPactada || '')),
+    periodicidad_cobro_gpo: na(String(t.periodicidadCobroGpo || '')),
+    // ── Estructura Operativa 2o Piso ──
+    institucion_fiduciaria: na(String(est.institucionFiduciaria || '')),
+    numero_fideicomiso: na(String(est.numeroFideicomisoFuentePago || '')),
+    representante_comun: na(String(est.representanteComun || '')),
+    // ── Validación de Cláusulas Fiduciarias ──
+    clabe_fideicomiso: na(String(cl.cuentaClabeFideicomiso || '')),
+    fecha_firma_contratos: na(fmtFechaGPO(cl.fechaFirmaContratos)),
+    clausula_41: cl.clausula41AgotamientoFondoReserva ? 'Confirmada' : 'No confirmada',
+    clausula_72: cl.clausula72CascadaPagosPreferencial ? 'Confirmada' : 'No confirmada',
+  };
+}
+
+/** Sustituye `{{CLAVE}}` y `{CLAVE}`. Lo no reconocido se deja intacto. */
+export function sustituirClavesContratoGPO(html: string, mapa: Record<string, string>): string {
+  let out = html;
+  for (const [clave, valor] of Object.entries(mapa)) {
+    out = out
+      .replace(new RegExp(`\\{\\{\\s*${clave}\\s*\\}\\}`, 'g'), valor)
+      .replace(new RegExp(`\\{\\s*${clave}\\s*\\}`, 'g'), valor);
+  }
+  return out;
+}
+
+/**
+ * Genera la Propuesta de Contrato GPO desde la plantilla tipo `contrato-gpo`
+ * del producto y la adjunta al Expediente Electrónico — REQ-14.
+ *
+ * Se dispara desde [Ejecutar Formalización Legal y Cierre de Solicitud], que no
+ * es un botón propio sino el avance de la Fase 4 "Validación de Cláusulas
+ * Fiduciarias" (FaseActionsComponent reetiqueta "Enviar de Fase").
+ *
+ * RN-03 — NUNCA bloquea el cierre de la Solicitud: sin plantilla activa, o si
+ * el render falla, devuelve el motivo y el llamador sigue avanzando de fase.
+ * Idempotente: si la propuesta ya existe, no genera un duplicado.
+ */
+export async function autoCrearPropuestaContratoGPO(
+  opts: AutoCrearOpts & { datosContrato: DatosContratoGPO; faseNombre?: string; faseId?: number },
+): Promise<AutoCrearResult> {
+  const { storageId, datos, plantillas, supabase, projectId: pid, datosContrato } = opts;
+  const fecha = new Date().toLocaleString('es-MX');
+  const labelPlantilla = getTipoPlantillaMeta('contrato-gpo')?.label || 'Contrato de Garantía de Pago Oportuno';
+
+  const docsPrevios: DocumentoCargado[] =
+    loadFromSession<DocumentoCargado[]>(storageId, 'documentos') ??
+    loadFromSavedStore<DocumentoCargado[]>(storageId, 'documentos') ??
+    [];
+
+  const okVacio = (motivos: string[], faltantes: string[]): AutoCrearResult => ({
+    exito: false,
+    documentosCreados: [],
+    pdfGenerados: [],
+    subidosASupabase: false,
+    registradosEnExpediente: false,
+    error: motivos[0],
+    validacionPlantillas: {
+      valido: false, motivos, faltantes, plantillasDetectadas: [], puedeGenerarDocumentos: false,
+    },
+    documentosActualizados: docsPrevios,
+  });
+
+  // ── Idempotencia: no duplicar la propuesta ──
+  const existe = docsPrevios.some(d =>
+    d.tipoDocumento === CLAVE_CONTRATO_GPO_PROPUESTA ||
+    (d as any).claveDocumento === CLAVE_CONTRATO_GPO_PROPUESTA
+  );
+  if (existe) {
+    return {
+      exito: true, documentosCreados: [], pdfGenerados: [], subidosASupabase: false,
+      registradosEnExpediente: true, error: undefined,
+      validacionPlantillas: { valido: true, motivos: [], faltantes: [], plantillasDetectadas: [labelPlantilla], puedeGenerarDocumentos: true },
+      documentosActualizados: docsPrevios,
+    };
+  }
+
+  // ── Plantilla del producto (CA-07: sin ella se avisa, no se rompe) ──
+  const plantilla = (plantillas || []).find(
+    p => p.tipoPlantilla === 'contrato-gpo' && p.estatus === 'Activo',
+  );
+  if (!plantilla) {
+    const hayInactiva = (plantillas || []).some(p => p.tipoPlantilla === 'contrato-gpo');
+    return okVacio(
+      [hayInactiva
+        ? `${labelPlantilla}: existe en el producto pero está INACTIVA. Actívela para generar la propuesta.`
+        : `${labelPlantilla}: no hay ninguna plantilla de este tipo dada de alta en el subtab Plantillas del producto.`],
+      [`${labelPlantilla} (Activa)`],
+    );
+  }
+  if (!plantilla.archivoData) {
+    return okVacio(
+      [`${labelPlantilla}: la plantilla activa "${plantilla.nombre}" no tiene archivo cargado.`],
+      [`${labelPlantilla} (con archivo)`],
+    );
+  }
+
+  // ── Render: plantilla HTML → placeholders → PDF ──
+  let fileData: string;
+  try {
+    const htmlBase = decodificarArchivoData(plantilla.archivoData);
+    // Primero las claves propias del GPO; después las compartidas, cuyo
+    // catch-all vacía todo lo que no reconozca.
+    const htmlGPO = sustituirClavesContratoGPO(htmlBase, construirDatosContratoGPO(datos, datosContrato));
+    const html = sustituirPlaceholders(htmlGPO, datos);
+    fileData = await htmlToPdfBlobUrl(html, 'datauri');
+  } catch (err: any) {
+    return okVacio(
+      [`No se pudo renderizar la plantilla "${plantilla.nombre}": ${err?.message || String(err)}`],
+      [],
+    );
+  }
+
+  const archivo = 'propuesta_contrato_gpo.pdf';
+  let uploadInfo: UploadResult | null = null;
+  let subidosASupabase = false;
+  if (supabase && pid) {
+    uploadInfo = await uploadGeneratedPDF(supabase, fileData, archivo, String(storageId), pid);
+    if (uploadInfo) subidosASupabase = true;
+  }
+
+  const nuevo: DocumentoCargado = {
+    id: generateId(),
+    fecha,
+    usuario: 'Sistema',
+    tipoDocumento: CLAVE_CONTRATO_GPO_PROPUESTA,
+    archivo,
+    tipoArchivo: 'pdf',
+    nota: `Generada desde la plantilla "${plantilla.nombre}" (v${plantilla.version}) al ejecutar la Formalización Legal. ` +
+      'Documento de constancia: no sustituye al Contrato GPO firmado.',
+    area: 'Jurídico',
+    fase: opts.faseNombre || 'Validación de Cláusulas Fiduciarias',
+    faseId: opts.faseId ?? 4,
+    estatus: 'Pendiente Validación IA',
+    validadoIA: false,
+    fileData,
+    url: uploadInfo?.url,
+    storagePath: uploadInfo?.storagePath,
+    mime: 'application/pdf',
+    tamanoKB: uploadInfo?.tamanoKB || Math.round((fileData.length * 3) / 4 / 1024) || 1,
+  } as DocumentoCargado & { storagePath?: string };
+
+  const docsActualizados = [...docsPrevios, nuevo];
+  saveToSession(storageId, 'documentos', documentosParaSessionStorage(docsActualizados));
+  const persist = await persistirDocumentosEnBD(storageId, docsActualizados);
+
+  console.log(`[autoCrearPropuestaContratoGPO] Propuesta creada para ${storageId} | plantilla="${plantilla.nombre}" | Storage: ${subidosASupabase ? 'OK' : 'local'} | BD: ${persist.ok ? 'OK' : 'FALLO'}`);
+
+  return {
+    exito: true,
+    documentosCreados: [CLAVE_CONTRATO_GPO_PROPUESTA],
+    pdfGenerados: [archivo],
+    subidosASupabase,
+    registradosEnExpediente: persist.ok,
+    error: persist.ok ? undefined : `Documento generado pero NO persistido en BD: ${persist.error}`,
+    validacionPlantillas: {
+      valido: true, motivos: [], faltantes: [], plantillasDetectadas: [labelPlantilla], puedeGenerarDocumentos: true,
+    },
+    documentoCreadoId: nuevo.id,
+    fileData,
+    documentosActualizados: docsActualizados,
   };
 }

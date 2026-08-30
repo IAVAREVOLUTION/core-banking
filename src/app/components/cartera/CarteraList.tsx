@@ -8,6 +8,7 @@ import { CarteraForm, type CarteraCredito } from './CarteraForm';
 import { SolicitudesExtGestion } from './SolicitudesExtGestion';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 import { esArrendamientoPuroRow } from './CarteraArrendamientoList';
+import { esLineaCredito2oPisoRow } from '../banca-2o-piso/banca2oPisoStore';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-7e2d13d9`;
 const HDR = { Authorization: `Bearer ${publicAnonKey}` };
@@ -40,10 +41,19 @@ function useCreditos() {
       const mapped: CarteraCredito[] = (json.data || [])
         .filter((r: any) => {
           const h = r.data?.solicitud?.header || {};
-          return !esArrendamientoPuroRow(
+          if (esArrendamientoPuroRow(
             r.linea_produc || h.linea_producto || '',
             r.tipo_produc || h.tipo_producto || '',
-          );
+          )) return false;
+          // REQ-17 §Decisión #2 — las Líneas de Crédito ya ACTIVAS se administran en
+          // el módulo Banca 2º Piso. Mismo criterio que Arrendamiento: se excluyen aquí
+          // para que ninguna cuenta se administre desde dos módulos. Las Líneas de
+          // Crédito que aún no están activas sí siguen apareciendo en esta cartera.
+          if (esLineaCredito2oPisoRow(
+            r.linea_produc || h.linea_producto || '',
+            r.estatus_sol || h.estatus || '',
+          )) return false;
+          return true;
         })
         .map((r: any) => {
         const h = r.data?.solicitud?.header || {};

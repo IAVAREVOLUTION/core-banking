@@ -26,7 +26,24 @@ import {
   esArrendamiento,
 } from './solicitudCreditoStore';
 import { TerminosCondicionesTab } from './TerminosCondicionesTab';
+import {
+  EstructuraOperativa2oPisoTab, SUBTAB_ESTRUCTURA_2O_PISO,
+  leerEstructura2oPiso, faltantesEstructura2oPiso,
+} from './EstructuraOperativa2oPisoTab';
+import {
+  ModeloViabilidadFinancieraTab, leerModeloViabilidad, faltantesModeloViabilidad,
+  dscrPromedio, semaforoDeDscr, dscrDeFila,
+} from './ModeloViabilidadFinancieraTab';
+import { VotacionCPCTab, leerVotacionCPC } from './VotacionCPCTab';
+import {
+  ValidacionClausulasFiduciariasTab, leerValidacionClausulas, faltantesValidacionClausulas,
+} from './ValidacionClausulasFiduciariasTab';
+import {
+  ResolucionFinalCICTab, leerResolucionCIC, faltantesResolucionCIC,
+  type EmitirOficioPayload, type EmitirOficioResultado,
+} from './ResolucionFinalCICTab';
 import { SimulacionTab, calcularNumeroPeriodos } from './SimulacionTab';
+import { formalizarGarantiaGPO } from '../../hooks/formalizacionCarteraGPO';
 import { ExpedienteElectronicoTab } from './ExpedienteElectronicoTab';
 import { GarantiasTab } from './GarantiasTab';
 import { ComisionesTab } from './ComisionesTab';
@@ -37,7 +54,7 @@ import { FasesSolicitudTab } from './tabs/FasesSolicitudTab';
 import { SeleccionarClienteModal } from './SeleccionarClienteModal';
 import { PartesRelacionadasTab } from './tabs/PartesRelacionadasTab';
 import { useProductosCatalogoDB, type ProductoCatalogo } from '../../hooks/useProductosCatalogoDB';
-import { fetchNextNoSol, updateFaseSolicitudDB, avanzarFaseSolicitudDB, regresarFaseSolicitudDB, formalizarContratoSolicitudDB, activarCuentaDB, actualizarEstatusSolicitudDB, crearCuentaDesdeSolicitudDB, actualizarDispersionDB, actualizarFacturasDB } from '../../hooks/useSolicitudesDB';
+import { useSolicitudesDB, fetchNextNoSol, updateFaseSolicitudDB, avanzarFaseSolicitudDB, regresarFaseSolicitudDB, formalizarContratoSolicitudDB, activarCuentaDB, actualizarEstatusSolicitudDB, crearCuentaDesdeSolicitudDB, actualizarDispersionDB, actualizarFacturasDB } from '../../hooks/useSolicitudesDB';
 import {
   validarDocumentosFase, validarDocumentosPorFase, validarNotaReciente, validarFormalizarContrato,
   validarContratosYPagares, validarFase4Envio, validarFase6, leerRequisitosProducto,
@@ -50,6 +67,10 @@ import {
   generarContratoPDF, generarPagePDF, generarSolicitudPDF,
   autoCrearDocumentosFase2, CLAVE_SOLICITUD_BASE,
   autoCrearReporteBuro,
+  autoCrearDocumentosComitePrepago,
+  autoCrearDictamenRiesgo,
+  autoCrearOficioCIC,
+  autoCrearPropuestaContratoGPO,
   htmlToPdfBlobUrl, sustituirPlaceholders, decodificarArchivoData,
   type DatosSolicitud,
 } from '../../hooks/generarDocumentosFase4';
@@ -142,8 +163,44 @@ interface SolicitudCreditoFormProps {
   modo?: 'solicitudes' | 'originacion';
 }
 
+/**
+ * Nombre legible de cada campo obligatorio, para poder decir CUÁL falta.
+ * Antes el aviso sólo daba el conteo ("1 campo(s) requieren corrección") y
+ * el mensaje en rojo vive junto al campo — que puede estar en un acordeón
+ * cerrado o en el encabezado, fuera de lo que el usuario está mirando. Sin
+ * el nombre no había forma de saber dónde buscar.
+ */
+const ETIQUETAS_CAMPO_OBLIGATORIO: Record<string, string> = {
+  lineaProducto: 'Línea de Producto',
+  tipoProducto: 'Tipo de Producto',
+  tipoPersona: 'Tipo de Persona',
+  nombrePersona: 'Nombre',
+  apellidoPaternoPersona: 'Apellido Paterno',
+  productoId: 'Producto',
+  sucursal: 'Sucursal',
+  montoSolicitado: 'Monto Solicitado',
+  plazo: 'Plazo',
+};
+
 export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, cotizacionData, modo: modoProp = 'solicitudes' }: SolicitudCreditoFormProps): JSX.Element {
   const storageId: number | string | 'new' = mode === 'nuevo' ? 'new' : (solicitudId ?? 1);
+  /**
+   * Documentos vivos del subtab Expediente. Es la fuente preferente al validar
+   * el avance de fase: sessionStorage puede quedarse sin cuota al guardar los
+   * archivos en base64 y devolver una lista vacia aunque el usuario los tenga
+   * cargados en pantalla (saveToSession se tragaba el QuotaExceededError).
+   */
+  const documentosDelTabRef = useRef<DocumentoCargado[] | null>(null);
+  /** REQ-9 — última estructura capturada; la validación de avance la prefiere. */
+  const estructura2oPisoRef = useRef<any>(null);
+  /** REQ-10 — último modelo de viabilidad capturado. */
+  const modeloViabilidadRef = useRef<any>(null);
+  /** REQ-11 — no se usa para validar (decisión #4 sin resolver); sólo espeja para no perder datos si se necesitara en el futuro. */
+  const votacionCPCRef = useRef<any>(null);
+  /** REQ-12 — última Resolución Final del CIC capturada; la validación de avance la prefiere. */
+  const resolucionCICRef = useRef<any>(null);
+  /** Actividad 7.1 — última Validación de Cláusulas Fiduciarias capturada; la validación de avance la prefiere. */
+  const validacionClausulasRef = useRef<any>(null);
   const initialRender = useRef(true);
   /** Tracks the formData snapshot at mount time — used to detect user-driven changes */
   const loadedProductoId = useRef<string>('');
@@ -176,6 +233,68 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [activeSection, setActiveSection] = useState<string>('fases');
+
+  // ══════════════════════════════════════════════════════════════════
+  // AUTO-HIDRATACIÓN DESDE BD — red de seguridad
+  //
+  // BUG FIX (2026-08-25): hasta aquí, este formulario SOLO sabía leer de
+  // sessionStorage; dependía de que quien lo abriera hubiera sembrado antes
+  // (handleVer/handleEditar en la lista, seedAndOpen en Originación, el deep
+  // link del Cierre Comercial...). Cualquier ruta que no sembrara — o un
+  // simple refresh de la página, que vacía la sesión — dejaba el formulario
+  // en EMPTY_FORM: se veía vacío aunque la Solicitud estuviera completa en
+  // la BD (verificado: la fila traía los 15 campos correctos).
+  //
+  // En vez de seguir parchando cada punto de entrada uno por uno, el
+  // formulario ahora se hidrata solo: si está en modo ver/editar y detecta
+  // que no tiene datos (noSol vacío), busca su registro en la BD y se llena.
+  //
+  // El import es dinámico a propósito: SolicitudCreditoList ya importa a
+  // este componente, así que un import estático crearía un ciclo.
+  // ══════════════════════════════════════════════════════════════════
+  const { solicitudes: solicitudesBD } = useSolicitudesDB(mode !== 'nuevo');
+  const autoHidratado = useRef(false);
+  /**
+   * Se incrementa cuando la auto-hidratación termina de sembrar sessionStorage.
+   * Los subtabs (Términos, Simulación) leen su sesión UNA SOLA VEZ, en el
+   * inicializador de useState; si ya estaban montados cuando llegó la
+   * hidratación (que es asíncrona), se quedaban con su estado vacío para
+   * siempre — la sección se veía completa pero con "—" en todos los campos.
+   * Usarlo como `key` los obliga a remontar y releer.
+   */
+  const [hidratacionKey, setHidratacionKey] = useState(0);
+
+  useEffect(() => {
+    if (mode === 'nuevo' || autoHidratado.current) return;
+    // Ya tiene datos (la sembraron bien) — no hay nada que reparar.
+    if (formData.noSol) { autoHidratado.current = true; return; }
+    if (!solicitudesBD.length) return;
+
+    const sid = String(storageId);
+    const row = (solicitudesBD as Record<string, any>[]).find(
+      s => String(s._dbId ?? s.id) === sid || s.noSol === sid,
+    );
+    if (!row) return;
+
+    autoHidratado.current = true;
+    import('./SolicitudCreditoList')
+      .then(({ buildFormDataFromListItem, preloadSubtabsFromDBData }) => {
+        const hidratado = buildFormDataFromListItem(row as any);
+        saveToSession(storageId, 'form', hidratado);
+        const dbData = row._data;
+        if (dbData && typeof dbData === 'object') {
+          preloadSubtabsFromDBData(storageId, dbData, {
+            montoCubrirGarantia: row._montoCubrirGarantia,
+            porcentajeAforo: row._porcentajeAforo,
+          });
+        }
+        setFormData(prev => ({ ...prev, ...hidratado }));
+        // Fuerza el remontaje de los subtabs para que relean la sesión recién sembrada.
+        setHidratacionKey(k => k + 1);
+        console.log('[SolicitudCreditoForm] Auto-hidratación desde BD OK —', hidratado.noSol);
+      })
+      .catch(err => console.error('[SolicitudCreditoForm] Auto-hidratación falló:', err));
+  }, [mode, storageId, formData.noSol, solicitudesBD]);
 
   // Limpiar datos de simulación de solicitudes previas que quedaron en sessionStorage bajo 'new'
   useEffect(() => {
@@ -364,6 +483,22 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
     return arr as FilaMatriz[];
   }, [productoSeleccionado]);
 
+  /**
+   * Periodicidades que declara la Matriz de Tasa Fija (columna FRECUENCIA).
+   * Es la MISMA lista que acota el select de Términos y Condiciones; se pasa
+   * también a la Cotización para que ambos acordeones compartan la fuente de
+   * verdad. Sin esto la Cotización podía cotizar con una frecuencia que el
+   * producto no ofrece (ver comentario en handleCotizarGPO).
+   */
+  const frecuenciasPermitidas = useMemo(() => {
+    const vistas: string[] = [];
+    for (const f of matrizTasaFijaProducto) {
+      const per = String((f as any)?.periodo ?? '').trim();
+      if (per && !vistas.includes(per)) vistas.push(per);
+    }
+    return vistas;
+  }, [matrizTasaFijaProducto]);
+
   // Auto-derivar la fila de Matriz SOLO la primera vez que hay un Plazo sin
   // fila fija aún (p.ej. solicitud recién cargada con Plazo guardado, o el
   // usuario tecleó un Plazo antes de haber abierto el modal alguna vez).
@@ -515,6 +650,10 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
 
   // Clave para forzar remount de ExpedienteElectronicoTab tras auto-generar docs en Fase 4
   const [expedienteKey, setExpedienteKey] = useState(0);
+  /** REQ-13 — folios a mostrar en la pantalla de éxito tras formalizar (solo GPO). */
+  const [formalizacionExitosaGPO, setFormalizacionExitosaGPO] = useState<{
+    idGarantiaCartera: string; polizaContableApertura: string;
+  } | null>(null);
 
   // Debug IA de fases — registro del último intento de validación IA al enviar fase
   const [iaFaseDebug, setIaFaseDebug] = useState<{
@@ -565,6 +704,178 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
   // (Auto-generación de documentos en Fase 4 eliminada — los PDFs se generan
   //  manualmente con "Formalizar Contrato" y el usuario los firma y sube al expediente.)
 
+  /**
+   * REQ-10 — [Procesar Grado de Riesgo y Generar Dictamen].
+   * El subtab ya validó; aquí sólo se arma el PDF y se adjunta al Expediente.
+   */
+  const handleProcesarDictamenRiesgo = useCallback(async (datos: any, resumen: any) => {
+    try {
+      const res = await autoCrearDictamenRiesgo({
+        storageId,
+        datos: {
+          noSol: formData.noSol || '',
+          cliente: formData.denominacionRazonSocial || `${formData.nombrePersona || ''} ${formData.apellidoPaternoPersona || ''}`.trim() || 'Cliente',
+          lineaProducto: formData.lineaProducto || '',
+          tipoProducto: formData.tipoProducto || '',
+          productoNombre: productoSeleccionado?.nombreProducto || formData.nombreProducto || '',
+          terminos: loadFromSession<any>(storageId, 'terminos') || loadFromSavedStore<any>(storageId, 'terminos') || {},
+        },
+        riesgo: {
+          fuentePrimariaIngreso: datos.fuentePrimariaIngreso,
+          montoFondoReserva: parseFloat(String(datos.montoFondoReservaFideicomiso || '0')) || 0,
+          plazoBonosAnios: datos.proyecciones.length,
+          dscrPromedio: resumen.promedio,
+          semaforo: resumen.semaforo,
+          dictamenTexto: datos.dictamenRiesgoTexto,
+          proyecciones: datos.proyecciones.map((f: any) => ({
+            anio: f.anio,
+            ebitda: parseFloat(String(f.flujoCajaNetoOperativo || f.ebitdaProyectado || '0')) || 0,
+            servicioDeuda: parseFloat(String(f.servicioDeudaBursatil || '0')) || 0,
+            dscr: dscrDeFila(f),
+          })),
+        },
+        faseNombre: formData.descripcionFase,
+        faseId: parseInt(formData.faseId) || 2,
+        supabase,
+        projectId,
+      });
+      if (res.documentosCreados.length > 0) {
+        if (res.registradosEnExpediente) {
+          toast.success('Dictamen de Riesgo generado', {
+            description: `Semáforo ${resumen.semaforo} · DSCR ${resumen.promedio === null ? '—' : resumen.promedio.toFixed(2)} — adjuntado al Expediente Electrónico.`,
+            duration: 8000,
+          });
+        } else {
+          toast.warning('Dictamen generado, pero NO se guardó en base de datos', {
+            description: res.error || 'Error desconocido al persistir.',
+            duration: 12000,
+          });
+        }
+      } else {
+        toast.info('El Dictamen ya existía', { description: 'No se generó un duplicado.', duration: 5000 });
+      }
+      setExpedienteKey(k => k + 1);
+    } catch (err: any) {
+      toast.error('Error al generar el Dictamen de Riesgo', { description: err?.message || String(err), duration: 8000 });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storageId, formData, productoSeleccionado]);
+
+  /**
+   * REQ-12 — [Emitir Oficio de Autorización y Bloquear Cupo].
+   * El subtab valida el Registro Legal y arma el payload; aquí se intenta la
+   * reserva atómica de cupo (RPC `reservar_cupo_gpo`, necesita el cliente de
+   * Supabase) y se genera/adjunta el Oficio. El resultado se regresa al
+   * subtab para que persista su propio cupoReservado/cupoMensaje.
+   */
+  const handleEmitirOficioCIC = useCallback(async (payload: EmitirOficioPayload): Promise<EmitirOficioResultado> => {
+    let cupoReservado = false;
+    let cupoMensaje = 'No aplica — la operación fue rechazada, no se reserva capacidad.';
+    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+    // Si ya se reservó cupo antes para esta Solicitud (persistido en un click
+    // anterior), NO se vuelve a llamar el RPC — reservar_cupo_gpo no es
+    // idempotente por sí mismo (no sabe si esta Solicitud ya tiene una
+    // reserva), y reintentar "Emitir Oficio" (p. ej. tras recargar sin haber
+    // guardado) descontaría el monto una segunda vez del límite global.
+    const previa = leerResolucionCIC(storageId);
+    const yaReservado = previa.cupoReservado === true;
+
+    if (yaReservado) {
+      cupoReservado = true;
+      cupoMensaje = previa.cupoMensaje || 'Cupo ya estaba reservado.';
+    } else if (payload.registroLegal.estatusResolucion === 'Aprobada por CIC') {
+      if (payload.montoOperacion <= 0) {
+        cupoMensaje = 'No se pudo determinar el monto de la operación — revise Términos y Condiciones.';
+      } else if (storageId === 'new' || !UUID_RE.test(String(storageId))) {
+        cupoMensaje = 'La Solicitud aún no tiene ID de BD — guárdela antes de bloquear cupo.';
+      } else {
+        const { data, error } = await supabase.rpc('reservar_cupo_gpo', {
+          p_clave: 'GPO_GLOBAL',
+          p_monto: payload.montoOperacion,
+          p_solicitud_id: storageId,
+          p_folio_oficio: null,
+        });
+        if (error) {
+          // El RPC puede no existir todavía si create_rpc_bloqueo_cupo_gpo.sql no se ha corrido.
+          cupoMensaje = `No se pudo bloquear el cupo: ${error.message}. ` +
+            'Verifique que la migración create_rpc_bloqueo_cupo_gpo.sql esté aplicada en Supabase.';
+        } else {
+          const fila = Array.isArray(data) ? data[0] : data;
+          cupoReservado = !!fila?.ok;
+          cupoMensaje = fila?.mensaje || (cupoReservado ? 'Cupo reservado.' : 'No se pudo reservar el cupo.');
+          if (fila?.saldo_disponible != null) {
+            cupoMensaje += ` Saldo disponible: ${formatCurrency(Number(fila.saldo_disponible))}.`;
+          }
+        }
+      }
+    }
+
+    try {
+      const res = await autoCrearOficioCIC({
+        storageId,
+        datos: {
+          noSol: formData.noSol || '',
+          cliente: formData.denominacionRazonSocial || `${formData.nombrePersona || ''} ${formData.apellidoPaternoPersona || ''}`.trim() || 'Cliente',
+          lineaProducto: formData.lineaProducto || '',
+          tipoProducto: formData.tipoProducto || '',
+          productoNombre: productoSeleccionado?.nombreProducto || formData.nombreProducto || '',
+          terminos: loadFromSession<any>(storageId, 'terminos') || loadFromSavedStore<any>(storageId, 'terminos') || {},
+        },
+        datosOficio: {
+          numeroActaCIC: payload.registroLegal.numeroActaCIC,
+          fechaSesionCIC: payload.registroLegal.fechaSesionCIC,
+          estatusResolucion: payload.registroLegal.estatusResolucion,
+          montoOperacion: payload.montoOperacion,
+          cupoReservado,
+          cupoMensaje,
+          votos: payload.votos,
+        },
+        faseNombre: formData.descripcionFase,
+        faseId: parseInt(formData.faseId) || 3,
+        supabase,
+        projectId,
+      });
+      // Espejar en memoria, igual que documentosDelTabRef en el resto del form:
+      // si sessionStorage rechazó el guardado por cuota (documentos con PDFs
+      // en base64 la agotan fácil), el remount de Expediente Electrónico NO
+      // debe quedarse con la lista vieja sólo porque la caché local falló —
+      // la persistencia en BD (arriba) sí ocurrió igual.
+      if (res.documentosActualizados) {
+        documentosDelTabRef.current = res.documentosActualizados;
+      }
+      if (res.documentosCreados.length > 0) {
+        if (res.registradosEnExpediente) {
+          toast.success('Oficio de Autorización emitido', { description: cupoMensaje, duration: 9000 });
+        } else {
+          toast.warning('Oficio generado, pero NO se guardó en base de datos', {
+            description: res.error || 'Error desconocido al persistir.',
+            duration: 12000,
+          });
+        }
+      } else {
+        toast.info('El Oficio ya existía', { description: 'No se generó un duplicado.', duration: 5000 });
+      }
+      if (payload.registroLegal.estatusResolucion === 'Aprobada por CIC') {
+        if (cupoReservado) {
+          toast.success('Cupo bloqueado', { description: cupoMensaje, duration: 9000 });
+        } else {
+          toast.error('Cupo NO bloqueado', { description: cupoMensaje, duration: 12000 });
+        }
+      }
+      setExpedienteKey(k => k + 1);
+    } catch (err: any) {
+      toast.error('Error al emitir el Oficio', { description: err?.message || String(err), duration: 8000 });
+    }
+
+    if (payload.registroLegal.estatusResolucion) {
+      setFormData(prev => ({ ...prev, estatusSolicitud: payload.registroLegal.estatusResolucion }));
+    }
+
+    return { cupoReservado, cupoMensaje };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storageId, formData, productoSeleccionado]);
+
   const handleEnviarFase = useCallback(async () => {
     // En modo originación siempre se permite; en otros modos respeta isRO
     if ((isRO && modo !== 'originacion') || enviandoFase) return;
@@ -575,10 +886,34 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
       const seqActual = faseActualReal?.seq ?? (parseInt(formData.faseId) || 1);
 
       // ── 2. Obtener documentos cargados (Sección 2) y requisitos (Sección 1) ──
+      // Cuatro fuentes, en orden de confiabilidad. El subtab manda cuando esta
+      // montado; el storage es el respaldo historico; y el JSONB original de la
+      // BD cierra el hueco cuando sessionStorage se quedo sin cuota (los
+      // documentos llevan el archivo en base64 y la agotan facil).
+      const docsEnMemoria = documentosDelTabRef.current;
+      const docsSession = loadFromSession<DocumentoCargado[]>(storageId, 'documentos');
+      const docsSaved = loadFromSavedStore<DocumentoCargado[]>(storageId, 'documentos');
+      const origData: any =
+        loadFromSession<any>(storageId, '_originalData') ||
+        loadFromSavedStore<any>(storageId, '_originalData');
+      const docsDeBD: DocumentoCargado[] = Array.isArray(origData?.solicitud?.expediente_electronico?.documentos)
+        ? origData.solicitud.expediente_electronico.documentos.map((d: any, i: number) => ({
+            id: d.id || (i + 1),
+            tipoDocumento: String(d.tipo_documento || d.tipoDocumento || '').trim(),
+            archivo: d.archivo_adjunto || d.archivo || '',
+            url: d.url || '',
+            storagePath: d.storage_path || '',
+            estatus: d.estatus || 'Pendiente',
+            faseId: d.fase_id ?? d.faseId ?? null,
+          } as any))
+        : [];
       const documentos: DocumentoCargado[] =
-        loadFromSession<DocumentoCargado[]>(storageId, 'documentos') ||
-        loadFromSavedStore<DocumentoCargado[]>(storageId, 'documentos') ||
+        (docsEnMemoria && docsEnMemoria.length > 0 ? docsEnMemoria : null) ||
+        (docsSession && docsSession.length > 0 ? docsSession : null) ||
+        (docsSaved && docsSaved.length > 0 ? docsSaved : null) ||
+        (docsDeBD.length > 0 ? docsDeBD : null) ||
         [];
+      console.warn(`[avanzarFase] origen de documentos → ref=${docsEnMemoria?.length ?? 'null'} session=${docsSession?.length ?? 'null'} saved=${docsSaved?.length ?? 'null'} bd=${docsDeBD.length} | usados=${documentos.length} | storageId=${String(storageId)}`);
       const rawData = productoSeleccionado?.rawData as Record<string, any> | undefined;
       const requisitosProducto = getRequisitosFromRawData(rawData);
 
@@ -657,17 +992,282 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
         return;
       }
 
+      // ── REQ-9: Estructura Operativa de 2o Piso obligatoria al salir de Admisión ──
+      // Es el botón [Validar Ecosistema y Crear Expediente de Riesgo] del BPM: no se
+      // crea uno nuevo, se le agrega esta condición al avance existente.
+      if (esGPOForm) {
+        const nombreFaseActual = (faseNombre || '')
+          .toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+        const saliendoDeAdmision = nombreFaseActual.includes('admision') || nombreFaseActual.includes('ecosistema');
+        if (saliendoDeAdmision) {
+          const est = estructura2oPisoRef.current || leerEstructura2oPiso(storageId);
+          const faltan = faltantesEstructura2oPiso(est);
+          if (faltan.length > 0) {
+            toast.error('No se puede avanzar de fase', {
+              description: `Estructura Operativa de 2o Piso incompleta: ${faltan.join(' · ')}`,
+              duration: 10000,
+            });
+            return;
+          }
+        }
+      }
+
+      // ── REQ-10: Análisis de Grado de Riesgo completo antes de ir a Comités ──
+      // "Si los flujos son muy ajustados, el Core detendrá el proceso": semáforo
+      // Rojo bloquea de forma dura (decisión de negocio 27/08/2026).
+      if (esGPOForm) {
+        const nf = (faseNombre || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        const saliendoDeRiesgo = nf.includes('grado de riesgo') || nf.includes('analisis de grado');
+        if (saliendoDeRiesgo) {
+          const mv = modeloViabilidadRef.current || leerModeloViabilidad(storageId);
+          const faltanMv = faltantesModeloViabilidad(mv);
+          if (faltanMv.length > 0) {
+            toast.error('No se puede avanzar de fase', {
+              description: `Análisis de Grado de Riesgo incompleto: ${faltanMv.join(' · ')}`,
+              duration: 12000,
+            });
+            return;
+          }
+        }
+      }
+
+      // ── REQ-12: Resolución Final del CIC completa antes de salir del Comité ──
+      // El bloqueo de cupo es la condición dura del requerimiento: si el CIC
+      // aprobó pero el cupo no quedó reservado, no se deja avanzar — es
+      // justamente el "impedir que el banco comprometa esa misma capacidad
+      // en otros proyectos" del BPM.
+      if (esGPOForm) {
+        const nf3 = (faseNombre || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+        const saliendoDeComitePrepago = nf3.includes('comite') && nf3.includes('prepago');
+        if (saliendoDeComitePrepago) {
+          // Actividad 6.1 — sin votos del CPC no hay nada que el CIC pueda resolver.
+          const votacion = leerVotacionCPC(storageId);
+          if (votacion.votos.length === 0) {
+            toast.error('No se puede avanzar de fase', {
+              description: 'Votación CPC incompleta: no hay ningún voto registrado.',
+              duration: 10000,
+            });
+            return;
+          }
+          const rc = resolucionCICRef.current || leerResolucionCIC(storageId);
+          const faltanRc = faltantesResolucionCIC(rc);
+          if (faltanRc.length > 0) {
+            toast.error('No se puede avanzar de fase', {
+              description: `Resolución Final del CIC incompleta: ${faltanRc.join(' · ')}`,
+              duration: 12000,
+            });
+            return;
+          }
+        }
+      }
+
+      // ── Actividad 7.1: Validación de Cláusulas Fiduciarias completa antes de salir de Fase 4 ──
+      if (esGPOForm) {
+        const nf4 = (faseNombre || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+        const saliendoDeClausulasFiduciarias = nf4.includes('clausulas fiduciarias') || nf4.includes('clausulas fiduciari');
+        if (saliendoDeClausulasFiduciarias) {
+          const vc = validacionClausulasRef.current || leerValidacionClausulas(storageId);
+          const faltanVc = faltantesValidacionClausulas(vc);
+          if (faltanVc.length > 0) {
+            toast.error('No se puede avanzar de fase', {
+              description: `Validación de Cláusulas Fiduciarias incompleta: ${faltanVc.join(' · ')}`,
+              duration: 12000,
+            });
+            return;
+          }
+
+          // ── REQ-14: Propuesta de Contrato GPO desde la plantilla del producto ──
+          // Se genera con lo ya capturado en Solicitud + Términos + Estructura
+          // Operativa 2o Piso + Cláusulas Fiduciarias, y se adjunta al requisito
+          // del Expediente. RN-03: NUNCA bloquea el cierre — si no hay plantilla
+          // activa o el render falla, se avisa y el avance de fase continúa.
+          try {
+            const est4 = estructura2oPisoRef.current || leerEstructura2oPiso(storageId);
+            const clienteExtra4 = await obtenerDatosCliente();
+            const rawData4 = productoSeleccionado?.rawData as Record<string, any> | undefined;
+            const plantillas4 =
+              (Array.isArray(productoSeleccionado?.plantillas) && productoSeleccionado!.plantillas!.length > 0
+                ? productoSeleccionado!.plantillas
+                : null) ??
+              (Array.isArray(rawData4?.plantillas) ? rawData4!.plantillas : []);
+            const resContrato = await autoCrearPropuestaContratoGPO({
+              storageId,
+              datos: {
+                noSol: formData.noSol || '',
+                cliente:
+                  formData.denominacionRazonSocial ||
+                  `${formData.nombrePersona || ''} ${formData.apellidoPaternoPersona || ''}`.trim() ||
+                  clienteExtra4.nombreDB ||
+                  'Cliente',
+                lineaProducto: formData.lineaProducto || '',
+                tipoProducto: formData.tipoProducto || '',
+                productoNombre: productoSeleccionado?.nombreProducto || formData.nombreProducto || '',
+                terminos:
+                  loadFromSession<any>(storageId, 'terminos') ||
+                  loadFromSavedStore<any>(storageId, 'terminos') ||
+                  {},
+                ...clienteExtra4,
+                sucursal: formData.sucursal || '',
+                finalidad: formData.descripcion || '',
+              },
+              datosContrato: {
+                estructura: est4,
+                clausulas: vc,
+                institucionGobierno:
+                  (formData as any)._gobierno || clienteExtra4.gobierno || '',
+              },
+              plantillas: plantillas4 as any,
+              faseNombre: formData.descripcionFase,
+              faseId: parseInt(formData.faseId) || 4,
+              supabase,
+              projectId,
+            });
+            if (resContrato.documentosActualizados) {
+              documentosDelTabRef.current = resContrato.documentosActualizados;
+            }
+            if (resContrato.documentosCreados.length > 0) {
+              if (resContrato.registradosEnExpediente) {
+                toast.success('Propuesta de Contrato GPO generada', {
+                  description: 'Adjuntada al Expediente Electrónico de la Solicitud.',
+                  duration: 8000,
+                });
+              } else {
+                toast.warning('Propuesta generada, pero NO se guardó en base de datos', {
+                  description: resContrato.error || 'Error desconocido al persistir.',
+                  duration: 12000,
+                });
+              }
+            } else if (!resContrato.exito) {
+              toast.warning('No se generó la Propuesta de Contrato GPO', {
+                description:
+                  resContrato.validacionPlantillas.motivos[0] ||
+                  resContrato.error ||
+                  'Revise el subtab Plantillas del producto.',
+                duration: 12000,
+              });
+            }
+            setExpedienteKey(k => k + 1);
+          } catch (err: any) {
+            toast.warning('No se generó la Propuesta de Contrato GPO', {
+              description: err?.message || String(err),
+              duration: 10000,
+            });
+          }
+
+          // ── REQ-15: Cargos de la Solicitud desde el subtab Cargos del producto ──
+          // Del producto se toma sólo el CONCEPTO (tipo de cargo + descripción);
+          // el monto de cada cargo es el Monto Garantizado GPO de Términos.
+          // No bloquea el avance de fase: si falta configuración, se avisa.
+          try {
+            const rawProd4 = productoSeleccionado?.rawData as Record<string, any> | undefined;
+            const cargosProducto: any[] =
+              (Array.isArray((productoSeleccionado as any)?.cargos)
+                ? (productoSeleccionado as any).cargos
+                : null) ??
+              (Array.isArray(rawProd4?.cargo) ? rawProd4!.cargo : []);
+            const terminosGPO: any =
+              loadFromSession<any>(storageId, 'terminos') ||
+              loadFromSavedStore<any>(storageId, 'terminos') ||
+              {};
+            const montoGarantizado =
+              parseFloat(parseCurrency(String(terminosGPO.montoGarantizadoGpo || '0'))) || 0;
+
+            if (cargosProducto.length === 0) {
+              toast.warning('No se generaron cargos', {
+                description: 'El producto no tiene cargos configurados en su subtab Cargos.',
+                duration: 10000,
+              });
+            } else if (montoGarantizado <= 0) {
+              toast.warning('No se generaron cargos', {
+                description: 'La Solicitud no tiene Monto Garantizado GPO en Términos y Condiciones.',
+                duration: 10000,
+              });
+            } else {
+              const cargosPrevios: any[] =
+                loadFromSession<any[]>(storageId, 'cargos') ||
+                loadFromSavedStore<any[]>(storageId, 'cargos') ||
+                [];
+              const claveCargo = (t: string, d: string) =>
+                `${(t || '').trim().toLowerCase()}|${(d || '').trim().toLowerCase()}`;
+              const yaEstan = new Set(
+                cargosPrevios.map((c: any) => claveCargo(c.tipoCargo, c.descripcion)),
+              );
+              const hoyISO = new Date().toISOString().slice(0, 10);
+              const nuevosCargos = cargosProducto
+                .filter((c: any) => !yaEstan.has(claveCargo(c.tipoCargo, c.descripcion)))
+                .map((c: any, i: number) => ({
+                  id: Date.now() + i,
+                  tipoCargo: c.tipoCargo || '',
+                  descripcion: c.descripcion || '',
+                  monto: montoGarantizado,
+                  fechaCargo: hoyISO,
+                  estatus: 'Pendiente',
+                  notas:
+                    'Generado automáticamente desde el subtab Cargos del producto al ejecutar ' +
+                    'la Formalización Legal. Monto = Monto Garantizado GPO.',
+                }));
+
+              if (nuevosCargos.length === 0) {
+                toast.info('Los cargos ya estaban generados', {
+                  description: 'No se duplicaron.',
+                  duration: 6000,
+                });
+              } else {
+                const todosLosCargos = [...cargosPrevios, ...nuevosCargos];
+                saveToSession(storageId, 'cargos', todosLosCargos);
+                saveToSavedStore(storageId, 'cargos', todosLosCargos);
+                // Cargos sólo viaja a BD cuando se incluye explícitamente en
+                // _allSubtabs — mismo camino que usa el envío a originación.
+                try {
+                  await onSave?.({ ...formData, _allSubtabs: { cargos: todosLosCargos } });
+                } catch (saveErr: any) {
+                  toast.warning('Cargos generados, pero no se persistieron en BD', {
+                    description: saveErr?.message || String(saveErr),
+                    duration: 12000,
+                  });
+                }
+                toast.success(`${nuevosCargos.length} cargo(s) generados en la Solicitud`, {
+                  description:
+                    `${nuevosCargos.map((c: any) => c.tipoCargo).filter(Boolean).join(', ')} — ` +
+                    `${formatCurrency(montoGarantizado)} cada uno.`,
+                  duration: 9000,
+                });
+              }
+            }
+          } catch (err: any) {
+            toast.warning('No se generaron los cargos de la Solicitud', {
+              description: err?.message || String(err),
+              duration: 10000,
+            });
+          }
+        }
+      }
+
       // ── 3. Validar documentos obligatorios de la fase actual (Sección B) ──
       if (!esActivacionCuentaFinanciera) {
         const valFase = validarDocumentosPorFase(
           seqActual, faseNombre, requisitosProducto, documentos, formData.tipoPersona,
         );
         if (!valFase.valido) {
-          // Solo faltantes (sin archivo o rechazados) bloquean el avance
-          const desc = valFase.faltantes.slice(0, 3).join(', ') + (valFase.faltantes.length > 3 ? ` (+${valFase.faltantes.length - 3} más)` : '');
+          // Solo faltantes (sin archivo o rechazados) bloquean el avance.
+          //
+          // Se muestra el MOTIVO de cada uno, no sólo el nombre: "faltante"
+          // agrupa casos muy distintos — no cargado, cargado pero sin archivo
+          // adjunto, o rechazado. Con sólo el nombre el usuario ve el documento
+          // en pantalla (y hasta validado), da por hecho que está bien, y el
+          // aviso parece estar mintiendo.
+          const motivosDeFaltantes = valFase.motivos.filter(m =>
+            valFase.faltantes.some(f => m.startsWith(`"${f}"`)),
+          );
+          const detalle = (motivosDeFaltantes.length > 0 ? motivosDeFaltantes : valFase.faltantes)
+            .slice(0, 3).join(' · ')
+            + (valFase.faltantes.length > 3 ? ` (+${valFase.faltantes.length - 3} más)` : '');
+          // Traza completa para diagnóstico: incluye los motivos de TODOS.
+          console.warn('[avanzarFase] bloqueado — motivos:', valFase.motivos);
+          console.warn('[avanzarFase] documentos vistos:', documentos.map(d => `"${d.tipoDocumento}" faseId=${d.faseId} estatus=${d.estatus}`));
           toast.error('No se puede avanzar de fase', {
-            description: `Documentos faltantes: ${desc}`,
-            duration: 8000,
+            description: detalle,
+            duration: 10000,
           });
           return;
         }
@@ -947,14 +1547,20 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
           });
           return;
         }
-        // Validar que contratos y pagarés estén formalizados antes de pasar a "Validación contratos y pagarés"
-        const resultContratos4 = validarContratosYPagares(documentos);
-        if (!resultContratos4.valid) {
-          toast.error('Formaliza el contrato antes de avanzar', {
-            description: resultContratos4.errors.join(' · '),
-            duration: 8000,
-          });
-          return;
+        // Validar que contratos y pagarés estén formalizados antes de pasar a "Validación contratos y pagarés".
+        // NO aplica a Garantía Financiera 2o Piso: su fase 4 es "Validación de Cláusulas
+        // Fiduciarias" y no maneja pagarés — este chequeo se disparaba sólo por coincidir
+        // en número de fase con el flujo de Crédito. Su equivalente real para GPO es
+        // faltantesValidacionClausulas (contrato GPO firmado + cláusulas blindadas).
+        if (!esGPOForm) {
+          const resultContratos4 = validarContratosYPagares(documentos);
+          if (!resultContratos4.valid) {
+            toast.error('Formaliza el contrato antes de avanzar', {
+              description: resultContratos4.errors.join(' · '),
+              duration: 8000,
+            });
+            return;
+          }
         }
       }
 
@@ -1007,8 +1613,9 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
 
       // ── 3c. Fase 5: validar contratos y pagarés (Sección D) ──
       // Sólo aplica al flujo de crédito: en arrendamiento la fase 5 emite el
-      // CFDI del proveedor y no exige pagarés.
-      if (seqActual === 5 && !esArrPuro) {
+      // CFDI del proveedor y no exige pagarés; en GPO la fase 5 es "Activación
+      // de Línea 2o Piso" (detonación contable), que tampoco los maneja.
+      if (seqActual === 5 && !esArrPuro && !esGPOForm) {
         const resultContratos = validarContratosYPagares(documentos);
         if (!resultContratos.valid) {
           toast.error('Contratos y pagarés pendientes', {
@@ -1174,6 +1781,68 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
         }
       }
 
+      // ── Fase "Dictamen del Comité de Prepago y Crédito" ──
+      // Su prompt exige que el sistema genere y asocie automáticamente el Acta
+      // de Sesión del Comité y el Certificado de Pre-Apartado de Cupo, sin
+      // carga manual. Se detecta por NOMBRE de fase y no por número: el faseId
+      // de este producto no es correlativo (sus fases se llaman por su nombre
+      // institucional, no "Fase N"), y esta pareja de documentos pertenece a
+      // esa fase concreta, no a un ordinal.
+      const nombreSigFase = (sigFase.fase || '')
+        .toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      const esFaseComitePrepago = nombreSigFase.includes('comite') && nombreSigFase.includes('prepago');
+      // Actividad 7.2 — "ejecutada automáticamente por el Core... al presionar el
+      // botón de la Actividad 7.1": el disparador real es ENTRAR a Fase 5, sin
+      // importar cuál botón concreto hizo avanzar la fase (mismo criterio que
+      // esFaseComitePrepago arriba, que dispara al ENTRAR a Fase 3).
+      const entrandoAActivacion2oPiso = esGPOForm && nombreSigFase.includes('activacion') && nombreSigFase.includes('piso');
+      if (esFaseComitePrepago) {
+        try {
+          const terminosComite: any = loadFromSession<any>(storageId, 'terminos') || loadFromSavedStore<any>(storageId, 'terminos') || {};
+          const clienteComite = [formData.nombrePersona, formData.apellidoPaternoPersona, formData.apellidoMaternoPersona]
+            .filter(Boolean).join(' ').trim() || 'Cliente';
+          const resComite = await autoCrearDocumentosComitePrepago({
+            storageId,
+            datos: {
+              noSol: formData.noSol,
+              cliente: clienteComite,
+              lineaProducto: formData.lineaProducto,
+              tipoProducto: formData.tipoProducto,
+              productoNombre: productoSeleccionado?.nombreProducto || formData.nombreProducto || formData.tipoProducto || '',
+              terminos: terminosComite,
+              sucursal: formData.sucursal || '',
+            },
+            faseNombre: sigFase.fase,
+            faseId: sigFase.seq,
+            supabase,
+            projectId,
+          });
+          if (resComite.documentosCreados.length > 0) {
+            if (resComite.registradosEnExpediente) {
+              toast.success('Documentos del Comité generados', {
+                description: `${resComite.documentosCreados.join(' · ')} — adjuntados al Expediente Electrónico.`,
+                duration: 7000,
+              });
+            } else {
+              toast.warning('Documentos del Comité generados, pero NO se guardaron en base de datos', {
+                description: `${resComite.error || 'Error desconocido al persistir.'} Se perderán al recargar.`,
+                duration: 12000,
+              });
+            }
+          } else {
+            toast.info('Documentos del Comité ya existían', {
+              description: 'No se generaron duplicados (ya estaban en el Expediente).',
+              duration: 5000,
+            });
+          }
+        } catch (comiteErr: any) {
+          toast.error('Error al generar los documentos del Comité', {
+            description: comiteErr?.message || String(comiteErr),
+            duration: 8000,
+          });
+        }
+      }
+
       // ── 5. Actualizar estado local ──
       setFormData(prev => ({
         ...prev,
@@ -1199,7 +1868,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
         // Guardar el estado completo de la solicitud para no perder datos al cambiar de fase
         try {
           const subtabsAutoSave: Record<string, any> = {};
-          const subtabKeys = ['terminos', 'simulacion', 'simulacion_cal', 'simulacion_inv', 'simulacion_arrendamiento', 'documentos', 'garantias', 'comisiones', 'autorizaciones', 'notas', 'partesRelacionadas', 'facturas', '_originalData'];
+          const subtabKeys = ['terminos', 'simulacion', 'simulacion_cal', 'simulacion_inv', 'simulacion_arrendamiento', 'documentos', 'garantias', 'comisiones', 'autorizaciones', 'notas', 'partesRelacionadas', 'facturas', 'estructura2oPiso', 'modeloViabilidad', 'votacionCPC', 'resolucionCIC', 'validacionClausulas', '_originalData'];
           for (const key of subtabKeys) {
             const data = loadFromSession(storageId, key) ?? loadFromSavedStore(storageId, key);
             if (data) subtabsAutoSave[key] = data;
@@ -1218,6 +1887,11 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
             description: autoSaveErr?.message || 'El avance de fase se ve localmente, pero se perderá al recargar. Intente guardar manualmente.',
             duration: 10000,
           });
+        }
+
+        // Actividad 7.2 — fin del BPM, automático al entrar a Fase 5.
+        if (entrandoAActivacion2oPiso) {
+          await formalizarGarantiaSiEsGPO(dbId);
         }
       } else {
         toast.success('Fase avanzada', { description: `${faseActualReal?.fase || formData.descripcionFase} → ${sigFase.fase}. Guarda para persistir.` });
@@ -1657,9 +2331,19 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
             dir0.estado || dir0.entidadFederativa || d.entidadFederativa || '',
             dir0.codigoPostal ? `C.P. ${dir0.codigoPostal}` : '',
           ].filter(Boolean);
-          // Nombre completo desde el registro del cliente
-          const nombreDB = [g('nombre'), g('apellidoPaterno'), g('apellidoMaterno')]
-            .filter(Boolean).join(' ') || g('razonSocial') || g('nombreCompleto') || '';
+          // Nombre completo desde el registro del cliente.
+          // BUG FIX: el campo real de Persona Moral es `denominacionRazonSocial`
+          // (así lo guarda ProspectoForm); `razonSocial` nunca existió.
+          // Ademas, para Moral NUNCA concatenar apellidoPaterno/apellidoMaterino:
+          // un bug ya corregido en ProspectoForm.tsx llego a inyectar palabras de
+          // la Razon Social ahi (crecia en cada guardado: "PRUEBA 2 2 2"), y ese
+          // guardado parcial nunca puede limpiarse a '' (los vacios se ignoran
+          // para no borrar datos por accidente) — por eso se ignoran esos dos
+          // campos por completo aqui, sin importar que haya quedado guardado.
+          const esClienteMoral = rowC.subtipo === 'Persona Moral';
+          const nombreDB = esClienteMoral
+            ? (g('denominacionRazonSocial') || g('razonSocial') || g('nombre') || g('nombreCompleto') || '')
+            : ([g('nombre'), g('apellidoPaterno'), g('apellidoMaterno')].filter(Boolean).join(' ') || g('nombreCompleto') || '');
           extra = {
             rfc:             g('rfc')             || extra.rfc,
             curp:            g('curp')            || extra.curp,
@@ -2065,6 +2749,72 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
   };
 
   /**
+   * REQ-13 — Detonación Contable y Traspaso a Cartera (fin del BPM), sólo GPO.
+   * Se llama justo después de que la activación (crearCuentaDesdeSolicitudDB) corre —
+   * mismo punto que hoy hace las veces de "Actividad 7.1" para este producto (HU
+   * §Decisión #1: no hay un botón "7.1" separado en el código).
+   * Idempotente (CA-07): si la Solicitud ya tiene idGarantiaCartera, no genera nada de
+   * nuevo ni crea una segunda póliza.
+   */
+  const formalizarGarantiaSiEsGPO = useCallback(async (dbId: string, cuentaVinculadaId?: string) => {
+    if (!esGPOForm) return;
+    if (formData.idGarantiaCartera) return;
+    const terminosGPO: any = loadFromSession<any>(storageId, 'terminos') || loadFromSavedStore<any>(storageId, 'terminos') || {};
+    const monto = parseFloat(parseCurrency(String(terminosGPO.montoGarantizadoGpo || '0'))) || 0;
+    // REQ-16 — la guía contabilizadora APERTURA_LINEA vive en el Motor Contable del
+    // producto, y los importes de cada partida en los Cargos de la Solicitud (REQ-15).
+    const rawProdGPO = productoSeleccionado?.rawData as Record<string, any> | undefined;
+    const motorContableProducto: any[] =
+      (Array.isArray((productoSeleccionado as any)?.motorContable)
+        ? (productoSeleccionado as any).motorContable
+        : null) ??
+      (Array.isArray(rawProdGPO?.motorContable) ? rawProdGPO!.motorContable : []);
+    const cargosSolicitud: any[] =
+      loadFromSession<any[]>(storageId, 'cargos') || loadFromSavedStore<any[]>(storageId, 'cargos') || [];
+    const resultado = await formalizarGarantiaGPO({
+      solicitudId: dbId,
+      noSol: formData.noSol || '',
+      productoId: formData.productoId || '',
+      montoGarantizado: monto,
+      cuentaVinculadaId,
+      motorContable: motorContableProducto,
+      cargos: cargosSolicitud.map((c: any) => ({
+        tipoCargo: String(c?.tipoCargo || ''),
+        monto: Number(c?.monto) || 0,
+      })),
+    });
+    if (resultado.ok && resultado.idGarantiaCartera && resultado.polizaContableApertura) {
+      const idGarantiaCartera = resultado.idGarantiaCartera;
+      const polizaContableApertura = resultado.polizaContableApertura;
+      setFormData(prev => ({ ...prev, idGarantiaCartera, polizaContableApertura, estatusSolicitud: 'En Administración' }));
+      try {
+        await onSave?.({ ...formData, idGarantiaCartera, polizaContableApertura, estatusSolicitud: 'En Administración' });
+      } catch (err: any) {
+        toast.warning('Garantía formalizada, pero no se pudo guardar de inmediato', { description: err?.message || String(err) });
+      }
+      // REQ-16 — decir con qué quedó la póliza: con desglose de la guía, o sin él y por qué.
+      if ((resultado.partidas ?? 0) > 0) {
+        toast.success(`Póliza generada desde la guía ${resultado.eventCode}`, {
+          description: `${resultado.partidas} partidas por componente. ${resultado.avisoGuia || ''}`.trim(),
+          duration: 9000,
+        });
+      } else if (resultado.avisoGuia) {
+        toast.warning('Póliza generada sin desglose por componente', {
+          description: resultado.avisoGuia,
+          duration: 12000,
+        });
+      }
+      setFormalizacionExitosaGPO({ idGarantiaCartera, polizaContableApertura });
+    } else if (!resultado.ok) {
+      toast.error('No se pudo generar la póliza de apertura', {
+        description: resultado.error || 'Error desconocido — la garantía quedó activada, pero sin póliza contable.',
+        duration: 12000,
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formData, storageId, onSave]);
+
+  /**
    * Callback invocado por SolicitudActivacionModal cuando el usuario guarda.
    * Originación valida el resultado (estatus, montos) y avanza de fase si todo está correcto.
    * Para Línea de Crédito: avanza automáticamente.
@@ -2240,6 +2990,9 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
               description: cuentaResult.error,
             });
           }
+
+          // REQ-13 — sólo GPO: no interfiere con el flujo de Línea de Crédito normal.
+          await formalizarGarantiaSiEsGPO(actDbId, cuentaResult.cuentaId);
         } catch (err) {
         }
       } else {
@@ -2256,7 +3009,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
         toast.info('Solicitud marcada como Pagado. Presione "Activar" para finalizar la fase.');
       }
     }
-  }, [formData, fasesDelProducto, storageId, refetchActivaciones]);
+  }, [formData, fasesDelProducto, storageId, refetchActivaciones, formalizarGarantiaSiEsGPO]);
 
   /**
    * Activar Cuenta — Fase 7.
@@ -2322,13 +3075,16 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
         } else if (!cuentaResult.ok) {
           toast.warning('No se pudo crear el registro de cuenta', { description: cuentaResult.error });
         }
+
+        // REQ-13 — sólo GPO: no interfiere con el flujo de Línea de Crédito normal.
+        await formalizarGarantiaSiEsGPO(dbId, cuentaResult.cuentaId);
       } else {
         toast.success('Cuenta activada (modo local)', { description: formData.noSol });
       }
     } finally {
       setEnviandoFase(false);
     }
-  }, [enviandoFase, canActivarCuenta, formData, storageId]);
+  }, [enviandoFase, canActivarCuenta, formData, storageId, formalizarGarantiaSiEsGPO]);
 
   const handleNumeric = (field: keyof SolicitudFormData, value: string) => {
     const cleaned = value.replace(/[^0-9.]/g, '');
@@ -2423,8 +3179,12 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
     if (!formData.lineaProducto) e.lineaProducto = 'Obligatorio';
     if (!formData.tipoProducto) e.tipoProducto = 'Obligatorio';
     if (!formData.tipoPersona) e.tipoPersona = 'Obligatorio';
-    if (!formData.nombrePersona) e.nombrePersona = 'Obligatorio';
-    if (!formData.apellidoPaternoPersona) e.apellidoPaternoPersona = 'Obligatorio';
+    // Persona Moral no tiene apellidos: el formulario ni siquiera dibuja el
+    // campo (ahí va la Razón Social). Exigirlo dejaba la Solicitud imposible
+    // de guardar, y el aviso señalaba un campo que no existe en pantalla.
+    const esMoral = (formData.tipoPersona || '').toLowerCase().startsWith('moral');
+    if (!formData.nombrePersona) e.nombrePersona = esMoral ? 'Capture la Razón Social' : 'Obligatorio';
+    if (!esMoral && !formData.apellidoPaternoPersona) e.apellidoPaternoPersona = 'Obligatorio';
     if (!formData.productoId) e.productoId = 'Obligatorio';
     if (!formData.sucursal) e.sucursal = 'Obligatorio';
     const ms = parseFloat(parseCurrency(formData.montoSolicitado || '0'));
@@ -2433,7 +3193,17 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
     if (!e.montoSolicitado && matrizRangoError) e.montoSolicitado = matrizRangoError;
     setErrors(e);
     if (Object.keys(e).length > 0) {
-      toast.error('Campos obligatorios incompletos', { description: `${Object.keys(e).length} campo(s) requieren corrección`, duration: 4000 });
+      // Nombrar los campos y, cuando el motivo no es un simple "Obligatorio"
+      // (p. ej. fuera del rango de la Matriz), decir también por qué.
+      const detalle = Object.entries(e)
+        .map(([campo, motivo]) => {
+          const etiqueta = campo === 'nombrePersona' && esMoral
+            ? 'Razón Social'
+            : (ETIQUETAS_CAMPO_OBLIGATORIO[campo] || campo);
+          return motivo && motivo !== 'Obligatorio' ? `${etiqueta} (${motivo})` : etiqueta;
+        })
+        .join(' · ');
+      toast.error('Campos obligatorios incompletos', { description: detalle, duration: 7000 });
       return false;
     }
     return true;
@@ -2461,7 +3231,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
 
     // ── Recopilar datos de TODAS las subtabs ANTES de commitAndClearSession ──
     const allSubtabs: Record<string, any> = {};
-    const subtabKeys = ['terminos', 'simulacion', 'simulacion_cal', 'simulacion_inv', 'simulacion_arrendamiento', 'documentos', 'garantias', 'comisiones', 'autorizaciones', 'notas', 'partesRelacionadas', 'facturas', '_originalData'];
+    const subtabKeys = ['terminos', 'simulacion', 'simulacion_cal', 'simulacion_inv', 'simulacion_arrendamiento', 'documentos', 'garantias', 'comisiones', 'autorizaciones', 'notas', 'partesRelacionadas', 'facturas', 'estructura2oPiso', 'modeloViabilidad', 'votacionCPC', 'resolucionCIC', 'validacionClausulas', '_originalData'];
     for (const key of subtabKeys) {
       // _originalData puede haber sido limpiado de session por commitAndClearSession en el save anterior;
       // usar savedStore como fallback para no perder los datos de banca móvil al hacer deep merge
@@ -2520,6 +3290,30 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
   const _linea = (formData.lineaProducto || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   const isCaptacionForm    = _linea.includes('captac') || _linea.includes('ahorro') || _linea.includes('invers');
   const isLineaCreditoForm = (_linea.includes('linea') || _linea.includes('línea')) && _linea.includes('cred');
+  /**
+   * Garantía Financiera 2o Piso. Se detecta por nombre O por presencia de los
+   * datos GPO heredados: la Solicitud que genera el Cierre Comercial guarda
+   * tipo_producto = "Simple" y linea_producto = "Línea de Crédito" — ninguno
+   * contiene "garantía", así que el nombre por sí solo no basta.
+   */
+  const esGPOForm = useMemo(() => {
+    const nombre = `${productoSeleccionado?.nombreProducto || ''} ${formData.nombreProducto || ''} ${formData.tipoProducto || ''}`
+      .toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    if (nombre.includes('garant')) return true;
+    const t: any = loadFromSession<any>(storageId, 'terminos') || loadFromSavedStore<any>(storageId, 'terminos') || {};
+    return !!(t.periodicidadCobroGpo || t.porcentajeCoberturaGpo || t.montoGarantizadoGpo || t.sectorInfraestructura);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [productoSeleccionado, formData.nombreProducto, formData.tipoProducto, storageId, expedienteKey]);
+  /**
+   * REQ-13 — ¿la Solicitud está en la fase final del BPM GPO ("Activación de
+   * Línea 2o Piso") o ya la cerró? Se detecta por NOMBRE de fase, igual que el
+   * resto de las compuertas GPO; 'Completada' cubre el estado posterior al
+   * cierre, donde el nombre de la fase ya se reemplazó.
+   */
+  const enFaseActivacion2oPiso = useMemo(() => {
+    const nf = (formData.descripcionFase || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+    return (nf.includes('activacion') && nf.includes('piso')) || nf.includes('completada');
+  }, [formData.descripcionFase]);
   const isCreditoForm      = !isCaptacionForm && !isLineaCreditoForm;
 
   // ── Subtabs dinámicos según tipo de producto ────────────────────────────────
@@ -2530,10 +3324,21 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
   const sections = [
     { id: 'default',           label: 'Default' },
     { id: 'terminos',          label: 'Términos y Condiciones' },
+    // REQ-9 — solo en Garantía Financiera 2o Piso; va antes de cotizar porque el
+    // analista "viste" el ecosistema al admitir la solicitud.
+    ...(esGPOForm ? [{ id: 'estructura2oPiso', label: 'Estructura Operativa de 2o Piso' }] : []),
+    // REQ-10 — Actividad 5 del BPM: Análisis de Grado de Riesgo.
+    ...(esGPOForm ? [{ id: 'modeloViabilidad', label: 'Modelo y Viabilidad Financiera' }] : []),
+    // REQ-11 — Actividad 6.1 del BPM: Votación del Comité de Prepago y Crédito.
+    ...(esGPOForm ? [{ id: 'votacionCPC', label: 'Votación CPC' }] : []),
+    // REQ-12 — Actividad 6.2 del BPM: Autorización del Comité Interno de Crédito.
+    ...(esGPOForm ? [{ id: 'resolucionCIC', label: 'Resolución Final CIC' }] : []),
+    // Actividad 7.1 del BPM: Confección y Validación de Cláusulas Fiduciarias.
+    ...(esGPOForm ? [{ id: 'validacionClausulas', label: 'Validación de Cláusulas Fiduciarias' }] : []),
     {
       id: 'simulacion',
       label: isCaptacionForm    ? 'Calendario de Aportaciones'
-           : isLineaCreditoForm ? 'Tabla de Amortización'
+           : isLineaCreditoForm ? 'Cotización'
            :                      'Simulación',
     },
     ...(esArrendamientoPuro ? [{ id: 'facturas', label: 'Facturas' }] : []),
@@ -2636,6 +3441,61 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
           existingActivacion={activacionForThisSol}
         />
       </div>
+
+      {/* ═══ REQ-13 — Cierre del BPM GPO: banda persistente con los folios de cartera ═══
+          El modal de éxito es de un solo uso (se dispara al formalizar); esta banda
+          deja el resultado visible siempre que se reabra la Solicitud. Si la fase
+          final se alcanzó sin que la detonación contable llegara a completarse
+          —le pasó al bug de FK de account_id— ofrece ejecutarla, en vez de dejar
+          la Solicitud en un cierre a medias sin forma de repararlo. */}
+      {esGPOForm && enFaseActivacion2oPiso && (
+        <div className="mx-6 mt-3">
+          {formData.idGarantiaCartera ? (
+            <div className="bg-green-50 border border-green-300 rounded px-4 py-3 flex items-center justify-between gap-4 flex-wrap">
+              <div className="flex items-center gap-3">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#16A34A" strokeWidth="2">
+                  <path d="M22 11.08V12a10 10 0 11-5.93-9.14" />
+                  <polyline points="22 4 12 14.01 9 11.01" />
+                </svg>
+                <div>
+                  <div className="text-sm font-medium text-green-900">¡Solicitud Formalizada con Éxito!</div>
+                  <div className="text-[11px] text-green-800 mt-0.5">
+                    Garantía en Cartera: <span className="font-mono font-medium">{formData.idGarantiaCartera}</span>
+                    <span className="mx-2 text-green-400">·</span>
+                    Póliza de Apertura: <span className="font-mono font-medium">{formData.polizaContableApertura || '—'}</span>
+                  </div>
+                </div>
+              </div>
+              <button
+                onClick={() => setFormalizacionExitosaGPO({
+                  idGarantiaCartera: formData.idGarantiaCartera || '',
+                  polizaContableApertura: formData.polizaContableApertura || '',
+                })}
+                className="px-3 py-1.5 rounded text-xs font-medium bg-white border border-green-300 text-green-800 hover:bg-green-100 whitespace-nowrap"
+              >
+                Ver detalle
+              </button>
+            </div>
+          ) : (
+            <div className="bg-amber-50 border border-amber-300 rounded px-4 py-3 flex items-center justify-between gap-4 flex-wrap">
+              <div className="text-xs text-amber-800">
+                <strong>Detonación contable pendiente.</strong> Esta Solicitud llegó a la fase
+                final pero aún no tiene folio de cartera ni póliza de apertura.
+              </div>
+              <button
+                onClick={() => {
+                  const dbId = String(formData.id || storageId);
+                  formalizarGarantiaSiEsGPO(dbId);
+                }}
+                disabled={enviandoFase}
+                className="px-3 py-1.5 rounded text-xs font-medium bg-[#0F766E] text-white hover:bg-[#0D5F58] disabled:opacity-60 whitespace-nowrap"
+              >
+                Ejecutar Detonación Contable
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ═══ DEBUG IA DE FASES ═══ */}
       {showIAFaseDebug && iaFaseDebug && (
@@ -2936,6 +3796,25 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
               </div>
               {errors.nombrePersona && <span className="text-[10px] text-red-500 mt-0.5 block">{errors.nombrePersona}</span>}
             </div>
+            {/* BUG FIX (2026-08-25): el RFC del emisor ya viajaba internamente
+                como formData._rfc (Buró de Crédito, Expediente Electrónico),
+                pero nunca se mostraba como campo visible en el Formulario
+                General — para el usuario "no llegaba" aunque sí estaba ahí. */}
+            {(formData as any)._rfc && (
+              <div>
+                <Lbl>RFC Emisor</Lbl>
+                <input type="text" value={(formData as any)._rfc} disabled className={ic(false, true)} />
+              </div>
+            )}
+            {/* id_cliente_crm — sí viajaba en formData.noCliente, pero solo se
+                pintaba como un "ID: xxx" gris diminuto dentro del selector de
+                Cliente; la spec lo pide como campo del Formulario General. */}
+            {formData.noCliente && (
+              <div>
+                <Lbl>ID Cliente CRM</Lbl>
+                <input type="text" value={formData.noCliente} disabled className={ic(false, true)} />
+              </div>
+            )}
             <div>
               <Lbl req error={errors.productoId}>Producto</Lbl>
               <select value={formData.productoId} onChange={e => handleProductoChange(e.target.value)} disabled={isRO} className={sc(!!errors.productoId)}>
@@ -3236,6 +4115,53 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
                     estatusSolicitud={formData.estatusSolicitud}
                   />
                 )}
+                {sec.id === 'estructura2oPiso' && (
+                  <EstructuraOperativa2oPisoTab
+                    mode={mode}
+                    solicitudId={storageId}
+                    folioSolicitudLOS={formData.noSol}
+                    folioOrigenCRM={formData.cotizacionId}
+                    acreditadoEmisor={formData.denominacionRazonSocial || `${formData.nombrePersona || ''} ${formData.apellidoPaternoPersona || ''}`.trim()}
+                    clienteId={formData._clienteId}
+                    onChange={datos => { estructura2oPisoRef.current = datos; }}
+                  />
+                )}
+                {sec.id === 'modeloViabilidad' && (
+                  <ModeloViabilidadFinancieraTab
+                    mode={mode}
+                    solicitudId={storageId}
+                    plazoBonosAnios={(() => {
+                      const t: any = loadFromSession<any>(storageId, 'terminos') || loadFromSavedStore<any>(storageId, 'terminos') || {};
+                      return t.plazoBonosAnios || '';
+                    })()}
+                    noSolicitud={formData.noSol}
+                    nombreSolicitante={formData.denominacionRazonSocial || `${formData.nombrePersona || ''} ${formData.apellidoPaternoPersona || ''}`.trim()}
+                    onChange={d => { modeloViabilidadRef.current = d; }}
+                    onProcesarDictamen={handleProcesarDictamenRiesgo}
+                  />
+                )}
+                {sec.id === 'votacionCPC' && (
+                  <VotacionCPCTab
+                    mode={mode}
+                    solicitudId={storageId}
+                    onChange={d => { votacionCPCRef.current = d; }}
+                  />
+                )}
+                {sec.id === 'resolucionCIC' && (
+                  <ResolucionFinalCICTab
+                    mode={mode}
+                    solicitudId={storageId}
+                    onChange={d => { resolucionCICRef.current = d; }}
+                    onEmitirOficio={handleEmitirOficioCIC}
+                  />
+                )}
+                {sec.id === 'validacionClausulas' && (
+                  <ValidacionClausulasFiduciariasTab
+                    mode={mode}
+                    solicitudId={storageId}
+                    onChange={d => { validacionClausulasRef.current = d; }}
+                  />
+                )}
                 {sec.id === 'partesRelacionadas' && (
                   <PartesRelacionadasTab
                     mode={mode}
@@ -3247,6 +4173,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
                 )}
                 {sec.id === 'terminos' && (
                   <TerminosCondicionesTab
+                    key={`term-${storageId}-${hidratacionKey}`}
                     mode={mode}
                     solicitudId={storageId}
                     lineaProducto={formData.lineaProducto}
@@ -3260,6 +4187,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
                     onFechaPrimeraAportacionChange={v => set('fechaInicio', v)}
                     onMontoAutorizadoChange={v => set('montoAutorizado', v)}
                     onTasaChange={v => setTasaSeleccionadaHeader(v)}
+                    onFrecuenciaChange={v => setFrecuenciaSeleccionadaHeader(v)}
                     porcentajeEngancheHeader={formData.porcentajeEnganche}
                     plazoHeader={formData.plazo}
                     onPlazoLoaded={v => set('plazo', v)}
@@ -3271,6 +4199,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
                 )}
                 {sec.id === 'simulacion' && (
                   <SimulacionTab
+                    key={`sim-${storageId}-${hidratacionKey}`}
                     mode={mode}
                     solicitudId={storageId}
                     lineaProducto={formData.lineaProducto}
@@ -3311,6 +4240,8 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
                     lineaProducto={formData.lineaProducto || ''}
                     descripcionFase={formData.descripcionFase || ''}
                     onEnviarSolicitud={modo === 'originacion' ? handleEnviarSolicitud : undefined}
+                    onDocumentosChange={docs => { documentosDelTabRef.current = docs; }}
+                    documentosIniciales={documentosDelTabRef.current || undefined}
                     noSolicitud={formData.noSol || ''}
                     tipoProducto={formData.tipoProducto || ''}
                     nombreProducto={productoSeleccionado?.nombreProducto || formData.nombreProducto || ''}
@@ -3444,6 +4375,54 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
           />
         </>
       ) : null}
+
+      {/* ── REQ-13: Pantalla de Éxito de Formalización (fin del BPM, solo GPO) ── */}
+      {formalizacionExitosaGPO && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
+            <div className="flex flex-col items-center text-center mb-5">
+              <div className="w-14 h-14 rounded-full bg-green-100 flex items-center justify-center mb-3">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#16A34A" strokeWidth="2">
+                  <path d="M22 11.08V12a10 10 0 11-5.93-9.14" />
+                  <polyline points="22 4 12 14.01 9 11.01" />
+                </svg>
+              </div>
+              <h3 className="text-lg font-medium text-gray-800">¡Solicitud Formalizada con Éxito!</h3>
+              <p className="text-xs text-gray-500 mt-1">
+                La garantía quedó activa en cartera, lista para administración.
+              </p>
+            </div>
+            <div className="space-y-3 mb-6">
+              <div className="bg-gray-50 border border-gray-200 rounded px-3 py-2">
+                <div className="text-[10px] text-gray-500 uppercase tracking-wide">ID de Garantía en Cartera</div>
+                <div className="text-sm font-mono font-medium text-gray-800">{formalizacionExitosaGPO.idGarantiaCartera}</div>
+              </div>
+              <div className="bg-gray-50 border border-gray-200 rounded px-3 py-2">
+                <div className="text-[10px] text-gray-500 uppercase tracking-wide">Póliza Contable de Apertura</div>
+                <div className="text-sm font-mono font-medium text-gray-800">{formalizacionExitosaGPO.polizaContableApertura}</div>
+                <div className="text-[10px] text-amber-600 mt-1">
+                  Cuenta contable provisional — pendiente de confirmar con Contabilidad.
+                </div>
+              </div>
+            </div>
+            <div className="flex flex-col gap-2">
+              <button
+                disabled
+                title="Módulo de Monitoreo de Cartera GPO — próximamente"
+                className="w-full px-4 py-2 rounded text-sm font-medium bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200"
+              >
+                Ir a Monitoreo de Cartera GPO (próximamente)
+              </button>
+              <button
+                onClick={() => setFormalizacionExitosaGPO(null)}
+                className="w-full px-4 py-2 rounded text-sm font-medium bg-[#2E5C91] text-white hover:bg-[#254A75]"
+              >
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Modal Selección de Cliente ── */}
       <SeleccionarClienteModal

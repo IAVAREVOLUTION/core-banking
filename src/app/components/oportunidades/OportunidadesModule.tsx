@@ -32,12 +32,37 @@ interface Props {
   leadParaOportunidad?: any;
   /** Callback para limpiar el Lead después de consumirlo */
   onLeadParaOportunidadConsumido?: () => void;
+  /** Cierre Comercial — navega al módulo LOS abriendo la Solicitud generada. */
+  onNavigateToSolicitud?: (
+    solicitudId: string,
+    noSol: string,
+    fromClienteId?: string,
+    opts?: { mode?: 'ver' | 'editar'; volverAOportunidadId?: string },
+  ) => void;
+  /** "+ Nueva Solicitud" del tab Solicitudes — mismo bridge que Cotización → Solicitud. */
+  onCrearSolicitudDesdeOportunidad?: (data: any) => void;
+  /**
+   * Regreso desde el módulo de Solicitudes: id de la Oportunidad que hay que
+   * volver a abrir. Este módulo se desmonta al cambiar de módulo, así que su
+   * estado local (vista/selected) no sobrevive al viaje de ida y vuelta —
+   * el id viaja por App y aquí se reconstruye la vista de detalle.
+   */
+  oportunidadDeepLinkId?: string | null;
+  /** Limpia el deep link una vez reabierta la Oportunidad. */
+  onOportunidadDeepLinkConsumido?: () => void;
 }
 
 /** sessionStorage: Oportunidades aún no persistidas en BD */
 const SS_KEY = 'oportunidades_local';
 
-export function OportunidadesModule({ leadParaOportunidad, onLeadParaOportunidadConsumido }: Props = {}) {
+export function OportunidadesModule({
+  leadParaOportunidad,
+  onLeadParaOportunidadConsumido,
+  onNavigateToSolicitud,
+  onCrearSolicitudDesdeOportunidad,
+  oportunidadDeepLinkId,
+  onOportunidadDeepLinkConsumido,
+}: Props = {}) {
   const [vista, setVista] = useState<Vista>('home');
   const [formMode, setFormMode] = useState<FormMode>('create');
   const [selected, setSelected] = useState<CotizacionCredito | undefined>();
@@ -126,6 +151,27 @@ export function OportunidadesModule({ leadParaOportunidad, onLeadParaOportunidad
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [leadParaOportunidad]);
 
+  // ══════════════════════════════════════════════════════════════
+  // Regreso desde Solicitudes — reabrir la Oportunidad en edición.
+  // Espera a que la lista traiga el registro (la consulta a BD es async);
+  // mientras tanto el deep link se conserva sin consumirse.
+  // ══════════════════════════════════════════════════════════════
+  useEffect(() => {
+    if (!oportunidadDeepLinkId) return;
+    const encontrada = oportunidades.find(o => String(o.id) === String(oportunidadDeepLinkId));
+    if (!encontrada) {
+      // Aún cargando: no consumir el deep link todavía. Si ya terminó de
+      // cargar y aun así no existe, soltar el link para no quedar en bucle.
+      if (!loading) onOportunidadDeepLinkConsumido?.();
+      return;
+    }
+    setSelected(encontrada);
+    setFormMode('edit');
+    setVista('form');
+    onOportunidadDeepLinkConsumido?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [oportunidadDeepLinkId, cotizacionesDB, loading]);
+
   // ── Handlers ──
   // Alta manual: se arma una Oportunidad en blanco. Antes se pasaba
   // `undefined` y el formulario mostraba su estado vacío, así que no había
@@ -144,10 +190,6 @@ export function OportunidadesModule({ leadParaOportunidad, onLeadParaOportunidad
     const dbResult = await saveCotizacion(o as any);
     const finalId = dbResult.id ?? o.id;
 
-    if (!dbResult.ok) {
-      console.warn('[OportunidadesModule] Falló el guardado en BD, se conserva local:', dbResult.error);
-    }
-
     const guardada: CotizacionCredito = { ...o, id: finalId };
     setLocales(prev => {
       const idx = prev.findIndex(x => x.id === o.id || x.no_cotiza === o.no_cotiza);
@@ -157,11 +199,24 @@ export function OportunidadesModule({ leadParaOportunidad, onLeadParaOportunidad
     });
 
     setSelected(guardada);
-    setSavedId(finalId);
     setFormMode('edit');
-    toast.success('Oportunidad guardada', { description: `Folio: ${o.no_cotiza}` });
 
-    if (dbResult.ok) setTimeout(() => refetch(), 500);
+    // BUG FIX (2026-08-25): antes se marcaba savedId y se mostraba "guardada"
+    // sin importar si saveCotizacion realmente escribió en la BD. Eso hacía
+    // que el badge "Guardada en BD" (existeEnBD compara selected.id===savedId)
+    // mintiera, y el usuario nunca se enteraba de que la Oportunidad se había
+    // quedado solo en sessionStorage. Ver useCotizacionesCaptacionDB.ts.
+    if (dbResult.ok) {
+      setSavedId(finalId);
+      toast.success('Oportunidad guardada', { description: `Folio: ${o.no_cotiza}` });
+      setTimeout(() => refetch(), 500);
+    } else {
+      console.error('[OportunidadesModule] Falló el guardado en BD:', dbResult.error);
+      toast.error('No se pudo guardar en la base de datos', {
+        description: dbResult.error || 'La Oportunidad se conservó solo en este navegador. Vuelva a intentar Guardar.',
+        duration: 8000,
+      });
+    }
   };
 
   const existeEnBD =
@@ -219,6 +274,8 @@ export function OportunidadesModule({ leadParaOportunidad, onLeadParaOportunidad
           onSave={handleSave}
           onBack={() => setVista('list')}
           existeEnBD={existeEnBD}
+          onNavigateToSolicitud={onNavigateToSolicitud}
+          onCrearSolicitudDesdeOportunidad={onCrearSolicitudDesdeOportunidad}
         />
       )}
     </>

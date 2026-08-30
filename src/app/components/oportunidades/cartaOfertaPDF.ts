@@ -198,3 +198,59 @@ export async function subirCartaOferta(
     enStorage: false,
   };
 }
+
+// ══════════════════════════════════════════════════════════════════
+// Cierre Comercial — Carta Oferta firmada por el cliente (evidencia)
+// ══════════════════════════════════════════════════════════════════
+export class DocumentoAceptacionError extends Error {}
+
+/** Candado de evidencia: solo PDF. */
+export function esPDFValido(file: File): boolean {
+  return file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+}
+
+/**
+ * Sube la Carta Oferta firmada (evidencia de aceptación del cliente) que el
+ * ejecutivo carga manualmente — a diferencia de `subirCartaOferta`, aquí el
+ * PDF no se genera: ya viene firmado y capturado por el usuario.
+ * Misma estrategia de degradación a blob URL local si Storage falla.
+ */
+export async function subirDocumentoAceptacion(
+  file: File,
+  oportunidadId: string,
+): Promise<SubidaCartaOferta> {
+  if (!esPDFValido(file)) {
+    throw new DocumentoAceptacionError('Solo se acepta un archivo PDF para la Carta Oferta firmada.');
+  }
+
+  const nombreSeguro = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+  const storagePath = `oportunidades/${oportunidadId || 'sin-id'}/aceptacion/${Date.now()}-${nombreSeguro}`;
+
+  try {
+    const { data, error } = await supabase.storage
+      .from(BUCKET_EXPEDIENTES)
+      .upload(storagePath, file, { cacheControl: '3600', upsert: false, contentType: 'application/pdf' });
+
+    if (!error && data?.path) {
+      let url = `https://${projectId}.supabase.co/storage/v1/object/public/${BUCKET_EXPEDIENTES}/${data.path}`;
+      try {
+        const { data: signed } = await supabase.storage
+          .from(BUCKET_EXPEDIENTES)
+          .createSignedUrl(data.path, 3600);
+        if (signed?.signedUrl) url = signed.signedUrl;
+      } catch { /* se queda con la pública */ }
+
+      return { url, storagePath: data.path, tamanoKB: Math.round(file.size / 1024), enStorage: true };
+    }
+    console.warn('[cartaOfertaPDF] Upload de documento de aceptación rechazado por Storage:', error?.message);
+  } catch (err) {
+    console.warn('[cartaOfertaPDF] Upload de documento de aceptación falló:', err);
+  }
+
+  return {
+    url: URL.createObjectURL(file),
+    storagePath,
+    tamanoKB: Math.round(file.size / 1024),
+    enStorage: false,
+  };
+}

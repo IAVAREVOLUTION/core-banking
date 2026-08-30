@@ -146,8 +146,29 @@ function loadFromSession(): SolicitudListItem[] {
   return [];
 }
 
+/**
+ * Tope del caché de la lista. Este caché es sólo un respaldo por si la BD no
+ * responde: se reescribe entero en cada carga exitosa. No vale la pena que se
+ * coma la cuota del origen (~5 MB compartidos por TODA la app en esa pestaña) y
+ * deje sin espacio al trabajo real del usuario.
+ *
+ * MEDIDO (28/08/2026): con 95 solicitudes este caché pesaba 3.3 MB — el 69% de
+ * toda la cuota — y provocaba que guardar los documentos de una solicitud
+ * fallara incluso pesando 14 KB.
+ */
+const SS_MAX_BYTES = 1_000_000;
+
 function saveToSession(items: SolicitudListItem[]) {
-  try { sessionStorage.setItem(SS_KEY, JSON.stringify(items)); } catch { /* */ }
+  try {
+    const payload = JSON.stringify(items);
+    if (payload.length > SS_MAX_BYTES) {
+      // Mejor sin respaldo offline que sin espacio para el trabajo del usuario.
+      sessionStorage.removeItem(SS_KEY);
+      console.warn(`[SolicDB] Caché de la lista omitido: ${(payload.length / 1024 / 1024).toFixed(1)} MB supera el tope de ${(SS_MAX_BYTES / 1024 / 1024).toFixed(1)} MB. La lista se recargará de la BD (sin respaldo offline).`);
+      return;
+    }
+    sessionStorage.setItem(SS_KEY, payload);
+  } catch { /* */ }
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -218,6 +239,9 @@ function mapRowToListItem(row: SolicitudDBRow): SolicitudListItem {
     _dbId: row.id,
     _clienteId: row.cliente_id,
     _productoId: row.producto_id,
+    // Folio del registro padre (Oportunidad/Cotización) que la originó — permite
+    // ubicar "¿ya existe una Solicitud para este folio?" sin escribir de vuelta.
+    _noReferenc1: row.no_referenc1 || null,
     _data: d,
     _fromDB: true,
     // ── JOIN fields preserved for form reconstruction ──
@@ -311,6 +335,35 @@ function formToDBPayload(form: SolicitudFormData, allSubtabs?: Record<string, an
   const autorizaciones: any[] = subtabArr('autorizaciones', 'autorizaciones');
   const notas: any[] = subtabArr('notas', 'notas');
   const partesRelacionadas: any[] = subtabArr('partesRelacionadas', 'partes_relacionadas');
+  // REQ-9 — Estructura Operativa de 2o Piso. Objeto, no arreglo: si el subtab no
+  // se abrió en esta sesión se conserva lo que ya había en el JSONB.
+  // REQ-11 — Votación del Comité de Prepago y Crédito. Persiste tal cual: no hay
+  // veredicto ni validación de identidad que calcular aquí (decisiones #2-#4 sin
+  // resolver); sólo se guarda lo que el usuario capturó.
+  const votacionCPC: any[] =
+    allSubtabs?.votacionCPC?.votos !== undefined
+      ? allSubtabs.votacionCPC.votos
+      : (origSol.votacion_cpc?.votos || []);
+
+  // REQ-10 — Modelo y Viabilidad Financiera (Análisis de Grado de Riesgo).
+  const modeloViabilidad: Record<string, any> =
+    allSubtabs?.modeloViabilidad !== undefined
+      ? (allSubtabs.modeloViabilidad as Record<string, any>)
+      : (origSol.modelo_viabilidad || {});
+  const estructura2oPiso: Record<string, any> =
+    allSubtabs?.estructura2oPiso !== undefined
+      ? (allSubtabs.estructura2oPiso as Record<string, any>)
+      : (origSol.estructura_2o_piso || {});
+  // REQ-12 — Resolución Final del CIC (Registro Legal + resultado del bloqueo de cupo).
+  const resolucionCIC: Record<string, any> =
+    allSubtabs?.resolucionCIC !== undefined
+      ? (allSubtabs.resolucionCIC as Record<string, any>)
+      : (origSol.resolucion_cic || {});
+  // Actividad 7.1 — Validación de Cláusulas Fiduciarias (Fase 4).
+  const validacionClausulas: Record<string, any> =
+    allSubtabs?.validacionClausulas !== undefined
+      ? (allSubtabs.validacionClausulas as Record<string, any>)
+      : (origSol.validacion_clausulas || {});
   // cargos: solo viaja cuando SolicitudCreditoForm lo incluye explícitamente en allSubtabs
   // (al enviar a originación) — el resto del tiempo permanece como vista previa en sessionStorage.
   const cargos: any[] = subtabArr('cargos', 'cargos');
@@ -336,6 +389,14 @@ function formToDBPayload(form: SolicitudFormData, allSubtabs?: Record<string, an
   if (form.estatusSolicitud) coreHeader.estatus = form.estatusSolicitud;
   if ((form as any)._curp) coreHeader.curp = (form as any)._curp;
   if ((form as any)._rfc) coreHeader.rfc = (form as any)._rfc;
+  // BUG FIX (2026-08-25): id_cliente_crm (formData.noCliente) nunca se
+  // incluía aquí — se mostraba en el Formulario General mientras la
+  // Solicitud vivía solo en memoria, pero al guardar simplemente no viajaba
+  // a la BD y desaparecía al reabrir.
+  if (form.noCliente) coreHeader.no_cliente = form.noCliente;
+  // REQ-13 — folios generados al formalizar (fin del BPM, solo GPO).
+  if ((form as any).idGarantiaCartera) coreHeader.id_garantia_cartera = (form as any).idGarantiaCartera;
+  if ((form as any).polizaContableApertura) coreHeader.poliza_contable_apertura = (form as any).polizaContableApertura;
 
   // Merge Core header on top of original header (preserves banca móvil-specific fields)
   const mergedHeader = origSol.header ? deepMerge(origSol.header, coreHeader) : coreHeader;
@@ -388,6 +449,29 @@ function formToDBPayload(form: SolicitudFormData, allSubtabs?: Record<string, an
   if (terminos.riesgoInversionista) coreTerminosRaw.riesgoInversionista = terminos.riesgoInversionista;
   if (terminos.horizonteInversion) coreTerminosRaw.horizonteInversion = terminos.horizonteInversion;
   if (terminos.experienciaInversion) coreTerminosRaw.experienciaInversion = terminos.experienciaInversion;
+  // Garantía Financiera 2o Piso (GPO) — heredados del Cierre Comercial.
+  //
+  // BUG FIX (2026-08-25): estos seis usaban la guarda `!== undefined` como el
+  // resto del bloque. Esa guarda existe para campos que el usuario SÍ puede
+  // vaciar a propósito (un checkbox que se desmarca, un monto que se borra) —
+  // pero estos no se capturan aquí: se heredan del Cierre Comercial y son de
+  // solo lectura. Con `!== undefined`, abrir la Solicitud antes de que el
+  // subtab hidratara y guardar mandaba '' y BORRABA los valores buenos de la
+  // BD (le pasó a BAN-DIGITAL-20260825-000001, que quedó con 0/6 campos).
+  // Con la guarda por valor truthy, un vacío simplemente no viaja y el deep
+  // merge del servidor conserva lo que ya había.
+  if (terminos.sectorInfraestructura) coreTerminosRaw.sectorInfraestructura = terminos.sectorInfraestructura;
+  if (terminos.montoEmisionProyectado) coreTerminosRaw.montoEmisionProyectado = terminos.montoEmisionProyectado;
+  if (terminos.porcentajeCoberturaGpo) coreTerminosRaw.porcentajeCoberturaGpo = terminos.porcentajeCoberturaGpo;
+  if (terminos.montoGarantizadoGpo) coreTerminosRaw.montoGarantizadoGpo = terminos.montoGarantizadoGpo;
+  if (terminos.tasaComisionAnualPactada) coreTerminosRaw.tasaComisionAnualPactada = terminos.tasaComisionAnualPactada;
+  if (terminos.periodicidadCobroGpo) coreTerminosRaw.periodicidadCobroGpo = terminos.periodicidadCobroGpo;
+  // Plazo(s) elegidos en la Oportunidad (Estructura Bursátil) — array, no escalar.
+  if (Array.isArray((terminos as any).plazosProducto) && (terminos as any).plazosProducto.length > 0) {
+    coreTerminosRaw.plazosProducto = (terminos as any).plazosProducto;
+  }
+  // REQ-10 — plazo de la emisión bursátil (años de la matriz de proyecciones).
+  if ((terminos as any).plazoBonosAnios) coreTerminosRaw.plazoBonosAnios = (terminos as any).plazoBonosAnios;
 
   const origRaw = origSol.terminos_condiciones?._raw || {};
   const mergedRaw = Object.keys(coreTerminosRaw).length > 0
@@ -521,6 +605,82 @@ function formToDBPayload(form: SolicitudFormData, allSubtabs?: Record<string, an
       puesto: n.puesto || null, nota: n.nota || null,
       archivo_adjunto: n.archivoAdjunto || null,
     })),
+    // REQ-11 — sólo viaja si hay al menos un voto.
+    ...(votacionCPC.length > 0
+      ? {
+          votacion_cpc: {
+            votos: votacionCPC.map((v: any) => ({
+              id: v.id,
+              votante: v.votante || null,
+              decision: v.decision || null,
+              comentarios: v.comentarios || null,
+              firma_token: v.firmaToken || null,
+              fecha: v.fecha || null,
+            })),
+          },
+        }
+      : {}),
+    // REQ-10 — misma regla: sólo viaja si tiene contenido.
+    ...(Object.keys(modeloViabilidad).length > 0 && (
+      modeloViabilidad.fuentePrimariaIngreso ||
+      modeloViabilidad.montoFondoReservaFideicomiso ||
+      modeloViabilidad.dictamenRiesgoTexto ||
+      (Array.isArray(modeloViabilidad.proyecciones) && modeloViabilidad.proyecciones.length > 0)
+    )
+      ? {
+          modelo_viabilidad: {
+            fuente_primaria_ingreso: modeloViabilidad.fuentePrimariaIngreso || null,
+            monto_fondo_reserva: modeloViabilidad.montoFondoReservaFideicomiso || null,
+            dictamen_riesgo_texto: modeloViabilidad.dictamenRiesgoTexto || null,
+            procesado_en: modeloViabilidad.procesadoEn || null,
+            proyecciones: Array.isArray(modeloViabilidad.proyecciones)
+              ? modeloViabilidad.proyecciones.map((f: any) => ({
+                  anio: f.anio,
+                  flujo_caja_neto_operativo: f.flujoCajaNetoOperativo || f.ebitdaProyectado || null,
+                  servicio_deuda_bursatil: f.servicioDeudaBursatil || null,
+                }))
+              : [],
+          },
+        }
+      : {}),
+    // REQ-9 — sólo viaja si tiene algo; un objeto vacío no debe pisar la BD.
+    ...(Object.values(estructura2oPiso).some(v => String(v ?? '').trim())
+      ? {
+          estructura_2o_piso: {
+            institucion_fiduciaria: estructura2oPiso.institucionFiduciaria || null,
+            institucion_fiduciaria_id: estructura2oPiso.institucionFiduciariaId || null,
+            numero_fideicomiso_fuente_pago: estructura2oPiso.numeroFideicomisoFuentePago || null,
+            representante_comun: estructura2oPiso.representanteComun || null,
+            representante_comun_id: estructura2oPiso.representanteComunId || null,
+            notas: estructura2oPiso.notasEstructura2oPiso || null,
+          },
+        }
+      : {}),
+    // REQ-12 — sólo viaja si tiene algo capturado del Registro Legal.
+    ...(resolucionCIC.numeroActaCIC || resolucionCIC.fechaSesionCIC || resolucionCIC.estatusResolucionCIC
+      ? {
+          resolucion_cic: {
+            numero_acta_cic: resolucionCIC.numeroActaCIC || null,
+            fecha_sesion_cic: resolucionCIC.fechaSesionCIC || null,
+            estatus_resolucion_cic: resolucionCIC.estatusResolucionCIC || null,
+            cupo_reservado: resolucionCIC.cupoReservado ?? null,
+            cupo_mensaje: resolucionCIC.cupoMensaje || null,
+            emitido_en: resolucionCIC.emitidoEn || null,
+          },
+        }
+      : {}),
+    // Actividad 7.1 — sólo viaja si tiene algo capturado.
+    ...(validacionClausulas.cuentaClabeFideicomiso || validacionClausulas.fechaFirmaContratos || validacionClausulas.contratoArchivo
+      ? {
+          validacion_clausulas: {
+            cuenta_clabe_fideicomiso: validacionClausulas.cuentaClabeFideicomiso || null,
+            fecha_firma_contratos: validacionClausulas.fechaFirmaContratos || null,
+            clausula_41_agotamiento_fondo_reserva: validacionClausulas.clausula41AgotamientoFondoReserva ?? false,
+            clausula_72_cascada_pagos_preferencial: validacionClausulas.clausula72CascadaPagosPreferencial ?? false,
+            contrato_archivo: validacionClausulas.contratoArchivo || null,
+          },
+        }
+      : {}),
     partes_relacionadas: partesRelacionadas.map((p: any) => ({
       relacionLegal: p.tipoRelacion || null,
       participacion: p.participacion || null,
@@ -578,7 +738,16 @@ function formToDBPayload(form: SolicitudFormData, allSubtabs?: Record<string, an
   const porcentajeAforo = terminos.porcentajeAforo != null ? Number(terminos.porcentajeAforo) : null;
 
   return {
-    type: 'Solicitudes',
+    // BUG FIX (2026-08-25): estaba en plural ('Solicitudes'). Tanto
+    // get_solicitudes_credito() (WHERE t.type = 'Solicitud') como el edge
+    // function GET /solicitudes-credito (.eq('type', 'Solicitud')) filtran
+    // por el singular — con el plural, el INSERT sí escribía en
+    // J_CUENTAS_CORP_CLIENTES (por eso se generaba un id real y navegaba a
+    // "ver"), pero ninguna ruta de lectura volvía a encontrar esa fila nunca
+    // más: la Solicitud quedaba huérfana y la pantalla de detalle se abría
+    // casi vacía (los pocos campos que sí se ven vienen del propio
+    // navegador/deep-link, no de la BD).
+    type: 'Solicitud',
     no_sol: form.noSol || '',
     no_cuenta: '',
     no_referenc1: noReferenc1,
@@ -1181,7 +1350,7 @@ export async function crearCuentaDesdeSolicitudDB(params: {
   montoSolicitado?: number;
   montoAutorizado?: number;
   data?: Record<string, unknown>;
-}): Promise<{ ok: boolean; noCuenta?: string; error?: string }> {
+}): Promise<{ ok: boolean; noCuenta?: string; cuentaId?: string; error?: string }> {
   const PRODUCTOS_CON_CUENTA = ['crédito', 'captacion', 'captación', 'aportacion', 'aportación', 'inversion', 'inversión', 'linea', 'línea'];
   const lineaNorm = (params.lineaProducto || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
   const debeCrear = PRODUCTOS_CON_CUENTA.some(p => lineaNorm.includes(p));
@@ -1267,7 +1436,7 @@ export async function crearCuentaDesdeSolicitudDB(params: {
       const json = await res.json().catch(() => ({}));
       console.log('[SolicDB] crearCuentaDesdeSolicitud Edge OK — noCuenta:', noCuenta, '| id:', json?.id);
       window.dispatchEvent(new Event('cuentaAhorroRefetch'));
-      return { ok: true, noCuenta };
+      return { ok: true, noCuenta, cuentaId: json?.id };
     }
     const errText = await res.text().catch(() => '');
     console.warn('[SolicDB] crearCuentaDesdeSolicitud Edge HTTP', res.status, errText);
@@ -1287,7 +1456,8 @@ export async function crearCuentaDesdeSolicitudDB(params: {
     if (!error && data) {
       console.log('[SolicDB] crearCuentaDesdeSolicitud RPC OK — noCuenta:', noCuenta);
       window.dispatchEvent(new Event('cuentaAhorroRefetch'));
-      return { ok: true, noCuenta };
+      const filaRPC = Array.isArray(data) ? data[0] : data;
+      return { ok: true, noCuenta, cuentaId: filaRPC?.id };
     }
     if (error) console.warn('[SolicDB] crearCuentaDesdeSolicitud RPC error:', error.message);
   } catch (e: any) {

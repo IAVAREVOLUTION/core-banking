@@ -43,6 +43,14 @@ const CAT_MONEDA_PERFIL = [
   { value: 'EUR', label: 'EUR - Euro' },
 ];
 
+// Formatea un monto para lectura ("20000000.00" → "20,000,000.00").
+// El valor guardado en formData se mantiene SIN comas.
+function formatMiles(valor: string | number | undefined | null): string {
+  const n = parseFloat(String(valor ?? '').replace(/,/g, ''));
+  if (isNaN(n)) return '0.00';
+  return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
 function stripEmptyFieldsForSync(obj: Record<string, any>): Record<string, any> {
   const cleaned: Record<string, any> = {};
   for (const [key, value] of Object.entries(obj)) {
@@ -261,13 +269,23 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
     // Modo editar/ver: cargar datos del prospecto desde J_CLIENTES
     // Usar campos individuales del JSONB (nombrePila, apellidoPaterno, etc.)
     // en vez de dividir el nombre completo por espacios
-    const fallbackNombres = prospecto?.nombre?.split(' ') || [];
+    const tipoProspecto = prospecto?.subtipo || prospecto?.tipo || '';
+    // BUG FIX: Persona Moral no tiene nombre/apellidos — "nombre" ahí es la
+    // Razón Social completa (puede traer espacios, ej. "Grupo ABC"). Partir
+    // esa cadena por espacio como si fuera nombre+apellidoPaterno+
+    // apellidoMaterno de una persona física inyecta palabras de la Razón
+    // Social en esos campos; al guardar, esas palabras basura se persisten
+    // y el próximo ciclo de editar→guardar vuelve a sumarles otra palabra —
+    // el nombre visible crece sin fin (bug real observado: "PRUEBA 2 2 2"
+    // tras 3 guardados). Para Moral, nunca usar este fallback.
+    const esMoral = tipoProspecto === 'Persona Moral';
+    const fallbackNombres = esMoral ? [] : (prospecto?.nombre?.split(' ') || []);
     return {
       idProspecto: prospecto?.idProspecto || `PROS-${String(prospecto?.id || 0).padStart(3, '0')}`,
-      tipo: prospecto?.subtipo || prospecto?.tipo || '',
-      nombre: prospecto?.nombrePila || fallbackNombres[0] || '',
-      apellidoPaterno: prospecto?.apellidoPaterno || fallbackNombres[1] || '',
-      apellidoMaterno: prospecto?.apellidoMaterno || fallbackNombres[2] || '',
+      tipo: tipoProspecto,
+      nombre: esMoral ? '' : (prospecto?.nombrePila || fallbackNombres[0] || ''),
+      apellidoPaterno: esMoral ? '' : (prospecto?.apellidoPaterno || fallbackNombres[1] || ''),
+      apellidoMaterno: esMoral ? '' : (prospecto?.apellidoMaterno || fallbackNombres[2] || ''),
       denominacionRazonSocial: prospecto?.denominacionRazonSocial || '',
       telefono: prospecto?.telefono || '',
       fechaNacimiento: prospecto?.fechaNacimiento || prospecto?.fechaOriginacion || '',
@@ -302,17 +320,23 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
   // Solo se ejecuta una vez al montar el componente
   useEffect(() => {
     if (prospecto && !isCreate) {
-      const fallbackNombres = prospecto.nombre?.split(' ') || [];
+      // BUG FIX: mismo guard que la hidratación inicial — para Persona Moral
+      // nunca partir "nombre" (la Razón Social, puede traer espacios) como
+      // si fuera nombre+apellidos de una persona física. Ver comentario
+      // extenso en la hidratación inicial (más arriba en este archivo).
+      const tipoSync = prospecto?.subtipo || prospecto?.tipo || '';
+      const esMoralSync = tipoSync === 'Persona Moral';
+      const fallbackNombres = esMoralSync ? [] : (prospecto.nombre?.split(' ') || []);
       setFormData(prev => {
         // Solo actualizar si el ID es diferente (evita sobrescribir ediciones del usuario)
         const expectedId = prospecto.idProspecto || `PROS-${String(prospecto.id).padStart(3, '0')}`;
         if (prev.idProspecto !== expectedId) {
           return {
             idProspecto: expectedId,
-            tipo: prospecto?.subtipo || prospecto?.tipo || '',
-            nombre: prospecto?.nombrePila || fallbackNombres[0] || '',
-            apellidoPaterno: prospecto?.apellidoPaterno || fallbackNombres[1] || '',
-            apellidoMaterno: prospecto?.apellidoMaterno || fallbackNombres[2] || '',
+            tipo: tipoSync,
+            nombre: esMoralSync ? '' : (prospecto?.nombrePila || fallbackNombres[0] || ''),
+            apellidoPaterno: esMoralSync ? '' : (prospecto?.apellidoPaterno || fallbackNombres[1] || ''),
+            apellidoMaterno: esMoralSync ? '' : (prospecto?.apellidoMaterno || fallbackNombres[2] || ''),
             denominacionRazonSocial: prospecto.denominacionRazonSocial || '',
             telefono: prospecto.telefono || '',
             fechaNacimiento: prospecto?.fechaNacimiento || prospecto.fechaOriginacion || '',
@@ -413,24 +437,71 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
   }, [prospecto, isCreate]);
 
   // ===== PERSISTENCIA DE DATOS EN SESSIONSTORAGE (claves por prospecto) =====
+  //
+  // BUG FIX — QuotaExceededError al presionar "Nuevo".
+  //
+  // Cada uno de los 9 `sessionStorage.setItem` de abajo corría sin protección
+  // dentro de un useEffect: si sessionStorage se llena (muy fácil de lograr
+  // aquí — cada expediente electrónico guarda el archivo en base64 dentro de
+  // `fileData`, y eso se acumula por cada prospecto que se prueba en la
+  // misma pestaña sin cerrar el navegador), el setItem lanza
+  // QuotaExceededError, el useEffect revienta sin capturarlo, y React tumba
+  // TODO el árbol de <ProspectoForm> — exactamente lo reportado al abrir
+  // "Nuevo" (storageId='nuevo'): ni siquiera había datos grandes en ESE
+  // registro, la cuota ya estaba agotada por OTROS prospectos.
+  //
+  // Este guardado es solo un borrador de conveniencia (para no perder lo
+  // tecleado si el usuario navega por accidente) — nunca debe poder tumbar
+  // el formulario. safeSetSessionItem intenta guardar; si la cuota está
+  // llena, borra el WIP de CUALQUIER OTRO prospecto (seguro: si ya se
+  // guardó, es redundante: si no, ya es un borrador abandonado) y reintenta
+  // una vez. Si aun así falla, se resigna en silencio: el usuario sigue
+  // pudiendo capturar y guardar con Guardar, solo pierde el auto-guardado.
+  const safeSetSessionItem = (key: string, value: string) => {
+    try {
+      sessionStorage.setItem(key, value);
+    } catch (err) {
+      const esCuotaLlena = err instanceof DOMException
+        && (err.name === 'QuotaExceededError' || err.name === 'NS_ERROR_DOM_QUOTA_REACHED');
+      if (!esCuotaLlena) {
+        console.warn(`[ProspectoForm] No se pudo guardar borrador "${key}":`, err);
+        return;
+      }
+      try {
+        // Liberar espacio: descartar el WIP de cualquier OTRO prospecto.
+        // El propio storageId se conserva porque es justo lo que se intenta
+        // escribir ahora mismo.
+        const propios = new Set(Object.keys(sessionStorage));
+        for (const k of propios) {
+          if (k.startsWith('prospecto_') && !k.endsWith(`_${storageId}`)) {
+            sessionStorage.removeItem(k);
+          }
+        }
+        sessionStorage.setItem(key, value);
+      } catch (err2) {
+        console.warn(`[ProspectoForm] sessionStorage sin espacio incluso tras limpiar — se omite el borrador de "${key}":`, err2);
+      }
+    }
+  };
+
   // Guardar formData
   useEffect(() => {
-    sessionStorage.setItem(`prospecto_formData_${storageId}`, JSON.stringify(formData));
+    safeSetSessionItem(`prospecto_formData_${storageId}`, JSON.stringify(formData));
   }, [formData, storageId]);
 
   // Guardar direcciones
   useEffect(() => {
-    sessionStorage.setItem(`prospecto_direcciones_${storageId}`, JSON.stringify(direcciones));
+    safeSetSessionItem(`prospecto_direcciones_${storageId}`, JSON.stringify(direcciones));
   }, [direcciones, storageId]);
 
   // Guardar consultas SIC
   useEffect(() => {
-    sessionStorage.setItem(`prospecto_consultas_${storageId}`, JSON.stringify(consultas));
+    safeSetSessionItem(`prospecto_consultas_${storageId}`, JSON.stringify(consultas));
   }, [consultas, storageId]);
 
   // Guardar listas negras
   useEffect(() => {
-    sessionStorage.setItem(`prospecto_listasNegras_${storageId}`, JSON.stringify(listasNegras));
+    safeSetSessionItem(`prospecto_listasNegras_${storageId}`, JSON.stringify(listasNegras));
   }, [listasNegras, storageId]);
 
   // Guardar expedientes electrónicos
@@ -440,27 +511,27 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
       const { _pendingFile, ...rest } = e;
       return rest;
     });
-    sessionStorage.setItem(`prospecto_expedientes_${storageId}`, JSON.stringify(serializable));
+    safeSetSessionItem(`prospecto_expedientes_${storageId}`, JSON.stringify(serializable));
   }, [expedientesElectronicos, storageId]);
 
   // Guardar cotizaciones
   useEffect(() => {
-    sessionStorage.setItem(`prospecto_cotizaciones_${storageId}`, JSON.stringify(cotizaciones));
+    safeSetSessionItem(`prospecto_cotizaciones_${storageId}`, JSON.stringify(cotizaciones));
   }, [cotizaciones, storageId]);
 
   // Guardar cotización seleccionada
   useEffect(() => {
-    sessionStorage.setItem(`prospecto_cotizacionSeleccionada_${storageId}`, JSON.stringify(cotizacionSeleccionada));
+    safeSetSessionItem(`prospecto_cotizacionSeleccionada_${storageId}`, JSON.stringify(cotizacionSeleccionada));
   }, [cotizacionSeleccionada, storageId]);
 
   // Guardar tabla de amortización
   useEffect(() => {
-    sessionStorage.setItem(`prospecto_tablaAmortizacion_${storageId}`, JSON.stringify(tablaAmortizacion));
+    safeSetSessionItem(`prospecto_tablaAmortizacion_${storageId}`, JSON.stringify(tablaAmortizacion));
   }, [tablaAmortizacion, storageId]);
 
   // Guardar tab activo
   useEffect(() => {
-    sessionStorage.setItem(`prospecto_activeTab_${storageId}`, JSON.stringify(activeTab));
+    safeSetSessionItem(`prospecto_activeTab_${storageId}`, JSON.stringify(activeTab));
   }, [activeTab, storageId]);
   // ===== FIN PERSISTENCIA =====
 
@@ -563,7 +634,18 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
         const dataJson: Record<string, any> = {
           idProspecto: formData.idProspecto,
           tipo: formData.tipo,
-          nombre: formData.nombre,
+          // BUG FIX: unificar el campo "nombre" independientemente del tipo de
+          // persona. Antes, en Persona Moral, `nombre` se guardaba vacío (el
+          // formulario solo captura Razón Social) y varios módulos —
+          // Clientes (mapRowToCliente), Solicitudes (SeleccionarClienteModal,
+          // obtenerDatosCliente), la propia lista de Prospectos— leen
+          // `data.nombre` + apellidos a ciegas para armar el nombre a mostrar,
+          // sin saber que para Moral el dato vive en otro campo. Resultado:
+          // "Sin nombre" en Clientes/Solicitudes para cualquier prospecto/
+          // cliente Persona Moral. Guardando la Razón Social también en
+          // `nombre`, el mismo campo sirve para los dos tipos y ningún
+          // consumidor necesita lógica especial por tipo de persona.
+          nombre: formData.tipo === 'Persona Moral' ? (formData.denominacionRazonSocial || '') : formData.nombre,
           apellidoPaterno: formData.apellidoPaterno,
           apellidoMaterno: formData.apellidoMaterno,
           denominacionRazonSocial: formData.denominacionRazonSocial,
@@ -585,6 +667,11 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
           institucionGobierno: formData.institucionGobierno,
           institucionGobiernoId: formData.institucionGobiernoId,
           clasificacionCliente: formData.clasificacionCliente,
+          // ── Persona Moral (bug: nunca se incluían en el guardado) ──
+          fechaConstitucion: (formData as any).fechaConstitucion,
+          giroEmpresa: (formData as any).giroEmpresa,
+          // ── HU-CRM-01: Nombre Contacto (antes REP LEGAL) ──
+          representanteLegalNombre: (formData as any).representanteLegalNombre,
           // ── HU-CRM-02: Perfil ──
           sectorInfraestructura: (formData as any).sectorInfraestructura,
           montoInversion: (formData as any).montoInversion,
@@ -826,6 +913,8 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
         : '';
 
   const [calificando, setCalificando] = useState(false);
+  // Mientras el campo está enfocado se edita el número crudo; al salir se formatea
+  const [montoInversionFocus, setMontoInversionFocus] = useState(false);
 
   const handleCalificarLead = async () => {
     // Defensa en profundidad: el botón ya está deshabilitado en estos casos.
@@ -857,17 +946,22 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
 
     setCalificando(true);
     try {
-      // ── CA-03 + CA-04 ──
-      // Misma fila de J_CLIENTES: el type pasa de 'Prospecto' a 'Clientes'
-      // (la Cuenta de Cliente) y el Lead sale del pipeline como 'Calificado'.
+      // ── Lead calificado — YA NO convierte a Cliente aquí ──
+      // Cambio de diseño (2026-08-25): antes, Calificar Lead pasaba
+      // type='Prospecto' → 'Clientes' de inmediato (así lo pedía HU-CRM-03
+      // CA-04 originalmente). Ahora el Lead se queda como Prospecto — la
+      // conversión a Cliente se disparó desde aquí y se movió al botón
+      // [Cerrada-Ganada] de Cierre Comercial en la Oportunidad, con el mismo
+      // patrón que "Activar Prospecto" (ver handleCerrarGanada en
+      // OportunidadForm.tsx), sin las validaciones de KYC individual
+      // (CURP, SIC, Listas Negras) que no aplican a una Persona Moral.
       // syncToJClientes hace deep merge, así que basta el JSON parcial.
       await syncToJClientes({
-        type: 'Clientes',
+        type: 'Prospecto',
         tipoFormulario: formData.tipo,
-        estatus: 'Activo',
+        estatus: 'En proceso',
         data: {
           estatusProspecto: 'Calificado',
-          estatusCliente: 'Calificado',
           // El Perfil se persiste aquí para que la Oportunidad no dependa
           // de que el usuario haya guardado antes de calificar.
           sectorInfraestructura: f.sectorInfraestructura,
@@ -883,7 +977,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
       setFormData(prev => ({
         ...prev,
         estatusProspecto: 'Calificado',
-        estatus: 'Activo',
+        estatus: 'En proceso',
       }));
 
       // ── CA-05: payload de la Oportunidad ──
@@ -904,7 +998,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
       };
 
       toast.success('Lead calificado', {
-        description: 'Se convirtió en Cliente y se abrió la Oportunidad.',
+        description: 'Se abrió la Oportunidad. El Lead se convertirá en Cliente al cerrarla como Ganada en Cierre Comercial.',
       });
 
       // ── CA-06: redirección ──
@@ -2022,7 +2116,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
                   <label className="text-xs w-40 flex-shrink-0 text-gray-700">MONTO INVERSIÓN <span className="text-red-600">*</span></label>
                   {isView ? (
                     <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100 text-right font-mono">
-                      {(formData as any).montoInversion || '0.00'}
+                      {formatMiles((formData as any).montoInversion)}
                     </div>
                   ) : (
                     <div className="relative flex-1">
@@ -2030,15 +2124,21 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
                       <input
                         type="text"
                         inputMode="decimal"
-                        value={(formData as any).montoInversion ?? '0.00'}
+                        value={
+                          montoInversionFocus
+                            ? ((formData as any).montoInversion ?? '0.00')
+                            : formatMiles((formData as any).montoInversion)
+                        }
+                        onFocus={() => setMontoInversionFocus(true)}
                         onChange={(e) => {
                           const limpio = e.target.value.replace(/[^0-9.]/g, '');
                           if (limpio.split('.').length > 2) return;
                           handleChange('montoInversion' as any, limpio);
                         }}
                         onBlur={(e) => {
-                          const n = parseFloat(e.target.value);
+                          const n = parseFloat(e.target.value.replace(/,/g, ''));
                           handleChange('montoInversion' as any, isNaN(n) ? '0.00' : n.toFixed(2));
+                          setMontoInversionFocus(false);
                         }}
                         className="w-full pl-5 pr-2 py-1 text-xs border border-gray-300 rounded text-right font-mono"
                       />

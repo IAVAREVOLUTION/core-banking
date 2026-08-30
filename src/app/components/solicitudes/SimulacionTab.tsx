@@ -177,6 +177,34 @@ export function SimulacionTab({ mode, solicitudId, lineaProducto, tipoProducto, 
   // motor lo genera y qué columnas se pintan.
   const isArrendamiento = !isCap && _tpRaw.includes('arrendamiento');
   const isArrFinanciero = isArrendamiento && !_tpRaw.includes('puro');
+  /**
+   * Garantía Financiera 2o Piso (GPO) — comisión periódica, no amortización.
+   *
+   * BUG FIX (2026-08-25): detectaba solo por nombre (`_tpRaw.includes('garant')`),
+   * pero la Solicitud real que genera el Cierre Comercial guarda
+   * tipo_producto = "Simple" y linea_producto = "Línea de Crédito" — ninguno
+   * de los dos contiene "garant", así que isGPO daba false y la pestaña
+   * pintaba columnas de amortización de crédito (Saldo Insoluto, Capital)
+   * sobre filas que son comisiones. La señal confiable es el propio dato GPO
+   * en Términos y Condiciones, que solo existe en este producto.
+   */
+  const _terminosGPO =
+    loadFromSession<TerminosCondiciones>(solicitudId, 'terminos') ||
+    loadFromSavedStore<TerminosCondiciones>(solicitudId, 'terminos');
+  // Mismo respaldo que TerminosCondicionesTab: el JSONB original nunca pasa
+  // por el round-trip de 'terminos', así que sobrevive a los desfases de
+  // hidratación que dejaban la sesión sin los campos GPO.
+  const _origRawGPO =
+    (loadFromSession<any>(solicitudId, '_originalData') ||
+      loadFromSavedStore<any>(solicitudId, '_originalData'))
+      ?.solicitud?.terminos_condiciones?._raw || {};
+  const isGPO = !isCap && !isArrendamiento && (
+    _tpRaw.includes('garant') ||
+    !!_terminosGPO?.periodicidadCobroGpo ||
+    !!_terminosGPO?.porcentajeCoberturaGpo ||
+    !!_origRawGPO.periodicidadCobroGpo ||
+    !!_origRawGPO.porcentajeCoberturaGpo
+  );
 
   // ── Amortización (solo crédito) ──
   const getInitRows = (): SimulacionRow[] => {
@@ -385,6 +413,117 @@ export function SimulacionTab({ mode, solicitudId, lineaProducto, tipoProducto, 
   };
 
   // ── Simular Crédito ──
+  /** Valor GPO con respaldo al JSONB original (misma cadena frágil que Términos). */
+  const gpoVal = (campo: string): string => {
+    const v = (_terminosGPO as any)?.[campo];
+    if (v !== undefined && v !== null && v !== '') return String(v);
+    const f = _origRawGPO[campo];
+    return f !== undefined && f !== null && f !== '' ? String(f) : '';
+  };
+
+  /**
+   * "Cotizar" — recalcula el flujo de comisiones GPO de UN AÑO.
+   *
+   * No es amortización: el Monto Garantizado no se abona, solo se cobra la
+   * comisión pactada por periodo. El número de renglones lo fija la
+   * periodicidad (Anual→1, Semestral→2, Trimestral→4, Mensual→12), igual que
+   * el cálculo que hace el Cierre Comercial en la Oportunidad.
+   */
+  // Cubre TODO CAT_FRECUENCIA (solicitudCreditoStore) — antes solo tenía 4
+  // entradas, así que elegir Semanal/Catorcenal/Quincenal daba 0 periodos y
+  // abortaba la cotización con "Datos insuficientes".
+  const PERIODOS_ANIO_GPO: Record<string, number> = {
+    Semanal: 52, Catorcenal: 26, Quincenal: 24, Mensual: 12,
+    Trimestral: 4, Semestral: 2, Anual: 1,
+  };
+
+  const handleCotizarGPO = () => {
+    // Términos leídos EN EL CLIC, no del render. `_terminosGPO`/`gpoVal` son
+    // constantes de render: si este acordeón ya estaba montado cuando el
+    // usuario cambió la Frecuencia en Términos y Condiciones, el handler
+    // cerraba sobre el snapshot viejo y seguía cotizando con el valor
+    // anterior. El resto de los handlers de este archivo (handleSimularCredito,
+    // handleSimularArrendamiento…) ya usaban readTerminos() por esta razón.
+    const terminosAlClic = readTerminos();
+    const gpoAlClic = (campo: string): string => {
+      const v = (terminosAlClic as any)?.[campo];
+      if (v !== undefined && v !== null && v !== '') return String(v);
+      const f = _origRawGPO[campo];
+      return f !== undefined && f !== null && f !== '' ? String(f) : '';
+    };
+
+    const montoGarantizado = parseFloat(parseCurrency(gpoAlClic('montoGarantizadoGpo') || '0')) || 0;
+    const tasaComision = parseFloat(gpoAlClic('tasaComisionAnualPactada') || '0') || 0;
+    // La periodicidad de la cotización sale de la Frecuencia que el usuario
+    // captura en Términos y Condiciones — es el campo editable y el que ve en
+    // pantalla. periodicidadCobroGpo es el valor heredado de la Oportunidad y
+    // se pinta deshabilitado; queda solo como último respaldo.
+    // La cadencia de la comisión la fija SOLO la Periodicidad Cobro Comisión
+    // (heredada de la Oportunidad). Deliberadamente NO se usan aquí:
+    //   · `frecuencia`  → es la periodicidad del PRODUCTO (matriz de tasa fija)
+    //   · `plazo`       → es la duración del financiamiento
+    // Son tres conceptos distintos; mezclarlos fue la causa de que la
+    // cotización saliera con una periodicidad que nadie había elegido.
+    const periodicidad = gpoAlClic('periodicidadCobroGpo');
+    const periodosPorAnio = PERIODOS_ANIO_GPO[periodicidad] || 0;
+
+    if (montoGarantizado <= 0 || tasaComision <= 0 || !periodosPorAnio) {
+      toast.error('Datos insuficientes para cotizar', {
+        description: `Revise Monto Garantizado (${montoGarantizado}), Tasa Comisión (${tasaComision}%) y Periodicidad Cobro Comisión (${periodicidad || 'sin capturar'}) en Términos y Condiciones.`,
+        duration: 5000,
+      });
+      return;
+    }
+
+    // Conserva la tasa de IVA con la que se generó la tabla original (el
+    // producto puede tener un % distinto al 16 general); si no hay tabla
+    // previa de dónde deducirla, usa el 16% general.
+    //
+    // BUG FIX: antes bastaba con que pagoInteres > 0 para deducir la tasa. Si
+    // la tabla heredada traía ivaInteres = 0 (la Oportunidad la generó con un
+    // % de IVA sin capturar), la división daba 0% y la columna "IVA del
+    // Periodo" se quedaba en $0.00 para siempre: recotizar volvía a deducir 0
+    // de sus propias filas. Solo se deduce del histórico cuando ese histórico
+    // efectivamente trae IVA; si no, se cae al 16%.
+    const ivaPct = rows.length > 0 && rows[0].pagoInteres > 0 && rows[0].ivaInteres > 0
+      ? (rows[0].ivaInteres / rows[0].pagoInteres) * 100
+      : 16;
+
+    const ingresoAnual = montoGarantizado * (tasaComision / 100);
+    const ingresoPorPeriodo = ingresoAnual / periodosPorAnio;
+    const ivaPorPeriodo = ingresoPorPeriodo * (ivaPct / 100);
+    const mesesPorPeriodo = 12 / periodosPorAnio;
+
+    // Horizonte fijo de 1 AÑO: la proyección de comisión es anual y no se
+    // extiende al plazo contratado del producto. Mensual→12, Trimestral→4,
+    // Semestral→2, Anual→1.
+    const totalPeriodos = periodosPorAnio;
+
+    const nuevas: SimulacionRow[] = [];
+    let fecha = new Date();
+    for (let i = 0; i < totalPeriodos; i++) {
+      fecha = new Date(fecha.getFullYear(), fecha.getMonth() + mesesPorPeriodo, fecha.getDate());
+      nuevas.push({
+        noPago: i + 1,
+        fechaPago: fecha.toISOString().split('T')[0],
+        saldoInsoluto: montoGarantizado,
+        pagoCapital: 0,
+        pagoInteres: ingresoPorPeriodo,
+        ivaInteres: ivaPorPeriodo,
+        pagoPeriodo: ingresoPorPeriodo,
+        pagoSeguro: 0,
+        pagoTotal: ingresoPorPeriodo + ivaPorPeriodo,
+      });
+    }
+
+    setRows(nuevas);
+    saveToSession(solicitudId, 'simulacion', nuevas);
+    toast.success('Cotización generada', {
+      description: `${nuevas.length} comisión(es) al año · ${periodicidad} · Total ${formatCurrency(nuevas.reduce((s, r) => s + r.pagoTotal, 0))}`,
+      duration: 4000,
+    });
+  };
+
   const handleSimularCredito = () => {
     const terminos = readTerminos();
     const montoSol = parseFloat(parseCurrency(montoSolicitadoHeader || terminos.montoSolicitado || '0'));
@@ -836,7 +975,7 @@ export function SimulacionTab({ mode, solicitudId, lineaProducto, tipoProducto, 
   // ════════════════════════════════════════════════
   // CRÉDITO / LÍNEA DE CRÉDITO — tabla de amortización
   // ════════════════════════════════════════════════
-  const tableTitle = lineaProducto === 'Línea de Crédito' ? 'Tabla de Amortización' : 'Tabla de Pagos';
+  const tableTitle = isGPO ? 'Cotización — Comisiones GPO' : lineaProducto === 'Línea de Crédito' ? 'Cotización' : 'Tabla de Pagos';
   const totalCapital = rows.reduce((s, r) => s + r.pagoCapital, 0);
   const totalInteres = rows.reduce((s, r) => s + r.pagoInteres, 0);
   const totalIVA = rows.reduce((s, r) => s + r.ivaInteres, 0);
@@ -849,14 +988,17 @@ export function SimulacionTab({ mode, solicitudId, lineaProducto, tipoProducto, 
         <h4 className="text-sm font-medium text-gray-800">{tableTitle}</h4>
         {!isRO && (
           <button
-            onClick={handleSimularCredito}
+            onClick={isGPO ? handleCotizarGPO : handleSimularCredito}
+            title={isGPO
+              ? 'Recalcula las comisiones GPO del año con los datos de Términos y Condiciones'
+              : 'Genera la tabla de amortización'}
             className="px-4 py-1.5 btn-secondary-theme rounded text-xs flex items-center gap-1.5"
           >
             <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" strokeWidth="1.5">
               <path d="M6.5 1v5.5L9 9" strokeLinecap="round" strokeLinejoin="round"/>
               <circle cx="6.5" cy="6.5" r="5.5"/>
             </svg>
-            Simular
+            {isGPO ? 'Cotizar' : 'Simular'}
           </button>
         )}
       </div>
@@ -867,8 +1009,60 @@ export function SimulacionTab({ mode, solicitudId, lineaProducto, tipoProducto, 
             <rect x="5" y="8" width="30" height="24" rx="2" />
             <path d="M5 14h30M13 8v6M20 8v6M27 8v6" />
           </svg>
-          No hay simulación generada. Complete los Términos y Condiciones y presione "Simular".
+          {isGPO
+            ? 'No hay comisiones generadas. Presione "Cotizar" para calcularlas con los datos de Términos y Condiciones.'
+            : 'No hay simulación generada. Complete los Términos y Condiciones y presione "Simular".'}
         </div>
+      ) : isGPO ? (
+        /*
+         * BUG FIX (2026-08-25): esta tabla venía pintando columnas de
+         * amortización de crédito (Saldo Insoluto, Capital) sobre filas que
+         * en realidad son comisiones GPO — no hay capital que amortizar, la
+         * GPO solo cobra una comisión periódica sobre el Monto Garantizado.
+         * Spec: Fecha, Comisión del periodo, IVA del periodo y Total; el
+         * número de líneas ya viene acotado a 1 año (ver
+         * construirSimulacionComisionGPO en OportunidadForm.tsx).
+         */
+        <>
+          <div className="border border-gray-300 overflow-auto max-h-[400px]">
+            <table className="w-full text-xs">
+              <thead className="bg-[#2E5C91] text-white sticky top-0">
+                <tr>
+                  <th className="px-2 py-2 text-left font-medium">Fecha</th>
+                  <th className="px-2 py-2 text-right font-medium">Comisión del Periodo</th>
+                  <th className="px-2 py-2 text-right font-medium">IVA del Periodo</th>
+                  <th className="px-2 py-2 text-right font-medium">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r, idx) => (
+                  <tr
+                    key={r.noPago}
+                    className="border-b border-gray-200"
+                    style={{ backgroundColor: idx % 2 === 1 ? '#F5F5F5' : '#FFFFFF' }}
+                  >
+                    <td className="px-2 py-1.5 text-gray-700">{formatDateCalendar(r.fechaPago)}</td>
+                    <td className="px-2 py-1.5 text-right text-gray-700">{formatCurrency(r.pagoInteres)}</td>
+                    <td className="px-2 py-1.5 text-right text-gray-700">{formatCurrency(r.ivaInteres)}</td>
+                    <td className="px-2 py-1.5 text-right font-medium text-gray-800">{formatCurrency(r.pagoTotal)}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="bg-gray-100 border-t-2 border-gray-400 font-medium">
+                  <td className="px-2 py-2 text-gray-800">TOTALES ({rows.length})</td>
+                  <td className="px-2 py-2 text-right text-gray-800">{formatCurrency(totalInteres)}</td>
+                  <td className="px-2 py-2 text-right text-gray-800">{formatCurrency(totalIVA)}</td>
+                  <td className="px-2 py-2 text-right text-gray-900 font-bold">{formatCurrency(totalPago)}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+          <div className="mt-3 text-xs text-gray-500 flex items-center gap-4">
+            <span>Comisiones por año: {rows.length}</span>
+            <span>Total con IVA: {formatCurrency(totalPago)}</span>
+          </div>
+        </>
       ) : (
         <>
           <div className="border border-gray-300 overflow-auto max-h-[400px]">

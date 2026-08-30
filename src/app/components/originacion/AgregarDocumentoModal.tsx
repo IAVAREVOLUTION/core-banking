@@ -61,10 +61,12 @@ interface Props {
   solicitudId: string;
   faseIdActual: number;
   requisitos: RequisitoProducto[];
+  /** Documentos ya cargados — se usan para marcar cuáles del listado ya están. */
+  documentos?: DocumentoCargado[];
   onAdd: (doc: DocumentoCargado) => void;
 }
 
-export function AgregarDocumentoModal({ isOpen, onClose, solicitudId, faseIdActual, requisitos, onAdd }: Props) {
+export function AgregarDocumentoModal({ isOpen, onClose, solicitudId, faseIdActual, requisitos, documentos = [], onAdd }: Props) {
   const [uploading, setUploading] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [tipoDocumento, setTipoDocumento] = useState('');
@@ -73,6 +75,33 @@ export function AgregarDocumentoModal({ isOpen, onClose, solicitudId, faseIdActu
   const fileInputRef = useRef<HTMLInputElement>(null);
   const requisitosFaseActual = requisitos.filter(r => r.faseId <= faseIdActual);
   const tipoFinal = tipoDocumento === '__custom__' ? tipoCustom : tipoDocumento;
+
+  // ── Qué ya está cargado ──
+  // Se compara normalizado (sin acentos, sin mayúsculas, sin espacios de
+  // sobra) porque el tipo del documento cargado es texto libre en el caso
+  // de 'Otro (especificar)' y no siempre coincide carácter por carácter con
+  // el requisito del producto.
+  const normalizar = (t: string) =>
+    (t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+  const tiposCargados = new Set(documentos.map(d => normalizar(d.tipoDocumento)));
+  const yaCargado = (req: RequisitoProducto) => tiposCargados.has(normalizar(req.tipoDocumento));
+
+  // Agrupar por fase conservando el orden de faseId — así se ve de un vistazo
+  // a qué fase pertenece cada requisito, no sólo cuáles están disponibles.
+  const fasesOrdenadas: { fase: string; faseId: number; reqs: RequisitoProducto[] }[] = [];
+  for (const r of [...requisitosFaseActual].sort((a, b) => a.faseId - b.faseId)) {
+    let grupo = fasesOrdenadas.find(g => g.faseId === r.faseId);
+    if (!grupo) {
+      grupo = { fase: r.fase || `Fase ${r.faseId}`, faseId: r.faseId, reqs: [] };
+      fasesOrdenadas.push(grupo);
+    }
+    grupo.reqs.push(r);
+  }
+
+  // Resumen de pendientes obligatorios — responde "¿qué me falta?" sin abrir
+  // el desplegable.
+  const obligatoriosFase = requisitosFaseActual.filter(r => r.obligatorio);
+  const obligatoriosPendientes = obligatoriosFase.filter(r => !yaCargado(r));
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -152,11 +181,37 @@ export function AgregarDocumentoModal({ isOpen, onClose, solicitudId, faseIdActu
                 <select value={tipoDocumento} onChange={e => setTipoDocumento(e.target.value)}
                   className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg bg-white focus:ring-2 focus:ring-[#4A6FA5]/30 focus:border-[#4A6FA5]">
                   <option value="">Seleccionar tipo...</option>
-                  {requisitosFaseActual.map(req => (
-                    <option key={req.id} value={req.tipoDocumento}>{req.tipoDocumento}</option>
+                  {fasesOrdenadas.map(grupo => (
+                    <optgroup key={grupo.faseId} label={grupo.fase}>
+                      {grupo.reqs.map(req => {
+                        const cargado = yaCargado(req);
+                        return (
+                          <option key={req.id} value={req.tipoDocumento} disabled={cargado}>
+                            {cargado ? '✓ ' : ''}{req.tipoDocumento}{req.obligatorio ? ' *' : ''}
+                            {cargado ? ' — ya cargado' : ''}
+                          </option>
+                        );
+                      })}
+                    </optgroup>
                   ))}
                   <option value="__custom__">Otro (especificar)...</option>
                 </select>
+                <p className="mt-1.5 text-[10px] text-gray-500">
+                  {obligatoriosPendientes.length > 0 ? (
+                    <>
+                      <span className="text-amber-600 font-medium">
+                        Faltan {obligatoriosPendientes.length} de {obligatoriosFase.length} obligatorio(s):
+                      </span>
+                      {' '}{obligatoriosPendientes.map(r => r.tipoDocumento).join(', ')}
+                    </>
+                  ) : obligatoriosFase.length > 0 ? (
+                    <span className="text-green-600 font-medium">
+                      Todos los documentos obligatorios de esta fase ya están cargados.
+                    </span>
+                  ) : (
+                    <>Los marcados con <span className="font-medium">*</span> son obligatorios. Sólo se listan los de la fase actual y anteriores.</>
+                  )}
+                </p>
                 {tipoDocumento === '__custom__' && (
                   <input
                     type="text" value={tipoCustom} onChange={e => setTipoCustom(e.target.value)}

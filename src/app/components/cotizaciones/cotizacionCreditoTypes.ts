@@ -126,6 +126,18 @@ export interface CotizacionCreditoData {
   /** HU-CRM-10 CA-04 — Archivos adjuntos de la Oportunidad (Cartas Oferta, etc.). */
   archivosAdjuntos?: ArchivoAdjuntoOportunidad[];
 
+  // ── Cierre Comercial — puente CRM → Originación (LOS) ──
+  /** Evidencia obligatoria para habilitar Cerrada-Ganada: Carta Oferta firmada por el cliente. */
+  documentoAceptacion?: ArchivoAdjuntoOportunidad;
+  /** Read-Only Hard Lock — true tras Cerrada-Ganada; congela todos los campos de la Oportunidad. */
+  congelado?: boolean;
+  /** Motivo capturado al marcar Cerrada-Perdida. */
+  motivoPerdida?: string;
+  /** Referencia a la Solicitud creada automáticamente en el módulo LOS al Cerrar-Ganada. */
+  solicitudLOS?: SolicitudLOSRef;
+  /** Bitácora del gatillo Cierre Comercial — folio, usuario, timestamp, id_solicitud generada. */
+  bitacoraCierreComercial?: BitacoraCierreComercial[];
+
   // ── Estructura Bursátil (HU-CRM-06) ──
   // El producto seleccionado vive en `producto` / producto_id; aquí se guarda
   // el renglón elegido de su Matriz Tasa Fija y lo que se derivó de él.
@@ -178,10 +190,50 @@ export const CAT_ESTATUS_OPORTUNIDAD = [
   'En Cotización',
   'Propuesta Entregada',
   'Negociación',
+  'Carta Oferta',
 ] as const;
 
 /** CA-02 — Estatus con el que nace una Oportunidad. */
 export const ESTATUS_OPORTUNIDAD_INICIAL = 'En Cotización';
+
+/** Cierre Comercial — estados terminales. */
+export const ESTATUS_OPORTUNIDAD_GANADA = 'Ganada Comercial';
+export const ESTATUS_OPORTUNIDAD_PERDIDA = 'Perdida';
+
+/**
+ * Estados terminales que SÍ se listan en el combo de Estatus de la
+ * Oportunidad, pero que no se eligen a mano: los mueve automáticamente el
+ * Cierre Comercial ([Cerrada-Ganada] / [Cerrada-Perdida]). Se muestran en la
+ * lista para que el ejecutivo vea el pipeline completo de un vistazo.
+ */
+export const CAT_ESTATUS_OPORTUNIDAD_CIERRE = [
+  ESTATUS_OPORTUNIDAD_GANADA,
+  ESTATUS_OPORTUNIDAD_PERDIDA,
+] as const;
+
+// ═══════════════════════════════════════════════════════════════
+// Cierre Comercial — puente CRM → Originación (LOS)
+// ═══════════════════════════════════════════════════════════════
+
+/** Referencia a la Solicitud creada automáticamente en el módulo LOS. */
+export interface SolicitudLOSRef {
+  /** UUID en J_CUENTAS_CORP_CLIENTES. */
+  id: string;
+  /** Folio legible de la Solicitud (BAN-DIGITAL-...). */
+  noSol: string;
+  fecha: string;
+}
+
+/** Entrada de bitácora del gatillo Cierre Comercial (Cerrada-Ganada / Cerrada-Perdida). */
+export interface BitacoraCierreComercial {
+  fecha: string;
+  usuario: string;
+  folioCRM: string;
+  resultado: 'Ganada' | 'Perdida' | 'Error';
+  idSolicitudLOS?: string;
+  motivo?: string;
+  detalle?: string;
+}
 
 // ═══════════════════════════════════════════════════════════════
 // Fila de la tabla de amortización — spec §10

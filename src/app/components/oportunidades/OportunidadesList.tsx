@@ -44,6 +44,9 @@ const renderEstatus = (estatus: string) => {
   if (lower === 'en cotización') bg = 'bg-yellow-100 text-yellow-800';
   else if (lower === 'propuesta entregada') bg = 'bg-blue-100 text-blue-800';
   else if (lower === 'negociación') bg = 'bg-indigo-100 text-indigo-800';
+  // Cierre Comercial — estados terminales (ver ESTATUS_OPORTUNIDAD_GANADA/PERDIDA)
+  else if (lower === 'ganada comercial') bg = 'bg-green-100 text-green-800 font-medium';
+  else if (lower === 'perdida') bg = 'bg-red-100 text-red-800';
   // Estatus heredados de cotizaciones previas
   else if (lower === 'pendiente') bg = 'bg-yellow-100 text-yellow-800';
   else if (lower === 'aprobada' || lower === 'aceptada') bg = 'bg-green-100 text-green-800';

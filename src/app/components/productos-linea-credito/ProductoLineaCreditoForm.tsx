@@ -398,7 +398,10 @@ export function ProductoLineaCreditoForm({
           tasasReferenciaRegistros: tasasReferencia || [],
           // Tabs sin forwardRef: datos desde formData
           jerarquiaProductos: formData.jerarquias || [],
-          comitesCredito: comitesRef.current?.getData() || formData.comites || [],
+          // "Comités Registrados" (bitácora) se retiró de la UI del producto — no aplica
+          // a configuración de producto, así que se conserva sin tocar lo que ya hubiera.
+          comitesCredito: formData.comites || [],
+          comiteEscalamiento: comitesRef.current?.getEscalamiento() || formData.comiteEscalamiento || [],
           periodicidad: formData.periodicidades || [],
           ivaPorcentaje: formData.ivaPorcentaje || [],
           exentoIVA: formData.exentoIva || [],
@@ -462,7 +465,7 @@ export function ProductoLineaCreditoForm({
   const valorResidualRef = useRef<{ getData: () => any[] }>(null);
   const rentaAnticipadaRef = useRef<{ getData: () => any[] }>(null);
   const expedientesRef = useRef<{ getData: () => any[] }>(null);
-  const comitesRef = useRef<{ getData: () => any[] }>(null);
+  const comitesRef = useRef<{ getEscalamiento: () => any[] }>(null);
   const plantillasRef = useRef<{ getData: () => any[] }>(null);
   // Subtabs de Garantía Financiera 2o Piso (REQ-8)
   const prelacion2oPisoRef = useRef<{ getData: () => any[] }>(null);
@@ -728,7 +731,7 @@ export function ProductoLineaCreditoForm({
                 mode={mode === 'create' ? 'create' : mode === 'edit' ? 'edit' : 'view'}
                 productId={productId}
                 montoSolicitado={formData.montoMinimo?.toString()}
-                initialData={formData.comites || []}
+                initialEscalamiento={formData.comiteEscalamiento || []}
                 persistToStorage
               />
             )}

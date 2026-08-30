@@ -34,6 +34,18 @@ export interface ComiteCreditoLineaCredito {
   estatus: string;
 }
 
+/**
+ * Escalamiento de Comité por Monto — matriz de configuración del PRODUCTO
+ * (no una bitácora de autorizaciones en tiempo de solicitud).
+ * Ej.: $500,000,000 – $1,000,000,000 → COMITÉ 1.
+ */
+export interface ComiteEscalamientoMonto {
+  id: number;
+  montoDesde: number | string;
+  montoHasta: number | string;
+  comiteAsignado: string;
+}
+
 export interface PeriodicidadLineaCredito {
   id: number;
   periodicidad: string;
@@ -162,6 +174,7 @@ export interface ProductoLineaCredito {
   garantias?: GarantiaLineaCredito[];
   jerarquias?: JerarquiaProductoLineaCredito[];
   comites?: ComiteCreditoLineaCredito[];
+  comiteEscalamiento?: ComiteEscalamientoMonto[];
   periodicidades?: PeriodicidadLineaCredito[];
   fases?: FaseLineaCredito[];
   matrizTasaFija?: MatrizTasaFijaLineaCredito[];

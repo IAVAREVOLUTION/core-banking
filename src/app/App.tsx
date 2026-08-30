@@ -55,6 +55,7 @@ import { EjecReportesModule } from './components/reportes-regulatorios/EjecRepor
 import { PagosReferenciadosModule } from './components/pagos-referenciados/PagosReferenciadosModule';
 import { CasosCobranzaModule } from './components/casos-cobranza/CasosCobranzaModule';
 import { CarteraList } from './components/cartera/CarteraList';
+import { Banca2oPisoModule } from './components/banca-2o-piso/Banca2oPisoModule';
 import { AportacionesModule } from './components/cartera/AportacionesModule';
 import { CobranzaModule } from './components/cartera/CobranzaModule';
 import { CotizacionesModule } from './components/cotizaciones/CotizacionesModule';
@@ -69,7 +70,7 @@ import { useProductosCaptacionDB } from './hooks/useProductosCaptacionDB';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 
 type View = 'list' | 'form' | 'direccion';
-type Module = 'dashboard' | 'configuracion' | 'productos' | 'garantias' | 'prospectos' | 'clientes' | 'oportunidades' | 'cotizaciones' | 'cuentas-ahorro' | 'solicitudes-creditos' | 'solicitudes-activacion' | 'originacion' | 'creditos' | 'inversiones' | 'cartera-credito' | 'cartera-arrendamiento' | 'cartera-inversion' | 'cartera-ahorro' | 'avisos-vencimiento' | 'pld' | 'pagos-referenciados' | 'casos-cobranza' | 'cobranza' | 'ejec-reportes' | 'polizas-contables' | 'gestion-riesgos' | 'une';
+type Module = 'dashboard' | 'configuracion' | 'productos' | 'garantias' | 'prospectos' | 'clientes' | 'oportunidades' | 'cotizaciones' | 'cuentas-ahorro' | 'solicitudes-creditos' | 'solicitudes-activacion' | 'originacion' | 'creditos' | 'inversiones' | 'cartera-credito' | 'cartera-arrendamiento' | 'cartera-inversion' | 'cartera-ahorro' | 'avisos-vencimiento' | 'pld' | 'pagos-referenciados' | 'casos-cobranza' | 'cobranza' | 'ejec-reportes' | 'polizas-contables' | 'gestion-riesgos' | 'banca-2o-piso' | 'une';
 type ClienteView = 'dashboard' | 'list' | 'form' | 'direccion';
 type ProspectoView = 'dashboard' | 'list' | 'form';
 type SolicitudView = 'dashboard' | 'list' | 'form';
@@ -122,7 +123,15 @@ function App() {
 
   // ── Deep-link para navegar al módulo Cotizaciones con un ID específico ──
   const [cotizacionDeepLink, setCotizacionDeepLink] = useState<{ id: string; linea: string } | null>(null);
-  const [solicitudDeepLink, setSolicitudDeepLink] = useState<{ dbId: string; noSol: string; fromClienteId?: string } | null>(null);
+  const [solicitudDeepLink, setSolicitudDeepLink] = useState<{
+    dbId: string;
+    noSol: string;
+    fromClienteId?: string;
+    mode?: 'ver' | 'editar';
+    volverAOportunidadId?: string;
+  } | null>(null);
+  /** Oportunidad a reabrir cuando se cancela una Solicitud abierta desde ella. */
+  const [oportunidadDeepLinkId, setOportunidadDeepLinkId] = useState<string | null>(null);
 
   // ── Datos de cotización para pre-llenar nueva solicitud (flujo Cotización → Solicitud) ──
   const [cotizacionParaSolicitud, setCotizacionParaSolicitud] = useState<any>(null);
@@ -133,9 +142,14 @@ function App() {
     setCurrentModule('cotizaciones');
   };
 
-  const handleNavigateToSolicitud = (solicitudId: string, noSol: string, fromClienteId?: string) => {
-    console.log(`[App] Navegando a Solicitudes → dbId=${solicitudId}, noSol=${noSol}, fromClienteId=${fromClienteId}`);
-    setSolicitudDeepLink({ dbId: solicitudId, noSol, fromClienteId });
+  const handleNavigateToSolicitud = (
+    solicitudId: string,
+    noSol: string,
+    fromClienteId?: string,
+    opts?: { mode?: 'ver' | 'editar'; volverAOportunidadId?: string },
+  ) => {
+    console.log(`[App] Navegando a Solicitudes → dbId=${solicitudId}, noSol=${noSol}, fromClienteId=${fromClienteId}`, opts);
+    setSolicitudDeepLink({ dbId: solicitudId, noSol, fromClienteId, ...opts });
     setCurrentModule('solicitudes-creditos');
     setSolicitudView('list');
   };
@@ -701,6 +715,7 @@ function App() {
     { id: 'casos-cobranza', label: 'Casos de Cobranza' },
     { id: 'cobranza', label: 'Cobranza' },
     { id: 'avisos-vencimiento', label: 'Avisos de Vencimiento' },
+    { id: 'banca-2o-piso', label: 'Banca 2º Piso' },
     { id: 'cartera-credito', label: 'Cartera crédito' },
     { id: 'cartera-arrendamiento', label: 'Cartera Arrendamiento' },
     { id: 'cartera-inversion', label: 'Cartera inversión' },
@@ -1287,6 +1302,10 @@ function App() {
           <OportunidadesModule
             leadParaOportunidad={leadParaOportunidad}
             onLeadParaOportunidadConsumido={() => setLeadParaOportunidad(null)}
+            onNavigateToSolicitud={handleNavigateToSolicitud}
+            onCrearSolicitudDesdeOportunidad={handleCrearSolicitudDesdeCotizacion}
+            oportunidadDeepLinkId={oportunidadDeepLinkId}
+            onOportunidadDeepLinkConsumido={() => setOportunidadDeepLinkId(null)}
           />
         ) : currentModule === 'cotizaciones' ? (
           <CotizacionesModule
@@ -1341,6 +1360,11 @@ function App() {
                 onSolicitudDeepLinkConsumed={() => setSolicitudDeepLink(null)}
                 onBackToCliente={() => {
                   setCurrentModule('clientes');
+                  setSolicitudView('dashboard');
+                }}
+                onBackToOportunidad={(oportunidadId) => {
+                  setOportunidadDeepLinkId(oportunidadId);
+                  setCurrentModule('oportunidades');
                   setSolicitudView('dashboard');
                 }}
               />
@@ -1447,6 +1471,8 @@ function App() {
           <CasosCobranzaModule />
         ) : currentModule === 'cobranza' ? (
           <CobranzaModule />
+        ) : currentModule === 'banca-2o-piso' ? (
+          <Banca2oPisoModule />
         ) : currentModule === 'cartera-credito' ? (
           <CarteraModule />
         ) : currentModule === 'cartera-arrendamiento' ? (

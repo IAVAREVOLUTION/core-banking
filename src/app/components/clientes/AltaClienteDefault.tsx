@@ -661,7 +661,11 @@ export function AltaClienteDefault({ onBack, onSave, mode, cliente, onNavigateTo
         direccionEmpresa: g('direccionEmpresa') || '',
         
         sector: gMulti('sector', 'sectorCNBV', 'sectorEconomico') || '',
-        actividadEconomica1: gMulti('actividadEconomica1', 'actividadEconomica', 'actividad_economica') || '',
+        // BUG FIX: falta 'giroEmpresa' — así lo captura ProspectoForm.tsx en
+        // Persona Moral ("Giro de la Empresa"). Sin este alias, un Prospecto
+        // Moral convertido a Cliente llega aquí con Actividad Económica vacía
+        // aunque el Giro sí se haya guardado en el mismo registro.
+        actividadEconomica1: gMulti('actividadEconomica1', 'actividadEconomica', 'actividad_economica', 'giroEmpresa') || '',
         actividadEconomica2: g('actividadEconomica2') || '',
         datosAdicionales: g('datosAdicionales') || '',
         

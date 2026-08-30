@@ -63,9 +63,12 @@ function mapRow(r: any): SolicitudCorpFin {
   };
 }
 
+/** cotizacion_id es UUID en BD — un id local sin guardar (p.ej. "local-171...") no es consultable. */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /**
  * @param cotizacionId  Oportunidad de la que se listan solicitudes.
- *                      Sin valor, el hook queda inactivo (no consulta).
+ *                      Sin valor (o sin guardar en BD todavía), el hook queda inactivo.
  */
 export function useCorpFinDB(cotizacionId?: string | null) {
   const [solicitudes, setSolicitudes] = useState<SolicitudCorpFin[]>([]);
@@ -73,7 +76,7 @@ export function useCorpFinDB(cotizacionId?: string | null) {
   const [error, setError] = useState<string | null>(null);
 
   const fetchSolicitudes = useCallback(async () => {
-    if (!cotizacionId) {
+    if (!cotizacionId || !UUID_RE.test(cotizacionId)) {
       setSolicitudes([]);
       return;
     }
@@ -98,9 +101,13 @@ export function useCorpFinDB(cotizacionId?: string | null) {
   useEffect(() => { fetchSolicitudes(); }, [fetchSolicitudes]);
 
   const crear = useCallback(async (input: CorpFinInput): Promise<{ ok: boolean; id?: string; folio?: string; error?: string }> => {
+    const cotizacionIdFinal = input.cotizacion_id ?? cotizacionId ?? '';
+    if (!cotizacionIdFinal || !UUID_RE.test(cotizacionIdFinal)) {
+      return { ok: false, error: 'Guarde la Oportunidad en la base de datos antes de registrar solicitudes corporativas.' };
+    }
     try {
       const { data, error: rpcError } = await supabase.rpc('insert_corp_fin', {
-        p_payload: { ...input, cotizacion_id: input.cotizacion_id ?? cotizacionId ?? '' },
+        p_payload: { ...input, cotizacion_id: cotizacionIdFinal },
       });
       if (rpcError) throw rpcError;
       const row = Array.isArray(data) ? data[0] : data;

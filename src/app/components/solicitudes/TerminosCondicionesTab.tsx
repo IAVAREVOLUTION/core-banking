@@ -41,6 +41,8 @@ interface Props {
    * por el usuario no tenía efecto — mismo motivo que onMontoAutorizadoChange.
    */
   onTasaChange?: (tasa: string) => void;
+  /** Sincroniza la Frecuencia capturada aquí hacia el encabezado — la cotización GPO la usa como periodicidad. */
+  onFrecuenciaChange?: (frecuencia: string) => void;
   /** % Enganche seleccionado en el encabezado (Arrendamiento) — fuente de verdad; Términos lo usa para calcular Monto Autorizado/Enganche */
   porcentajeEngancheHeader?: string;
   /** Plazo capturado en el encabezado (junto al producto) — fuente de verdad; Términos lo usa en sus cálculos internos (tasa, seguro, validaciones de rango) */
@@ -284,7 +286,7 @@ function extractTerminosFromProduct(prod: ProductoCatalogo): Partial<TerminosCon
   return result;
 }
 
-export function TerminosCondicionesTab({ mode, solicitudId, lineaProducto, tipoProducto, productoSeleccionado, montoSolicitadoHeader, fechaInicioHeader, tasaCotizacion, plazoCotizacion, cotizacionTerminos, onFechaPrimeraAportacionChange, onValidationChange, onMontoAutorizadoChange, onTasaChange, porcentajeEngancheHeader, plazoHeader, onPlazoLoaded, tasaHeader, frecuenciaHeader, tasaRangoMatriz, plazoRangoMatriz }: Props) {
+export function TerminosCondicionesTab({ mode, solicitudId, lineaProducto, tipoProducto, productoSeleccionado, montoSolicitadoHeader, fechaInicioHeader, tasaCotizacion, plazoCotizacion, cotizacionTerminos, onFechaPrimeraAportacionChange, onValidationChange, onMontoAutorizadoChange, onTasaChange, onFrecuenciaChange, porcentajeEngancheHeader, plazoHeader, onPlazoLoaded, tasaHeader, frecuenciaHeader, tasaRangoMatriz, plazoRangoMatriz }: Props) {
   console.log('[TerminosTab] MOUNT - productoSeleccionado:', productoSeleccionado?.nombreProducto, '| productoId:', productoSeleccionado?.id);
   // Track which productoId was last applied to avoid re-applying
   const lastAppliedProductoId = useRef<string>('');
@@ -326,6 +328,33 @@ export function TerminosCondicionesTab({ mode, solicitudId, lineaProducto, tipoP
 
   const [data, setData] = useState<TerminosCondiciones>(getInit);
   const isRO = mode === 'ver';
+
+  /**
+   * Frecuencias que ofrece el select — las que declara la Matriz de Tasa
+   * Fija del producto (columna FRECUENCIA de cada fila, campo `periodo`).
+   *
+   * El Plazo y la Tasa ya se eligen en esa matriz desde el encabezado; la
+   * periodicidad es parte de la MISMA fila, así que ofrecer todo
+   * CAT_FRECUENCIA dejaba capturar combinaciones que el producto no
+   * contempla (p. ej. Semanal en un producto que sólo cobra Anual).
+   * Si el producto no trae matriz, se conserva el catálogo completo.
+   */
+  const opcionesFrecuencia = useMemo(() => {
+    const rd = (productoSeleccionado as any)?.rawData;
+    const filas: any[] = Array.isArray(rd?.matrizTasaFija) ? rd.matrizTasaFija : [];
+    const periodos: string[] = [];
+    for (const f of filas) {
+      const per = String(f?.periodo ?? '').trim();
+      if (per && !periodos.includes(per)) periodos.push(per);
+    }
+    if (periodos.length === 0) return CAT_FRECUENCIA;
+    // Respetar label/dias del catálogo cuando el periodo existe ahí; si la
+    // matriz declara uno fuera de catálogo, mostrarlo tal cual en vez de
+    // descartarlo y dejar el select vacío.
+    return periodos.map(per =>
+      CAT_FRECUENCIA.find(f => f.value === per) || { value: per, label: per, dias: 30 },
+    );
+  }, [productoSeleccionado]);
 
   // ── Monto efectivo — debe ir PRIMERO, otros hooks lo usan ──
   const montoEfectivo = useMemo(() => {
@@ -437,12 +466,46 @@ export function TerminosCondicionesTab({ mode, solicitudId, lineaProducto, tipoP
   }, [tasaHeader]);
 
   // Frecuencia autocompletada desde la fila de la Matriz seleccionada (encabezado).
+  //
+  // BUG FIX: este tab se monta/desmonta con cada cambio de pestaña (se pinta
+  // condicionalmente en SolicitudCreditoForm), así que el efecto volvía a
+  // correr en cada regreso y pisaba con el valor del encabezado la Frecuencia
+  // que el usuario acababa de elegir. El encabezado no se entera del cambio
+  // (a diferencia de la Tasa, que sí avisa con onTasaChange), de modo que
+  // seguía trayendo el valor viejo — el clásico "la cambio a Mensual y se
+  // regresa a Anual". Ahora en el montaje solo autocompleta si todavía no hay
+  // Frecuencia capturada; una vez montado, sigue obedeciendo al encabezado
+  // para que elegir otra fila de la Matriz sí la actualice.
+  const frecuenciaHeaderVistaRef = useRef<string | undefined>(undefined);
   useEffect(() => {
-    if (frecuenciaHeader && frecuenciaHeader !== data.frecuencia) {
+    const esMontaje = frecuenciaHeaderVistaRef.current === undefined;
+    frecuenciaHeaderVistaRef.current = frecuenciaHeader;
+    if (!frecuenciaHeader) return;
+    if (esMontaje && data.frecuencia) return;
+    if (frecuenciaHeader !== data.frecuencia) {
       setData(prev => ({ ...prev, frecuencia: frecuenciaHeader }));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [frecuenciaHeader]);
+
+  // La Frecuencia guardada debe existir en el catálogo que se está pintando.
+  // Si no (producto cambiado, Solicitud vieja, o valor heredado que la matriz
+  // no contempla), el <select> pintaría la primera opción sin que nadie la
+  // haya elegido — un valor fantasma. Aquí se encuadra de forma explícita.
+  useEffect(() => {
+    if (isRO) return;
+    const permitidas = opcionesFrecuencia.map(f => f.value);
+    if (permitidas.length === 0) return;
+    if (data.frecuencia && permitidas.includes(data.frecuencia)) return;
+    const elegida = frecuenciaHeader && permitidas.includes(frecuenciaHeader)
+      ? frecuenciaHeader
+      : permitidas[0];
+    if (elegida && elegida !== data.frecuencia) {
+      setData(prev => ({ ...prev, frecuencia: elegida }));
+      onFrecuenciaChange?.(elegida);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [opcionesFrecuencia.map(f => f.value).join('|'), data.frecuencia, isRO]);
 
   // Recalcular Monto Enganche, Monto Autorizado y Monto Residual — solo Arrendamiento Puro.
   // % Valor Residual ahora es una selección del usuario (subtab Valor Residual del
@@ -785,6 +848,14 @@ export function TerminosCondicionesTab({ mode, solicitudId, lineaProducto, tipoP
     return null;
   }, [data.tasa, tasaRangoMatriz]);
 
+  // Señal GPO disponible temprano: la validación corre en este useMemo, que
+  // se declara ANTES de los helpers gpo()/_tpRaw, así que no puede usar esGPO
+  // (daría error por zona muerta temporal). Aquí basta con mirar el propio data.
+  const esGpoPorDatos = !!(
+    data.periodicidadCobroGpo || data.porcentajeCoberturaGpo ||
+    data.montoGarantizadoGpo || data.sectorInfraestructura
+  );
+
   const validationErrors = useMemo(() => {
     const errs: Record<string, string> = {};
     const limits = productoSeleccionado ? extractProductLimits(productoSeleccionado) : {};
@@ -836,9 +907,9 @@ export function TerminosCondicionesTab({ mode, solicitudId, lineaProducto, tipoP
         // Arrendamiento/Crédito: ya hay una fila de Matriz seleccionada explícitamente
         // (encabezado) — validar solo contra ESE rango, no contra toda la matriz.
         if (!plazoNum || plazoNum <= 0) {
-          errs.plazo = `Plazo debe estar en: ${plazoRangoMatriz.min}-${plazoRangoMatriz.max} meses`;
+          errs.plazo = `Plazo debe estar en: ${plazoRangoMatriz.min}-${plazoRangoMatriz.max} ${esGpoPorDatos ? 'años' : 'meses'}`;
         } else if (plazoNum < plazoRangoMatriz.min || plazoNum > plazoRangoMatriz.max) {
-          errs.plazo = `Plazo debe estar en: ${plazoRangoMatriz.min}-${plazoRangoMatriz.max} meses`;
+          errs.plazo = `Plazo debe estar en: ${plazoRangoMatriz.min}-${plazoRangoMatriz.max} ${esGpoPorDatos ? 'años' : 'meses'}`;
         }
       } else if (matrizPlazoRanges.length > 0) {
         // Captación Inversión: sin fila seleccionada explícita — plazo debe caer
@@ -902,6 +973,36 @@ export function TerminosCondicionesTab({ mode, solicitudId, lineaProducto, tipoP
 
   const isCaptacion = lineaProducto === 'Captación';
   const isLineaCredito = lineaProducto === 'Línea de Crédito';
+
+  /**
+   * Valores GPO con respaldo directo del JSONB original.
+   *
+   * BUG FIX (2026-08-25): estos 6 campos llegaban a `data` por una cadena
+   * larga y frágil — BD → preloadSubtabsFromDBData → sessionStorage
+   * 'terminos' → getInit (que solo lee UNA vez, al montar). Cualquier
+   * desfase de tiempo en esa cadena dejaba los seis en blanco y la sección
+   * mostraba "—" aunque la Solicitud tuviera los datos completos en la base
+   * (verificado: BAN-DIGITAL-20260825-000004 los tiene, 6/6).
+   *
+   * `_originalData` es el JSONB tal cual vino de la BD y lo siembra la misma
+   * función, en sessionStorage Y en el store en memoria. Leerlo aquí como
+   * respaldo hace que la sección no dependa del round-trip por `terminos`:
+   * si `data` los trae, se usan; si no, se leen del original.
+   */
+  const gpoFallback = useMemo<Record<string, any>>(() => {
+    const orig =
+      loadFromSession<any>(solicitudId, '_originalData') ||
+      loadFromSavedStore<any>(solicitudId, '_originalData');
+    return orig?.solicitud?.terminos_condiciones?._raw || {};
+  }, [solicitudId]);
+
+  /** data (lo capturado/sembrado) manda; si viene vacío, cae al JSONB original. */
+  const gpo = (campo: keyof TerminosCondiciones): string => {
+    const v = (data as any)[campo];
+    if (v !== undefined && v !== null && v !== '') return String(v);
+    const f = gpoFallback[campo as string];
+    return f !== undefined && f !== null && f !== '' ? String(f) : '';
+  };
   const _tpRaw = (
     productoSeleccionado?.tipoProducto ||
     productoSeleccionado?.sublineaProducto ||
@@ -911,6 +1012,31 @@ export function TerminosCondicionesTab({ mode, solicitudId, lineaProducto, tipoP
     ''
   ).toLowerCase();
   const isInversion = isCaptacion && _tpRaw.includes('invers');
+
+
+  /**
+   * Garantía Financiera 2o Piso — la GPO no financia un bien ni lleva seguro:
+   * cobra una comisión periódica sobre el Monto Garantizado. Bien y Seguro
+   * Financiado no aplican y solo estorban en la captura.
+   *
+   * Misma detección que SimulacionTab: el nombre no siempre delata al
+   * producto (la Solicitud real que genera el Cierre Comercial guarda
+   * tipo_producto = "Simple" y linea_producto = "Línea de Crédito"), así que
+   * la señal confiable son los propios datos GPO heredados.
+   */
+  const esGPO = _tpRaw.includes('garant')
+    || !!gpo('periodicidadCobroGpo')
+    || !!gpo('porcentajeCoberturaGpo')
+    || !!gpo('montoGarantizadoGpo')
+    || !!gpo('sectorInfraestructura');
+
+  /**
+   * Unidad del Plazo. Crédito/Arrendamiento lo capturan en meses; Garantía
+   * Financiera 2o Piso lo captura en AÑOS — un GPO a 20 son 20 años, no 20
+   * meses. El encabezado de la Matriz de Tasa Fija dice "PLAZO (MESES)"
+   * para todos los productos, así que aquí se rotula según corresponda.
+   */
+  const unidadPlazo = esGPO ? 'años' : 'meses';
 
   return (
     <div className="border border-gray-200 bg-white p-5">
@@ -998,7 +1124,7 @@ export function TerminosCondicionesTab({ mode, solicitudId, lineaProducto, tipoP
           <div>
             <label className="block text-xs text-gray-700 mb-1">
               Plazo <span className="text-red-500">*</span>
-              {plazoRangoMatriz && <span className="ml-1 text-gray-400 font-normal">({plazoRangoMatriz.min}–{plazoRangoMatriz.max} meses)</span>}
+              {plazoRangoMatriz && <span className="ml-1 text-gray-400 font-normal">({plazoRangoMatriz.min}–{plazoRangoMatriz.max} {unidadPlazo})</span>}
             </label>
             <input
               type="text" inputMode="decimal"
@@ -1021,8 +1147,18 @@ export function TerminosCondicionesTab({ mode, solicitudId, lineaProducto, tipoP
         <div className="space-y-3">
           <div>
             <label className="block text-xs text-gray-700 mb-1">Frecuencia <span className="text-red-500">*</span></label>
-            <select value={data.frecuencia} onChange={e => set('frecuencia', e.target.value)} disabled={isRO} className={sc()}>
-              {CAT_FRECUENCIA.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
+            <select
+              value={data.frecuencia}
+              onChange={e => {
+                set('frecuencia', e.target.value);
+                // Mantener el encabezado en sincronía — sin esto conserva el
+                // valor viejo y lo reimpone al volver a montar este tab.
+                onFrecuenciaChange?.(e.target.value);
+              }}
+              disabled={isRO}
+              className={sc()}
+            >
+              {opcionesFrecuencia.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
             </select>
           </div>
 
@@ -1198,7 +1334,7 @@ export function TerminosCondicionesTab({ mode, solicitudId, lineaProducto, tipoP
               <label className="block text-xs text-gray-700 mb-1">Plazo</label>
               <input
                 type="text"
-                value={data.plazo ? `${data.plazo} meses` : ''}
+                value={data.plazo ? `${data.plazo} ${unidadPlazo}` : ''}
                 disabled
                 placeholder="Seleccione en Plazos y Montos"
                 className={ic(true)}
@@ -1220,8 +1356,8 @@ export function TerminosCondicionesTab({ mode, solicitudId, lineaProducto, tipoP
         </div>
       )}
 
-      {/* ── Bien (Garantía) — solo Crédito y Línea de Crédito ── */}
-      {!isCaptacion && (
+      {/* ── Bien (Garantía) — solo Crédito y Línea de Crédito, nunca GPO ── */}
+      {!isCaptacion && !esGPO && (
         <div className="mt-4 pt-4 border-t border-gray-200">
           <div className="flex items-center gap-3 mb-3">
             <label className="flex items-center gap-2 text-xs font-semibold text-gray-700 uppercase tracking-wide cursor-pointer">
@@ -1339,8 +1475,8 @@ export function TerminosCondicionesTab({ mode, solicitudId, lineaProducto, tipoP
         </div>
       )}
 
-      {/* ── Seguro Financiado — solo Crédito y Línea de Crédito ── */}
-      {!isCaptacion && (
+      {/* ── Seguro Financiado — solo Crédito y Línea de Crédito, nunca GPO ── */}
+      {!isCaptacion && !esGPO && (
         <div className="mt-4 pt-4 border-t border-gray-200">
           <div className="flex items-center gap-3 mb-3">
             <label className="flex items-center gap-2 text-xs font-semibold text-gray-700 uppercase tracking-wide cursor-pointer">
@@ -1569,6 +1705,72 @@ export function TerminosCondicionesTab({ mode, solicitudId, lineaProducto, tipoP
           <p className="text-xs text-purple-800">
             <strong>Línea de Crédito:</strong> La simulación generará una tabla de amortización para disposiciones sobre la línea.
           </p>
+        </div>
+      )}
+
+      {/*
+        BUG FIX (2026-08-25): estos campos ya llegaban hasta la BD (ver
+        formToDBPayload en useSolicitudesDB.ts, líneas coreTerminosRaw) y ya se
+        sembraban en `data` vía cotizacionTerminos (getInit más arriba), pero
+        nunca se renderizaban en ningún lado — el usuario los daba por
+        "perdidos" porque nada los mostraba, no porque no llegaran.
+        Se detecta por la presencia del dato (no por tipoProducto) porque el
+        producto GPO puede tener tipoProducto genérico "Línea de Crédito".
+      */}
+      {/* CAMBIO (2026-08-25): la condición era por presencia de datos, así que
+          si la Solicitud no hidrataba bien la sección DESAPARECÍA por completo
+          y no había forma de notar que faltaban los campos. La spec la pide
+          por tipo de producto: se muestra siempre en Línea de Crédito / GPO,
+          y los valores que falten se ven como "—". Un hueco visible es mucho
+          más útil que una sección invisible. */}
+      {(isLineaCredito || gpo('periodicidadCobroGpo') || gpo('sectorInfraestructura') || gpo('porcentajeCoberturaGpo')) && (
+        <div className="mt-4 border border-teal-200 rounded overflow-hidden">
+          <div className="bg-teal-50 border-b border-teal-200 px-3 py-2">
+            <span className="text-xs font-medium text-teal-800 uppercase">
+              Garantía Financiera 2o Piso — heredado de la Oportunidad (Cierre Comercial)
+            </span>
+          </div>
+          <div className="grid grid-cols-3 gap-x-6 gap-y-3 p-3">
+            <div>
+              <label className="block text-xs text-gray-700 mb-1">Sector de Infraestructura</label>
+              <input type="text" value={gpo('sectorInfraestructura') || '—'} disabled className={ic(true)} />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-700 mb-1">Monto Emisión Proyectado</label>
+              <input
+                type="text"
+                value={gpo('montoEmisionProyectado') ? formatCurrency(parseFloat(gpo('montoEmisionProyectado')) || 0) : '—'}
+                disabled
+                className={ic(true)}
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-700 mb-1">% Cobertura GPO</label>
+              <input type="text" value={gpo('porcentajeCoberturaGpo') ? `${gpo('porcentajeCoberturaGpo')}%` : '—'} disabled className={ic(true)} />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-700 mb-1">Monto Garantizado GPO</label>
+              <input
+                type="text"
+                value={gpo('montoGarantizadoGpo') ? formatCurrency(parseFloat(gpo('montoGarantizadoGpo')) || 0) : '—'}
+                disabled
+                className={ic(true)}
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-700 mb-1">Tasa Comisión Anual Pactada</label>
+              <input type="text" value={gpo('tasaComisionAnualPactada') ? `${gpo('tasaComisionAnualPactada')}%` : '—'} disabled className={ic(true)} />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-700 mb-1">Periodicidad Cobro Comisión <span className="text-red-500">*</span></label>
+              <input type="text" value={gpo('periodicidadCobroGpo') || '—'} disabled className={ic(true)} />
+              <p className="text-[10px] text-gray-500 mt-0.5">
+                Heredado de la Oportunidad; no se captura aquí. Determina cada cuánto se cobra la
+                comisión — es independiente del <span className="font-medium">Plazo</span> y de la
+                <span className="font-medium"> Frecuencia</span> del producto.
+              </p>
+            </div>
+          </div>
         </div>
       )}
     </div>

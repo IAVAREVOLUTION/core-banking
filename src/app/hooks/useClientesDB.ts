@@ -106,10 +106,20 @@ function mapRowToCliente(row: JClienteRow, index: number): ClienteDB {
   const def = (d.default || {}) as Record<string, any>;
   const g = (key: string) => (d[key] as string) || (def[key] as string) || '';
 
-  const nombre = g('nombre');
-  const apellidoPaterno = g('apellidoPaterno');
-  const apellidoMaterno = g('apellidoMaterno');
-  const nombreCompleto = [nombre, apellidoPaterno, apellidoMaterno].filter(Boolean).join(' ');
+  // BUG FIX — Persona Moral no tiene nombre/apellidos; su nombre vive en
+  // denominacionRazonSocial. Un bug ya corregido en ProspectoForm.tsx llegó
+  // a inyectar palabras de la Razón Social en apellidoPaterno/apellidoMaterno
+  // (crecía en cada guardado: "PRUEBA 2 2 2"); ese guardado parcial nunca
+  // puede limpiarse a '' (los vacíos se ignoran para no borrar datos por
+  // accidente), así que aquí se ignoran esos dos campos POR COMPLETO para
+  // Moral, sin importar qué haya quedado guardado.
+  const esMoral = row.subtipo === 'Persona Moral';
+  const nombre = g('nombre') || g('denominacionRazonSocial') || g('razonSocial');
+  const apellidoPaterno = esMoral ? '' : g('apellidoPaterno');
+  const apellidoMaterno = esMoral ? '' : g('apellidoMaterno');
+  const nombreCompleto = esMoral
+    ? (g('denominacionRazonSocial') || g('razonSocial') || nombre)
+    : [nombre, apellidoPaterno, apellidoMaterno].filter(Boolean).join(' ');
 
   return {
     dbUuid: row.id,

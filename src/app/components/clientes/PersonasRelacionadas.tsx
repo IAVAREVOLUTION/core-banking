@@ -116,6 +116,10 @@ const TIPOS_RELACION = [
   'Tutor',
   'Aval',
   'Beneficiario',
+  // Estructuras de Segundo Piso (Garantía Financiera 2o Piso): el Fideicomiso de
+  // fuente de pago y el Beneficiario Legal que puede ejecutar la garantía.
+  'Beneficiario Legal',
+  'Fideicomiso',
   'Referencia Personal',
   'Referencia Comercial',
   'Otro',

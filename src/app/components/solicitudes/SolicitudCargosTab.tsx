@@ -8,6 +8,7 @@ import {
   esArrendamiento,
 } from './solicitudCreditoStore';
 import type { SimulacionArrendamiento } from '../cotizaciones/cotizacionArrendamientoTypes';
+import { useComponentesContablesCatalogo } from '@/app/hooks/useComponentesContablesCatalogo';
 
 interface Props {
   mode: 'nuevo' | 'editar' | 'ver';
@@ -17,6 +18,10 @@ interface Props {
 }
 
 export function SolicitudCargosTab({ mode, solicitudId, lineaProducto, tipoProducto }: Props) {
+  // REQ-15 — el Tipo de Cargo sale del catálogo de Componentes Contables;
+  // CAT_TIPO_CARGO queda como respaldo si el catálogo no responde.
+  const { opcionesTipoCargo, desdeCatalogo } = useComponentesContablesCatalogo();
+  const opcionesTipo = desdeCatalogo ? opcionesTipoCargo : CAT_TIPO_CARGO.map(t => ({ value: t.value, label: t.label }));
   // Puro y Financiero comparten los mismos conceptos de desembolso inicial
   // (Enganche, Comisión, Renta Anticipada) — difiere solo la FUENTE de la
   // renta anticipada: Puro usa el Calendario de rentas fijas, Financiero usa
@@ -253,7 +258,10 @@ export function SolicitudCargosTab({ mode, solicitudId, lineaProducto, tipoProdu
                     <td className="px-3 py-2">
                       <select value={c.tipoCargo} onChange={e => { e.stopPropagation(); update(c.id, 'tipoCargo', e.target.value); }} disabled={isRO} onClick={e => e.stopPropagation()} className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-lg bg-white focus:ring-2 focus:ring-[#4A6FA5]/30 focus:border-[#4A6FA5]">
                         <option value="">Seleccione...</option>
-                        {CAT_TIPO_CARGO.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                        {opcionesTipo.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                        {c.tipoCargo && !opcionesTipo.some(t => t.value === c.tipoCargo) && (
+                          <option value={c.tipoCargo}>{c.tipoCargo}</option>
+                        )}
                       </select>
                     </td>
                     <td className="px-3 py-2">

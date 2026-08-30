@@ -185,6 +185,7 @@ function mapRowToProduct(row: ProductoLineaCreditoRow, index: number): ProductoL
       : (Array.isArray(d.jerarquias) ? d.jerarquias : undefined),
     comites: Array.isArray(d.comitesCredito) ? d.comitesCredito
       : (Array.isArray(d.comites) ? d.comites : undefined),
+    comiteEscalamiento: Array.isArray(d.comiteEscalamiento) ? d.comiteEscalamiento : undefined,
     periodicidades: Array.isArray(d.periodicidad) ? d.periodicidad
       : (Array.isArray(d.periodicidades) ? d.periodicidades : undefined),
     fases: Array.isArray(d.fases) ? d.fases : undefined,
