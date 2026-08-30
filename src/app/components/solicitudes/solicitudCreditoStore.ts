@@ -45,6 +45,10 @@ export interface SolicitudFormData {
   _rfc?: string;                   // RFC del cliente (para validación IA de CSF)
   /** Calendario de aportaciones heredado desde Cotización (solo Captación) */
   _calendarioAportaciones?: Array<{ noAportacion: number; fecha: string; monto: number; moneda: string }>;
+  /** REQ-13 — folio oficial de garantía en cartera, generado al formalizar (solo GPO). */
+  idGarantiaCartera?: string;
+  /** REQ-13 — folio de la póliza contable de apertura generada al formalizar (solo GPO). */
+  polizaContableApertura?: string;
 }
 
 // Términos y Condiciones
@@ -92,6 +96,14 @@ export interface TerminosCondiciones {
   porcentajeValorResidualSel?: string; // % elegido del subtab Valor Residual del producto
   montoResidual?: number;        // calculado: montoAutorizadoNum * (porcentajeValorResidualSel / 100)
   rentasAnticipadas?: string;    // No. elegido del subtab Rentas Anticipadas del producto
+  // Garantía Financiera 2o Piso (GPO) — heredados de la Oportunidad al Cierre Comercial.
+  // Solo aplican cuando tipoProducto = Línea de Crédito / Garantía Financiera 2o Piso.
+  sectorInfraestructura?: string;
+  montoEmisionProyectado?: string;
+  porcentajeCoberturaGpo?: string;
+  montoGarantizadoGpo?: string;
+  tasaComisionAnualPactada?: string;
+  periodicidadCobroGpo?: string;
 }
 
 export interface RendimientoRow {
@@ -166,6 +178,21 @@ export interface DocumentoCargado {
   iaMotivos?: string[];
   /** Datos extraídos por IA */
   iaExtraido?: Record<string, string>;
+}
+
+/**
+ * Quita `fileData` (el PDF/imagen completo en base64) de los documentos que ya
+ * tienen `url` de Storage, antes de guardarlos en sessionStorage. Es lo que
+ * realmente agota su cuota (5-10 MB por origen, compartida por toda la app en
+ * esa pestaña): unos cuantos PDFs generados (Oficio, Dictamen, Acta...) de
+ * ~100-200 KB cada uno, embebidos en base64, la llenan solos. `fileData` se
+ * conserva sólo para documentos sin `url` todavía (subida en curso o
+ * fallida) — ahí sigue siendo la única copia disponible. La base de datos y
+ * la vista previa no se ven afectadas: el PUT a BD nunca incluye `fileData`,
+ * y el visor usa `url` primero, cayendo a `fileData` sólo si no hay `url`.
+ */
+export function documentosParaSessionStorage(docs: DocumentoCargado[]): DocumentoCargado[] {
+  return docs.map(d => (d.url && d.fileData ? { ...d, fileData: undefined } : d));
 }
 
 // Garantía registrada por el usuario en una solicitud
@@ -289,8 +316,86 @@ function storageKey(solId: SolId, subtab: string): string {
   return `sol_credito_${solId}_${subtab}`;
 }
 
-export function saveToSession<T>(solId: SolId, subtab: string, data: T): void {
-  try { sessionStorage.setItem(storageKey(solId, subtab), JSON.stringify(data)); } catch { /* */ }
+/**
+ * Cachés que son PURO ESPEJO de datos del servidor: se reescriben completos en
+ * cada carga exitosa y sólo sirven de respaldo si la BD no responde. Son lo
+ * primero que se debe sacrificar cuando la cuota aprieta — volver a pedirlos al
+ * servidor es gratis; perder el trabajo del usuario, no.
+ *
+ * MEDIDO (28/08/2026, solicitud c5bf56a5): estas tres claves ocupaban 3.9 MB de
+ * los ~4.9 MB de cuota del origen — 'solicitudes_credito_db' sola pesaba 3.3 MB
+ * (la lista completa de 95 solicitudes con su JSONB entero). Por eso fallaba
+ * incluso un guardado de 14 KB.
+ *
+ * NO se incluyen aquí las claves '*_local': ésas sí pueden ser la única copia de
+ * algo capturado sin conexión.
+ */
+const CACHES_DESECHABLES = [
+  'solicitudes_credito_db',
+  'catalogo_productos_all',
+  'solicitudes_activacion_db',
+  'catalogo_documentos_nombres_v1',
+];
+
+/**
+ * Guarda un subtab en sessionStorage.
+ *
+ * BUG FIX: antes era `catch { }` — se tragaba TODO error sin dejar rastro. El
+ * caso real: los documentos del expediente llevan el archivo en base64, llenan
+ * la cuota de sessionStorage, y el setItem lanza QuotaExceededError. El subtab
+ * seguía mostrando los documentos (viven en el estado de React) pero nada se
+ * persistía, así que la validación de avance de fase —que lee de aquí— los daba
+ * por no cargados. Un fallo invisible que se veía como "dice que faltan
+ * documentos que están en pantalla".
+ *
+ * Si la cuota se agota se liberan, en orden: (1) el WIP de OTRAS solicitudes y
+ * (2) los cachés espejo del servidor. El orden importa: antes sólo se hacía (1),
+ * y como esos borradores pesan unos pocos KB mientras los cachés del servidor se
+ * comían el 80% de la cuota, el reintento liberaba casi nada y volvía a fallar.
+ */
+export function saveToSession<T>(solId: SolId, subtab: string, data: T): boolean {
+  const key = storageKey(solId, subtab);
+  const payload = JSON.stringify(data);
+  try {
+    sessionStorage.setItem(key, payload);
+    return true;
+  } catch (err) {
+    const cuotaLlena = err instanceof DOMException &&
+      (err.name === 'QuotaExceededError' || err.name === 'NS_ERROR_DOM_QUOTA_REACHED');
+    if (!cuotaLlena) {
+      console.warn(`[solicitudStore] No se pudo guardar "${key}":`, err);
+      return false;
+    }
+
+    // Escalón 1: borradores de OTRAS solicitudes.
+    const prefijoPropio = `sol_credito_${solId}_`;
+    try {
+      const ajenas = Object.keys(sessionStorage).filter(
+        k => k.startsWith('sol_credito_') && !k.startsWith(prefijoPropio),
+      );
+      if (ajenas.length > 0) {
+        ajenas.forEach(k => sessionStorage.removeItem(k));
+        sessionStorage.setItem(key, payload);
+        console.warn(`[solicitudStore] Cuota agotada: se descartó el borrador de ${ajenas.length} solicitud(es) para guardar "${key}".`);
+        return true;
+      }
+    } catch { /* sigue al escalón 2 */ }
+
+    // Escalón 2: cachés espejo del servidor — se vuelven a pedir solos.
+    try {
+      let liberados = 0;
+      for (const cacheKey of CACHES_DESECHABLES) {
+        const v = sessionStorage.getItem(cacheKey);
+        if (v) { liberados += v.length; sessionStorage.removeItem(cacheKey); }
+      }
+      sessionStorage.setItem(key, payload);
+      console.warn(`[solicitudStore] Cuota agotada: se liberaron ${(liberados / 1024).toFixed(0)} KB de cachés del servidor (se recargarán solos) para guardar "${key}".`);
+      return true;
+    } catch {
+      console.error(`[solicitudStore] CUOTA AGOTADA — "${key}" NO se guardó (${payload.length} bytes). Los datos sólo viven en memoria.`);
+      return false;
+    }
+  }
 }
 
 export function loadFromSession<T>(solId: SolId, subtab: string): T | null {
@@ -849,6 +954,15 @@ export const CAT_ESTATUS_SOLICITUD = [
   { value: 'Autorizada', label: 'Autorizada' },
   { value: 'Rechazado', label: 'Rechazado' },
   { value: 'Cancelado', label: 'Cancelado' },
+  // REQ-12 — resolución del Comité Interno de Crédito. Se agregan como valores
+  // NUEVOS (no se reusa Autorizada/Rechazado) para no perder la distinción de
+  // que la aprobación/rechazo vino específicamente del CIC.
+  { value: 'Aprobada por CIC', label: 'Aprobada por CIC' },
+  { value: 'Rechazada Definitivamente', label: 'Rechazada Definitivamente' },
+  // REQ-13 — fin del BPM: la garantía queda viva en cartera, fuera del flujo
+  // de originación activo. Valor nuevo (no se reusa "Aprobado") para poder
+  // distinguir "originación terminó" de "ya es una obligación en cartera".
+  { value: 'En Administración', label: 'En Administración (Cartera Activa)' },
 ];
 
 export const CAT_FRECUENCIA = [
@@ -1246,6 +1360,8 @@ export interface SolicitudListItem {
   estatusSolicitud: string;
   _dbId?: string;
   _clienteId?: string;
+  /** Folio del registro padre (Oportunidad/Cotización) que originó la Solicitud. */
+  _noReferenc1?: string | null;
 }
 
 export const SOLICITUDES_LISTA: SolicitudListItem[] = [

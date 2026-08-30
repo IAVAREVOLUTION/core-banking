@@ -1,17 +1,42 @@
 import { ProductoLineaCredito, FormModeLineaCredito } from '@/app/types/productoLineaCredito';
 
+interface TasaReferenciaItem {
+  id: number;
+  productId: number;
+  tasaReferenciaId: number;
+  tasaReferenciaNombre: string;
+  moneda: string;
+  activo: boolean;
+}
+
 interface ProductoLineaCreditoFormDatosProductoProps {
   formData: ProductoLineaCredito;
   mode: FormModeLineaCredito;
   handleChange: (field: keyof ProductoLineaCredito, value: string | number | boolean) => void;
+  tasasReferencia?: TasaReferenciaItem[];
 }
 
 export function ProductoLineaCreditoFormDatosProducto({
   formData,
   mode,
   handleChange,
+  tasasReferencia = [],
 }: ProductoLineaCreditoFormDatosProductoProps) {
   const isView = mode === 'view';
+
+  // Opciones de Tasa Base = tasas activas capturadas en el subtab "Tasas de Referencia"
+  // (sin duplicados por nombre). Se conserva el valor ya guardado aunque su tasa se haya
+  // eliminado del subtab, para no perderlo al editar.
+  const tasaBaseOptions = Array.from(
+    new Set(
+      tasasReferencia
+        .filter((t) => t.activo !== false && t.tasaReferenciaNombre)
+        .map((t) => t.tasaReferenciaNombre)
+    )
+  );
+  if (formData.tasaBase && !tasaBaseOptions.includes(formData.tasaBase)) {
+    tasaBaseOptions.push(formData.tasaBase);
+  }
 
   const viewFieldClass = 'w-full px-2.5 py-1.5 text-xs bg-gray-50 border border-transparent rounded text-gray-800 cursor-default';
   const inputClass = 'w-full px-2.5 py-1.5 text-xs border border-gray-300 rounded focus:border-[#4A6FA5] focus:ring-1 focus:ring-[#4A6FA5]/20 outline-none transition-colors';
@@ -96,6 +121,9 @@ export function ProductoLineaCreditoFormDatosProducto({
                 <option value="Quirografario">Quirografario</option>
                 <option value="Simple">Simple</option>
                 <option value="Arrendamiento">Arrendamiento</option>
+                <option value="Global">Global</option>
+                {/* Habilita los subtabs Prelación 2o Piso y Cobertura y Comisiones 2o Piso */}
+                <option value="Garantía Financiera 2o Piso">Garantía Financiera 2o Piso</option>
               </select>
             )}
           </div>
@@ -133,11 +161,13 @@ export function ProductoLineaCreditoFormDatosProducto({
                 className={inputClass}
               >
                 <option value="">Seleccione...</option>
-                <option value="TIIE 28">TIIE 28</option>
-                <option value="TIIE 91">TIIE 91</option>
-                <option value="TIIE 182">TIIE 182</option>
-                <option value="SOFR">SOFR</option>
-                <option value="Fija">Fija</option>
+                {tasaBaseOptions.length > 0 ? (
+                  tasaBaseOptions.map((nombre) => (
+                    <option key={nombre} value={nombre}>{nombre}</option>
+                  ))
+                ) : (
+                  <option value="" disabled>No hay tasas de referencia configuradas</option>
+                )}
               </select>
             )}
           </div>

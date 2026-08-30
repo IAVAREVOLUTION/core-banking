@@ -20,6 +20,37 @@ import { currentUser } from '../../data/mockData';
 // Esto protege campos como contrasena, telefono, curp, etc. que existen
 // en la BD pero NO en el formulario del CORE.
 // ═══════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════
+// HU-CRM-02 — Catálogos de la pestaña Perfil
+// ═══════════════════════════════════════════════════════════════════
+const CAT_SECTOR_INFRAESTRUCTURA = [
+  'Transporte/Carreteras',
+  'Energía',
+  'Agua/Medio Ambiente',
+  'Social/Urbano',
+];
+
+const CAT_TIPO_FINANCIAMIENTO = [
+  'Emisión de Deuda Bursátil',
+  'Crédito Bancario Tradicional',
+];
+
+// Catálogo local: en el repo conviven tres listas de monedas distintas
+// (originacionStore, creditoStore, ComisionesTab) sin una fuente única.
+const CAT_MONEDA_PERFIL = [
+  { value: 'MXN', label: 'MXN - Peso Mexicano' },
+  { value: 'USD', label: 'USD - Dólar Americano' },
+  { value: 'EUR', label: 'EUR - Euro' },
+];
+
+// Formatea un monto para lectura ("20000000.00" → "20,000,000.00").
+// El valor guardado en formData se mantiene SIN comas.
+function formatMiles(valor: string | number | undefined | null): string {
+  const n = parseFloat(String(valor ?? '').replace(/,/g, ''));
+  if (isNaN(n)) return '0.00';
+  return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
 function stripEmptyFieldsForSync(obj: Record<string, any>): Record<string, any> {
   const cleaned: Record<string, any> = {};
   for (const [key, value] of Object.entries(obj)) {
@@ -52,6 +83,8 @@ interface ProspectoFormProps {
   onBack: () => void;
   /** ID consecutivo legible: "PROS-001", "PROS-002", etc. */
   nextId?: string;
+  /** HU-CRM-03 CA-06 — Calificar Lead: abre la Oportunidad heredando el Perfil. */
+  onCalificarLead?: (leadData: any) => void;
 }
 
 interface ConsultaSIC {
@@ -63,7 +96,7 @@ interface ConsultaSIC {
   xmlResultado: string;
 }
 
-export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, nextId }: ProspectoFormProps) {
+export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, nextId, onCalificarLead }: ProspectoFormProps) {
   const isView = mode === 'view';
   const isCreate = mode === 'create';
 
@@ -224,22 +257,35 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
         fechaConstitucion: '',
         giroEmpresa: '',
         representanteLegalNombre: '',
-        representanteLegalCurp: '',
-        representanteLegalRfc: '',
-        representanteLegalIdentificacion: '',
+        // ── HU-CRM-02: Perfil ──
+        sectorInfraestructura: '',
+        montoInversion: '0.00',
+        monedaInversion: 'MXN',
+        tipoFinanciamiento: '',
+        descripcionObra: '',
       };
     }
 
     // Modo editar/ver: cargar datos del prospecto desde J_CLIENTES
     // Usar campos individuales del JSONB (nombrePila, apellidoPaterno, etc.)
     // en vez de dividir el nombre completo por espacios
-    const fallbackNombres = prospecto?.nombre?.split(' ') || [];
+    const tipoProspecto = prospecto?.subtipo || prospecto?.tipo || '';
+    // BUG FIX: Persona Moral no tiene nombre/apellidos — "nombre" ahí es la
+    // Razón Social completa (puede traer espacios, ej. "Grupo ABC"). Partir
+    // esa cadena por espacio como si fuera nombre+apellidoPaterno+
+    // apellidoMaterno de una persona física inyecta palabras de la Razón
+    // Social en esos campos; al guardar, esas palabras basura se persisten
+    // y el próximo ciclo de editar→guardar vuelve a sumarles otra palabra —
+    // el nombre visible crece sin fin (bug real observado: "PRUEBA 2 2 2"
+    // tras 3 guardados). Para Moral, nunca usar este fallback.
+    const esMoral = tipoProspecto === 'Persona Moral';
+    const fallbackNombres = esMoral ? [] : (prospecto?.nombre?.split(' ') || []);
     return {
       idProspecto: prospecto?.idProspecto || `PROS-${String(prospecto?.id || 0).padStart(3, '0')}`,
-      tipo: prospecto?.subtipo || prospecto?.tipo || '',
-      nombre: prospecto?.nombrePila || fallbackNombres[0] || '',
-      apellidoPaterno: prospecto?.apellidoPaterno || fallbackNombres[1] || '',
-      apellidoMaterno: prospecto?.apellidoMaterno || fallbackNombres[2] || '',
+      tipo: tipoProspecto,
+      nombre: esMoral ? '' : (prospecto?.nombrePila || fallbackNombres[0] || ''),
+      apellidoPaterno: esMoral ? '' : (prospecto?.apellidoPaterno || fallbackNombres[1] || ''),
+      apellidoMaterno: esMoral ? '' : (prospecto?.apellidoMaterno || fallbackNombres[2] || ''),
       denominacionRazonSocial: prospecto?.denominacionRazonSocial || '',
       telefono: prospecto?.telefono || '',
       fechaNacimiento: prospecto?.fechaNacimiento || prospecto?.fechaOriginacion || '',
@@ -261,9 +307,12 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
       fechaConstitucion: (prospecto as any)?.fechaConstitucion || '',
       giroEmpresa: (prospecto as any)?.giroEmpresa || '',
       representanteLegalNombre: (prospecto as any)?.representanteLegalNombre || '',
-      representanteLegalCurp: (prospecto as any)?.representanteLegalCurp || '',
-      representanteLegalRfc: (prospecto as any)?.representanteLegalRfc || '',
-      representanteLegalIdentificacion: (prospecto as any)?.representanteLegalIdentificacion || '',
+      // ── HU-CRM-02: Perfil ──
+      sectorInfraestructura: (prospecto as any)?.sectorInfraestructura || '',
+      montoInversion: (prospecto as any)?.montoInversion || '0.00',
+      monedaInversion: (prospecto as any)?.monedaInversion || 'MXN',
+      tipoFinanciamiento: (prospecto as any)?.tipoFinanciamiento || '',
+      descripcionObra: (prospecto as any)?.descripcionObra || '',
     };
   });
 
@@ -271,17 +320,23 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
   // Solo se ejecuta una vez al montar el componente
   useEffect(() => {
     if (prospecto && !isCreate) {
-      const fallbackNombres = prospecto.nombre?.split(' ') || [];
+      // BUG FIX: mismo guard que la hidratación inicial — para Persona Moral
+      // nunca partir "nombre" (la Razón Social, puede traer espacios) como
+      // si fuera nombre+apellidos de una persona física. Ver comentario
+      // extenso en la hidratación inicial (más arriba en este archivo).
+      const tipoSync = prospecto?.subtipo || prospecto?.tipo || '';
+      const esMoralSync = tipoSync === 'Persona Moral';
+      const fallbackNombres = esMoralSync ? [] : (prospecto.nombre?.split(' ') || []);
       setFormData(prev => {
         // Solo actualizar si el ID es diferente (evita sobrescribir ediciones del usuario)
         const expectedId = prospecto.idProspecto || `PROS-${String(prospecto.id).padStart(3, '0')}`;
         if (prev.idProspecto !== expectedId) {
           return {
             idProspecto: expectedId,
-            tipo: prospecto?.subtipo || prospecto?.tipo || '',
-            nombre: prospecto?.nombrePila || fallbackNombres[0] || '',
-            apellidoPaterno: prospecto?.apellidoPaterno || fallbackNombres[1] || '',
-            apellidoMaterno: prospecto?.apellidoMaterno || fallbackNombres[2] || '',
+            tipo: tipoSync,
+            nombre: esMoralSync ? '' : (prospecto?.nombrePila || fallbackNombres[0] || ''),
+            apellidoPaterno: esMoralSync ? '' : (prospecto?.apellidoPaterno || fallbackNombres[1] || ''),
+            apellidoMaterno: esMoralSync ? '' : (prospecto?.apellidoMaterno || fallbackNombres[2] || ''),
             denominacionRazonSocial: prospecto.denominacionRazonSocial || '',
             telefono: prospecto.telefono || '',
             fechaNacimiento: prospecto?.fechaNacimiento || prospecto.fechaOriginacion || '',
@@ -302,9 +357,12 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
             fechaConstitucion: (prospecto as any)?.fechaConstitucion || '',
             giroEmpresa: (prospecto as any)?.giroEmpresa || '',
             representanteLegalNombre: (prospecto as any)?.representanteLegalNombre || '',
-            representanteLegalCurp: (prospecto as any)?.representanteLegalCurp || '',
-            representanteLegalRfc: (prospecto as any)?.representanteLegalRfc || '',
-            representanteLegalIdentificacion: (prospecto as any)?.representanteLegalIdentificacion || '',
+            // ── HU-CRM-02: Perfil ──
+            sectorInfraestructura: (prospecto as any)?.sectorInfraestructura || '',
+            montoInversion: (prospecto as any)?.montoInversion || '0.00',
+            monedaInversion: (prospecto as any)?.monedaInversion || 'MXN',
+            tipoFinanciamiento: (prospecto as any)?.tipoFinanciamiento || '',
+            descripcionObra: (prospecto as any)?.descripcionObra || '',
           };
         }
         return prev;
@@ -379,24 +437,71 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
   }, [prospecto, isCreate]);
 
   // ===== PERSISTENCIA DE DATOS EN SESSIONSTORAGE (claves por prospecto) =====
+  //
+  // BUG FIX — QuotaExceededError al presionar "Nuevo".
+  //
+  // Cada uno de los 9 `sessionStorage.setItem` de abajo corría sin protección
+  // dentro de un useEffect: si sessionStorage se llena (muy fácil de lograr
+  // aquí — cada expediente electrónico guarda el archivo en base64 dentro de
+  // `fileData`, y eso se acumula por cada prospecto que se prueba en la
+  // misma pestaña sin cerrar el navegador), el setItem lanza
+  // QuotaExceededError, el useEffect revienta sin capturarlo, y React tumba
+  // TODO el árbol de <ProspectoForm> — exactamente lo reportado al abrir
+  // "Nuevo" (storageId='nuevo'): ni siquiera había datos grandes en ESE
+  // registro, la cuota ya estaba agotada por OTROS prospectos.
+  //
+  // Este guardado es solo un borrador de conveniencia (para no perder lo
+  // tecleado si el usuario navega por accidente) — nunca debe poder tumbar
+  // el formulario. safeSetSessionItem intenta guardar; si la cuota está
+  // llena, borra el WIP de CUALQUIER OTRO prospecto (seguro: si ya se
+  // guardó, es redundante: si no, ya es un borrador abandonado) y reintenta
+  // una vez. Si aun así falla, se resigna en silencio: el usuario sigue
+  // pudiendo capturar y guardar con Guardar, solo pierde el auto-guardado.
+  const safeSetSessionItem = (key: string, value: string) => {
+    try {
+      sessionStorage.setItem(key, value);
+    } catch (err) {
+      const esCuotaLlena = err instanceof DOMException
+        && (err.name === 'QuotaExceededError' || err.name === 'NS_ERROR_DOM_QUOTA_REACHED');
+      if (!esCuotaLlena) {
+        console.warn(`[ProspectoForm] No se pudo guardar borrador "${key}":`, err);
+        return;
+      }
+      try {
+        // Liberar espacio: descartar el WIP de cualquier OTRO prospecto.
+        // El propio storageId se conserva porque es justo lo que se intenta
+        // escribir ahora mismo.
+        const propios = new Set(Object.keys(sessionStorage));
+        for (const k of propios) {
+          if (k.startsWith('prospecto_') && !k.endsWith(`_${storageId}`)) {
+            sessionStorage.removeItem(k);
+          }
+        }
+        sessionStorage.setItem(key, value);
+      } catch (err2) {
+        console.warn(`[ProspectoForm] sessionStorage sin espacio incluso tras limpiar — se omite el borrador de "${key}":`, err2);
+      }
+    }
+  };
+
   // Guardar formData
   useEffect(() => {
-    sessionStorage.setItem(`prospecto_formData_${storageId}`, JSON.stringify(formData));
+    safeSetSessionItem(`prospecto_formData_${storageId}`, JSON.stringify(formData));
   }, [formData, storageId]);
 
   // Guardar direcciones
   useEffect(() => {
-    sessionStorage.setItem(`prospecto_direcciones_${storageId}`, JSON.stringify(direcciones));
+    safeSetSessionItem(`prospecto_direcciones_${storageId}`, JSON.stringify(direcciones));
   }, [direcciones, storageId]);
 
   // Guardar consultas SIC
   useEffect(() => {
-    sessionStorage.setItem(`prospecto_consultas_${storageId}`, JSON.stringify(consultas));
+    safeSetSessionItem(`prospecto_consultas_${storageId}`, JSON.stringify(consultas));
   }, [consultas, storageId]);
 
   // Guardar listas negras
   useEffect(() => {
-    sessionStorage.setItem(`prospecto_listasNegras_${storageId}`, JSON.stringify(listasNegras));
+    safeSetSessionItem(`prospecto_listasNegras_${storageId}`, JSON.stringify(listasNegras));
   }, [listasNegras, storageId]);
 
   // Guardar expedientes electrónicos
@@ -406,27 +511,27 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
       const { _pendingFile, ...rest } = e;
       return rest;
     });
-    sessionStorage.setItem(`prospecto_expedientes_${storageId}`, JSON.stringify(serializable));
+    safeSetSessionItem(`prospecto_expedientes_${storageId}`, JSON.stringify(serializable));
   }, [expedientesElectronicos, storageId]);
 
   // Guardar cotizaciones
   useEffect(() => {
-    sessionStorage.setItem(`prospecto_cotizaciones_${storageId}`, JSON.stringify(cotizaciones));
+    safeSetSessionItem(`prospecto_cotizaciones_${storageId}`, JSON.stringify(cotizaciones));
   }, [cotizaciones, storageId]);
 
   // Guardar cotización seleccionada
   useEffect(() => {
-    sessionStorage.setItem(`prospecto_cotizacionSeleccionada_${storageId}`, JSON.stringify(cotizacionSeleccionada));
+    safeSetSessionItem(`prospecto_cotizacionSeleccionada_${storageId}`, JSON.stringify(cotizacionSeleccionada));
   }, [cotizacionSeleccionada, storageId]);
 
   // Guardar tabla de amortización
   useEffect(() => {
-    sessionStorage.setItem(`prospecto_tablaAmortizacion_${storageId}`, JSON.stringify(tablaAmortizacion));
+    safeSetSessionItem(`prospecto_tablaAmortizacion_${storageId}`, JSON.stringify(tablaAmortizacion));
   }, [tablaAmortizacion, storageId]);
 
   // Guardar tab activo
   useEffect(() => {
-    sessionStorage.setItem(`prospecto_activeTab_${storageId}`, JSON.stringify(activeTab));
+    safeSetSessionItem(`prospecto_activeTab_${storageId}`, JSON.stringify(activeTab));
   }, [activeTab, storageId]);
   // ===== FIN PERSISTENCIA =====
 
@@ -469,8 +574,18 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
       } else {
         if (!(formData as any).denominacionRazonSocial?.trim()) { toast.error('Razón Social es obligatoria'); return; }
         if (!formData.rfc.trim()) { toast.error('RFC es obligatorio'); return; }
-        if (!(formData as any).representanteLegalNombre?.trim()) { toast.error('Nombre del Representante Legal es obligatorio'); return; }
+        if (!(formData as any).representanteLegalNombre?.trim()) { toast.error('Nombre de Contacto es obligatorio'); return; }
       }
+      // ── HU-CRM-02: campos obligatorios de la pestaña Perfil ──
+      const faltantesPerfil = validarPerfil();
+      if (faltantesPerfil.length > 0) {
+        setActiveTab('perfil');
+        toast.error('Pestaña Perfil incompleta', {
+          description: 'Falta capturar: ' + faltantesPerfil.join(', '),
+        });
+        return;
+      }
+
       setSaving(true);
       try {
       // Limpiar datos persistidos después de guardar exitosamente
@@ -519,7 +634,18 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
         const dataJson: Record<string, any> = {
           idProspecto: formData.idProspecto,
           tipo: formData.tipo,
-          nombre: formData.nombre,
+          // BUG FIX: unificar el campo "nombre" independientemente del tipo de
+          // persona. Antes, en Persona Moral, `nombre` se guardaba vacío (el
+          // formulario solo captura Razón Social) y varios módulos —
+          // Clientes (mapRowToCliente), Solicitudes (SeleccionarClienteModal,
+          // obtenerDatosCliente), la propia lista de Prospectos— leen
+          // `data.nombre` + apellidos a ciegas para armar el nombre a mostrar,
+          // sin saber que para Moral el dato vive en otro campo. Resultado:
+          // "Sin nombre" en Clientes/Solicitudes para cualquier prospecto/
+          // cliente Persona Moral. Guardando la Razón Social también en
+          // `nombre`, el mismo campo sirve para los dos tipos y ningún
+          // consumidor necesita lógica especial por tipo de persona.
+          nombre: formData.tipo === 'Persona Moral' ? (formData.denominacionRazonSocial || '') : formData.nombre,
           apellidoPaterno: formData.apellidoPaterno,
           apellidoMaterno: formData.apellidoMaterno,
           denominacionRazonSocial: formData.denominacionRazonSocial,
@@ -541,6 +667,17 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
           institucionGobierno: formData.institucionGobierno,
           institucionGobiernoId: formData.institucionGobiernoId,
           clasificacionCliente: formData.clasificacionCliente,
+          // ── Persona Moral (bug: nunca se incluían en el guardado) ──
+          fechaConstitucion: (formData as any).fechaConstitucion,
+          giroEmpresa: (formData as any).giroEmpresa,
+          // ── HU-CRM-01: Nombre Contacto (antes REP LEGAL) ──
+          representanteLegalNombre: (formData as any).representanteLegalNombre,
+          // ── HU-CRM-02: Perfil ──
+          sectorInfraestructura: (formData as any).sectorInfraestructura,
+          montoInversion: (formData as any).montoInversion,
+          monedaInversion: (formData as any).monedaInversion,
+          tipoFinanciamiento: (formData as any).tipoFinanciamiento,
+          descripcionObra: (formData as any).descripcionObra,
           fechaOriginacion: isCreate
             ? new Date().toISOString().split('T')[0]
             : (prospecto?.fechaOriginacion || new Date().toISOString().split('T')[0]),
@@ -740,8 +877,151 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
     }
   };
 
+  // ── HU-CRM-02: validación de la pestaña Perfil ──
+  // Devuelve la lista de campos obligatorios sin capturar.
+  const validarPerfil = (): string[] => {
+    const f = formData as any;
+    const faltantes: string[] = [];
+    if (!f.sectorInfraestructura?.trim()) faltantes.push('Sector Infraestructura');
+    const monto = parseFloat(String(f.montoInversion ?? '').replace(/,/g, ''));
+    if (isNaN(monto) || monto <= 0) faltantes.push('Monto Inversión');
+    if (!f.monedaInversion?.trim()) faltantes.push('Moneda');
+    if (!f.tipoFinanciamiento?.trim()) faltantes.push('Tipo Financiamiento');
+    if (!f.descripcionObra?.trim()) faltantes.push('Descripción Obra');
+    return faltantes;
+  };
+
+  // ── HU-CRM-03 RN-01 / CA-01 / CA-02 ──
+  // El botón [Calificar Lead] solo se habilita con Sector capturado y Monto > 0.
+  const montoInversionNum = (() => {
+    const n = parseFloat(String((formData as any).montoInversion ?? '').replace(/,/g, ''));
+    return isNaN(n) ? 0 : n;
+  })();
+  const sectorCapturado = !!(formData as any).sectorInfraestructura?.trim();
+
+  // ── HU-CRM-03 RN-03 — idempotencia ──
+  const leadYaCalificado = formData.estatusProspecto === 'Calificado';
+
+  const puedeCalificar = sectorCapturado && montoInversionNum > 0 && !leadYaCalificado;
+
+  const motivoNoCalificable = leadYaCalificado
+    ? 'Este Lead ya fue calificado previamente.'
+    : !sectorCapturado
+      ? 'Capture el Sector Infraestructura para poder calificar.'
+      : montoInversionNum <= 0
+        ? 'El Monto Inversión debe ser mayor a cero.'
+        : '';
+
+  const [calificando, setCalificando] = useState(false);
+  // Mientras el campo está enfocado se edita el número crudo; al salir se formatea
+  const [montoInversionFocus, setMontoInversionFocus] = useState(false);
+
+  const handleCalificarLead = async () => {
+    // Defensa en profundidad: el botón ya está deshabilitado en estos casos.
+    if (!puedeCalificar) {
+      toast.error('No se puede calificar el Lead', { description: motivoNoCalificable });
+      return;
+    }
+    const faltantes = validarPerfil();
+    if (faltantes.length > 0) {
+      toast.error('No se puede calificar el Lead', {
+        description: 'Falta capturar: ' + faltantes.join(', '),
+      });
+      return;
+    }
+
+    const dbUuid = prospecto?.dbUuid || null;
+    if (!dbUuid) {
+      toast.error('Guarde el Lead antes de calificarlo', {
+        description: 'La Oportunidad necesita el identificador del cliente en base de datos.',
+      });
+      return;
+    }
+
+    const f = formData as any;
+    const nombreContacto = f.representanteLegalNombre || '';
+    const nombreCompleto = formData.tipo === 'Persona Moral'
+      ? (formData.denominacionRazonSocial || nombreContacto)
+      : `${formData.nombre} ${formData.apellidoPaterno} ${formData.apellidoMaterno}`.trim();
+
+    setCalificando(true);
+    try {
+      // ── Lead calificado — YA NO convierte a Cliente aquí ──
+      // Cambio de diseño (2026-08-25): antes, Calificar Lead pasaba
+      // type='Prospecto' → 'Clientes' de inmediato (así lo pedía HU-CRM-03
+      // CA-04 originalmente). Ahora el Lead se queda como Prospecto — la
+      // conversión a Cliente se disparó desde aquí y se movió al botón
+      // [Cerrada-Ganada] de Cierre Comercial en la Oportunidad, con el mismo
+      // patrón que "Activar Prospecto" (ver handleCerrarGanada en
+      // OportunidadForm.tsx), sin las validaciones de KYC individual
+      // (CURP, SIC, Listas Negras) que no aplican a una Persona Moral.
+      // syncToJClientes hace deep merge, así que basta el JSON parcial.
+      await syncToJClientes({
+        type: 'Prospecto',
+        tipoFormulario: formData.tipo,
+        estatus: 'En proceso',
+        data: {
+          estatusProspecto: 'Calificado',
+          // El Perfil se persiste aquí para que la Oportunidad no dependa
+          // de que el usuario haya guardado antes de calificar.
+          sectorInfraestructura: f.sectorInfraestructura,
+          montoInversion: f.montoInversion,
+          monedaInversion: f.monedaInversion,
+          tipoFinanciamiento: f.tipoFinanciamiento,
+          descripcionObra: f.descripcionObra,
+        },
+        label: 'Lead calificado',
+        existingId: dbUuid,
+      });
+
+      setFormData(prev => ({
+        ...prev,
+        estatusProspecto: 'Calificado',
+        estatus: 'En proceso',
+      }));
+
+      // ── CA-05: payload de la Oportunidad ──
+      const leadData = {
+        leadOrigenId: dbUuid,
+        clienteId: dbUuid,
+        claveCliente: formData.idProspecto || '',
+        nombreCompleto,
+        nombreContacto,
+        telefono: formData.telefono || '',
+        correoElectronico: formData.correoElectronico || '',
+        institucionGobierno: formData.institucionGobierno || '',
+        sectorInfraestructura: f.sectorInfraestructura || '',
+        montoInversion: f.montoInversion || '0.00',
+        monedaInversion: f.monedaInversion || 'MXN',
+        tipoFinanciamiento: f.tipoFinanciamiento || '',
+        descripcionObra: f.descripcionObra || '',
+      };
+
+      toast.success('Lead calificado', {
+        description: 'Se abrió la Oportunidad. El Lead se convertirá en Cliente al cerrarla como Ganada en Cierre Comercial.',
+      });
+
+      // ── CA-06: redirección ──
+      if (onCalificarLead) {
+        onCalificarLead(leadData);
+      } else {
+        toast.warning('Oportunidad no abierta', {
+          description: 'El módulo no recibió el callback de navegación.',
+        });
+      }
+    } catch (err) {
+      console.error('[ProspectoForm] Error al calificar el Lead:', err);
+      toast.error('No se pudo calificar el Lead', {
+        description: err instanceof Error ? err.message : 'Error desconocido',
+      });
+    } finally {
+      setCalificando(false);
+    }
+  };
+
   const tabs = [
     { id: 'general', label: 'Default' },
+    { id: 'perfil', label: 'Perfil' },
     { id: 'direcciones', label: 'Direcciones' },
     { id: 'expedientes', label: 'Expedientes Electrónicos' },
     { id: 'sic', label: 'SIC' },
@@ -1368,12 +1648,14 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
                     )}
                   </div>
                 </>)}
-                <div className="flex items-center gap-2">
-                  <label className="text-xs w-28 flex-shrink-0 text-gray-700">TELÉFONO <span className="text-red-600">*</span></label>
-                  {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700">{formData.telefono}</div> : (
-                    <input type="text" value={formData.telefono} onChange={(e) => handleChange('telefono', e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" />
-                  )}
-                </div>
+                {isFisica && (
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs w-28 flex-shrink-0 text-gray-700">TELÉFONO <span className="text-red-600">*</span></label>
+                    {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700">{formData.telefono}</div> : (
+                      <input type="text" value={formData.telefono} onChange={(e) => handleChange('telefono', e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" />
+                    )}
+                  </div>
+                )}
                 <CampoInstitucionGobierno
                   value={formData.institucionGobierno || ''}
                   onChange={(value, institucion) => {
@@ -1418,46 +1700,42 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
                     )}
                   </div>
                 </>)}
-                {/* Moral: rep. legal */}
+                {/* Moral: datos de contacto (HU-CRM-01) */}
                 {isMoral && (<>
                   <div className="flex items-center gap-2">
-                    <label className="text-xs w-28 flex-shrink-0 text-gray-700">REP. LEGAL <span className="text-red-600">*</span></label>
+                    <label className="text-xs w-28 flex-shrink-0 text-gray-700">NOMBRE CONTACTO <span className="text-red-600">*</span></label>
                     {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700">{(formData as any).representanteLegalNombre}</div> : (
                       <input type="text" value={(formData as any).representanteLegalNombre} onChange={(e) => handleChange('representanteLegalNombre' as any, e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" placeholder="Nombre completo" />
                     )}
                   </div>
                   <div className="flex items-center gap-2">
-                    <label className="text-xs w-28 flex-shrink-0 text-gray-700">CURP REP. LEGAL</label>
-                    {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700">{(formData as any).representanteLegalCurp}</div> : (
-                      <input type="text" value={(formData as any).representanteLegalCurp} onChange={(e) => handleChange('representanteLegalCurp' as any, e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" />
+                    <label className="text-xs w-28 flex-shrink-0 text-gray-700">TELÉFONO <span className="text-red-600">*</span></label>
+                    {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700">{formData.telefono}</div> : (
+                      <input type="text" value={formData.telefono} onChange={(e) => handleChange('telefono', e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" />
                     )}
                   </div>
                   <div className="flex items-center gap-2">
-                    <label className="text-xs w-28 flex-shrink-0 text-gray-700">RFC REP. LEGAL</label>
-                    {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700">{(formData as any).representanteLegalRfc}</div> : (
-                      <input type="text" value={(formData as any).representanteLegalRfc} onChange={(e) => handleChange('representanteLegalRfc' as any, e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" />
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <label className="text-xs w-28 flex-shrink-0 text-gray-700">ID REP. LEGAL</label>
-                    {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700">{(formData as any).representanteLegalIdentificacion}</div> : (
-                      <input type="text" value={(formData as any).representanteLegalIdentificacion} onChange={(e) => handleChange('representanteLegalIdentificacion' as any, e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" placeholder="No. de identificación" />
+                    <label className="text-xs w-28 flex-shrink-0 text-gray-700">CORREO ELECTRÓNICO <span className="text-red-600">*</span></label>
+                    {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700">{formData.correoElectronico}</div> : (
+                      <input type="email" value={formData.correoElectronico} onChange={(e) => handleChange('correoElectronico', e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" />
                     )}
                   </div>
                 </>)}
-                {/* Ambos tipos: RFC y correo */}
+                {/* Ambos tipos: RFC. El correo va en el grupo de contacto (Moral) o abajo (Física). */}
                 <div className="flex items-center gap-2">
                   <label className="text-xs w-28 flex-shrink-0 text-gray-700">RFC <span className="text-red-600">*</span></label>
                   {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700">{formData.rfc}</div> : (
                     <input type="text" value={formData.rfc} onChange={(e) => handleChange('rfc', e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" />
                   )}
                 </div>
-                <div className="flex items-center gap-2">
-                  <label className="text-xs w-28 flex-shrink-0 text-gray-700">CORREO ELECTRÓNICO <span className="text-red-600">*</span></label>
-                  {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700">{formData.correoElectronico}</div> : (
-                    <input type="email" value={formData.correoElectronico} onChange={(e) => handleChange('correoElectronico', e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" />
-                  )}
-                </div>
+                {isFisica && (
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs w-28 flex-shrink-0 text-gray-700">CORREO ELECTRÓNICO <span className="text-red-600">*</span></label>
+                    {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700">{formData.correoElectronico}</div> : (
+                      <input type="email" value={formData.correoElectronico} onChange={(e) => handleChange('correoElectronico', e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" />
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Columna 3 - 5 campos */}
@@ -1494,6 +1772,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
                       >
                         <option value="Contacto">Contacto</option>
                         <option value="Prospecto">Prospecto</option>
+                        <option value="Calificado">Calificado</option>
                         <option value="Cliente">Cliente</option>
                       </select>
                       <svg className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" width="10" height="10" viewBox="0 0 10 10" fill="#666">
@@ -1633,12 +1912,14 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
                         )}
                       </div>
                     </>)}
-                    <div className="flex items-center gap-2">
-                      <label className="text-xs w-28 flex-shrink-0 text-gray-700">TELÉFONO <span className="text-red-600">*</span></label>
-                      {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100">{formData.telefono}</div> : (
-                        <input type="text" value={formData.telefono} onChange={(e) => handleChange('telefono', e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" />
-                      )}
-                    </div>
+                    {isFisica && (
+                      <div className="flex items-center gap-2">
+                        <label className="text-xs w-28 flex-shrink-0 text-gray-700">TELÉFONO <span className="text-red-600">*</span></label>
+                        {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100">{formData.telefono}</div> : (
+                          <input type="text" value={formData.telefono} onChange={(e) => handleChange('telefono', e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" />
+                        )}
+                      </div>
+                    )}
                     <CampoInstitucionGobierno
                       value={formData.institucionGobierno || ''}
                       onChange={(value, institucion) => {
@@ -1687,27 +1968,21 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
                     </>)}
                     {isMoral && (<>
                       <div className="flex items-center gap-2">
-                        <label className="text-xs w-28 flex-shrink-0 text-gray-700">REP. LEGAL <span className="text-red-600">*</span></label>
+                        <label className="text-xs w-28 flex-shrink-0 text-gray-700">NOMBRE CONTACTO <span className="text-red-600">*</span></label>
                         {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100">{(formData as any).representanteLegalNombre}</div> : (
                           <input type="text" value={(formData as any).representanteLegalNombre} onChange={(e) => handleChange('representanteLegalNombre' as any, e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" placeholder="Nombre completo" />
                         )}
                       </div>
                       <div className="flex items-center gap-2">
-                        <label className="text-xs w-28 flex-shrink-0 text-gray-700">CURP REP. LEGAL</label>
-                        {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100">{(formData as any).representanteLegalCurp}</div> : (
-                          <input type="text" value={(formData as any).representanteLegalCurp} onChange={(e) => handleChange('representanteLegalCurp' as any, e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" />
+                        <label className="text-xs w-28 flex-shrink-0 text-gray-700">TELÉFONO <span className="text-red-600">*</span></label>
+                        {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100">{formData.telefono}</div> : (
+                          <input type="text" value={formData.telefono} onChange={(e) => handleChange('telefono', e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" />
                         )}
                       </div>
                       <div className="flex items-center gap-2">
-                        <label className="text-xs w-28 flex-shrink-0 text-gray-700">RFC REP. LEGAL</label>
-                        {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100">{(formData as any).representanteLegalRfc}</div> : (
-                          <input type="text" value={(formData as any).representanteLegalRfc} onChange={(e) => handleChange('representanteLegalRfc' as any, e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" />
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <label className="text-xs w-28 flex-shrink-0 text-gray-700">ID REP. LEGAL</label>
-                        {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100">{(formData as any).representanteLegalIdentificacion}</div> : (
-                          <input type="text" value={(formData as any).representanteLegalIdentificacion} onChange={(e) => handleChange('representanteLegalIdentificacion' as any, e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" placeholder="No. de identificación" />
+                        <label className="text-xs w-28 flex-shrink-0 text-gray-700">CORREO ELECTRÓNICO <span className="text-red-600">*</span></label>
+                        {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100">{formData.correoElectronico}</div> : (
+                          <input type="email" value={formData.correoElectronico} onChange={(e) => handleChange('correoElectronico', e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" />
                         )}
                       </div>
                     </>)}
@@ -1717,12 +1992,14 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
                         <input type="text" value={formData.rfc} onChange={(e) => handleChange('rfc', e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" maxLength={13} />
                       )}
                     </div>
-                    <div className="flex items-center gap-2">
-                      <label className="text-xs w-28 flex-shrink-0 text-gray-700">CORREO ELECTRÓNICO <span className="text-red-600">*</span></label>
-                      {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100">{formData.correoElectronico}</div> : (
-                        <input type="email" value={formData.correoElectronico} onChange={(e) => handleChange('correoElectronico', e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" />
-                      )}
-                    </div>
+                    {isFisica && (
+                      <div className="flex items-center gap-2">
+                        <label className="text-xs w-28 flex-shrink-0 text-gray-700">CORREO ELECTRÓNICO <span className="text-red-600">*</span></label>
+                        {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100">{formData.correoElectronico}</div> : (
+                          <input type="email" value={formData.correoElectronico} onChange={(e) => handleChange('correoElectronico', e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" />
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   {/* Columna 3 */}
@@ -1748,6 +2025,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
                           >
                             <option value="Contacto">Contacto</option>
                             <option value="Prospecto">Prospecto</option>
+                            <option value="Calificado">Calificado</option>
                             <option value="Cliente">Cliente</option>
                           </select>
                           <svg className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" width="10" height="10" viewBox="0 0 10 10" fill="#666">
@@ -1784,6 +2062,149 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
                 })()}
               </div>
             </>
+          )}
+
+
+          {/* ── HU-CRM-02: Pestaña Perfil ── */}
+          {activeTab === 'perfil' && (
+            <div>
+              <div className="bg-primary-light-theme px-3 py-2 mb-3 text-sm font-medium text-gray-800 border-l-4 border-primary-theme">
+                PERFIL DEL PROYECTO
+              </div>
+
+              <div className="grid grid-cols-2 gap-x-6 gap-y-3 mb-4">
+                {/* Sector Infraestructura */}
+                <div className="flex items-center gap-2">
+                  <label className="text-xs w-40 flex-shrink-0 text-gray-700">SECTOR INFRAESTRUCTURA <span className="text-red-600">*</span></label>
+                  {isView ? (
+                    <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100">{(formData as any).sectorInfraestructura || '—'}</div>
+                  ) : (
+                    <select
+                      value={(formData as any).sectorInfraestructura || ''}
+                      onChange={(e) => handleChange('sectorInfraestructura' as any, e.target.value)}
+                      className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded bg-white"
+                    >
+                      <option value="">-- Seleccione --</option>
+                      {CAT_SECTOR_INFRAESTRUCTURA.map((sec) => (
+                        <option key={sec} value={sec}>{sec}</option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+
+                {/* Tipo Financiamiento */}
+                <div className="flex items-center gap-2">
+                  <label className="text-xs w-40 flex-shrink-0 text-gray-700">TIPO FINANCIAMIENTO <span className="text-red-600">*</span></label>
+                  {isView ? (
+                    <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100">{(formData as any).tipoFinanciamiento || '—'}</div>
+                  ) : (
+                    <select
+                      value={(formData as any).tipoFinanciamiento || ''}
+                      onChange={(e) => handleChange('tipoFinanciamiento' as any, e.target.value)}
+                      className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded bg-white"
+                    >
+                      <option value="">-- Seleccione --</option>
+                      {CAT_TIPO_FINANCIAMIENTO.map((tf) => (
+                        <option key={tf} value={tf}>{tf}</option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+
+                {/* Monto Inversión */}
+                <div className="flex items-center gap-2">
+                  <label className="text-xs w-40 flex-shrink-0 text-gray-700">MONTO INVERSIÓN <span className="text-red-600">*</span></label>
+                  {isView ? (
+                    <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100 text-right font-mono">
+                      {formatMiles((formData as any).montoInversion)}
+                    </div>
+                  ) : (
+                    <div className="relative flex-1">
+                      <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">$</span>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={
+                          montoInversionFocus
+                            ? ((formData as any).montoInversion ?? '0.00')
+                            : formatMiles((formData as any).montoInversion)
+                        }
+                        onFocus={() => setMontoInversionFocus(true)}
+                        onChange={(e) => {
+                          const limpio = e.target.value.replace(/[^0-9.]/g, '');
+                          if (limpio.split('.').length > 2) return;
+                          handleChange('montoInversion' as any, limpio);
+                        }}
+                        onBlur={(e) => {
+                          const n = parseFloat(e.target.value.replace(/,/g, ''));
+                          handleChange('montoInversion' as any, isNaN(n) ? '0.00' : n.toFixed(2));
+                          setMontoInversionFocus(false);
+                        }}
+                        className="w-full pl-5 pr-2 py-1 text-xs border border-gray-300 rounded text-right font-mono"
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {/* Moneda */}
+                <div className="flex items-center gap-2">
+                  <label className="text-xs w-40 flex-shrink-0 text-gray-700">MONEDA <span className="text-red-600">*</span></label>
+                  {isView ? (
+                    <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100">{(formData as any).monedaInversion || 'MXN'}</div>
+                  ) : (
+                    <select
+                      value={(formData as any).monedaInversion || 'MXN'}
+                      onChange={(e) => handleChange('monedaInversion' as any, e.target.value)}
+                      className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded bg-white"
+                    >
+                      {CAT_MONEDA_PERFIL.map((m) => (
+                        <option key={m.value} value={m.value}>{m.label}</option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+              </div>
+
+              {/* Descripción Obra */}
+              <div className="flex items-start gap-2 mb-4">
+                <label className="text-xs w-40 flex-shrink-0 text-gray-700 pt-1">DESCRIPCIÓN OBRA <span className="text-red-600">*</span></label>
+                {isView ? (
+                  <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100 min-h-[64px] whitespace-pre-wrap">
+                    {(formData as any).descripcionObra || '—'}
+                  </div>
+                ) : (
+                  <textarea
+                    rows={4}
+                    maxLength={1000}
+                    value={(formData as any).descripcionObra || ''}
+                    onChange={(e) => handleChange('descripcionObra' as any, e.target.value)}
+                    placeholder="Descripción breve de la obra de infraestructura..."
+                    className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded resize-y"
+                  />
+                )}
+              </div>
+
+              {/* Calificar Lead — HU-CRM-03 CA-01/CA-02/CA-07 */}
+              {!isView && (
+                <div className="flex items-center justify-end gap-3 pt-3 border-t border-gray-200">
+                  {motivoNoCalificable && (
+                    <span className="text-[11px] text-gray-500 italic">{motivoNoCalificable}</span>
+                  )}
+                  <button
+                    onClick={handleCalificarLead}
+                    disabled={!puedeCalificar || calificando}
+                    title={motivoNoCalificable || 'Calificar el Lead y convertirlo en Oportunidad'}
+                    className={`px-5 py-1.5 rounded text-xs font-medium transition-colors ${
+                      puedeCalificar && !calificando
+                        ? 'bg-[#0099CC] text-white hover:bg-[#0088BB]'
+                        : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                    }`}
+                  >
+                    {calificando ? 'Calificando…' : 'Calificar Lead'}
+                  </button>
+                </div>
+              )}
+            </div>
           )}
 
           {/* Tab Direcciones - Tabla con botones Nuevo/Eliminar */}

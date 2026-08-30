@@ -195,6 +195,7 @@ export function ProductoLineaCreditoFormDefaultTab({
                     <option value="Quirografaria">Quirografaria</option>
                     <option value="Prendaria">Prendaria</option>
                     <option value="Hipotecaria">Hipotecaria</option>
+                    <option value="Fideicomiso">Fideicomiso</option>
                   </select>
                 )}
               </div>

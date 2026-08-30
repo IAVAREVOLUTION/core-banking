@@ -18,11 +18,21 @@ interface SolicitudCreditoListProps {
   /** Callback para limpiar el dato de cotización después de consumirlo */
   onCotizacionConsumed?: () => void;
   /** Deep link: abrir directamente una solicitud por dbId */
-  solicitudDeepLink?: { dbId: string; noSol: string; fromClienteId?: string } | null;
+  solicitudDeepLink?: {
+    dbId: string;
+    noSol: string;
+    fromClienteId?: string;
+    /** Modo con el que se abre el formulario. Por omisión 'ver' (flujo Clientes). */
+    mode?: 'ver' | 'editar';
+    /** Si viene de una Oportunidad, id al que debe regresar Cancelar. */
+    volverAOportunidadId?: string;
+  } | null;
   /** Callback para limpiar el deep link después de usarlo */
   onSolicitudDeepLinkConsumed?: () => void;
   /** Callback para regresar al cliente después de ver una solicitud */
   onBackToCliente?: () => void;
+  /** Callback para regresar a la Oportunidad de origen al cancelar la Solicitud */
+  onBackToOportunidad?: (oportunidadId: string) => void;
   /** Si se pasa, filtra la lista para mostrar solo las solicitudes de este cliente */
   clienteIdFilter?: string;
   /** Datos del cliente para pre-llenar automáticamente una nueva solicitud */
@@ -105,7 +115,13 @@ export function buildFormDataFromListItem(s: SolicitudListItem): Record<string, 
     porcentajeEnganche: rawTerminos.porcentajeEnganche || d.porcentajeEnganche || '',
     fechaInicio: rawTerminos.fechaInicio || rawTerminos.fechaPrimerPago || extra._fechaInicio || '',
     fechaFin: rawTerminos.fechaFin || extra._fechaFin || '',
+    idGarantiaCartera: hdr.id_garantia_cartera || d.idGarantiaCartera || '',
+    polizaContableApertura: hdr.poliza_contable_apertura || d.polizaContableApertura || '',
     _clienteId: extra._clienteId || hdr.cliente_id || d._clienteId || '',
+    // BUG FIX (2026-08-25): ver formToDBPayload en useSolicitudesDB.ts — sin
+    // esto, id_cliente_crm nunca sobrevivía a un guardado real (faltaba en
+    // el payload de escritura, así que tampoco había nada que leer aquí).
+    noCliente: hdr.no_cliente || d.noCliente || '',
     _curp: extra._clienteCurp || hdr.curp || d._curp || d.curp || '',
     _rfc: extra._clienteRfc || hdr.rfc || d._rfc || d.rfc || '',
     _gobierno: extra._gobierno || hdr._gobierno || d._gobierno || '',
@@ -142,7 +158,12 @@ export function preloadSubtabsFromDBData(
       fechaPrimerPago: ps.fecha_primer_pago || rawTerminos.fechaPrimerPago || '',
       fechaPrimeraAportacion: ps.fecha_primera_aportacion || rawTerminos.fechaPrimeraAportacion || '',
       plazo: ps.plazo || rawTerminos.plazo || '',
-      frecuencia: ps.periodicidad || rawTerminos.frecuencia || '',
+      // Ultimo recurso: la periodicidad heredada de la Oportunidad. Las
+      // Solicitudes creadas antes de que el Cierre Comercial sembrara
+      // frecuencia solo tienen periodicidadCobroGpo; sin este fallback el
+      // select quedaba en cadena vacia y el navegador pintaba la primera
+      // opcion del catalogo (Semanal), que nadie habia elegido.
+      frecuencia: ps.periodicidad || rawTerminos.frecuencia || rawTerminos.periodicidadCobroGpo || '',
       tasa: ps.tasa_interes || rawTerminos.tasa || '',
       tipoTasa: rawTerminos.tipoTasa || '',
       tipoCalculo: rawTerminos.tipoCalculo || '',
@@ -186,6 +207,21 @@ export function preloadSubtabsFromDBData(
       experienciaInversion: rawTerminos.experienciaInversion || '',
       // Inversión — Método de pago de intereses
       metodoIntereses: rawTerminos.metodoIntereses || rawTerminos.metodoPagoIntereses || '',
+      // BUG FIX (2026-08-25): estos 6 campos SÍ se guardaban en BD (ver
+      // formToDBPayload en useSolicitudesDB.ts, bloque "Garantía Financiera
+      // 2o Piso"), pero esta función los omitía al reconstruir `terminos`
+      // desde rawTerminos al reabrir la Solicitud — se perdían en el viaje
+      // de vuelta aunque nunca se hubieran perdido en la BD.
+      sectorInfraestructura: rawTerminos.sectorInfraestructura || '',
+      montoEmisionProyectado: rawTerminos.montoEmisionProyectado || '',
+      porcentajeCoberturaGpo: rawTerminos.porcentajeCoberturaGpo || '',
+      montoGarantizadoGpo: rawTerminos.montoGarantizadoGpo || '',
+      tasaComisionAnualPactada: rawTerminos.tasaComisionAnualPactada || '',
+      periodicidadCobroGpo: rawTerminos.periodicidadCobroGpo || '',
+      // Plazo(s) del Producto elegidos en la Oportunidad (array).
+      plazosProducto: Array.isArray(rawTerminos.plazosProducto) ? rawTerminos.plazosProducto : [],
+      // REQ-10 — años de la emisión bursátil.
+      plazoBonosAnios: rawTerminos.plazoBonosAnios || '',
     });
   }
   const sim = sol.simulacion || {};
@@ -301,6 +337,18 @@ export function preloadSubtabsFromDBData(
       estatus: c.estatus || 'Pendiente',
     })));
   }
+  // ── Cargos (REQ-15) ──
+  // Los cargos generados al cerrar la Fase 4 de GPO viajan a BD; sin esto no
+  // se veían al reabrir la Solicitud en otra sesión. Las líneas calculadas de
+  // Arrendamiento (prefijo ARR_) que vengan de BD las reemplaza el efecto de
+  // recálculo de SolicitudCargosTab, así que no se duplican.
+  if (sol.cargos?.length > 0) {
+    saveToSession(storageId, 'cargos', sol.cargos.map((c: any, i: number) => ({
+      id: i + 1, tipoCargo: c.tipo_cargo || '', descripcion: c.descripcion || '',
+      monto: c.monto ?? 0, fechaCargo: c.fecha_cargo || '',
+      estatus: c.estatus || 'Pendiente', notas: c.notas || '',
+    })));
+  }
   if (sol.autorizaciones?.length > 0) {
     saveToSession(storageId, 'autorizaciones', sol.autorizaciones.map((a: any, i: number) => ({
       id: i + 1, fechaHora: a.fecha_autorizacion || '', usuario: a.usuario || '',
@@ -313,6 +361,71 @@ export function preloadSubtabsFromDBData(
       id: i + 1, fecha: n.fecha || '', usuario: n.usuario || '',
       puesto: n.puesto || '', nota: n.nota || '', archivoAdjunto: n.archivo_adjunto || '',
     })));
+  }
+  // REQ-11 — Votación del Comité de Prepago y Crédito.
+  if (sol.votacion_cpc?.votos?.length > 0) {
+    saveToSession(storageId, 'votacionCPC', {
+      votos: sol.votacion_cpc.votos.map((v: any) => ({
+        id: v.id,
+        votante: v.votante || '',
+        decision: v.decision || '',
+        comentarios: v.comentarios || '',
+        firmaToken: v.firma_token || '',
+        fecha: v.fecha || '',
+      })),
+    });
+  }
+  // REQ-10 — Modelo y Viabilidad Financiera.
+  if (sol.modelo_viabilidad && Object.keys(sol.modelo_viabilidad).length > 0) {
+    const mv = sol.modelo_viabilidad;
+    saveToSession(storageId, 'modeloViabilidad', {
+      fuentePrimariaIngreso: mv.fuente_primaria_ingreso || '',
+      montoFondoReservaFideicomiso: mv.monto_fondo_reserva || '',
+      dictamenRiesgoTexto: mv.dictamen_riesgo_texto || '',
+      procesadoEn: mv.procesado_en || '',
+      proyecciones: Array.isArray(mv.proyecciones)
+        ? mv.proyecciones.map((f: any, i: number) => ({
+            anio: f.anio ?? i + 1,
+            flujoCajaNetoOperativo: f.flujo_caja_neto_operativo || f.ebitda_proyectado || '',
+            servicioDeudaBursatil: f.servicio_deuda_bursatil || '',
+          }))
+        : [],
+    });
+  }
+  // REQ-9 — Estructura Operativa de 2o Piso.
+  if (sol.estructura_2o_piso && Object.keys(sol.estructura_2o_piso).length > 0) {
+    const e2p = sol.estructura_2o_piso;
+    saveToSession(storageId, 'estructura2oPiso', {
+      institucionFiduciaria: e2p.institucion_fiduciaria || '',
+      institucionFiduciariaId: e2p.institucion_fiduciaria_id || '',
+      numeroFideicomisoFuentePago: e2p.numero_fideicomiso_fuente_pago || '',
+      representanteComun: e2p.representante_comun || '',
+      representanteComunId: e2p.representante_comun_id || '',
+      notasEstructura2oPiso: e2p.notas || '',
+    });
+  }
+  // REQ-12 — Resolución Final del CIC.
+  if (sol.resolucion_cic && Object.keys(sol.resolucion_cic).length > 0) {
+    const rc = sol.resolucion_cic;
+    saveToSession(storageId, 'resolucionCIC', {
+      numeroActaCIC: rc.numero_acta_cic || '',
+      fechaSesionCIC: rc.fecha_sesion_cic || '',
+      estatusResolucionCIC: rc.estatus_resolucion_cic || '',
+      cupoReservado: rc.cupo_reservado ?? null,
+      cupoMensaje: rc.cupo_mensaje || '',
+      emitidoEn: rc.emitido_en || '',
+    });
+  }
+  // Actividad 7.1 — Validación de Cláusulas Fiduciarias.
+  if (sol.validacion_clausulas && Object.keys(sol.validacion_clausulas).length > 0) {
+    const vc = sol.validacion_clausulas;
+    saveToSession(storageId, 'validacionClausulas', {
+      cuentaClabeFideicomiso: vc.cuenta_clabe_fideicomiso || '',
+      fechaFirmaContratos: vc.fecha_firma_contratos || '',
+      clausula41AgotamientoFondoReserva: vc.clausula_41_agotamiento_fondo_reserva ?? false,
+      clausula72CascadaPagosPreferencial: vc.clausula_72_cascada_pagos_preferencial ?? false,
+      contratoArchivo: vc.contrato_archivo || null,
+    });
   }
   if (sol.partes_relacionadas?.length > 0) {
     saveToSession(storageId, 'partesRelacionadas', sol.partes_relacionadas.map((p: any, i: number) => ({
@@ -336,6 +449,7 @@ export function SolicitudCreditoList({
   solicitudDeepLink,
   onSolicitudDeepLinkConsumed,
   onBackToCliente,
+  onBackToOportunidad,
   clienteIdFilter, 
   initialClienteData 
 }: SolicitudCreditoListProps = {}) {
@@ -398,6 +512,8 @@ export function SolicitudCreditoList({
 
   // ─── Flujo "Ver solicitud desde Clientes" — abrir solicitud existente por dbId ───
   const [cameFromCliente, setCameFromCliente] = useState<string | null>(null);
+  // Oportunidad de origen — Cancelar debe devolver ahí, no a la lista.
+  const [cameFromOportunidad, setCameFromOportunidad] = useState<string | null>(null);
 
   useEffect(() => {
     if (!solicitudDeepLink || !solicitudesDB.length) return;
@@ -405,19 +521,45 @@ export function SolicitudCreditoList({
     const targetDbId = solicitudDeepLink.dbId;
     const targetNoSol = solicitudDeepLink.noSol;
     const fromCli = solicitudDeepLink.fromClienteId || null;
+    const fromOportunidad = solicitudDeepLink.volverAOportunidadId || null;
     
-    // Guardar el clienteId para saber si venimos del módulo Clientes
-    if (fromCli) {
+    // El origen decide a dónde regresa Cancelar. La Oportunidad gana: manda
+    // su cliente_id igual que el módulo Clientes, y sin esta precedencia
+    // Cancelar terminaba en Clientes en vez de volver a la Oportunidad.
+    if (fromOportunidad) {
+      setCameFromOportunidad(fromOportunidad);
+      setCameFromCliente(null);
+    } else if (fromCli) {
       setCameFromCliente(fromCli);
     }
     
     // Buscar la solicitud en la lista cargada desde DB
     const found = solicitudesDB.find(s => (s as any)._dbId === targetDbId || s.noSol === targetNoSol);
-    
+
     if (found) {
-      // Abrir en modo 'ver'
+      // Modo según el origen: Clientes abre en 'ver', la Oportunidad en
+      // 'editar' (ahí el usuario va a completar la Solicitud recién creada).
+      const modoApertura = solicitudDeepLink.mode || 'ver';
       const sid = found.id;
-      setView({ type: 'form', mode: 'ver', solicitudId: sid, dbId: (found as any)._dbId || String(sid) });
+      // BUG FIX (2026-08-25): a diferencia de handleVer/handleEditar (clic
+      // normal en la lista), este flujo solo hacía setView() — nunca corría
+      // buildFormDataFromListItem ni preloadSubtabsFromDBData, así que
+      // SolicitudCreditoForm montaba sin nada en sessionStorage. Los datos
+      // SÍ estaban en la BD (verificado); la pantalla se veía casi vacía
+      // porque nadie los había copiado a session antes de abrir el form.
+      // Mismas 2 llamadas que handleVer, con clearSession primero para no
+      // arrastrar un session leftover de otra solicitud con el mismo sid.
+      clearSession(sid);
+      const formData = buildFormDataFromListItem(found);
+      saveToSession(sid, 'form', formData);
+      const dbData = (found as any)._data;
+      if (dbData && typeof dbData === 'object') {
+        preloadSubtabsFromDBData(sid, dbData, {
+          montoCubrirGarantia: (found as any)._montoCubrirGarantia,
+          porcentajeAforo: (found as any)._porcentajeAforo,
+        });
+      }
+      setView({ type: 'form', mode: modoApertura, solicitudId: sid, dbId: (found as any)._dbId || String(sid) });
       // Limpiar deep link
       onSolicitudDeepLinkConsumed?.();
     } else {
@@ -473,6 +615,7 @@ export function SolicitudCreditoList({
       area: 'Mesa de Control',
       estatusSolicitud: 'En proceso',
       _clienteId: cp._clienteId || '',
+      ...(cp._rfc ? { _rfc: cp._rfc } : {}),
       // Fechas vigencia
       fechaInicio,
       fechaFin,
@@ -498,6 +641,14 @@ export function SolicitudCreditoList({
         montoGarantia: tc.montoGarantia || '',
         seguroFinanciado: tc.seguroFinanciado || false,
         montoSeguro: tc.montoSeguro || '',
+        // Garantía Financiera 2o Piso (GPO) — heredados de la Oportunidad (Línea de Crédito).
+        ...(tc.sectorInfraestructura !== undefined ? { sectorInfraestructura: tc.sectorInfraestructura } : {}),
+        ...(tc.montoEmisionProyectado !== undefined ? { montoEmisionProyectado: tc.montoEmisionProyectado } : {}),
+        ...(tc.porcentajeCoberturaGpo !== undefined ? { porcentajeCoberturaGpo: tc.porcentajeCoberturaGpo } : {}),
+        ...(tc.montoGarantizadoGpo !== undefined ? { montoGarantizadoGpo: tc.montoGarantizadoGpo } : {}),
+        ...(tc.tasaComisionAnualPactada !== undefined ? { tasaComisionAnualPactada: tc.tasaComisionAnualPactada } : {}),
+        ...(tc.periodicidadCobroGpo !== undefined ? { periodicidadCobroGpo: tc.periodicidadCobroGpo } : {}),
+        ...(tc.plazosProducto !== undefined ? { plazosProducto: tc.plazosProducto } : {}),
       };
       saveToSession('new', 'terminos', terminos);
 
@@ -600,6 +751,8 @@ estatusSolicitud: s.estatusSolicitud || d.estatusSolicitud || 'Pendiente',
       montoAutorizado: hdr.monto_autorizado
         || (typeof s.montoAutorizado === 'number' && s.montoAutorizado > 0 ? s.montoAutorizado.toFixed(2) : null)
         || d.montoAutorizado || '0.00',
+      idGarantiaCartera: hdr.id_garantia_cartera || d.idGarantiaCartera || '',
+      polizaContableApertura: hdr.poliza_contable_apertura || d.polizaContableApertura || '',
       _clienteId: extra._clienteId || hdr.cliente_id || d._clienteId || '',
       _gobierno: extra._gobierno || hdr._gobierno || d._gobierno || '',
       _calendarioAportaciones: (d.solicitud?.simulacion?.calendario_aportaciones || []).map((r: any) => ({
@@ -627,7 +780,12 @@ estatusSolicitud: s.estatusSolicitud || d.estatusSolicitud || 'Pendiente',
         fechaPrimerPago: ps.fecha_primer_pago || rawTerminos.fechaPrimerPago || '',
         fechaPrimeraAportacion: ps.fecha_primera_aportacion || rawTerminos.fechaPrimeraAportacion || '',
         plazo: ps.plazo || rawTerminos.plazo || '',
-        frecuencia: ps.periodicidad || rawTerminos.frecuencia || '',
+        // Ultimo recurso: la periodicidad heredada de la Oportunidad. Las
+        // Solicitudes creadas antes de que el Cierre Comercial sembrara
+        // frecuencia solo tienen periodicidadCobroGpo; sin este fallback el
+        // select quedaba en cadena vacia y el navegador pintaba la primera
+        // opcion del catalogo (Semanal), que nadie habia elegido.
+        frecuencia: ps.periodicidad || rawTerminos.frecuencia || rawTerminos.periodicidadCobroGpo || '',
         tasa: ps.tasa_interes || rawTerminos.tasa || '',
         tipoTasa: rawTerminos.tipoTasa || '',
         tipoCalculo: rawTerminos.tipoCalculo || '',
@@ -701,6 +859,15 @@ estatusSolicitud: s.estatusSolicitud || d.estatusSolicitud || 'Pendiente',
     } else {
     }
 
+    // ── Cargos (REQ-15) ──
+    if (sol.cargos?.length > 0) {
+      saveToSession(storageId, 'cargos', sol.cargos.map((c: any, i: number) => ({
+        id: i + 1, tipoCargo: c.tipo_cargo || '', descripcion: c.descripcion || '',
+        monto: c.monto ?? 0, fechaCargo: c.fecha_cargo || '',
+        estatus: c.estatus || 'Pendiente', notas: c.notas || '',
+      })));
+    }
+
     // ── Autorizaciones ──
     if (sol.autorizaciones?.length > 0) {
       saveToSession(storageId, 'autorizaciones', sol.autorizaciones.map((a: any, i: number) => ({
@@ -748,7 +915,14 @@ estatusSolicitud: s.estatusSolicitud || d.estatusSolicitud || 'Pendiente',
     setView({ type: 'form', mode: 'ver', solicitudId: sid, dbId: (s as any)._dbId || String(s.id) });
   };
   const handleBack = () => {
-    // Si venimos del módulo Clientes, regressionar allá
+    // Si venimos de una Oportunidad, regresar a su formulario
+    if (cameFromOportunidad && onBackToOportunidad) {
+      const destino = cameFromOportunidad;
+      setCameFromOportunidad(null);
+      onBackToOportunidad(destino);
+      return;
+    }
+    // Si venimos del módulo Clientes, regresar allá
     if (cameFromCliente && onBackToCliente) {
       onBackToCliente();
       setCameFromCliente(null);

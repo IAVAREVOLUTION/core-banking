@@ -596,15 +596,25 @@ export function CotizacionesModule({ deepLinkCotizacionId, deepLinkLinea, onDeep
       return next;
     });
 
-    // Actualizar el registro seleccionado con el ID definitivo y permanecer en el formulario
+    // Actualizar el registro seleccionado y permanecer en el formulario
     setSelectedCredito(savedRecord);
-    setCreSavedId(savedId);
     setFormMode('edit');
-    toast.success('Cotización guardada', { description: `Folio: ${c.no_cotiza}` });
 
-    // Refetch para sincronizar con BD
+    // BUG FIX (2026-08-25): antes se marcaba creSavedId y se mostraba
+    // "guardada" sin importar si saveCotizacion realmente escribió en la BD.
+    // creSavedId alimenta cotizacionCreEnBD (el badge "Guardada en BD"), así
+    // que una falla silenciosa dejaba al usuario creyendo que el registro
+    // estaba en J_COTIZACIONES cuando solo vivía en sessionStorage.
     if (dbResult.ok) {
+      setCreSavedId(savedId);
+      toast.success('Cotización guardada', { description: `Folio: ${c.no_cotiza}` });
       setTimeout(() => refetch(), 500);
+    } else {
+      console.error('[CotizModule] Falló el guardado en BD:', dbResult.error);
+      toast.error('No se pudo guardar en la base de datos', {
+        description: dbResult.error || 'La cotización se conservó solo en este navegador. Vuelva a intentar Guardar.',
+        duration: 8000,
+      });
     }
     // No redirigir al listado; el usuario permanece en el formulario
   };

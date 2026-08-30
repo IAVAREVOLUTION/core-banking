@@ -120,6 +120,8 @@ export function FaseActionsComponent({
   const lpLower = (formData.lineaProducto || '').toLowerCase();
   const esLineaCredito = lpLower.includes('nea') && lpLower.includes('cr');
   const esCuentaFinanciera = esLineaCredito && faseContiene('activac');
+  /** Actividad 7.1 del BPM GPO (Fase 4) — mismo botón de "Enviar de Fase", sólo cambia la etiqueta. */
+  const esValidacionClausulasFiduciarias = faseContiene('clausulas fiduciarias', 'clausula fiduciaria');
 
   // Fase de activación pura — solo si NO es "Activación Cuenta Financiera" ni similar
   // Excluir fases que contengan "cuenta" o "financier" porque esas son activaciones directas
@@ -391,7 +393,9 @@ export function FaseActionsComponent({
                     ? 'Activar cuenta y finalizar'
                     : esCierreDeProceso
                       ? 'Cerrar proceso'
-                      : 'Enviar de Fase'}
+                      : esValidacionClausulasFiduciarias
+                        ? 'Ejecutar Formalización Legal y Cierre de Solicitud'
+                        : 'Enviar de Fase'}
               </button>
             )}
 

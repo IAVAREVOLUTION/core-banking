@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<title>Contrato de Garantía de Pago Oportuno</title>
+
+<style>
+  body {
+    font-family: "Helvetica Neue", Arial, sans-serif;
+    margin: 0;
+    color: #1a1a1a;
+    font-size: 8.5px;
+  }
+
+  .page {
+    width: 210mm;
+    min-height: 297mm;
+    padding: 12mm 16mm 10mm 16mm;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+  }
+
+  /* HEADER */
+  .header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+  }
+
+  .brand { display: flex; align-items: center; gap: 7px; }
+  .logo  { height: 26px; }
+  .brand-text { line-height: 1.2; }
+  .brand-name { font-weight: 700; font-size: 11px; }
+  .brand small { font-size: 8px; color: #666; }
+
+  .doc-meta { text-align: right; font-size: 8px; line-height: 1.4; }
+
+  /* TITLE */
+  .title {
+    text-align: center;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    margin: 4px 0 2px 0;
+    border-top: 1px solid #000;
+    border-bottom: 1px solid #000;
+    padding: 3px 0;
+  }
+
+  .subtitle {
+    text-align: center;
+    font-size: 8px;
+    color: #444;
+    margin-bottom: 6px;
+  }
+
+  /* TEXT */
+  .text { text-align: justify; line-height: 1.4; }
+
+  .section { margin-bottom: 6px; }
+
+  .section-title {
+    font-size: 8px;
+    font-weight: 700;
+    text-transform: uppercase;
+    border-bottom: 1px solid #000;
+    margin-bottom: 3px;
+    padding-bottom: 1px;
+  }
+
+  .highlight { font-weight: 600; }
+
+  /* LAYOUT: declaraciones + cláusulas en dos columnas */
+  .two-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+
+  /* TABLE */
+  table { width: 100%; border-collapse: collapse; margin: 3px 0; }
+
+  td { padding: 2px 2px; vertical-align: top; }
+
+  .label { width: 44%; font-size: 8px; color: #555; }
+
+  .value { border-bottom: 1px solid #bbb; font-weight: 500; font-size: 8.5px; }
+
+  /* CASCADA DE PAGOS */
+  .cascada td { padding: 1px 3px; font-size: 7.5px; }
+  .cascada .seq { width: 12px; color: #666; text-align: right; }
+  .cascada .hit { font-weight: 700; }
+
+  /* CLAUSES */
+  .clause { margin-bottom: 4px; text-align: justify; line-height: 1.38; }
+  .clause strong { display: inline; font-weight: 700; }
+
+  /* SIGNATURE */
+  .signature-block {
+    margin-top: 8px;
+    display: flex;
+    justify-content: space-between;
+  }
+
+  .signature { width: 30%; text-align: center; }
+
+  .line {
+    margin-top: 26px;
+    border-top: 1px solid #000;
+    padding-top: 4px;
+    font-size: 8px;
+  }
+
+  /* FOOTER */
+  .footer { font-size: 7.5px; color: #666; }
+
+  .footer-line { width: 100%; height: 1px; background: #ccc; margin-bottom: 4px; }
+
+  .footer-content { display: flex; justify-content: space-between; }
+
+</style>
+</head>
+
+<body>
+<div class="page">
+
+  <div>
+
+    <!-- HEADER -->
+    <div class="header">
+      <div class="brand">
+        <img class="logo" src="/src/assets/7b6cb23c00b7817818c638af3eae0a416e1e9f57.png"/>
+        <div class="brand-text">
+          <div class="brand-name">{{institucionNombre}}</div>
+          <small>{{empresa_razon_social}}</small>
+        </div>
+      </div>
+
+      <div class="doc-meta">
+        <div><strong>Contrato No.:</strong> {{numeroSolicitud}}</div>
+        <div><strong>Fecha:</strong> {{fechaFirmaLarga}}</div>
+        <div><strong>Lugar:</strong> {{ciudadFirma}}</div>
+      </div>
+    </div>
+
+    <!-- TITLE -->
+    <div class="title">CONTRATO DE GARANTÍA DE PAGO OPORTUNO (GPO)</div>
+    <div class="subtitle">Garantía Financiera de Segundo Piso sobre emisión bursátil de infraestructura</div>
+
+    <!-- INTRO -->
+    <div class="text section">
+      En {{ciudadFirma}}, a {{fechaFirmaLarga}}, comparecen <span class="highlight">{{institucionNombre}}</span>
+      (<span class="highlight">"EL GARANTE"</span>) y <span class="highlight">{{clienteNombreCompleto}}</span>
+      (<span class="highlight">"EL EMISOR"</span>), en relación con la emisión de deuda bursátil destinada a
+      financiar el proyecto de infraestructura promovido con la Institución de Gobierno
+      <span class="highlight">{{institucion_gobierno}}</span>, quienes celebran el presente
+      <span class="highlight">Contrato de Garantía de Pago Oportuno</span> conforme a las declaraciones y cláusulas
+      siguientes. Los términos con mayúscula inicial no definidos en este contrato tienen el significado que les
+      atribuyen los documentos de la emisión y el contrato de fideicomiso de fuente de pago.
+    </div>
+
+    <div class="two-col">
+
+      <!-- COLUMNA IZQUIERDA: DECLARACIONES, DATOS, CONDICIONES Y CASCADAS -->
+      <div class="section">
+        <div class="section-title">Declaraciones</div>
+        <div class="text">
+          <strong>I. EL GARANTE:</strong> institución legalmente constituida, con facultades para otorgar
+          <span class="highlight">garantías financieras de segundo piso</span>, que declara contar con la
+          autorización del órgano interno competente conforme al monto de la operación, y que
+          <span class="highlight">no asume la calidad de emisor, obligado solidario ni avalista de los bonos</span>:
+          su obligación se limita, en monto y en supuestos, a lo pactado en la Cláusula PRIMERA.<br>
+          <strong>II. EL EMISOR:</strong> {{clienteTipoPersonaDescripcion}} con capacidad legal, que declara que la
+          información entregada para la evaluación de LA GARANTÍA es cierta y completa, que la emisión y el
+          fideicomiso de fuente de pago se encuentran debidamente constituidos, y que
+          <span class="highlight">reconoce que todo pago que EL GARANTE realice al amparo de este contrato
+          constituye un adeudo directo a su cargo</span> en los términos de la Cláusula SÉPTIMA.
+        </div>
+
+        <div class="section-title" style="margin-top:6px">Datos de EL EMISOR</div>
+        <table>
+          <tr><td class="label">Nombre / Razón social</td><td class="value">{{clienteNombreCompleto}}</td></tr>
+          <tr><td class="label">RFC</td><td class="value">{{clienteRFC}}</td></tr>
+          <tr><td class="label">Constitución / Nacimiento</td><td class="value">{{clienteFechaNacimientoConstitucion}}</td></tr>
+          <tr><td class="label">Domicilio</td><td class="value">{{clienteDomicilio}}</td></tr>
+          <tr><td class="label">Institución de Gobierno</td><td class="value">{{institucion_gobierno}}</td></tr>
+          <tr><td class="label">Sector de infraestructura</td><td class="value">{{sector_infraestructura}}</td></tr>
+        </table>
+
+        <div class="section-title" style="margin-top:6px">Condiciones de LA GARANTÍA</div>
+        <table>
+          <tr><td class="label">Producto</td><td class="value">{{productoNombre}}</td></tr>
+          <tr><td class="label">Destino de los recursos</td><td class="value">{{descripcion}}</td></tr>
+          <tr><td class="label">Monto de la emisión</td><td class="value">{{monto_emision}} {{moneda}}</td></tr>
+          <tr><td class="label">Plazo de los bonos</td><td class="value">{{plazo_bonos}} años</td></tr>
+          <tr><td class="label">% de cobertura</td><td class="value">{{porcentaje_cobertura_gpo}}%</td></tr>
+          <tr><td class="label">Monto Máximo Garantizado</td><td class="value">{{monto_garantizado}} {{moneda}}</td></tr>
+          <tr><td class="label">Tasa de comisión anual</td><td class="value">{{tasa_comision_gpo}}%</td></tr>
+          <tr><td class="label">Periodicidad de cobro</td><td class="value">{{periodicidad_cobro_gpo}}</td></tr>
+          <tr><td class="label">Inicio de vigencia</td><td class="value">{{fecha_inicio}}</td></tr>
+          <tr><td class="label">Crédito de recuperación</td><td class="value">Crédito Simple 2o Piso</td></tr>
+        </table>
+
+        <div class="section-title" style="margin-top:6px">Fideicomiso de Fuente de Pago</div>
+        <table>
+          <tr><td class="label">Institución fiduciaria</td><td class="value">{{institucion_fiduciaria}}</td></tr>
+          <tr><td class="label">No. de fideicomiso</td><td class="value">{{numero_fideicomiso}}</td></tr>
+          <tr><td class="label">Representante común</td><td class="value">{{representante_comun}}</td></tr>
+          <tr><td class="label">Cuenta CLABE</td><td class="value">{{clabe_fideicomiso}}</td></tr>
+          <tr><td class="label">Fecha de firma de contratos</td><td class="value">{{fecha_firma_contratos}}</td></tr>
+          <tr><td class="label">Cláusula 4.1 — Fondo de Reserva</td><td class="value">{{clausula_41}}</td></tr>
+          <tr><td class="label">Cláusula 7.2 — Cascada preferencial</td><td class="value">{{clausula_72}}</td></tr>
+        </table>
+
+        <div class="section-title" style="margin-top:6px">Prelación de Pagos — Operación Normal</div>
+        <table class="cascada">
+          <tr><td class="seq">1</td><td>Gastos de Operación y Mantenimiento del Proyecto (O&amp;M)</td></tr>
+          <tr><td class="seq">2</td><td>Impuestos, derechos y gastos fiduciarios básicos</td></tr>
+          <tr><td class="seq">3</td><td>Servicio de la deuda bursátil (intereses y capital ordinario)</td></tr>
+          <tr><td class="seq">4</td><td>Fondeo o restitución del Fondo de Reserva (DSR)</td></tr>
+          <tr><td class="seq">5</td><td class="hit">Comisión por Garantía Financiera (Segundo Piso)</td></tr>
+          <tr><td class="seq">6</td><td>Fondos de reserva adicionales o menores</td></tr>
+          <tr><td class="seq">7</td><td>Distribución de remanentes</td></tr>
+          <tr><td class="seq">8</td><td>Intereses y capital del Crédito de Recuperación</td></tr>
+        </table>
+
+        <div class="section-title" style="margin-top:4px">Prelación de Pagos — Botón de Pánico</div>
+        <table class="cascada">
+          <tr><td class="seq">1</td><td>Gastos de Operación y Mantenimiento del Proyecto (O&amp;M)</td></tr>
+          <tr><td class="seq">2</td><td>Impuestos, derechos y gastos fiduciarios básicos</td></tr>
+          <tr><td class="seq">3</td><td class="hit">Intereses y capital del Crédito de Recuperación — Total del Pagaré</td></tr>
+          <tr><td class="seq">4</td><td>Servicio de la deuda bursátil (intereses y capital ordinario)</td></tr>
+          <tr><td class="seq">5</td><td>Fondeo o restitución del Fondo de Reserva (DSR)</td></tr>
+          <tr><td class="seq">6</td><td>Comisión por Garantía Financiera (Segundo Piso)</td></tr>
+          <tr><td class="seq">7</td><td>Fondos de reserva adicionales o menores</td></tr>
+          <tr><td class="seq">8</td><td>Distribución de remanentes</td></tr>
+        </table>
+      </div>
+
+      <!-- COLUMNA DERECHA: CLÁUSULAS -->
+      <div class="section">
+        <div class="section-title">Cláusulas</div>
+
+        <div class="clause"><strong>PRIMERA. Objeto —</strong> EL GARANTE otorga en favor de los tenedores de los
+          bonos emitidos por EL EMISOR una <strong>garantía de pago oportuno, irrevocable e incondicional</strong>,
+          que cubre el <strong>{{porcentaje_cobertura_gpo}}%</strong> del servicio de la deuda bursátil —intereses y
+          capital ordinario— <strong>hasta por un Monto Máximo Garantizado de {{monto_garantizado}}
+          {{moneda}}</strong>. LA GARANTÍA no cubre penas convencionales, intereses moratorios, gastos de la emisión,
+          ni los montos exigibles por vencimiento anticipado decretado por causas imputables a EL EMISOR.</div>
+
+        <div class="clause"><strong>SEGUNDA. Monto Máximo Garantizado —</strong> El Monto Máximo Garantizado es
+          <strong>decreciente y no revolvente</strong>: se reduce en el importe de cada pago que EL GARANTE realice
+          al amparo de este contrato y en la proporción que corresponda conforme se amortice la emisión. Su
+          restitución procede únicamente cuando EL EMISOR haya reembolsado íntegramente el Crédito de Recuperación
+          de la Cláusula SÉPTIMA y así lo confirme EL GARANTE por escrito.</div>
+
+        <div class="clause"><strong>TERCERA. Comisión por garantía —</strong> Como contraprestación, EL EMISOR pagará
+          una comisión a razón de <strong>{{tasa_comision_gpo}}% anual</strong> sobre el Monto Máximo Garantizado
+          vigente, con periodicidad <strong>{{periodicidad_cobro_gpo}}</strong>, más el Impuesto al Valor Agregado
+          correspondiente. La comisión ocupa el <strong>quinto lugar de la cascada en Operación Normal</strong> y se
+          cubre con cargo al patrimonio del fideicomiso de fuente de pago. Su falta de pago constituye incumplimiento
+          en términos de la Cláusula DÉCIMA SEGUNDA.</div>
+
+        <div class="clause"><strong>CUARTA. Requerimiento y ejecución —</strong> Ante insuficiencia de recursos en el
+          fideicomiso para cubrir el servicio de la deuda, el representante común o el fiduciario deberá notificar
+          por escrito a EL GARANTE con al menos <strong>cinco días hábiles</strong> de anticipación a la fecha de
+          pago, acompañando el cálculo del faltante. EL GARANTE cubrirá el importe procedente, hasta el remanente del
+          Monto Máximo Garantizado, <strong>a más tardar el día hábil anterior a la fecha de pago</strong>, mediante
+          depósito directo en la cuenta del fideicomiso.</div>
+
+        <div class="clause"><strong>QUINTA. Fuente de pago y prelación —</strong> Las partes reconocen como fuente de
+          pago el patrimonio del <strong>fideicomiso No. {{numero_fideicomiso}}</strong>, administrado por
+          <strong>{{institucion_fiduciaria}}</strong> y con representante común
+          <strong>{{representante_comun}}</strong>, cuyos recursos se depositan en la cuenta CLABE
+          <strong>{{clabe_fideicomiso}}</strong> y se aplicarán conforme a la <strong>cascada de Operación
+          Normal</strong> transcrita en este contrato. Ninguna modificación a dicha cascada surtirá efectos sin
+          consentimiento previo y por escrito de EL GARANTE.</div>
+
+        <div class="clause"><strong>QUINTA BIS. Cláusulas fiduciarias blindadas —</strong> EL EMISOR manifiesta que el
+          contrato de fideicomiso, firmado el <strong>{{fecha_firma_contratos}}</strong>, incorpora de forma
+          irrevocable la <strong>Cláusula 4.1 — Agotamiento del Fondo de Reserva previo a la ejecución de LA
+          GARANTÍA</strong> ({{clausula_41}}) y la <strong>Cláusula 7.2 — Cascada de Pagos Preferencial</strong>
+          ({{clausula_72}}). Su modificación o supresión constituye incumplimiento en términos de la Cláusula
+          DÉCIMA SEGUNDA.</div>
+
+        <div class="clause"><strong>SEXTA. Botón de Pánico —</strong> A partir del primer pago que EL GARANTE realice
+          al amparo de LA GARANTÍA, y hasta el reembolso total del Crédito de Recuperación, la aplicación de recursos
+          se sujetará a la <strong>cascada de Botón de Pánico</strong>, en la que dicho crédito se paga <strong>en
+          tercer lugar por el Total del Pagaré</strong> y se suspende toda distribución de remanentes.</div>
+
+        <div class="clause"><strong>SÉPTIMA. Crédito de Recuperación y subrogación —</strong> Cada pago efectuado por
+          EL GARANTE se documentará como <strong>disposición del Crédito Simple 2o Piso</strong> a cargo de EL EMISOR,
+          amparada por el pagaré correspondiente, y devengará los intereses ordinarios y moratorios pactados en dicho
+          crédito desde la fecha del desembolso. EL GARANTE <strong>se subroga</strong> en los derechos de los
+          tenedores hasta por el importe pagado, sin necesidad de declaración judicial.</div>
+
+        <div class="clause"><strong>OCTAVA. Fondo de Reserva (DSR) —</strong> EL EMISOR se obliga a mantener el Fondo
+          de Reserva del Servicio de la Deuda en el nivel exigido por los documentos de la emisión y a
+          <strong>restituirlo dentro de los treinta días naturales</strong> siguientes a cualquier disposición del
+          mismo, con la prelación señalada en la cascada aplicable.</div>
+
+        <div class="clause"><strong>NOVENA. Obligaciones de hacer —</strong> EL EMISOR se obliga a: (a) entregar
+          información financiera y reportes de avance del proyecto con la periodicidad que EL GARANTE determine;
+          (b) mantener vigentes autorizaciones, permisos e inscripciones aplicables a la emisión; (c) destinar los
+          recursos exclusivamente al fin pactado; y (d) informar a EL GARANTE, dentro de los tres días hábiles
+          siguientes, cualquier hecho que pueda afectar la fuente de pago.</div>
+
+        <div class="clause"><strong>DÉCIMA. Obligaciones de no hacer —</strong> Sin autorización previa y por escrito
+          de EL GARANTE, EL EMISOR no podrá: (a) contratar deuda adicional con cargo a la misma fuente de pago;
+          (b) modificar los documentos de la emisión o el contrato de fideicomiso; (c) ceder o gravar los derechos de
+          cobro afectos; ni (d) constituir garantías de prelación preferente sobre el patrimonio fideicomitido.</div>
+
+        <div class="clause"><strong>DÉCIMA PRIMERA. Vigencia y extinción —</strong> LA GARANTÍA estará vigente desde
+          {{fecha_inicio}} y por todo el plazo de {{plazo_bonos}} años de la emisión. Se extingue por: (a) amortización
+          total de los bonos; (b) agotamiento del Monto Máximo Garantizado; o (c) sustitución de LA GARANTÍA con
+          consentimiento de EL GARANTE. La extinción de LA GARANTÍA <strong>no libera</strong> a EL EMISOR de los
+          saldos pendientes del Crédito de Recuperación ni de las comisiones devengadas.</div>
+
+        <div class="clause"><strong>DÉCIMA SEGUNDA. Incumplimiento —</strong> El incumplimiento de cualquiera de las
+          obligaciones a cargo de EL EMISOR faculta a EL GARANTE para dar por vencido anticipadamente el Crédito de
+          Recuperación y exigir su pago total, mantener la cascada de Botón de Pánico y ejercer las acciones que
+          correspondan, sin perjuicio de la subsistencia de LA GARANTÍA frente a los tenedores.</div>
+
+        <div class="clause"><strong>DÉCIMA TERCERA. Registro y cesión —</strong> EL GARANTE registrará LA GARANTÍA en
+          las cuentas de orden que correspondan conforme a la normatividad aplicable. EL EMISOR no podrá ceder sus
+          derechos u obligaciones derivados de este contrato; EL GARANTE sí podrá cederlos o afectarlos en garantía,
+          previa notificación a EL EMISOR.</div>
+
+        <div class="clause"><strong>DÉCIMA CUARTA. Notificaciones y jurisdicción —</strong> Las notificaciones se
+          practicarán en los domicilios señalados en este contrato, mientras no se comunique su cambio por escrito.
+          Para la interpretación y cumplimiento del presente contrato, las partes se someten expresamente a los
+          tribunales de <strong>{{jurisdiccion}}</strong>, renunciando a cualquier otro fuero.</div>
+      </div>
+
+    </div>
+
+    <!-- CIERRE -->
+    <div class="text" style="margin-top:4px">
+      Leídas y enteradas las partes del contenido y alcance legal del presente Contrato de Garantía de Pago
+      Oportuno, lo firman de conformidad para constancia, en la fecha y lugar señalados en el proemio.
+    </div>
+
+    <!-- FIRMAS -->
+    <div class="signature-block">
+      <div class="signature">
+        <div class="line">{{clienteNombreCompleto}}</div>
+        EL EMISOR
+      </div>
+
+      <div class="signature">
+        <div class="line">{{institucionNombre}}</div>
+        EL GARANTE
+      </div>
+
+      <div class="signature">
+        <div class="line">{{institucion_gobierno}}</div>
+        INSTITUCIÓN DE GOBIERNO — ENTERADA
+      </div>
+    </div>
+
+  </div>
+
+  <!-- FOOTER -->
+  <div class="footer">
+    <div class="footer-line"></div>
+    <div class="footer-content">
+      <span>{{institucionNombre}} · Contrato No. {{numeroSolicitud}}</span>
+      <span>Emitido el {{fecha}} · {{ciudadFirma}}</span>
+      <span>Documento confidencial · Contrato legal</span>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

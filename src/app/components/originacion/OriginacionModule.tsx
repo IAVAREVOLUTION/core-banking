@@ -164,7 +164,9 @@ export function OriginacionModule() {
 
   // Antes de abrir el form, sembrar datos reales desde DB si no están en el store de Originación
   const seedAndOpen = useCallback((i: OriginacionListItem, mode: 'editar' | 'ver') => {
-    const solItem = (solicitudesDB as Record<string, any>[]).find(s => s.id === i.id || s.noSol === i.noSolicitud);
+    const solItem = (solicitudesDB as Record<string, any>[]).find(
+      s => s.id === i.id || s._dbId === i.id || s.noSol === i.noSolicitud,
+    );
     if (solItem) {
       // ── Sembrar namespace sol_credito_ (para SolicitudBaseForm / SolicitudCreditoForm) ──
       const solFormData = buildFormDataFromListItem(solItem as any);
@@ -175,6 +177,17 @@ export function OriginacionModule() {
       }
       // ── También sembrar namespace originacion_ (legacy) ──
       seedOriginacionFromSolicitudItem(i.id, solItem);
+    } else {
+      // BUG FIX (2026-08-25): antes se abría el formulario igual, sin sembrar
+      // nada — SolicitudCreditoForm caía a EMPTY_FORM y la pantalla salía en
+      // blanco sin ninguna pista de por qué. Si el renglón no se puede ligar
+      // a una Solicitud real, es mejor decirlo que mostrar un cascarón vacío.
+      console.error('[OriginacionModule] No se encontró la Solicitud en BD para el renglón:', i);
+      toast.error('No se pudo cargar la Solicitud', {
+        description: `El registro ${i.noSolicitud || i.id} no está en la base de datos. Refresque la lista.`,
+        duration: 8000,
+      });
+      return;
     }
     setView({ type: 'form', mode, id: i.id });
   }, [solicitudesDB]);

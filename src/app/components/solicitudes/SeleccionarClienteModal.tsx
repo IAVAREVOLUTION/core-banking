@@ -38,10 +38,6 @@ function mapRow(row: JClienteRow): ClienteItem {
   const def = d.default || {};
   const g = (key: string) => d[key] || def[key] || '';
 
-  const nombre = g('nombre');
-  const apellidoPaterno = g('apellidoPaterno');
-  const apellidoMaterno = g('apellidoMaterno');
-
   // Normalizar personalidad: puede venir de subtipo o de data.personalidad
   const rawPersonalidad = (row.subtipo || g('personalidad') || g('tipoPersona') || '').trim();
   const normalizarPersonalidad = (val: string): string => {
@@ -50,6 +46,19 @@ function mapRow(row: JClienteRow): ClienteItem {
     if (lower === 'moral' || lower === 'persona moral' || lower === 'pm') return 'Moral';
     return val || '';
   };
+  const esMoral = normalizarPersonalidad(rawPersonalidad) === 'Moral';
+
+  // BUG FIX — Persona Moral no tiene nombre/apellidos; su nombre vive en
+  // denominacionRazonSocial. Un bug ya corregido en ProspectoForm.tsx llego
+  // a inyectar palabras de la Razon Social en apellidoPaterno/apellidoMaterno
+  // (crecia en cada guardado); ese guardado parcial nunca puede limpiarse a
+  // '' (los vacios se ignoran para no borrar datos por accidente), asi que
+  // aqui se ignoran esos dos campos POR COMPLETO para Moral, sin importar
+  // que haya quedado guardado. Sin este fallback general de nombre, el
+  // selector de clientes de Solicitudes los muestra como "Sin nombre".
+  const nombre = g('nombre') || g('denominacionRazonSocial') || g('razonSocial');
+  const apellidoPaterno = esMoral ? '' : g('apellidoPaterno');
+  const apellidoMaterno = esMoral ? '' : g('apellidoMaterno');
 
   // Construir domicilio desde múltiples posibles estructuras del JSONB
   const dirs = d.direcciones || def.direcciones || [];

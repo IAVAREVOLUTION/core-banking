@@ -50,10 +50,25 @@ function mapRowToProspecto(row: ClienteProspectoRow, index: number): Prospecto {
     || '';
 
   // data.nombre = nombre de pila; nombre completo = nombre + apellidoPaterno + apellidoMaterno
+  //
+  // BUG FIX — Persona Moral: "nombre"/apellidos NO EXISTEN para una empresa.
+  // Un bug ya corregido (ver ProspectoForm.tsx) partía la Razón Social por
+  // espacio y la inyectaba en apellidoPaterno/apellidoMaterno; cada ciclo de
+  // editar→guardar volvía a sumar una palabra más (síntoma real observado:
+  // "PRUEBA 2 2 2" tras 3 guardados). Ese fix impide que sea GENERE más
+  // basura, pero no puede limpiar la que ya quedó en la BD — el guardado
+  // parcial nunca sobreescribe con '' (regla institucional §5: los vacíos
+  // se ignoran para no borrar datos por accidente). Por eso, para Moral,
+  // se ignoran apellidoPaterno/apellidoMaterino POR COMPLETO al construir el
+  // nombre a mostrar, sin importar qué haya quedado guardado.
+  const esMoral = row.subtipo === 'Persona Moral';
+  const razonSocial = (d.denominacionRazonSocial as string) || (legacy.denominacionRazonSocial as string) || '';
   const nombrePila = (d.nombre as string) || (legacy.nombre as string) || '';
-  const apPat = (d.apellidoPaterno as string) || (legacy.apellidoPaterno as string) || '';
-  const apMat = (d.apellidoMaterno as string) || (legacy.apellidoMaterno as string) || '';
-  const nombreCompleto = `${nombrePila} ${apPat} ${apMat}`.trim();
+  const apPat = esMoral ? '' : ((d.apellidoPaterno as string) || (legacy.apellidoPaterno as string) || '');
+  const apMat = esMoral ? '' : ((d.apellidoMaterno as string) || (legacy.apellidoMaterno as string) || '');
+  const nombreCompleto = esMoral
+    ? (razonSocial || nombrePila)
+    : (`${nombrePila} ${apPat} ${apMat}`.trim() || razonSocial);
 
   return {
     dbUuid: row.id,
@@ -84,6 +99,16 @@ function mapRowToProspecto(row: ClienteProspectoRow, index: number): Prospecto {
     institucionGobierno: (d.institucionGobierno as string) || '',
     institucionGobiernoId: (d.institucionGobiernoId as string) || '',
     clasificacionCliente: (d.clasificacionCliente as string) || '',
+    // ── Persona Moral ──
+    fechaConstitucion: (d.fechaConstitucion as string) || (legacy.fechaConstitucion as string) || '',
+    giroEmpresa:       (d.giroEmpresa as string) || (legacy.giroEmpresa as string) || '',
+    representanteLegalNombre: (d.representanteLegalNombre as string) || (legacy.representanteLegalNombre as string) || '',
+    // ── Perfil del proyecto — HU-CRM-02 ──
+    sectorInfraestructura: (d.sectorInfraestructura as string) || '',
+    montoInversion:    (d.montoInversion as string) || '',
+    monedaInversion:   (d.monedaInversion as string) || '',
+    tipoFinanciamiento: (d.tipoFinanciamiento as string) || '',
+    descripcionObra:   (d.descripcionObra as string) || '',
     direcciones:       Array.isArray(d.direcciones) ? d.direcciones : undefined,
     cotizaciones:      Array.isArray(d.cotizaciones) ? d.cotizaciones : undefined,
     consultas:         Array.isArray(d.sic) ? d.sic : (Array.isArray(d.consultas) ? d.consultas : undefined),

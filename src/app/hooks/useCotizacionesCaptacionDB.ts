@@ -434,6 +434,19 @@ export function useCotizacionesCaptacionDB(active: boolean) {
 
       console.log('[CotizDB] SAVE — id:', c.id, '| looksNew:', looksNew, '| existsInState:', existsInState, '| → isNew:', isNew);
 
+      // BUG FIX (2026-08-25): esta función devolvía { ok: true } incluso cuando
+      // el INSERT/UPDATE a la BD fallaba — el error real solo quedaba en un
+      // console.warn invisible para el usuario. Eso ocultó por completo que
+      // NINGUNA Oportunidad se estaba guardando en J_COTIZACIONES: el enum
+      // estatus_cotiza no tenía dado de alta los valores del pipeline
+      // ('En Cotización', etc. — ver migración
+      // add_estatus_oportunidad_enum_values.sql), cada INSERT fallaba con
+      // 22P02, y el usuario veía "Oportunidad guardada" de todas formas.
+      // Se conserva el respaldo en sessionStorage (para no perder lo
+      // capturado si además falla la red), pero el `ok` que se devuelve
+      // ahora refleja la verdad: false si NO llegó a la base de datos.
+      let dbError: string | undefined;
+
       if (DB_AVAILABLE) {
         if (isNew) {
           const result = await insertCotizacion(c);
@@ -446,8 +459,9 @@ export function useCotizacionesCaptacionDB(active: boolean) {
             });
             return { ok: true, id: result.id };
           }
-          // INSERT falló → log y caer a modo local
+          // INSERT falló → log y caer a modo local (con el error real)
           console.warn('[CotizDB] INSERT falló, guardando localmente:', result.error);
+          dbError = result.error || 'El INSERT a la base de datos falló.';
         } else {
           const result = await updateCotizacion(c);
           if (result.ok) {
@@ -458,12 +472,15 @@ export function useCotizacionesCaptacionDB(active: boolean) {
             });
             return { ok: true, id: c.id };
           }
-          // UPDATE falló → log y caer a modo local
+          // UPDATE falló → log y caer a modo local (con el error real)
           console.warn('[CotizDB] UPDATE falló, guardando localmente:', result.error);
+          dbError = result.error || 'El UPDATE a la base de datos falló.';
         }
       }
 
       // ── Modo local (DB_AVAILABLE=false o RPC falló) ──
+      // Se conserva el dato para que el usuario no lo pierda, pero se
+      // reporta ok:false para que el llamador NO muestre un falso éxito.
       const localId = isNew ? (c.id || `local-${Date.now()}`) : c.id;
       const localCotizacion = { ...c, id: localId };
       setCotizaciones(prev => {
@@ -478,7 +495,7 @@ export function useCotizacionesCaptacionDB(active: boolean) {
         saveToSession(next);
         return next;
       });
-      return { ok: true, id: localId };
+      return { ok: false, id: localId, error: dbError || 'DB no disponible (DB_AVAILABLE=false)' };
     } finally {
       setSaving(false);
     }

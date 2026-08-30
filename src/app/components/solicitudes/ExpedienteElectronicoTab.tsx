@@ -22,12 +22,13 @@ import { supabase } from '../../lib/supabaseClient';
 import {
   DocumentoCargado, RequisitoProducto, ElementoRequerido,
   saveToSession, loadFromSession, loadFromSavedStore, generateId,
-  MOCK_REQUISITOS_PRODUCTO, MOCK_DOCUMENTOS,
+  MOCK_REQUISITOS_PRODUCTO, MOCK_DOCUMENTOS, documentosParaSessionStorage,
 } from './solicitudCreditoStore';
 import { AgregarDocumentoModal } from '../originacion/AgregarDocumentoModal';
 import {
   autoCrearReporteBuro, CLAVE_REPORTE_BURO,
   autoCrearKitLegal, CLAVE_CONTRATO_REQ, CLAVE_PAGARE_REQ, CLAVE_ANEXO_RENTAS,
+  autoCrearDocumentosComitePrepago, CLAVE_ACTA_COMITE, CLAVE_CERT_PREAPART,
 } from '../../hooks/generarDocumentosFase4';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-7e2d13d9`;
@@ -419,6 +420,51 @@ function parseFaseId(fase?: string | number): number {
   return match ? parseInt(match[1], 10) : 1;
 }
 
+/** Normaliza un nombre de fase para comparar sin acentos, mayúsculas ni puntuación. */
+function normalizarFase(nombre?: string): string {
+  return (nombre || '')
+    .toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9 ]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * Mapa "nombre de fase" → número de fase, tomado de las fases del producto.
+ *
+ * BUG FIX: parseFaseId saca el número del NOMBRE de la fase. Funciona con
+ * "Fase 1"/"Fase 2", pero este producto (y cualquiera con fases descriptivas)
+ * las llama "ADMISIÓN Y CAPTURA DEL ECOSISTEMA", "ANÁLISIS DE GRADO DE
+ * RIESGO", etc. — sin un solo dígito. El regex no encontraba nada y TODOS los
+ * requisitos caían a faseId 1, así que la primera fase pedía los 18
+ * documentos del producto completo en vez de los 4 que le tocan.
+ *
+ * El producto ya declara sus fases en orden; ese orden es la fuente de verdad.
+ */
+function construirMapaFases(productData: any): Record<string, number> {
+  const raw =
+    (Array.isArray(productData?.fases) && productData.fases.length > 0 ? productData.fases : null) ??
+    (Array.isArray(productData?.fasesRegistros) && productData.fasesRegistros.length > 0 ? productData.fasesRegistros : null) ??
+    (Array.isArray(productData?.fase) ? productData.fase : null);
+  const mapa: Record<string, number> = {};
+  if (!Array.isArray(raw)) return mapa;
+  raw.forEach((f: any, idx: number) => {
+    const nombre = normalizarFase(f?.fase || f?.phaseName || f?.descripcion);
+    if (!nombre) return;
+    const num = parseInt(String(f?.seq ?? f?.numero_consecutivo ?? f?.orden ?? f?.numeroFase ?? idx + 1), 10);
+    mapa[nombre] = Number.isFinite(num) && num > 0 ? num : idx + 1;
+  });
+  return mapa;
+}
+
+/** Resuelve el número de fase: primero por nombre contra el producto, luego el regex. */
+function resolverFaseId(faseStr: string, mapaFases: Record<string, number>): number {
+  const porNombre = mapaFases[normalizarFase(faseStr)];
+  if (porNombre) return porNombre;
+  return parseFaseId(faseStr);
+}
+
 /** Helper para extraer promptIA del catálogo usando claveDocumento */
 interface CatalogoDocItem {
   id: string;
@@ -447,13 +493,15 @@ function getElementosFromCatalogo(claveDocumento: string | undefined, catalogo: 
 }
 
 /** Mapea una fila de data.expedientesElectronicos → RequisitoProducto */
-function mapExpedienteToLocal(row: ExpedienteDBRow, idx: number, catalogo: CatalogoDocItem[] = []): RequisitoProducto {
+function mapExpedienteToLocal(row: ExpedienteDBRow, idx: number, catalogo: CatalogoDocItem[] = [], mapaFases: Record<string, number> = {}): RequisitoProducto {
   const faseStr = row.fase || 'Fase 1';
   const claveDoc = row.claveDocumento;
 
   // faseId: normalizar SIEMPRE a número para evitar mismatch string "1" vs número 1
   const rawFaseId = row.faseId ?? row.fase_id;
-  const faseId = rawFaseId != null ? parseInt(String(rawFaseId), 10) || parseFaseId(faseStr) : parseFaseId(faseStr);
+  const faseId = rawFaseId != null
+    ? parseInt(String(rawFaseId), 10) || resolverFaseId(faseStr, mapaFases)
+    : resolverFaseId(faseStr, mapaFases);
 
   // Buscar promptIA: 1) del row mismo, 2) del catálogo usando claveDocumento
   const promptIADelRow = row.promptIA || row.prompt_ia || '';
@@ -475,12 +523,12 @@ function mapExpedienteToLocal(row: ExpedienteDBRow, idx: number, catalogo: Catal
 }
 
 /** Mapea una fila de data.requisitos → RequisitoProducto */
-function mapDBRequisitoToLocal(row: RequisitoDBRow, idx: number, catalogo: CatalogoDocItem[] = []): RequisitoProducto {
+function mapDBRequisitoToLocal(row: RequisitoDBRow, idx: number, catalogo: CatalogoDocItem[] = [], mapaFases: Record<string, number> = {}): RequisitoProducto {
   const faseStr = row.fase || 'Fase 1';
   return {
     id: row.id ?? (10000 + idx),
     fase: faseStr,
-    faseId: row.faseId ?? row.fase_id ?? parseFaseId(faseStr),
+    faseId: row.faseId ?? row.fase_id ?? resolverFaseId(faseStr, mapaFases),
     tipoDocumento: row.requisitoNombre || row.tipoDocumento || row.tipo_documento || `Requisito-${idx + 1}`,
     descripcion: row.descripcion || row.nota || '',
     area: row.area || 'General',
@@ -505,6 +553,21 @@ interface Props {
   lineaProducto?: string;
   descripcionFase?: string;
   onEnviarSolicitud?: () => void;
+  /**
+   * Espeja los documentos vivos hacia el formulario. La validación de avance
+   * de fase leía sólo de sessionStorage, que puede quedarse sin cuota; esta
+   * ruta en memoria no depende de que la escritura haya funcionado.
+   */
+  onDocumentosChange?: (docs: DocumentoCargado[]) => void;
+  /**
+   * Dirección inversa de onDocumentosChange: la última lista conocida en
+   * memoria (documentosDelTabRef en el padre). Se usa como semilla al montar
+   * cuando un generador automático (Oficio CIC, Dictamen, Acta, etc.) agregó
+   * un documento MIENTRAS este acordeón estaba cerrado — si sessionStorage
+   * rechazó ese guardado por cuota, sin esto el remount volvería a mostrar la
+   * lista vieja aunque la base de datos ya tenga el documento nuevo.
+   */
+  documentosIniciales?: DocumentoCargado[];
   /** No. de Solicitud — usado para el PDF del Reporte de Buró generado manualmente */
   noSolicitud?: string;
   /** Tipo/Sublínea de producto — usado para el PDF del Reporte de Buró */
@@ -515,7 +578,24 @@ interface Props {
   plantillasProducto?: any[];
 }
 
-export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, productoId, nombreSolicitante, curpCliente, rfcCliente, fasePromptIA, tipoPersona, lineaProducto, descripcionFase, onEnviarSolicitud, noSolicitud, tipoProducto, nombreProducto, plantillasProducto }: Props) {
+/**
+ * De varias copias candidatas del expediente (memoria, sessionStorage, BD),
+ * devuelve la más completa. Los documentos son casi siempre append-only — la
+ * única baja real ocurre con este mismo componente montado, lo que mantiene
+ * sincronizadas todas las copias — así que una copia con MENOS documentos
+ * que otra es, en la práctica, una copia vieja (típicamente porque
+ * sessionStorage se quedó con una cuota agotada y nunca recibió la última
+ * escritura), no un borrado real.
+ */
+function elMasCompleto(...candidatos: (DocumentoCargado[] | null | undefined)[]): DocumentoCargado[] {
+  let mejor: DocumentoCargado[] = [];
+  for (const c of candidatos) {
+    if (c && c.length > mejor.length) mejor = c;
+  }
+  return mejor;
+}
+
+export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, productoId, nombreSolicitante, curpCliente, rfcCliente, fasePromptIA, tipoPersona, lineaProducto, descripcionFase, onEnviarSolicitud, onDocumentosChange, documentosIniciales, noSolicitud, tipoProducto, nombreProducto, plantillasProducto }: Props) {
   // ── State: requisitos del producto (desde DB) ──
   const [requisitosDB, setRequisitosDB] = useState<RequisitoProducto[]>([]);
   const [loadingReqs, setLoadingReqs] = useState(false);
@@ -572,15 +652,22 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
   // ── State: documentos cargados ──
   const getInitDocs = useCallback((): DocumentoCargado[] => {
     const s = loadFromSession<DocumentoCargado[]>(solicitudId, 'documentos');
-    if (s) return s;
-    if (mode === 'nuevo') return [];
-    const saved = loadFromSavedStore<DocumentoCargado[]>(solicitudId, 'documentos');
-    if (saved) return saved;
-    // NO cargar MOCK: si la BD no tiene datos, el array queda vacío
-    return [];
-  }, [solicitudId, mode]);
+    // documentosIniciales viene del ref en memoria del padre (documentosDelTabRef),
+    // no depende de que sessionStorage haya podido escribir. Ninguna de las
+    // tres fuentes es confiable por sí sola cuando la cuota está agotada —
+    // se toma la que tenga más documentos (ver elMasCompleto). En modo
+    // 'nuevo' no se consulta la BD: no hay nada guardado todavía.
+    const saved = mode === 'nuevo' ? null : loadFromSavedStore<DocumentoCargado[]>(solicitudId, 'documentos');
+    return elMasCompleto(documentosIniciales, s, saved);
+  }, [solicitudId, mode, documentosIniciales]);
 
   const [documentos, setDocumentos] = useState<DocumentoCargado[]>(getInitDocs);
+
+  // Mantener al formulario al día con lo que este subtab tiene realmente.
+  useEffect(() => {
+    onDocumentosChange?.(documentos);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [documentos]);
 
   // Re-sincronizar documentos desde storage cuando cambia de fase (faseIdActual).
   // El avance de fase (avanzarFase, en el padre) genera documentos automáticos
@@ -592,9 +679,20 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
     // sessionStorage completo a SAVED_DATA (memoria) vía commitAndClearSession
     // justo después de generar el documento automático — sin el fallback a
     // loadFromSavedStore aquí, esta resincronización no lo encontraba.
-    const fresh = loadFromSession<DocumentoCargado[]>(solicitudId, 'documentos')
-      ?? loadFromSavedStore<DocumentoCargado[]>(solicitudId, 'documentos');
-    if (fresh) setDocumentos(fresh);
+    //
+    // Igual que en getInitDocs: si sessionStorage se quedó con una copia
+    // vieja (cuota agotada), NO se debe usar sólo por tener el dato "fresco"
+    // por definición — se compara contra lo que ya había en pantalla y se
+    // usa lo que tenga más documentos. Esto también corre en el montaje
+    // inicial (los useEffect con deps corren una vez después del primer
+    // render), así que sin esta comparación pisaba el resultado correcto de
+    // getInitDocs() con una copia de sessionStorage más chica.
+    const fresh = elMasCompleto(
+      documentosIniciales,
+      loadFromSession<DocumentoCargado[]>(solicitudId, 'documentos'),
+      loadFromSavedStore<DocumentoCargado[]>(solicitudId, 'documentos'),
+    );
+    setDocumentos(prev => (fresh.length > prev.length ? fresh : prev));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [faseIdActual]);
   const [showForm, setShowForm] = useState(false);
@@ -612,14 +710,65 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
   const fileInputRef = useRef<HTMLInputElement>(null);
   const isRO = mode === 'ver';
 
+  /**
+   * ¿Este montaje llegó a tener documentos alguna vez?
+   *
+   * BUG FIX (pérdida de datos): los dos efectos de abajo se disparan también
+   * en el PRIMER render, cuando `documentos` todavía es el array vacío que
+   * devuelve getInitDocs(). El de BD hacía entonces un PUT con
+   * `documentos: []` y BORRABA en la base los documentos que el usuario ya
+   * había subido; el de sessionStorage dejaba la clave en [].
+   *
+   * Basta con que la hidratación desde BD llegue un instante tarde (o que
+   * nunca escriba la clave) para que abrir la Solicitud vacíe su expediente.
+   * Después el avance de fase reporta "no cargado en el expediente
+   * electrónico" para documentos que el usuario vio en pantalla.
+   *
+   * Regla: nunca persistir una lista vacía si este montaje no vio documentos.
+   * Un borrado real sí se guarda, porque para llegar a cero hubo que tenerlos.
+   */
+  const huboDocumentosRef = useRef(false);
+  if (documentos.length > 0) huboDocumentosRef.current = true;
+  const persistenciaSegura = documentos.length > 0 || huboDocumentosRef.current;
+
+  /**
+   * Variante del mismo problema, pero con una lista NO vacía: si este mismo
+   * montaje leyó en algún momento más documentos de los que tiene ahora, y esa
+   * baja no vino de handleEliminar (marcada explícitamente), es casi seguro
+   * que una copia vieja de sessionStorage pisó el estado correcto — no una
+   * baja real. Guardar eso en la BD encogería el expediente de verdad. La
+   * línea base sólo sube sola; sólo un borrado explícito la puede bajar.
+   */
+  const borrandoExplicitoRef = useRef(false);
+  const maxDocumentosVistoRef = useRef(0);
+  if (borrandoExplicitoRef.current) {
+    maxDocumentosVistoRef.current = documentos.length;
+    borrandoExplicitoRef.current = false;
+  } else if (documentos.length > maxDocumentosVistoRef.current) {
+    maxDocumentosVistoRef.current = documentos.length;
+  }
+  const bajaSospechosa = documentos.length < maxDocumentosVistoRef.current;
+
   // ── Persist documentos en sessionStorage (caché local) ──
   useEffect(() => {
-    if (!isRO) saveToSession(solicitudId, 'documentos', documentos);
-  }, [documentos, solicitudId, isRO]);
+    if (isRO) return;
+    if (!persistenciaSegura) return;
+    if (bajaSospechosa) return;
+    saveToSession(solicitudId, 'documentos', documentosParaSessionStorage(documentos));
+  }, [documentos, solicitudId, isRO, persistenciaSegura, bajaSospechosa]);
 
   // ── Guardar documentos en BD cada vez que cambian (debounce 800ms) ──
   useEffect(() => {
     if (isRO) return;
+    // NUNCA escribir un expediente vacío que este montaje no produjo.
+    if (!persistenciaSegura) {
+      console.log(`${LOG} PUT omitido: lista vacía inicial — no se pisa la BD.`);
+      return;
+    }
+    if (bajaSospechosa) {
+      console.warn(`${LOG} PUT omitido: la lista bajó de ${maxDocumentosVistoRef.current} a ${documentos.length} documentos sin una eliminación explícita — probablemente una copia vieja. No se persiste para no encoger el expediente real.`);
+      return;
+    }
     // Solo guardar si es una solicitud persistida (UUID)
     const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     const dbId = String(solicitudId);
@@ -677,7 +826,7 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
     }, 800);
 
     return () => clearTimeout(timer);
-  }, [documentos, solicitudId, isRO]);
+  }, [documentos, solicitudId, isRO, persistenciaSegura, bajaSospechosa]);
 
   // ══════════════════════════════════════════════════════════════════
   // FETCH: Requisitos del producto seleccionado desde J_PRODUCTOS
@@ -768,11 +917,15 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
         }
 
         // Mapear cada fuente con su mapper especializado (pasando catálogo para obtener promptIA)
-        const mappedExpedientes = rawExpedientes.map((r, idx) => mapExpedienteToLocal(r, idx, catalogoDocs));
+        // Fases declaradas por el producto — resuelven el número de fase cuando
+        // el nombre no lo lleva (ver construirMapaFases).
+        const mapaFases = construirMapaFases(productData);
+        console.log(`${LOG} mapa de fases del producto:`, JSON.stringify(mapaFases));
+        const mappedExpedientes = rawExpedientes.map((r, idx) => mapExpedienteToLocal(r, idx, catalogoDocs, mapaFases));
         console.log(`${LOG} [DEBUG] mappedExpedientes[0] después del mapeo:`, JSON.stringify(mappedExpedientes[0]));
         console.log(`${LOG} [DEBUG] mappedExpedientes[0].promptIA:`, mappedExpedientes[0]?.promptIA);
         const activosRequisitos = rawRequisitos.filter(r => r.activo !== false);
-        const mappedRequisitos = activosRequisitos.map((r, idx) => mapDBRequisitoToLocal(r, idx, catalogoDocs));
+        const mappedRequisitos = activosRequisitos.map((r, idx) => mapDBRequisitoToLocal(r, idx, catalogoDocs, mapaFases));
 
         // Fusionar: expedientesElectronicos primero, luego requisitos sin duplicar tipoDocumento
         const seen = new Set(mappedExpedientes.map(r => r.tipoDocumento));
@@ -809,6 +962,23 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
     fetchRequisitos();
     return () => { cancelled = true; };
   }, [productoId, catalogoDocs]);
+
+  /**
+   * Autorización de Buró y Kit Legal no aplican a Línea de Crédito.
+   *
+   * La Autorización de Buró es el consentimiento para consultar el historial
+   * crediticio de una persona; en Línea de Crédito (Garantía Financiera 2o
+   * Piso) el acreditado es un fideicomiso/emisor y no hay tal consulta. El Kit
+   * Legal arma Contrato, Anexo de Rentas y Pagaré — instrumentos de crédito y
+   * arrendamiento que esta línea no emite.
+   *
+   * Ambos botones se pintaban en cualquier producto (sólo miraban isRO), así
+   * que ofrecían generar documentos que no corresponden al expediente.
+   */
+  const esLineaCredito = (lineaProducto || '')
+    .toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .includes('linea de credito');
+  const aplicaBuroYKitLegal = !esLineaCredito;
 
   // ── Usar requisitos del producto (todos, no solo la fase actual) ──
   const requisitos = requisitosDB;
@@ -943,6 +1113,70 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
 
   // ── Kit Legal (Fase 3): Contrato + Anexo de Rentas + Pagaré ──
   const [generandoKit, setGenerandoKit] = useState(false);
+  const [generandoComite, setGenerandoComite] = useState(false);
+
+  /**
+   * Fase "Dictamen del Comité de Prepago y Crédito".
+   *
+   * Su prompt exige que estos dos documentos se generen solos al iniciar la
+   * fase, y así ocurre al avanzar (ver SolicitudCreditoForm). Este botón cubre
+   * las solicitudes que YA estaban en la fase antes de que existiera esa
+   * generación: sin él habría que retroceder de fase para dispararla.
+   * Aparece sólo si falta alguno; la generación es idempotente.
+   */
+  const _faseComiteNorm = (descripcionFase || '')
+    .toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const esFaseComitePrepago = _faseComiteNorm.includes('comite') && _faseComiteNorm.includes('prepago');
+  const faltanDocsComite = esFaseComitePrepago && !documentos.some(d =>
+    d.tipoDocumento === CLAVE_ACTA_COMITE || d.tipoDocumento === CLAVE_CERT_PREAPART,
+  );
+
+  const handleGenerarDocsComite = async () => {
+    setGenerandoComite(true);
+    try {
+      const resultado = await autoCrearDocumentosComitePrepago({
+        storageId: solicitudId,
+        datos: {
+          noSol: noSolicitud || '',
+          cliente: nombreSolicitante || 'Cliente',
+          lineaProducto: lineaProducto || '',
+          tipoProducto: tipoProducto || '',
+          productoNombre: nombreProducto || tipoProducto || '',
+          terminos: loadFromSession<any>(solicitudId, 'terminos') || loadFromSavedStore<any>(solicitudId, 'terminos') || {},
+          rfc: rfcCliente || '',
+          curp: curpCliente || '',
+        },
+        faseNombre: descripcionFase,
+        faseId: faseIdActual,
+        supabase,
+        projectId,
+      });
+      if (resultado.documentosCreados.length > 0) {
+        const fresh = loadFromSession<DocumentoCargado[]>(solicitudId, 'documentos');
+        if (fresh) setDocumentos(fresh);
+        if (resultado.registradosEnExpediente) {
+          toast.success('Documentos del Comité generados', {
+            description: resultado.documentosCreados.join(' · '),
+            duration: 7000,
+          });
+        } else {
+          toast.warning('Generados, pero NO guardados en base de datos', {
+            description: resultado.error || 'Error desconocido al persistir.',
+            duration: 12000,
+          });
+        }
+      } else {
+        toast.info('Ya existían', { description: 'No se generaron duplicados.', duration: 5000 });
+      }
+    } catch (err: any) {
+      toast.error('Error al generar los documentos del Comité', {
+        description: err?.message || String(err),
+        duration: 8000,
+      });
+    } finally {
+      setGenerandoComite(false);
+    }
+  };
   const kitLegalCompleto =
     documentos.some(d => d.tipoDocumento === CLAVE_CONTRATO_REQ) &&
     documentos.some(d => d.tipoDocumento === CLAVE_PAGARE_REQ) &&
@@ -1391,8 +1625,12 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
     if (!doc) return;
     if (doc.storagePath) deleteFileFromStorage(doc.storagePath);
     const updated = documentos.filter(d => d.id !== docId);
+    // Marca la baja como intencional: sin esto, el guardia anti-copia-vieja
+    // (bajaSospechosa) bloquearía este mismo borrado por verse igual que una
+    // reducción accidental.
+    borrandoExplicitoRef.current = true;
     setDocumentos(updated);
-    saveToSession(solicitudId, 'documentos', updated);
+    saveToSession(solicitudId, 'documentos', documentosParaSessionStorage(updated));
     toast.success('Documento eliminado', { description: doc.tipoDocumento, duration: 3000 });
   };
 
@@ -1767,7 +2005,22 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
             {/* Acción manual explícita: disponible en cualquier fase. Antes estaba
                 limitada a faseIdActual === 2 y el botón no aparecía nunca si la
                 solicitud no estaba exactamente en esa fase. */}
-            {!isRO && !yaExisteReporteBuro && (
+            {!isRO && faltanDocsComite && (
+              <button
+                onClick={handleGenerarDocsComite}
+                disabled={generandoComite}
+                title="Genera el Acta de Sesión del Comité y el Certificado de Pre-Apartado de Cupo"
+                className="px-3.5 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all duration-200 shadow-sm bg-[#0F766E] text-white hover:bg-[#0D5F58] disabled:opacity-60"
+              >
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M2 1.5h5L10 4v6.5H2z" />
+                  <path d="M7 1.5V4h3" />
+                  <path d="M4 7l1.5 1.5L8 6" />
+                </svg>
+                {generandoComite ? 'Generando...' : 'Generar Documentos del Comité'}
+              </button>
+            )}
+            {!isRO && aplicaBuroYKitLegal && !yaExisteReporteBuro && (
               <button
                 onClick={handleGenerarReporteBuro}
                 disabled={generandoBuro}
@@ -1780,7 +2033,7 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
                 {generandoBuro ? 'Generando...' : 'Generar Autorización Buró'}
               </button>
             )}
-            {!isRO && !kitLegalCompleto && (
+            {!isRO && aplicaBuroYKitLegal && !kitLegalCompleto && (
               <button
                 onClick={handleGenerarKitLegal}
                 disabled={generandoKit}
@@ -2017,10 +2270,11 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
         solicitudId={String(solicitudId)}
         faseIdActual={faseIdActual}
         requisitos={requisitos}
+        documentos={documentos}
         onAdd={(doc) => {
           const updated = [...documentos, doc];
           setDocumentos(updated);
-          saveToSession(solicitudId, 'documentos', updated);
+          saveToSession(solicitudId, 'documentos', documentosParaSessionStorage(updated));
         }}
       />
 

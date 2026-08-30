@@ -17,7 +17,17 @@ interface PersonaRelacionada {
   id: string | number;
   clienteId?: string;
   tipoRelacion: string;
-  nombre: string;
+  /**
+   * Nombre canónico. El resto del sistema (hidratación desde BD en
+   * SolicitudCreditoList y el payload de useSolicitudesDB) usa
+   * `nombreCompleto`; este subtab usaba `nombre`, así que lo capturado aquí no
+   * casaba con lo leído de BD. Se conserva `nombre` como alias de lectura para
+   * no perder los borradores guardados con la forma anterior.
+   */
+  nombreCompleto: string;
+  nombre?: string;
+  /** Canónico en BD; `porcentajeParticipacion` es la forma vieja. */
+  participacion?: string;
   parentesco?: string;
   telefono?: string;
   porcentajeParticipacion?: number;
@@ -36,13 +46,19 @@ interface NuevaParteForm {
   observaciones: string;
 }
 
-// Catálogo de tipos de relación legal
+// Catálogo de tipos de relación legal.
+// Fideicomiso y Beneficiario Legal son los que exige la Estructura Operativa de
+// 2o Piso (REQ-9): el subtab de esa estructura filtra las partes por estos dos
+// valores para precargar sus buscadores. Es ampliación del catálogo, no
+// restricción — las partes ya capturadas conservan su tipo.
 const CAT_TIPOS_RELACION = [
   { value: 'Relación legal', label: 'Relación legal' },
   { value: 'Beneficiario', label: 'Beneficiario' },
   { value: 'Aval', label: 'Aval' },
   { value: 'Obligado solidario', label: 'Obligado solidario' },
   { value: 'Representante legal', label: 'Representante legal' },
+  { value: 'Fideicomiso', label: 'Fideicomiso' },
+  { value: 'Beneficiario Legal', label: 'Beneficiario Legal' },
 ];
 
 interface PartesRelacionadasTabProps {
@@ -61,7 +77,17 @@ export function PartesRelacionadasTab({
   onSave,
 }: PartesRelacionadasTabProps) {
   const isRO = mode === 'ver';
-  const storageKey = `partes_${solicitudId}`;
+  /**
+   * BUG FIX (REQ-9, paso 0): este subtab escribía en
+   * `sol_credito_partes_<id>_partes` mientras el formulario cosecha
+   * `sol_credito_<id>_partesRelacionadas` (ver subtabKeys en
+   * SolicitudCreditoForm) y la hidratación desde BD escribe en esa misma clave
+   * canónica. Las claves nunca coincidían: lo capturado aquí jamás llegaba a
+   * `partes_relacionadas` en BD, y lo que venía de BD nunca se mostraba aquí.
+   */
+  const SUBTAB_KEY = 'partesRelacionadas';
+  /** Clave anterior — solo para rescatar borradores ya guardados. */
+  const storageKeyLegacy = `partes_${solicitudId}`;
 
   // Estado de las partes relacionadas
   const [partes, setPartes] = useState<PersonaRelacionada[]>([]);
@@ -80,20 +106,35 @@ export function PartesRelacionadasTab({
 
   // Cargar datos iniciales
   useEffect(() => {
-    const stored = loadFromSession< PersonaRelacionada[]>(storageKey, 'partes');
-    if (stored && stored.length > 0) {
-      setPartes(stored);
-    } else if (personasRelacionadasIniciales && personasRelacionadasIniciales.length > 0) {
-      setPartes(personasRelacionadasIniciales);
+    // Normaliza ambas formas (canónica y la vieja de este subtab).
+    const normalizar = (arr: any[]): PersonaRelacionada[] => arr.map((x, i) => ({
+      ...x,
+      id: x.id ?? i + 1,
+      tipoRelacion: x.tipoRelacion || x.relacionLegal || '',
+      nombreCompleto: x.nombreCompleto || x.nombre || '',
+      participacion: x.participacion != null ? String(x.participacion)
+        : (x.porcentajeParticipacion != null ? String(x.porcentajeParticipacion) : ''),
+    }));
+
+    const canonico = loadFromSession<any[]>(solicitudId, SUBTAB_KEY);
+    if (canonico && canonico.length > 0) { setPartes(normalizar(canonico)); return; }
+
+    const legacy = loadFromSession<any[]>(storageKeyLegacy, 'partes');
+    if (legacy && legacy.length > 0) { setPartes(normalizar(legacy)); return; }
+
+    if (personasRelacionadasIniciales && personasRelacionadasIniciales.length > 0) {
+      setPartes(normalizar(personasRelacionadasIniciales as any[]));
     }
-  }, [storageKey, personasRelacionadasIniciales]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [solicitudId, personasRelacionadasIniciales]);
 
   // Guardar cuando cambian las partes
   useEffect(() => {
-    if (partes.length > 0) {
-      saveToSession(storageKey, 'partes', partes);
-    }
-  }, [partes, storageKey]);
+    // Nunca persistir vacío: sería pisar con nada lo que ya haya en BD.
+    if (partes.length === 0) return;
+    saveToSession(solicitudId, SUBTAB_KEY, partes);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [partes, solicitudId]);
 
   // Validar formulario
   const validateForm = useCallback((): boolean => {
@@ -135,8 +176,9 @@ export function PartesRelacionadasTab({
       id: Date.now(),
       clienteId: clienteId,
       personaId: nuevaParte.personaId || undefined,
-      nombre: nuevaParte.nombrePersona || 'Persona seleccionada',
+      nombreCompleto: nuevaParte.nombrePersona || 'Persona seleccionada',
       tipoRelacion: nuevaParte.tipoRelacion,
+      participacion: nuevaParte.porcentajeParticipacion || '',
       porcentajeParticipacion: nuevaParte.porcentajeParticipacion
         ? parseFloat(nuevaParte.porcentajeParticipacion)
         : undefined,
@@ -243,7 +285,7 @@ export function PartesRelacionadasTab({
                     </svg>
                   </div>
                   <div>
-                    <h5 className="text-sm font-semibold text-gray-800">{parte.nombre}</h5>
+                    <h5 className="text-sm font-semibold text-gray-800">{parte.nombreCompleto || parte.nombre}</h5>
                     <div className="flex items-center gap-2 mt-0.5">
                       <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-[10px] font-medium">
                         {parte.tipoRelacion}

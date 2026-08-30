@@ -54,6 +54,17 @@ export interface Prospecto {
   institucionGobiernoId?: string;
   /** CLASIFICACION CLIENTE — data.clasificacionCliente */
   clasificacionCliente?: string;
+  // ── Persona Moral ──
+  fechaConstitucion?: string;
+  giroEmpresa?: string;
+  /** NOMBRE CONTACTO (antes REP LEGAL) — HU-CRM-01 */
+  representanteLegalNombre?: string;
+  // ── Perfil del proyecto — HU-CRM-02 ──
+  sectorInfraestructura?: string;
+  montoInversion?: string;
+  monedaInversion?: string;
+  tipoFinanciamiento?: string;
+  descripcionObra?: string;
   /** Datos crudos del JSONB de J_CLIENTES — para detectar archivos (constanciaResidencia, etc.) */
   _rawData?: Record<string, any>;
 }

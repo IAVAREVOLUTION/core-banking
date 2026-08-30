@@ -1,6 +1,7 @@
 import { useState, useEffect, forwardRef, useImperativeHandle } from 'react';
 import { toast } from 'sonner';
 import { useTabPersistence } from '@/app/hooks/useProductoPersistence';
+import { useComponentesContablesCatalogo } from '@/app/hooks/useComponentesContablesCatalogo';
 
 interface Cargo {
   id: number;
@@ -22,8 +23,7 @@ interface CargoTabProps {
   storagePrefix?: string;
 }
 
-// Catálogos
-const TIPO_CARGO_OPTIONS = ['IVA', 'CAPITAL', 'INTERÉS'];
+// Catálogos — Tipo de Cargo sale del catálogo de Componentes Contables (REQ-15)
 const MONEDA_OPTIONS = ['MXN', 'USD', 'EUR', 'CAD', 'GBP'];
 
 export const CargoTab = forwardRef<{ getData: () => Cargo[] }, CargoTabProps>(
@@ -240,6 +240,7 @@ interface FormModalProps {
 
 function FormModal({ mode, item, productId, lineaProducto, sublinea, onSave, onClose }: FormModalProps) {
   const isViewMode = mode === 'view';
+  const { opcionesTipoCargo, desdeCatalogo } = useComponentesContablesCatalogo();
   const [formData, setFormData] = useState({
     tipoCargo: item?.tipoCargo || '',
     descripcion: item?.descripcion || '',
@@ -330,17 +331,28 @@ function FormModal({ mode, item, productId, lineaProducto, sublinea, onSave, onC
 
                 <div>
                   <label className="block text-xs text-gray-700 mb-1 font-medium">Tipo de Cargo <span className="text-red-600">*</span></label>
-                  <select 
-                    value={formData.tipoCargo} 
-                    onChange={(e) => handleChange('tipoCargo', e.target.value)} 
-                    disabled={isViewMode} 
+                  <select
+                    value={formData.tipoCargo}
+                    onChange={(e) => handleChange('tipoCargo', e.target.value)}
+                    disabled={isViewMode}
                     className={inputClassName()}
                   >
                     <option value="">Seleccione...</option>
-                    {TIPO_CARGO_OPTIONS.map((tipo) => (
-                      <option key={tipo} value={tipo}>{tipo}</option>
+                    {/* REQ-15 — los elementos salen del catálogo de Componentes Contables */}
+                    {opcionesTipoCargo.map((opt) => (
+                      <option key={opt.value} value={opt.value}>{opt.label}</option>
                     ))}
+                    {/* Un valor capturado antes de que existiera el catálogo no debe
+                        desaparecer del select al reabrir el cargo. */}
+                    {formData.tipoCargo && !opcionesTipoCargo.some(o => o.value === formData.tipoCargo) && (
+                      <option value={formData.tipoCargo}>{formData.tipoCargo}</option>
+                    )}
                   </select>
+                  <span className="text-[10px] text-gray-500 italic">
+                    {desdeCatalogo
+                      ? 'Catálogo de Componentes Contables'
+                      : 'Catálogo de Componentes Contables no disponible — valores base'}
+                  </span>
                 </div>
 
                 <div>

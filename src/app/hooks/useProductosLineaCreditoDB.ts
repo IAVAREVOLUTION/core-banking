@@ -185,6 +185,7 @@ function mapRowToProduct(row: ProductoLineaCreditoRow, index: number): ProductoL
       : (Array.isArray(d.jerarquias) ? d.jerarquias : undefined),
     comites: Array.isArray(d.comitesCredito) ? d.comitesCredito
       : (Array.isArray(d.comites) ? d.comites : undefined),
+    comiteEscalamiento: Array.isArray(d.comiteEscalamiento) ? d.comiteEscalamiento : undefined,
     periodicidades: Array.isArray(d.periodicidad) ? d.periodicidad
       : (Array.isArray(d.periodicidades) ? d.periodicidades : undefined),
     fases: Array.isArray(d.fases) ? d.fases : undefined,
@@ -209,6 +210,9 @@ function mapRowToProduct(row: ProductoLineaCreditoRow, index: number): ProductoL
     // ── Plantillas institucionales ──
     plantillas: Array.isArray(d.plantillas) ? d.plantillas : undefined,
     motorContable: Array.isArray(d.motorContable) ? d.motorContable : undefined,
+    // ── Garantía Financiera 2o Piso (REQ-8) ──
+    prelacion2oPiso: Array.isArray(d.prelacion2oPiso) ? d.prelacion2oPiso : undefined,
+    cobertura2oPiso: Array.isArray(d.cobertura2oPiso) ? d.cobertura2oPiso : undefined,
   } as ProductoLineaCredito;
 }
 
