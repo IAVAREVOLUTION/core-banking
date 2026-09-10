@@ -40,6 +40,13 @@ interface FaseActionsComponentProps {
   onGenerarSolicitud?: () => void;
   /** Formalizar Contrato (Fase 4) */
   onFormalizarContrato?: () => void;
+  /**
+   * Generar el Pagare desde la plantilla del producto. Se ofrece en lugar de
+   * "Generar Documentos" cuando el producto no emite contrato: la fase
+   * "Formalizacion de Pagare" contiene "formaliz", asi que activaba el boton de
+   * formalizacion de CONTRATO, que no es lo que ese producto produce.
+   */
+  onGenerarPagare?: () => void;
   /** Solicitud de Activación (Fase 6) */
   onSolicitudActivacion?: () => void;
   /** Activar Cuenta (Fase 7) */
@@ -52,6 +59,12 @@ interface FaseActionsComponentProps {
   canActivarCuenta?: boolean;
   /** Indica si hay una operación de fase en curso */
   enviandoFase?: boolean;
+  /**
+   * Plantillas del producto. Se usa para no ofrecer "Imprimir Solicitud" en
+   * productos que no emiten ese documento (p. ej. Garantía Financiera 2o Piso,
+   * que solo tiene Carta Oferta y Contrato GPO).
+   */
+  plantillasProducto?: { tipoPlantilla?: string; estatus?: string }[];
   /** Solicitud de Activación existente (para fase 3+) */
   existingActivacion?: { id: string; estatus: string } | null;
   /** Generar Factura de Pago Inicial — Arrendamiento Puro, fase "Recaudación Inicial y Compra" */
@@ -74,10 +87,12 @@ export function FaseActionsComponent({
   onRegresarFase,
   onGenerarSolicitud,
   onFormalizarContrato,
+  onGenerarPagare,
   onSolicitudActivacion,
   onActivarCuenta,
   canActivarCuenta,
   enviandoFase = false,
+  plantillasProducto,
   existingActivacion,
   onGenerarFacturaInicial,
   onGenerarFacturaProveedor,
@@ -136,10 +151,27 @@ export function FaseActionsComponent({
   const puedeActivarCuenta = faseContiene('activar cuenta', 'activar_cuenta');
 
   // "Formalizar Contrato" — nombre contiene "formaliz" (no cualquier mención de "contrato")
-  const puedeFormalizar = faseContiene('formaliz');
+  const emitePlantilla = (tipo: string) =>
+    !Array.isArray(plantillasProducto)
+    || plantillasProducto.length === 0
+    || plantillasProducto.some(pl => pl?.tipoPlantilla === tipo && pl?.estatus === 'Activo');
 
-  // "Imprimir Solicitud" — solo fase 1 (primera fase del producto)
-  const puedeGenerarSolicitud = seqActual === 1;
+  const enFaseFormalizacion = faseContiene('formaliz');
+  // El producto que no emite contrato no debe ver "Generar Documentos"; si emite
+  // pagare, la accion de esa fase es generar el pagare.
+  const puedeFormalizar = enFaseFormalizacion && emitePlantilla('contrato');
+  const puedeGenerarPagare =
+    enFaseFormalizacion && !emitePlantilla('contrato') && emitePlantilla('pagare');
+
+  // "Imprimir Solicitud" — primera fase Y que el producto emita ese documento.
+  // Antes bastaba con `seqActual === 1`, asi que aparecia en cualquier producto
+  // cuya fase 1 fuera otra cosa (en GPO es "Admision y Captura del Ecosistema",
+  // que no imprime solicitud alguna). Se decide por lo que el producto declara.
+  const tienePlantillaSolicitud =
+    !Array.isArray(plantillasProducto)
+    || plantillasProducto.length === 0   // sin dato: comportamiento previo
+    || plantillasProducto.some(pl => pl?.tipoPlantilla === 'solicitud' && pl?.estatus === 'Activo');
+  const puedeGenerarSolicitud = seqActual === 1 && tienePlantillaSolicitud;
 
   // "Activación Cuenta Financiera" ya finalizada cuando estatus = Autorizada/Aprobado
   const cuentaFinancieraYaFinalizada =
@@ -166,6 +198,17 @@ export function FaseActionsComponent({
     !puedeSolicitudActivacion &&
     !puedeVerActivacion &&
     !puedeActivarCuenta;
+
+
+  /**
+   * El flujo ya no admite avanzar: es un estado TERMINAL, no uno "en proceso".
+   * Se usa para que la barra deje de verse igual que una fase en curso y para
+   * degradar "Regresar de Fase", que aquí es una correccion y no el camino
+   * principal — presentarla como accion primaria invita a deshacer un cierre.
+   */
+  const flujoCerrado = !puedeEnviar && !puedeSolicitudActivacion && !puedeActivarCuenta;
+  /** Para decir "2 de 2" en vez de "#2": un numero sin escala no informa avance. */
+  const totalFases = Array.isArray(fases) ? fases.length : 0;
 
   // Todas las fases con anterior
   const puedeRegresar = !!faseAnterior;
@@ -206,7 +249,7 @@ export function FaseActionsComponent({
     return (
       <>
         {inconsistencyBanner}
-        <div className="bg-[#EBF3FB] border border-[#4A6FA5] rounded px-4 py-3 mb-4">
+        <div className={`rounded px-4 py-3 mb-4 border ${flujoCerrado ? 'bg-[#F0FDF4] border-[#16A34A]' : 'bg-[#EBF3FB] border-[#4A6FA5]'}`}>
           <div className="flex items-center justify-between">
             <span className="text-xs text-gray-700">
               <strong>Fase actual:</strong>{' '}
@@ -287,6 +330,20 @@ export function FaseActionsComponent({
                   {enviandoFase ? 'Generando...' : 'Generar Documentos'}
                 </button>
               )}
+              {/* ── Fase Formalizacion de Pagare: generar el Pagare ── */}
+              {puedeGenerarPagare && onGenerarPagare && (
+                <button
+                  onClick={onGenerarPagare}
+                  disabled={enviandoFase}
+                  className="px-4 py-1.5 bg-[#0F766E] text-white rounded text-xs hover:bg-[#0D5F58] flex items-center gap-1.5 disabled:opacity-50"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+                    <path d="M14 2v6h6M8 13h8" />
+                  </svg>
+                  {enviandoFase ? 'Generando...' : 'Generar Pagaré'}
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -313,35 +370,64 @@ export function FaseActionsComponent({
     );
   }
 
+
   // ── Modo Originación: todos los botones, siempre visibles ────────────────
   return (
     <>
       {inconsistencyBanner}
 
-      <div className="bg-[#EBF3FB] border border-[#4A6FA5] rounded px-4 py-3 mb-4">
+      <div className={`rounded px-4 py-3 mb-4 border ${flujoCerrado ? 'bg-[#F0FDF4] border-[#16A34A]' : 'bg-[#EBF3FB] border-[#4A6FA5]'}`}>
         {/* Fila info + botones */}
-        <div className="flex items-center justify-between flex-wrap gap-2">
-          <div className="flex items-center gap-3">
-            <span className="text-xs text-gray-700">
-              <strong>Fase:</strong>{' '}
-              {faseActualReal?.fase || formData.descripcionFase || '—'}
-              {seqActual > 0 && (
-                <span className="ml-1 text-gray-400">(#{seqActual})</span>
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            {/* Icono de estado: un cierre se reconoce antes de leer nada. */}
+            <div className={`shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${
+              flujoCerrado ? 'bg-[#16A34A] text-white' : 'bg-[#4A6FA5] text-white'
+            }`}>
+              {flujoCerrado ? (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M20 6L9 17l-5-5" />
+                </svg>
+              ) : (
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                  <circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" />
+                </svg>
               )}
-            </span>
-            {estatus && (
-              <span
-                className={`px-2 py-0.5 rounded text-xs ${
-                  estatus === 'Aprobado' || estatus === 'Autorizada'
-                    ? 'bg-green-100 text-green-800'
-                    : estatus === 'En Proceso' || estatus === 'En proceso'
-                    ? 'bg-blue-100 text-blue-800'
-                    : 'bg-gray-100 text-gray-800'
-                }`}
-              >
-                {estatus}
-              </span>
-            )}
+            </div>
+
+            <div className="min-w-0">
+              {/* Titular: en estado terminal manda el RESULTADO; en curso, la fase. */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className={`text-sm font-semibold ${flujoCerrado ? 'text-green-800' : 'text-gray-800'}`}>
+                  {flujoCerrado ? 'Proceso completado' : (faseActualReal?.fase || formData.descripcionFase || '—')}
+                </span>
+                {estatus && (
+                  <span
+                    className={`px-2 py-0.5 rounded-full text-[10px] font-medium ${
+                      estatus === 'Aprobado' || estatus === 'Autorizada'
+                        ? 'bg-green-100 text-green-800'
+                        : estatus === 'En Proceso' || estatus === 'En proceso'
+                        ? 'bg-blue-100 text-blue-800'
+                        : 'bg-gray-100 text-gray-800'
+                    }`}
+                  >
+                    {estatus}
+                  </span>
+                )}
+              </div>
+
+              {/* Subtitulo: avance real ("2 de 2") en vez de un "#2" sin escala. */}
+              <div className="text-[11px] text-gray-600 mt-0.5">
+                {flujoCerrado
+                  ? <>Última fase: <span className="text-gray-800">{faseActualReal?.fase || formData.descripcionFase || '—'}</span></>
+                  : <>Fase</>}
+                {totalFases > 0 && seqActual > 0 && (
+                  <span className={flujoCerrado ? 'ml-1 text-gray-500' : 'ml-1 text-gray-700'}>
+                    {flujoCerrado ? `(${seqActual} de ${totalFases})` : `${seqActual} de ${totalFases}`}
+                  </span>
+                )}
+              </div>
+            </div>
           </div>
 
           <div className="flex items-center gap-2 flex-wrap justify-end">
@@ -486,7 +572,7 @@ export function FaseActionsComponent({
               <button
                 onClick={onRegresarFase}
                 disabled={enviandoFase}
-                className="px-4 py-1.5 bg-[#F59E0B] text-white rounded text-xs hover:bg-[#D97706] flex items-center gap-1.5 disabled:opacity-50"
+                className={`px-4 py-1.5 rounded text-xs flex items-center gap-1.5 disabled:opacity-50 ${flujoCerrado ? 'bg-white border border-gray-400 text-gray-700 hover:bg-gray-50' : 'bg-[#F59E0B] text-white hover:bg-[#D97706]'}`}
               >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <path d="M19 12H5M12 19l-7-7 7-7" />
@@ -497,9 +583,12 @@ export function FaseActionsComponent({
           </div>
         </div>
 
-        {/* Contexto de navegación */}
-        <div className="mt-1.5 flex items-center gap-3 text-[10px] text-gray-500">
-          {faseAnterior && (
+        {/* Contexto de navegación — separado del titular por una línea, para que
+            deje de leerse como una continuación del nombre de la fase. */}
+        <div className={`mt-2.5 pt-2 border-t flex items-center gap-x-4 gap-y-1 flex-wrap text-[11px] text-gray-500 ${
+          flujoCerrado ? 'border-green-200' : 'border-[#4A6FA5]/20'
+        }`}>
+          {faseAnterior && !flujoCerrado && (
             <span>← Anterior: <span className="text-gray-600">{faseAnterior.fase}</span></span>
           )}
           {faseSiguiente && seqActual <= 5 && (
@@ -517,8 +606,18 @@ export function FaseActionsComponent({
           {seqActual === 7 && canActivarCuenta === false && (
             <span className="text-red-600 font-medium">⚠ La Solicitud de Activación no está pagada.</span>
           )}
-          {!puedeEnviar && !puedeSolicitudActivacion && !puedeActivarCuenta && (
-            <span className="text-green-600 font-medium">✓ Última fase del flujo</span>
+          {flujoCerrado && (
+            <span className="text-green-700 font-medium">Todas las fases concluidas</span>
+          )}
+          {/* El cierre suele dejar trabajo en otro modulo; decirlo aqui evita
+              que el usuario se quede mirando una pantalla sin siguiente paso. */}
+          {flujoCerrado && (
+            <span className="inline-flex items-center gap-1.5 text-gray-600">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M5 12h14M12 5l7 7-7 7" />
+              </svg>
+              Si el flujo generó una dispersión, continúela en <strong className="text-gray-800">Sol. Activación</strong>
+            </span>
           )}
         </div>
       </div>

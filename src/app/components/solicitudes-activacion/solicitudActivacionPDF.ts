@@ -29,8 +29,8 @@ export function descargarDetallePDF(form: SolicitudActivacionFormData): void {
   doc.rect(0, 0, W, HEADER_H, 'F');
 
   // Logo — white card behind it for contrast, then the image on top
-  const LOGO_W  = 30;
-  const LOGO_H  = 20; // 30 * (1024/1536)
+  const LOGO_W = 40;   // logo CACAO Banking: 2890x670 (ratio 4.31)
+  const LOGO_H = 9.3;  // alto derivado del ratio; con 20 salia aplastado // 30 * (1024/1536)
   const LOGO_Y  = (HEADER_H - LOGO_H) / 2;
   const PAD     = 2;
   doc.setFillColor(255, 255, 255);

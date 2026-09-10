@@ -30,6 +30,7 @@ import logoSrc from '../../assets/7b6cb23c00b7817818c638af3eae0a416e1e9f57.png';
 import type { DocumentoCargado } from '../components/solicitudes/solicitudCreditoStore';
 import {
   loadFromSession, loadFromSavedStore, saveToSession, generateId, documentosParaSessionStorage,
+  INSTITUCION_RAZON_SOCIAL,
 } from '../components/solicitudes/solicitudCreditoStore';
 import type { PlantillaInstitucional } from '../types/product';
 import type { Estructura2oPisoData } from '../components/solicitudes/EstructuraOperativa2oPisoTab';
@@ -452,8 +453,8 @@ export function generarReporteBuroPDF(datos: DatosSolicitud): string {
   doc.setFillColor(...BURO_PRIMARY);
   doc.rect(0, 0, W, HEADER_H, 'F');
 
-  const LOGO_W = 30;
-  const LOGO_H = 20;
+  const LOGO_W = 40;   // logo CACAO Banking: 2890x670 (ratio 4.31)
+  const LOGO_H = 9.3;  // alto derivado del ratio; con 20 salia aplastado
   const LOGO_Y = (HEADER_H - LOGO_H) / 2;
   const PAD = 2;
   doc.setFillColor(255, 255, 255);
@@ -1121,7 +1122,7 @@ export function generarAnexoRentasPDF(datos: DatosSolicitud, filas: FilaAnexo[])
   const HEADER_H = 28;
   doc.setFillColor(...BURO_PRIMARY);
   doc.rect(0, 0, W, HEADER_H, 'F');
-  const LOGO_W = 30, LOGO_H = 20, LOGO_Y = (HEADER_H - LOGO_H) / 2, PAD = 2;
+  const LOGO_W = 40, LOGO_H = 9.3, LOGO_Y = (HEADER_H - LOGO_H) / 2, PAD = 2;
   doc.setFillColor(255, 255, 255);
   doc.roundedRect(14 - PAD, LOGO_Y - PAD, LOGO_W + PAD * 2, LOGO_H + PAD * 2, 2, 2, 'F');
   try { doc.addImage(logoSrc as string, 'PNG', 14, LOGO_Y, LOGO_W, LOGO_H); } catch { /* opcional */ }
@@ -1387,6 +1388,133 @@ export async function autoCrearKitLegal(opts: AutoCrearOpts): Promise<AutoCrearR
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// REQ-23 HU-23.1 — Pagaré suelto, desde la plantilla del producto
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Genera SÓLO el pagaré a partir de la plantilla `pagare` del producto.
+ *
+ * Existe aparte de `autoCrearKitLegal` porque aquél arma el kit completo del
+ * arrendamiento —contrato + anexo de rentas + pagaré— y aborta si el producto no
+ * tiene plantilla de **contrato** (`validarPlantillasRequeridas`, y un `!` sobre
+ * el `find`). *Crédito Simple 2° Piso* sólo tiene plantilla de pagaré, así que
+ * por esa vía nunca podía generar su documento: pedirle un contrato es la misma
+ * regla ajena que corrige HU-23.3.
+ *
+ * CA-09: sin plantilla `pagare` Activa NO se cae a un PDF genérico — se informa
+ * qué falta. Un pagaré no es un documento que convenga improvisar.
+ * CA-10: si el documento ya existe en el expediente, no se duplica.
+ */
+export async function generarPagareDesdePlantilla(opts: AutoCrearOpts & {
+  /** Nombre con el que se registra en el expediente (el requisito del producto). */
+  tipoDocumento?: string;
+  /** Fase a la que pertenece el documento en el expediente. */
+  fase?: string;
+  faseId?: number;
+}): Promise<AutoCrearResult> {
+  const { storageId, datos, plantillas, supabase, projectId: pid } = opts;
+  const tipoDoc = opts.tipoDocumento || CLAVE_PAGARE_REQ;
+  const fecha = new Date().toLocaleString('es-MX');
+
+  const vacio = (error?: string): AutoCrearResult => ({
+    exito: !error,
+    documentosCreados: [],
+    pdfGenerados: [],
+    subidosASupabase: false,
+    registradosEnExpediente: !error,
+    error,
+    validacionPlantillas: {
+      puedeGenerarDocumentos: !error,
+      motivos: error ? [error] : [],
+      plantillasDetectadas: [],
+    } as ValidacionPlantillasResult,
+  });
+
+  const plantillaPagare = (plantillas || []).find(
+    p => p.tipoPlantilla === 'pagare' && p.estatus === 'Activo',
+  );
+  if (!plantillaPagare) {
+    const hayInactiva = (plantillas || []).some(p => p.tipoPlantilla === 'pagare');
+    return vacio(
+      hayInactiva
+        ? 'El producto tiene una plantilla de Pagaré, pero no está Activa. Actívela en el subtab Plantillas.'
+        : 'El producto no tiene plantilla de tipo "Pagaré". Cárguela en el subtab Plantillas del producto.',
+    );
+  }
+  if (!plantillaPagare.archivoData) {
+    return vacio(`La plantilla "${plantillaPagare.nombre}" no tiene archivo cargado.`);
+  }
+
+  const docsPrevios: DocumentoCargado[] =
+    loadFromSession<DocumentoCargado[]>(storageId, 'documentos') ??
+    loadFromSavedStore<DocumentoCargado[]>(storageId, 'documentos') ?? [];
+
+  // CA-10 — no duplicar. Se compara normalizado porque el nombre del requisito
+  // lo captura el usuario en el producto y puede traer espacios de más.
+  const norm = (v: unknown) => String(v ?? '').trim().toLowerCase();
+  if (docsPrevios.some(d => norm(d.tipoDocumento) === norm(tipoDoc))) {
+    return vacio(); // ya existe: éxito sin crear nada
+  }
+
+  let fileData: string;
+  try {
+    const html = sustituirPlaceholders(decodificarArchivoData(plantillaPagare.archivoData), datos);
+    fileData = await htmlToPdfBlobUrl(html, 'datauri');
+  } catch (e: any) {
+    return vacio(`No se pudo renderizar la plantilla del pagaré: ${e?.message || String(e)}`);
+  }
+
+  const archivo = 'pagare.pdf';
+  let uploadInfo: UploadResult | null = null;
+  if (supabase && pid) {
+    uploadInfo = await uploadGeneratedPDF(supabase, fileData, archivo, String(storageId), pid);
+  }
+
+  const doc = {
+    id: generateId(),
+    fecha,
+    usuario: 'Sistema',
+    tipoDocumento: tipoDoc,
+    archivo,
+    tipoArchivo: 'pdf',
+    nota: `Generado desde la plantilla "${plantillaPagare.nombre}" (v${plantillaPagare.version}). Pendiente de firma y Validación IA.`,
+    area: 'Comercial',
+    fase: opts.fase || 'Formalización de Pagaré',
+    faseId: opts.faseId ?? 1,
+    estatus: 'Pendiente Validación IA',
+    validadoIA: false,
+    // Igual que el kit legal: el PDF sólo se conserva embebido si no subió a
+    // Storage, porque pesa MB y revienta la cuota de sessionStorage.
+    fileData: uploadInfo?.url ? undefined : fileData,
+    url: uploadInfo?.url,
+    storagePath: uploadInfo?.storagePath,
+    mime: 'application/pdf',
+    tamanoKB: uploadInfo?.tamanoKB || Math.round((fileData.length * 3) / 4 / 1024) || 1,
+  } as DocumentoCargado & { storagePath?: string };
+
+  const docsActualizados = [...docsPrevios, doc];
+  saveToSession(storageId, 'documentos', documentosParaSessionStorage(docsActualizados));
+  const persist = await persistirDocumentosEnBD(storageId, docsActualizados);
+
+  return {
+    exito: true,
+    documentosCreados: [tipoDoc],
+    pdfGenerados: [archivo],
+    subidosASupabase: Boolean(uploadInfo?.url),
+    registradosEnExpediente: persist.ok,
+    error: persist.ok ? undefined : `Pagaré generado pero NO persistido en BD: ${persist.error}`,
+    validacionPlantillas: {
+      puedeGenerarDocumentos: true,
+      motivos: [],
+      plantillasDetectadas: [plantillaPagare.nombre],
+    } as ValidacionPlantillasResult,
+    documentoCreadoId: doc.id,
+    fileData,
+    documentosGenerados: [{ tipo: tipoDoc, archivo, fileData }],
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Fase 2 — Solicitud de Crédito
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -1473,6 +1601,66 @@ export function generarSolicitudPDF(datos: DatosSolicitud): string {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** Reemplaza todos los placeholders {{campo}} con los datos de la solicitud. */
+/**
+ * REQ-23 RN-03 — importe en letra para títulos de crédito.
+ *
+ * En un pagaré la cantidad en letra es la que **prevalece** ante discrepancia con
+ * la numérica (LGTOC art. 16). Antes `{{monto_letra}}` recibía la cifra en
+ * dígitos, así que el documento salía con el número repetido y sin cantidad en
+ * letra: defectuoso como título ejecutivo.
+ */
+export function importeALetra(monto: number, moneda = 'MXN'): string {
+  const UNIDADES = ['', 'UNO', 'DOS', 'TRES', 'CUATRO', 'CINCO', 'SEIS', 'SIETE', 'OCHO', 'NUEVE',
+    'DIEZ', 'ONCE', 'DOCE', 'TRECE', 'CATORCE', 'QUINCE', 'DIECISÉIS', 'DIECISIETE', 'DIECIOCHO', 'DIECINUEVE',
+    'VEINTE', 'VEINTIUNO', 'VEINTIDÓS', 'VEINTITRÉS', 'VEINTICUATRO', 'VEINTICINCO', 'VEINTISÉIS',
+    'VEINTISIETE', 'VEINTIOCHO', 'VEINTINUEVE'];
+  const DECENAS = ['', '', '', 'TREINTA', 'CUARENTA', 'CINCUENTA', 'SESENTA', 'SETENTA', 'OCHENTA', 'NOVENTA'];
+  const CENTENAS = ['', 'CIENTO', 'DOSCIENTOS', 'TRESCIENTOS', 'CUATROCIENTOS', 'QUINIENTOS',
+    'SEISCIENTOS', 'SETECIENTOS', 'OCHOCIENTOS', 'NOVECIENTOS'];
+
+  const menorAMil = (n: number): string => {
+    if (n === 0) return '';
+    if (n === 100) return 'CIEN';
+    if (n < 30) return UNIDADES[n];
+    if (n < 100) {
+      const d = Math.floor(n / 10), u = n % 10;
+      return DECENAS[d] + (u ? ` Y ${UNIDADES[u]}` : '');
+    }
+    const c = Math.floor(n / 100), r = n % 100;
+    return CENTENAS[c] + (r ? ` ${menorAMil(r)}` : '');
+  };
+
+  const aLetra = (n: number): string => {
+    if (n === 0) return 'CERO';
+    if (n < 1000) return menorAMil(n);
+    if (n < 1000000) {
+      const miles = Math.floor(n / 1000), resto = n % 1000;
+      const pref = miles === 1 ? 'MIL' : `${menorAMil(miles)} MIL`;
+      return pref + (resto ? ` ${menorAMil(resto)}` : '');
+    }
+    const millones = Math.floor(n / 1000000), resto = n % 1000000;
+    const pref = millones === 1 ? 'UN MILLÓN' : `${aLetra(millones)} MILLONES`;
+    return pref + (resto ? ` ${aLetra(resto)}` : '');
+  };
+
+  const abs = Math.abs(Number(monto) || 0);
+  const entero = Math.floor(abs);
+  const centavos = Math.round((abs - entero) * 100);
+  const sufijo = moneda === 'USD' ? 'DÓLARES' : moneda === 'EUR' ? 'EUROS' : 'PESOS';
+  const cierre = moneda === 'MXN' ? ' M.N.' : '';
+
+  let letra = aLetra(entero);
+  // Apócope: "veintiuno pesos" no es español — ante sustantivo masculino es
+  // "veintiún"/"un". En un título de crédito la redacción de la cantidad es
+  // parte del instrumento, no un detalle de estilo.
+  letra = letra.replace(/VEINTIUNO$/, 'VEINTIÚN').replace(/(^|\s)UNO$/, '$1UN');
+  // "un millón DE pesos" / "cuatrocientos millones DE pesos", pero
+  // "un millón setecientos mil pesos" (sin "de") cuando hay remanente.
+  const nexo = /MILL[ÓO]N(ES)?$/.test(letra) ? ' DE' : '';
+
+  return `${letra}${nexo} ${sufijo} ${String(centavos).padStart(2, '0')}/100${cierre}`;
+}
+
 export function sustituirPlaceholders(html: string, datos: DatosSolicitud): string {
   const t = datos.terminos ?? {};
   const fechaStr = new Date().toLocaleDateString('es-MX');
@@ -1488,6 +1676,17 @@ export function sustituirPlaceholders(html: string, datos: DatosSolicitud): stri
   const tipoTasaValor = String(t.tipoTasa || '');
   const tipoCalcValor = String(t.tipoCalculo || '');
   const monedaValor = t.moneda || 'MXN';
+  // REQ-23 CA-05 — el importe en letra que exige un título de crédito.
+  const montoEnLetra = importeALetra(
+    parseFloat(String(monto).replace(/[^0-9.-]/g, '')) || 0,
+    monedaValor,
+  );
+  // REQ-23 CA-04/CA-06/CA-07 — estos marcadores se imprimían como 'N/A', que en
+  // un pagaré deja el título defectuoso (RN-05). La plaza sale de la sucursal de
+  // la Solicitud; el aval se deja vacío en vez de rotular 'N/A' sobre su firma.
+  const plazaValor = String(datos.sucursal || '').trim() || 'CIUDAD DE MÉXICO';
+  const acreedorValor = INSTITUCION_RAZON_SOCIAL;
+  const avalValor = String((t as any).avalNombre || (datos as any).aval || '').trim();
   const fechaSolicitudValor = t.fechaSolicitud || fechaStr;
   const fechaPrimerPagoValor = String(t.fechaPrimerPago || 'N/A');
 
@@ -1594,7 +1793,8 @@ export function sustituirPlaceholders(html: string, datos: DatosSolicitud): stri
     .replace(/\{\{limite_numero\}\}/g, monto)
     .replace(/\{\{limite_letra\}\}/g, monto)
     .replace(/\{\{monto_numero\}\}/g, monto)
-    .replace(/\{\{monto_letra\}\}/g, monto)
+    // REQ-23 CA-05/RN-03 — en letra, no la misma cifra otra vez.
+    .replace(/\{\{monto_letra\}\}/g, montoEnLetra)
     .replace(/\{\{monto_garantia\}\}/g, garantiaValor || 'N/A')
     .replace(/\{\{monto_seguro\}\}/g, seguroValor || 'N/A')
     .replace(/\{\{monto_residual\}\}/g, montoResidualValor || 'N/A')
@@ -1629,20 +1829,20 @@ export function sustituirPlaceholders(html: string, datos: DatosSolicitud): stri
     .replace(/\{\{frecuencia\}\}/g, freqValor || 'N/A')
     .replace(/\{\{moneda\}\}/g, monedaValor)
     // ── Localización ──
-    .replace(/\{\{ciudad\}\}/g, 'N/A')
-    .replace(/\{\{ciudadFirma\}\}/g, 'N/A')
-    .replace(/\{\{ciudad_firma\}\}/g, 'N/A')
-    .replace(/\{\{jurisdiccion\}\}/g, 'N/A')
-    .replace(/\{\{lugar_pago\}\}/g, 'N/A')
+    .replace(/\{\{ciudad\}\}/g, plazaValor)
+    .replace(/\{\{ciudadFirma\}\}/g, plazaValor)
+    .replace(/\{\{ciudad_firma\}\}/g, plazaValor)
+    .replace(/\{\{jurisdiccion\}\}/g, plazaValor)
+    .replace(/\{\{lugar_pago\}\}/g, plazaValor)
     // ── Institución / Empresa ──
-    .replace(/\{\{institucionNombre\}\}/g, 'N/A')
-    .replace(/\{\{institucion_nombre\}\}/g, 'N/A')
-    .replace(/\{\{acreedor_nombre\}\}/g, 'N/A')
-    .replace(/\{\{aval_nombre\}\}/g, 'N/A')
-    .replace(/\{\{empresa_nombre\}\}/g, 'N/A')
-    .replace(/\{\{empresa_razon_social\}\}/g, 'N/A')
+    .replace(/\{\{institucionNombre\}\}/g, acreedorValor)
+    .replace(/\{\{institucion_nombre\}\}/g, acreedorValor)
+    .replace(/\{\{acreedor_nombre\}\}/g, acreedorValor)
+    .replace(/\{\{aval_nombre\}\}/g, avalValor)
+    .replace(/\{\{empresa_nombre\}\}/g, acreedorValor)
+    .replace(/\{\{empresa_razon_social\}\}/g, acreedorValor)
     .replace(/\{\{direccion_empresa\}\}/g, 'N/A')
-    .replace(/\{\{empresa\}\}/g, 'N/A')
+    .replace(/\{\{empresa\}\}/g, acreedorValor)
     // ── Solicitud / Operación ──
     .replace(/\{\{finalidad\}\}/g, datos.finalidad || 'N/A')
     .replace(/\{\{descripcion\}\}/g, datos.finalidad || 'N/A')
@@ -1936,8 +2136,8 @@ export function generarComprobanteSPEIPDF(datos: DatosSolicitud): string {
   doc.setFillColor(...SPEI_PRIMARY);
   doc.rect(0, 0, W, HEADER_H, 'F');
 
-  const LOGO_W = 30;
-  const LOGO_H = 20;
+  const LOGO_W = 40;   // logo CACAO Banking: 2890x670 (ratio 4.31)
+  const LOGO_H = 9.3;  // alto derivado del ratio; con 20 salia aplastado
   const LOGO_Y = (HEADER_H - LOGO_H) / 2;
   const PAD = 2;
   doc.setFillColor(255, 255, 255);
@@ -2173,7 +2373,7 @@ function encabezadoComite(doc: jsPDF, titulo: string, folio: string, datos: Dato
   doc.setFillColor(...COMITE_PRIMARY);
   doc.rect(0, 0, W, HEADER_H, 'F');
 
-  const LOGO_W = 30, LOGO_H = 20, PAD = 2;
+  const LOGO_W = 40, LOGO_H = 9.3, PAD = 2;
   const LOGO_Y = (HEADER_H - LOGO_H) / 2;
   doc.setFillColor(255, 255, 255);
   doc.roundedRect(14 - PAD, LOGO_Y - PAD, LOGO_W + PAD * 2, LOGO_H + PAD * 2, 2, 2, 'F');

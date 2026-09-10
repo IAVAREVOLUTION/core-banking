@@ -25,6 +25,7 @@ import { useSolicitudesDB, fetchNextNoSol } from '../../hooks/useSolicitudesDB';
 import { EMPTY_FORM as EMPTY_FORM_LOS, getFechaSolicitudNow, CAT_FASES } from '../solicitudes/solicitudCreditoStore';
 import type { SolicitudFormData, TerminosCondiciones as TerminosCondicionesLOS } from '../solicitudes/solicitudCreditoStore';
 import { syncToJClientes } from '../../hooks/useSyncJClientes';
+import { fechasCobroComision } from '../../lib/fechasComisionGPO';
 import { SeleccionarClienteModal } from '../solicitudes/SeleccionarClienteModal';
 
 type FormMode = 'create' | 'edit' | 'view';
@@ -94,19 +95,30 @@ function construirSimulacionComisionGPO(
   ingresoPorPeriodo: number,
   periodosPorAnio: number,
   ivaPorcentaje: number,
+  /** Inicio de la garantía. Sin esto las fechas se anclaban al día del cierre. */
+  fechaInicio?: string,
+  /**
+   * Plazo de la garantía EN AÑOS. Sin esto la tabla salía de un solo año:
+   * `totalPeriodos = periodosPorAnio` mostraba 4 renglones para una emisión
+   * Trimestral a 20 años, y los totales representaban un año en vez del
+   * contrato completo. Es el mismo horizonte que usa "Cotizar" en la Solicitud
+   * (SimulacionTab), para que ambas tablas coincidan.
+   */
+  plazoAnios?: number,
 ): Array<Record<string, any>> {
-  const totalPeriodos = Math.max(0, Math.round(periodosPorAnio || 0));
+  const anios = Math.max(1, Math.round(Number(plazoAnios) || 1));
+  const totalPeriodos = Math.max(0, Math.round((periodosPorAnio || 0) * anios));
   if (totalPeriodos <= 0 || ingresoPorPeriodo <= 0) return [];
 
   const ivaPorPeriodo = ingresoPorPeriodo * ((ivaPorcentaje || 0) / 100);
-  const mesesPorPeriodo = 12 / periodosPorAnio;
+  // Fechas sin desbordamiento de fin de mes y ancladas a la fecha de inicio
+  // (ver lib/fechasComisionGPO.ts).
+  const fechas = fechasCobroComision(totalPeriodos, periodosPorAnio, fechaInicio);
   const rows: Array<Record<string, any>> = [];
-  let fecha = new Date();
   for (let i = 0; i < totalPeriodos; i++) {
-    fecha = new Date(fecha.getFullYear(), fecha.getMonth() + mesesPorPeriodo, fecha.getDate());
     rows.push({
       noPago: i + 1,
-      fechaPago: fecha.toISOString().split('T')[0],
+      fechaPago: fechas[i],
       saldoInsoluto: montoGarantizado,
       pagoCapital: 0,
       pagoInteres: ingresoPorPeriodo,
@@ -564,6 +576,14 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
         estatusSolicitud: 'En proceso',
         montoSolicitado: montoStr,
         montoAutorizado: montoStr,
+        // BUG FIX (2026-08-31): la Solicitud nacía SIN Plazo — un campo
+        // obligatorio — y había que teclearlo a mano. Se mandaba
+        // `plazoBonosAnios` sólo dentro de Términos, pero no el `plazo` del
+        // encabezado, así que el Calendario de Comisiones de Banca 2º Piso se
+        // quedaba en 0 renglones en las líneas donde nadie lo capturó.
+        // La unidad es AÑOS, no meses: una GPO a 20 son 20 años
+        // (ver DefaultTab.tsx:38 y Banca2oPisoDetalle.tsx:375).
+        plazo: String(data.plazoBonosAnios || ''),
         fechaInicio: '',
         fechaFin: '',
         _clienteId: form.cliente_id || '',
@@ -606,6 +626,9 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
         ingresoComisionPorPeriodo,
         periodosPorAnio,
         ivaGPOPorcentaje,
+        undefined,
+        // Horizonte = TODO el plazo, no un año (ver nota en la funcion).
+        parseInt(String(data.plazoBonosAnios || ''), 10) || 1,
       );
 
       const result = await saveSolicitud(formLOS, undefined, { terminos: terminosLOS, simulacion: simulacionGPO });
@@ -786,6 +809,9 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
       ingresoComisionPorPeriodo,
       periodosPorAnio,
       ivaGPOPorcentaje,
+      undefined,
+      // Horizonte = TODO el plazo, no un año (ver nota en la funcion).
+      parseInt(String(data.plazoBonosAnios || ''), 10) || 1,
     );
     // El formulario de Solicitud exige apellidoPaternoPersona no vacío para validar
     // (aunque el emisor sea persona Moral) — mismo split crudo que ya usa Cotización → Solicitud.
@@ -807,6 +833,9 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
       productoId: form.producto_id || '',
       nombreProducto: data.producto?.nombreProducto || '',
       montoSolicitado: montoStr,
+      // Mismo mapeo que handleCerrarGanada: Plazo es obligatorio en la
+      // Solicitud y va en AÑOS para 2º Piso.
+      plazo: String(data.plazoBonosAnios || ''),
       _clienteId: form.cliente_id || '',
       _rfc: rfcEmisor,
       // TÉRMINOS Y CONDICIONES + SIMULACIÓN — hereda los mismos campos GPO que Cerrada-Ganada.

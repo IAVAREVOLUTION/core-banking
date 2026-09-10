@@ -430,6 +430,55 @@ export function loadFromSavedStore<T>(solId: SolId, subtab: string): T | null {
   return data ? structuredClone(data) as T : null;
 }
 
+/** Normaliza para comparar conceptos/componentes: sin acentos, sin espacios extra. */
+const _normCargo = (v: unknown) =>
+  String(v ?? '').trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+
+/**
+ * Marca como **Aplicado** los Cargos de la Solicitud que ya se procesaron
+ * dentro de una factura o de una póliza contable.
+ *
+ * El cargo deja de estar "Pendiente" en el momento en que su importe se
+ * incorpora a un documento con efecto real: la póliza de apertura lo lleva a
+ * contabilidad (REQ-16) o la factura de desembolso inicial lo cobra (REQ-6).
+ * Antes había que cambiarlo a mano, así que un cargo ya contabilizado seguía
+ * apareciendo como pendiente.
+ *
+ * Sólo toca los que están en 'Pendiente': un cargo 'Cancelado' no se reactiva,
+ * y uno ya 'Aplicado' no se vuelve a contar. Es idempotente a propósito, porque
+ * la póliza puede reintentarse.
+ *
+ * @param claves  tipos de cargo / componentes efectivamente procesados
+ * @returns       cuántos cambiaron y la lista resultante
+ */
+export function marcarCargosAplicados(
+  solId: SolId,
+  claves: string[],
+): { actualizados: number; cargos: CargoSolicitud[] } {
+  const cargos =
+    loadFromSession<CargoSolicitud[]>(solId, 'cargos') ||
+    loadFromSavedStore<CargoSolicitud[]>(solId, 'cargos') ||
+    [];
+  if (!Array.isArray(cargos) || cargos.length === 0) return { actualizados: 0, cargos: [] };
+
+  const buscadas = new Set(claves.map(_normCargo).filter(Boolean));
+  if (buscadas.size === 0) return { actualizados: 0, cargos };
+
+  let actualizados = 0;
+  const siguientes = cargos.map(c => {
+    if (c.estatus !== 'Pendiente') return c;
+    if (!buscadas.has(_normCargo(c.tipoCargo))) return c;
+    actualizados++;
+    return { ...c, estatus: 'Aplicado' };
+  });
+
+  if (actualizados > 0) {
+    saveToSession(solId, 'cargos', siguientes);
+    saveToSavedStore(solId, 'cargos', siguientes);
+  }
+  return { actualizados, cargos: siguientes };
+}
+
 /** Elimina todos los datos de un ID del saved store (in-memory + sessionStorage) */
 export function deleteSavedStore(solId: SolId): void {
   delete SAVED_DATA[String(solId)];

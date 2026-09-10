@@ -15,6 +15,9 @@
  *       [Detail tab: SolicitudActivacionDetailTab (unchanged)]
  */
 import { useState, useEffect, useCallback, useRef } from 'react';
+// REQ-24 HU-24.2/24.3 - activar una disposicion enciende el Boton de Panico
+// de su linea y consume el saldo de la garantia.
+import { aplicarActivacionDisposicion } from '../banca-2o-piso/banca2oPisoStore';
 import { toast } from 'sonner';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 import { createClient } from '@supabase/supabase-js';
@@ -337,6 +340,7 @@ export function SolicitudActivacionForm({
     };
     clearSession(storageId);
     const dbId = typeof solicitudId === 'string' ? solicitudId : undefined;
+
     if (onEnviar) {
       onEnviar(dataEnviada, dbId);
     } else {
@@ -348,6 +352,9 @@ export function SolicitudActivacionForm({
    * Activar — aparece cuando estatus = 'Pagado'.
    * Cambia estatus a 'Pagado', guarda y avanza la fase en BD.
    */
+  const fmtSaldo = (n?: number) =>
+    `$${(Number(n) || 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
   const handleActivar = async () => {
     if (!validate()) { toast.error('Faltan campos requeridos'); return; }
 
@@ -370,7 +377,31 @@ export function SolicitudActivacionForm({
     };
     clearSession(storageId);
     const dbId = typeof solicitudId === 'string' ? solicitudId : undefined;
-    
+
+    // ── REQ-24 — efecto sobre la linea de credito padre ────────────────────
+    // Va aqui porque este es el momento en que el dinero sale (§Decision 5), y
+    // antes de los callbacks para que un fallo se vea: dejar la linea sin
+    // consumir su saldo seria mostrar credito disponible que ya se ejercio.
+    const solDisp = String(formData.solicitudId || '');
+    if (solDisp) {
+      const efecto = await aplicarActivacionDisposicion(solDisp);
+      if (efecto.esDisposicion) {
+        if (!efecto.ok) {
+          toast.error('No se pudo aplicar la disposicion a la linea de credito', {
+            description: `${efecto.error}. No se activo.`,
+            duration: 14000,
+          });
+          return;
+        }
+        if (efecto.aplicada) {
+          toast.warning('La linea paso a Boton de Panico', {
+            description: `Saldo de la garantia: ${fmtSaldo(efecto.saldoAnterior)} -> ${fmtSaldo(efecto.saldoNuevo)}.`,
+            duration: 12000,
+          });
+        }
+      }
+    }
+
     // Si hay callback externo (desde SolicitudCreditoForm), usarlo
     if (onEnviar) {
       await onEnviar(dataActivar, dbId);

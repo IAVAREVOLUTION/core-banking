@@ -139,67 +139,6 @@ export function CotizacionCaptacionList({ cotizaciones, onNew, onEdit, onView, l
 
   return (
     <div className="bg-white min-h-screen">
-      {/* ═══ DIAGNÓSTICO DB — panel amarillo colapsable ═══ */}
-      <div className="px-4 pt-2">
-        <button
-          onClick={() => setShowDiag(!showDiag)}
-          className="text-xs px-2 py-1 bg-yellow-100 border border-yellow-400 rounded hover:bg-yellow-200 transition-colors"
-        >
-          {showDiag ? '▼' : '▶'} DIAGNÓSTICO DB — J_COTIZACIONES
-        </button>
-        {showDiag && (
-          <div className="mt-1 p-3 bg-yellow-50 border border-yellow-300 rounded text-xs font-mono space-y-1">
-            <div><strong>DB_AVAILABLE:</strong> <span className="text-blue-700">true</span></div>
-            <div><strong>backendStatus:</strong> <span className={
-              backendStatus === 'ready' ? 'text-green-700' :
-              backendStatus === 'empty' ? 'text-orange-600' :
-              backendStatus === 'error' ? 'text-red-700' :
-              backendStatus === 'pending-deploy' ? 'text-red-700' :
-              'text-gray-600'
-            }>{backendStatus || '—'}</span></div>
-            <div><strong>fetchMethod:</strong> <span className="text-blue-700">{fetchMethod || '(ninguno aún)'}</span></div>
-            <div><strong>dbRowCount (todas las líneas):</strong> {dbRowCount ?? '—'}</div>
-            <div><strong>cotizaciones Captación (UI):</strong> {cotizaciones.length}</div>
-            <div><strong>dataSource:</strong> <span className={
-              (dbRowCount ?? 0) > 0 && backendStatus === 'ready' ? 'text-green-700' : 'text-orange-600'
-            }>{(dbRowCount ?? 0) > 0 && backendStatus === 'ready' ? 'SUPABASE DB (J_COTIZACIONES)' : 'MOCK DATA (fallback local)'}</span></div>
-            <div><strong>loading:</strong> {loading ? 'true' : 'false'}</div>
-            {warning && <div className="text-red-700"><strong>warning:</strong> {warning}</div>}
-            {seedStatus === 'error' && (
-              <div className="mt-1 p-2 bg-red-100 border border-red-400 rounded text-red-800 space-y-1">
-                <div><strong>SEED ERROR:</strong> {seedError}</div>
-                {(seedError?.includes('NOT NULL') || seedError?.includes('not-null') || seedError?.includes('null value') || seedError?.includes('23502')) && (
-                  <div className="mt-1 p-2 bg-white border border-red-300 rounded">
-                    <div className="text-red-900 mb-1"><strong>SOLUCIÓN:</strong> Ejecuta este SQL en Supabase SQL Editor:</div>
-                    <div className="text-[10px] text-gray-800 bg-gray-100 p-2 rounded font-mono whitespace-pre-wrap select-all cursor-text">
-{`-- Copiar TODO esto y pegarlo en SQL Editor:
-ALTER TABLE "EFINANCIANET_DB"."J_COTIZACIONES" ALTER COLUMN producto_id DROP NOT NULL;
-ALTER TABLE "EFINANCIANET_DB"."J_COTIZACIONES" ALTER COLUMN cliente_id DROP NOT NULL;
-ALTER TABLE "EFINANCIANET_DB"."J_COTIZACIONES" DROP CONSTRAINT IF EXISTS fk_cliente;
-ALTER TABLE "EFINANCIANET_DB"."J_COTIZACIONES" DROP CONSTRAINT IF EXISTS fk_producto;`}
-                    </div>
-                    <div className="text-[10px] mt-1 text-gray-600">O ejecuta el archivo completo: /src/imports/migration-fix-jcotizaciones-nullable.sql</div>
-                  </div>
-                )}
-              </div>
-            )}
-            {seedStatus === 'success' && <div className="text-green-700"><strong>seed:</strong> Registro de prueba insertado OK — datos cargados desde DB.</div>}
-            <div className="pt-1 text-gray-500">Abre DevTools → Console y busca "[CotizDB]" para ver logs detallados de cada intento.</div>
-            {backendStatus === 'empty' && (
-              <div className="pt-1 p-2 bg-orange-100 border border-orange-300 rounded text-orange-800">
-                La tabla J_COTIZACIONES existe pero está vacía. Usa el botón "Sembrar" para insertar un registro de prueba vía RPC insert_jcotizacion.
-                Si falla por NOT NULL, ejecuta en SQL Editor:<br/>
-                <code className="text-[10px]">ALTER TABLE "EFINANCIANET_DB"."J_COTIZACIONES" ALTER COLUMN producto_id DROP NOT NULL; ALTER TABLE "EFINANCIANET_DB"."J_COTIZACIONES" ALTER COLUMN cliente_id DROP NOT NULL;</code>
-              </div>
-            )}
-            {backendStatus === 'pending-deploy' && (
-              <div className="pt-1 p-2 bg-red-100 border border-red-300 rounded text-red-800">
-                No se pudo conectar a la DB. Verifica que ejecutaste la migración: /src/imports/migration-jcotizaciones.sql
-              </div>
-            )}
-          </div>
-        )}
-      </div>
 
       {/* ═══ Header ═══ */}
       <div className="bg-white px-4 py-3 border-b border-gray-300">

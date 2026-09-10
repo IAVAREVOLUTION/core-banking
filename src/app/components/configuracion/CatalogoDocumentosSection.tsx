@@ -867,8 +867,7 @@ export function CatalogoDocumentosSection() {
             {selectedItem && (
               <div className="mt-6 pt-4 border-t border-gray-200 flex items-center gap-6 text-[10px] text-gray-400">
                 <span>UUID: {selectedItem.id}</span>
-                <span>Tabla: J_CATALOGOS</span>
-                <span>Type: Documento</span>
+<span>Type: Documento</span>
                 <span>Creado: {selectedItem.fechaCreacion}</span>
                 <span>Modificado: {selectedItem.fechaModificacion}</span>
               </div>
@@ -1110,8 +1109,7 @@ export function CatalogoDocumentosSection() {
             <span className="text-blue-600 ml-1">(mostrando {filteredData.length})</span>
           )}
           <span className="text-gray-300 ml-2">|</span>
-          <span className="text-gray-400 ml-2">Tabla: EFINANCIANET_DB.J_CATALOGOS (type=Documento)</span>
-        </span>
+</span>
         <div className="flex items-center gap-3 text-[11px]">
           <span className="text-green-600">
             <span className="font-semibold">{totalActivos}</span> activo{totalActivos !== 1 ? 's' : ''}

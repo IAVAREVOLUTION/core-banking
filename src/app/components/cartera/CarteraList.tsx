@@ -446,7 +446,7 @@ function ListScreen({ rows, loading, error, refetch, onVer, onEditar }: {
           <span className="text-sm text-gray-700">Ver</span>
           <div className="relative">
             <select className="px-3 py-1.5 border border-gray-400 rounded text-sm bg-white pr-8 appearance-none min-w-[280px]">
-              <option>Vista general de Cartera de Crédito</option>
+              <option>Vista general de Cartera de Crédito 2º Piso</option>
             </select>
             <svg className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" width="12" height="12" viewBox="0 0 12 12" fill="#666">
               <path d="M6 8l-4-4h8z" />

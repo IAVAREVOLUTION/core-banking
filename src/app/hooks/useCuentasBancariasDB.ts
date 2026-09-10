@@ -35,6 +35,15 @@ export interface CuentaBancariaData {
   numeroCuenta: string;
   moneda: string;
   cuentaSwift: string;
+  /**
+   * Beneficiario de la cuenta: quien recibe la dispersion. Se elige de las
+   * Personas Relacionadas del cliente (incluido el propio titular, que puede
+   * figurar entre ellas). Alimenta el subtab Cuenta(s) Beneficiaria(s) de la
+   * Solicitud, donde antes se asumia que el beneficiario era siempre el titular.
+   */
+  beneficiario?: string;
+  /** UUID de la persona relacionada elegida, para no depender del nombre. */
+  beneficiarioId?: string;
 }
 
 export interface CuentaBancaria extends CuentaBancariaData {
@@ -65,6 +74,8 @@ function mapRow(row: RpcRow): CuentaBancaria {
     numeroCuenta: d.numeroCuenta || '',
     moneda: d.moneda || '',
     cuentaSwift: d.cuentaSwift || '',
+    beneficiario: d.beneficiario || '',
+    beneficiarioId: d.beneficiarioId || '',
   };
 }
 
@@ -124,6 +135,8 @@ export function useCuentasBancariasDB(clienteId?: string | null) {
         numeroCuenta: payload.numeroCuenta,
         moneda: payload.moneda,
         cuentaSwift: payload.cuentaSwift,
+        beneficiario: payload.beneficiario || '',
+        beneficiarioId: payload.beneficiarioId || '',
       } };
 
       if (payload.id) {

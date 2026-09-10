@@ -393,8 +393,7 @@ export function EventosContablesSection() {
             {selectedItem && (
               <div className="mt-6 pt-4 border-t border-gray-200 flex items-center gap-6 text-[10px] text-gray-400">
                 <span>UUID: {selectedItem.id}</span>
-                <span>Tabla: EFINANCIANET_DB.J_CATALOGO_EVENTOS_CONTABLES</span>
-              </div>
+</div>
             )}
           </div>
         </div>
@@ -535,8 +534,7 @@ export function EventosContablesSection() {
           Total: <span className="font-semibold text-gray-700">{db.data.length}</span> evento{db.data.length !== 1 ? 's' : ''}
           {filteredData.length !== db.data.length && <span className="text-blue-600 ml-1">(mostrando {filteredData.length})</span>}
           <span className="text-gray-300 ml-2">|</span>
-          <span className="text-gray-400 ml-2">Tabla: EFINANCIANET_DB.J_CATALOGO_EVENTOS_CONTABLES</span>
-        </span>
+</span>
       </div>
 
       {/* Modal eliminación */}

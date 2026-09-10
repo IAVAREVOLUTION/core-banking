@@ -91,7 +91,11 @@ export function Banca2oPisoModule() {
           onVer={row => setView({ type: 'detalle', row })}
         />
       ) : (
-        <Banca2oPisoDetalle row={view.row} onBack={() => setView({ type: 'lista' })} />
+        <Banca2oPisoDetalle
+          row={view.row}
+          onBack={() => setView({ type: 'lista' })}
+          onCambio={refetch}
+        />
       )}
     </>
   );

@@ -585,19 +585,45 @@ export function seedOriginacionFromSolicitudItem(origId: number | string, item: 
     saveToSavedStore(origId, 'comites', comites);
   }
 
-  // Comisiones → cargos (necesario para FASE 6: CxP/CxC DETAIL)
-  const comisiones: any[] = sol.comisiones || [];
-  if (comisiones.length > 0) {
-    const cargos = comisiones.map((c: any) => ({
+  // Cargos de la Solicitud (REQ-15 / SolicitudCargosTab)
+  const cargosSol: any[] = Array.isArray(sol.cargos) && sol.cargos.length > 0
+    ? sol.cargos
+    : Array.isArray(sol.cargo) && sol.cargo.length > 0
+      ? sol.cargo
+      : Array.isArray(sol.cargoRegistros) && sol.cargoRegistros.length > 0
+        ? sol.cargoRegistros
+        : Array.isArray(d.cargos) && d.cargos.length > 0
+          ? d.cargos
+          : [];
+
+  if (cargosSol.length > 0) {
+    const cargos = cargosSol.map((c: any) => ({
       id: c.id || generateId(),
-      tipoCargo: c.tipo_comision || c.tipoCargo || 'Capital',
-      descripcion: c.descripcion || c.tipo_comision || '',
-      monto: typeof c.monto === 'number' ? c.monto : (c.montoCalculado || 0),
-      fechaCargo: c.fecha || '',
+      tipoCargo: c.tipo_cargo || c.tipoCargo || c.tipo_comision || c.tipoComision || '',
+      descripcion: c.descripcion || c.tipo_comision || c.tipoComision || '',
+      monto: typeof c.monto === 'number' ? c.monto : (parseFloat(String(c.monto || c.montoCalculado || 0).replace(/[$,\s]/g, '')) || 0),
+      fechaCargo: c.fecha_cargo || c.fechaCargo || c.fecha || '',
       estatus: c.estatus || 'Pendiente',
-      notas: '',
+      notas: c.notas || '',
     }));
     saveToSavedStore(origId, 'cargos', cargos);
+    saveToSession(origId as any, 'cargos', cargos);
+  } else {
+    // Comisiones → cargos (necesario para FASE 6: CxP/CxC DETAIL)
+    const comisiones: any[] = sol.comisiones || [];
+    if (comisiones.length > 0) {
+      const cargos = comisiones.map((c: any) => ({
+        id: c.id || generateId(),
+        tipoCargo: c.tipo_comision || c.tipoCargo || 'Capital',
+        descripcion: c.descripcion || c.tipo_comision || '',
+        monto: typeof c.monto === 'number' ? c.monto : (c.montoCalculado || 0),
+        fechaCargo: c.fecha || '',
+        estatus: c.estatus || 'Pendiente',
+        notas: '',
+      }));
+      saveToSavedStore(origId, 'cargos', cargos);
+      saveToSession(origId as any, 'cargos', cargos);
+    }
   }
 }
 

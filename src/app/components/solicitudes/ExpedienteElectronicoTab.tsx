@@ -27,7 +27,8 @@ import {
 import { AgregarDocumentoModal } from '../originacion/AgregarDocumentoModal';
 import {
   autoCrearReporteBuro, CLAVE_REPORTE_BURO,
-  autoCrearKitLegal, CLAVE_CONTRATO_REQ, CLAVE_PAGARE_REQ, CLAVE_ANEXO_RENTAS,
+  autoCrearKitLegal, generarPagareDesdePlantilla,
+  CLAVE_CONTRATO_REQ, CLAVE_PAGARE_REQ, CLAVE_ANEXO_RENTAS,
   autoCrearDocumentosComitePrepago, CLAVE_ACTA_COMITE, CLAVE_CERT_PREAPART,
 } from '../../hooks/generarDocumentosFase4';
 
@@ -558,6 +559,12 @@ interface Props {
    * de fase leía sólo de sessionStorage, que puede quedarse sin cuota; esta
    * ruta en memoria no depende de que la escritura haya funcionado.
    */
+  /**
+   * REQ-17 — oculta la Sección 1 (Requisitos del Producto) y deja sólo la vista de
+   * archivos cargados. Lo usa Banca 2º Piso, donde el expediente es de consulta: los
+   * requisitos y su validación pertenecen a la originación, no a la administración.
+   */
+  soloArchivos?: boolean;
   onDocumentosChange?: (docs: DocumentoCargado[]) => void;
   /**
    * Dirección inversa de onDocumentosChange: la última lista conocida en
@@ -595,7 +602,7 @@ function elMasCompleto(...candidatos: (DocumentoCargado[] | null | undefined)[])
   return mejor;
 }
 
-export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, productoId, nombreSolicitante, curpCliente, rfcCliente, fasePromptIA, tipoPersona, lineaProducto, descripcionFase, onEnviarSolicitud, onDocumentosChange, documentosIniciales, noSolicitud, tipoProducto, nombreProducto, plantillasProducto }: Props) {
+export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, productoId, nombreSolicitante, curpCliente, rfcCliente, fasePromptIA, tipoPersona, lineaProducto, descripcionFase, onEnviarSolicitud, onDocumentosChange, documentosIniciales, noSolicitud, tipoProducto, nombreProducto, plantillasProducto = [], soloArchivos = false }: Props) {
   // ── State: requisitos del producto (desde DB) ──
   const [requisitosDB, setRequisitosDB] = useState<RequisitoProducto[]>([]);
   const [loadingReqs, setLoadingReqs] = useState(false);
@@ -698,6 +705,14 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
   const [showForm, setShowForm] = useState(false);
   const [newDoc, setNewDoc] = useState<Partial<DocumentoCargado>>({});
   const [validatingId, setValidatingId] = useState<number | null>(null);
+  /**
+   * Fases plegadas de la tabla de Requisitos. Con muchos documentos la tabla se
+   * volvia larguisima: la columna "Fase" repetia el mismo nombre en cada fila
+   * (partido en 4 lineas) y las fases futuras, que no son accionables todavia,
+   * ocupaban tanto espacio como la actual. Ahora se agrupa por fase y solo la
+   * fase en curso queda abierta.
+   */
+  const [fasesPlegadas, setFasesPlegadas] = useState<Set<number>>(new Set());
   const [expandedPrompt, setExpandedPrompt] = useState<number | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [fileDataUrls, setFileDataUrls] = useState<Record<number, string>>({});
@@ -980,6 +995,22 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
     .includes('linea de credito');
   const aplicaBuroYKitLegal = !esLineaCredito;
 
+  /**
+   * Cada generador se ofrece solo si el producto DECLARA lo que produce.
+   *
+   * Antes bastaba con no ser Linea de Credito, asi que a Credito Simple 2o Piso
+   * —que solo declara el Pagare— se le ofrecia generar Autorizacion de Buro y el
+   * Kit Legal completo (contrato + anexo de rentas + pagare de arrendamiento).
+   * Mismo criterio que el resto del sistema: manda lo declarado, no la linea.
+   */
+  const declaraBuro = requisitosDB.some(r =>
+    /bur[oó]/i.test(String(r?.tipoDocumento || '')),
+  );
+  /** El Kit Legal aborta sin plantilla de contrato: no se ofrece si no existe. */
+  const tienePlantillaContrato = plantillasProducto.some(
+    (pl: any) => pl?.tipoPlantilla === 'contrato' && pl?.estatus === 'Activo',
+  );
+
   // ── Usar requisitos del producto (todos, no solo la fase actual) ──
   const requisitos = requisitosDB;
 
@@ -1113,6 +1144,7 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
 
   // ── Kit Legal (Fase 3): Contrato + Anexo de Rentas + Pagaré ──
   const [generandoKit, setGenerandoKit] = useState(false);
+  const [generandoPagare, setGenerandoPagare] = useState(false);
   const [generandoComite, setGenerandoComite] = useState(false);
 
   /**
@@ -1181,6 +1213,97 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
     documentos.some(d => d.tipoDocumento === CLAVE_CONTRATO_REQ) &&
     documentos.some(d => d.tipoDocumento === CLAVE_PAGARE_REQ) &&
     documentos.some(d => d.tipoDocumento === CLAVE_ANEXO_RENTAS);
+
+  /**
+   * REQ-23 HU-23.1 — genera el Pagaré solo, desde la plantilla del producto.
+   *
+   * Va aparte del Kit Legal a propósito: aquél arma el kit del arrendamiento y
+   * aborta si el producto no tiene plantilla de contrato, que es justo el caso
+   * de Crédito Simple 2° Piso (§Decisión 3: botón explícito, porque el pagaré
+   * necesita Monto y Plazo ya capturados).
+   */
+  const requisitoPagareDeLaFase = useMemo(
+    () => requisitos.find(r =>
+      /pagar[ée]/i.test(r.tipoDocumento || '') && Number(r.faseId) === Number(faseIdActual),
+    ),
+    [requisitos, faseIdActual],
+  );
+  const tienePlantillaPagare = plantillasProducto.some(
+    p => p.tipoPlantilla === 'pagare' && p.estatus === 'Activo',
+  );
+  const pagareYaGenerado = Boolean(
+    requisitoPagareDeLaFase &&
+    documentos.some(d =>
+      String(d.tipoDocumento || '').trim().toLowerCase() ===
+      String(requisitoPagareDeLaFase.tipoDocumento || '').trim().toLowerCase()),
+  );
+
+  const handleGenerarPagare = async () => {
+    if (!requisitoPagareDeLaFase) return;
+    setGenerandoPagare(true);
+    try {
+      const resultado = await generarPagareDesdePlantilla({
+        storageId: solicitudId,
+        datos: {
+          noSol: noSolicitud || '',
+          cliente: nombreSolicitante || 'Cliente',
+          lineaProducto: lineaProducto || '',
+          tipoProducto: tipoProducto || '',
+          productoNombre: nombreProducto || tipoProducto || '',
+          terminos: loadFromSession<any>(solicitudId, 'terminos') || loadFromSavedStore<any>(solicitudId, 'terminos') || {},
+          rfc: rfcCliente || '',
+          curp: curpCliente || '',
+        },
+        plantillas: plantillasProducto,
+        supabase,
+        projectId,
+        tipoDocumento: requisitoPagareDeLaFase.tipoDocumento,
+        fase: descripcionFase || requisitoPagareDeLaFase.fase,
+        faseId: Number(faseIdActual) || undefined,
+      });
+
+      // CA-09 — sin plantilla no se improvisa un PDF: se dice qué falta.
+      if (!resultado.exito) {
+        toast.error('No se pudo generar el Pagaré', { description: resultado.error, duration: 10000 });
+        return;
+      }
+      if (resultado.documentosCreados.length === 0) {
+        toast.info('El Pagaré ya existía en el Expediente.');
+        return;
+      }
+
+      const fresh = loadFromSession<DocumentoCargado[]>(solicitudId, 'documentos')
+        ?? loadFromSavedStore<DocumentoCargado[]>(solicitudId, 'documentos');
+      if (fresh) setDocumentos(fresh);
+
+      if (resultado.registradosEnExpediente) {
+        toast.success('Pagaré generado', {
+          description: `${resultado.documentosCreados[0]} — pendiente de firma y validación IA.`,
+          duration: 7000,
+        });
+      } else {
+        toast.warning('Pagaré generado, pero NO se guardó en base de datos', {
+          description: resultado.error || 'Se perderá al recargar la página.',
+          duration: 10000,
+        });
+      }
+
+      // Abrirlo de inmediato, mismo comportamiento que el Kit Legal.
+      const gen = (resultado.documentosGenerados || [])[0];
+      if (gen?.fileData) {
+        try {
+          const w = window.open();
+          if (w) w.document.write(
+            `<iframe src="${gen.fileData}" style="width:100%;height:100%;border:0"></iframe>`,
+          );
+        } catch { /* el documento ya quedó en el expediente */ }
+      }
+    } catch (err: any) {
+      toast.error('Error al generar el Pagaré', { description: err?.message || String(err), duration: 8000 });
+    } finally {
+      setGenerandoPagare(false);
+    }
+  };
 
   const handleGenerarKitLegal = async () => {
     setGenerandoKit(true);
@@ -1505,7 +1628,36 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
       const promptFuente = reqInfo?.promptIA ? 'DOCUMENTO (catálogo)' : 'FALLBACK';
 
       // Enriquecer prompt con elementos requeridos del catálogo
-      const elementos: ElementoRequerido[] = reqInfo?.elementosRequeridos || [];
+      let elementos: ElementoRequerido[] = reqInfo?.elementosRequeridos || [];
+
+      // REQ-23 HU-23.2 — un PAGARÉ siempre debe validarse contra acreditado,
+      // monto y firma. Si el catálogo ya los trae, manda el catálogo (CA-16);
+      // este respaldo sólo evita que un pagaré se valide con un prompt genérico
+      // de "que sea legible", que es lo que hacía hasta ahora.
+      const esPagare = /pagar[ée]/i.test(doc.tipoDocumento || '');
+      if (esPagare) {
+        const yaPide = (re: RegExp) => elementos.some(e => re.test(e.elemento || ''));
+        const minimos: ElementoRequerido[] = [];
+        if (!yaPide(/acreditad|suscriptor|deudor|nombre/i)) {
+          minimos.push({
+            elemento: `Nombre del acreditado (suscriptor)${nombreSolicitante ? `, que debe corresponder a "${nombreSolicitante}"` : ''}`,
+            obligatorio: true,
+          } as ElementoRequerido);
+        }
+        if (!yaPide(/monto|importe|cantidad/i)) {
+          minimos.push({
+            elemento: 'Monto del pagaré, en número y en letra',
+            obligatorio: true,
+          } as ElementoRequerido);
+        }
+        if (!yaPide(/firma/i)) {
+          minimos.push({
+            elemento: 'Firma autógrafa del suscriptor',
+            obligatorio: true,
+          } as ElementoRequerido);
+        }
+        if (minimos.length > 0) elementos = [...elementos, ...minimos];
+      }
       if (elementos.length > 0) {
         const obligatorios = elementos.filter(e => e.obligatorio).map(e => e.elemento);
         const opcionales   = elementos.filter(e => !e.obligatorio).map(e => e.elemento);
@@ -1689,6 +1841,7 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
   return (
     <div className="border border-gray-200 bg-white">
       {/* ═══ SECCION 1 — Requisitos del Producto ═══ */}
+      {!soloArchivos && (
       <div className="p-5 border-b border-gray-200">
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-3">
@@ -1762,13 +1915,15 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
           </div>
         )}
 
-        {/* Tabla de requisitos */}
+        {/* Requisitos agrupados por fase (ver nota en `fasesPlegadas`). */}
         {!loadingReqs && requisitos.length > 0 && (
           <div className="border border-gray-300 overflow-hidden rounded">
             <table className="w-full text-xs">
               <thead className="bg-[#2E5C91] text-white">
                 <tr>
-                  <th className="px-2 py-2 text-left font-medium w-16">Fase</th>
+                  {/* La columna "Fase" desaparecio: ahora es la cabecera del
+                      grupo. Repetirla por fila obligaba a un ancho de 64px con
+                      el nombre partido en 4 lineas. */}
                   <th className="px-2 py-2 text-left font-medium">Tipo Documento</th>
                   <th className="px-2 py-2 text-left font-medium">Descripcion</th>
                   <th className="px-2 py-2 text-left font-medium w-24">Area</th>
@@ -1777,11 +1932,64 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
                   <th className="px-2 py-2 text-center font-medium w-24">Estatus</th>
                 </tr>
               </thead>
-              <tbody>
-                {requisitos.map((req, idx) => {
+              {(() => {
+                // Agrupar conservando el orden de fase; una sola pasada.
+                const grupos = new Map<number, { fase: string; items: typeof requisitos }>();
+                for (const r of requisitos) {
+                  const fid = Number(r.faseId) || 0;
+                  if (!grupos.has(fid)) grupos.set(fid, { fase: r.fase, items: [] as any });
+                  grupos.get(fid)!.items.push(r);
+                }
+                const ordenadas = [...grupos.entries()].sort((a, b) => a[0] - b[0]);
+
+                return ordenadas.map(([fid, grupo]) => {
+                  const esFuturaG = fid > faseIdActual;
+                  const esActualG = fid === faseIdActual;
+                  // Las fases futuras y las ya superadas arrancan plegadas: lo
+                  // accionable es la fase en curso.
+                  const plegada = fasesPlegadas.has(fid) || (!esActualG && !fasesPlegadas.has(-fid));
+                  const cumplidos = grupo.items.filter(r => findDocForReq(r)?.estatus === 'Validado').length;
+
+                  return (
+                <tbody key={`grupo-${fid}`}>
+                  <tr
+                    className="border-b border-gray-300 cursor-pointer hover:bg-gray-100"
+                    style={{ backgroundColor: esActualG ? '#EFF6FF' : '#F3F4F6' }}
+                    onClick={() => setFasesPlegadas(prev => {
+                      const n = new Set(prev);
+                      // Se guarda la excepcion con clave negativa para poder
+                      // ABRIR una fase que por defecto viene plegada.
+                      if (esActualG) { n.has(fid) ? n.delete(fid) : n.add(fid); }
+                      else { n.has(-fid) ? n.delete(-fid) : n.add(-fid); }
+                      return n;
+                    })}
+                  >
+                    <td colSpan={6} className="px-2 py-1.5">
+                      <div className="flex items-center gap-2">
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"
+                             strokeLinecap="round" strokeLinejoin="round"
+                             className={`transition-transform ${plegada ? '-rotate-90' : ''} ${esActualG ? 'text-blue-700' : 'text-gray-500'}`}>
+                          <path d="M6 9l6 6 6-6" />
+                        </svg>
+                        <span className={`text-[11px] font-semibold ${esActualG ? 'text-blue-800' : 'text-gray-600'}`}>
+                          {grupo.fase}
+                        </span>
+                        {esActualG && (
+                          <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-blue-600 text-white">Fase actual</span>
+                        )}
+                        {esFuturaG && (
+                          <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-gray-200 text-gray-600">Fase futura</span>
+                        )}
+                        <span className="ml-auto text-[10px] text-gray-500">
+                          {cumplidos}/{grupo.items.length} validado{grupo.items.length !== 1 ? 's' : ''}
+                        </span>
+                      </div>
+                    </td>
+                  </tr>
+
+                  {!plegada && grupo.items.map((req, idx) => {
                   const docCargado = findDocForReq(req);
                   const esCumplido = docCargado?.estatus === 'Validado';
-                  const esFaseActual = req.faseId <= faseIdActual;
                   const esFaseFutura = req.faseId > faseIdActual;
 
                   return (
@@ -1794,15 +2002,6 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
                           : idx % 2 === 1 ? '#F5F5F5' : '#FFFFFF'
                       }}
                     >
-                      <td className="px-2 py-1.5">
-                        <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] border ${
-                          esFaseActual
-                            ? 'text-blue-700 bg-blue-50 border-blue-200 font-medium'
-                            : 'text-gray-500 bg-gray-50 border-gray-200'
-                        }`}>
-                          {req.fase}
-                        </span>
-                      </td>
                       <td className="px-2 py-1.5 text-gray-700 font-medium">{req.tipoDocumento}</td>
                       <td className="px-2 py-1.5 text-gray-600">{req.descripcion || <span className="text-gray-400 italic">Sin descripcion</span>}</td>
                       <td className="px-2 py-1.5 text-gray-700">{req.area}</td>
@@ -1888,8 +2087,11 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
                       </td>
                     </tr>
                   );
-                })}
-              </tbody>
+                  })}
+                </tbody>
+                  );
+                });
+              })()}
             </table>
 
             {/* Prompt IA expandido */}
@@ -1956,6 +2158,7 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
           </div>
         )}
       </div>
+      )}
 
       {/* ═══ SECCION 2 — Documentos Cargados por el Usuario ═══ */}
       <div className="p-5">
@@ -1981,27 +2184,10 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
             )}
           </div>
           <div className="flex items-center gap-2">
-            <button
-              onClick={() => setShowIADebug(v => !v)}
-              title="Panel de debug de validación IA"
-              className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-medium border transition-all duration-200 ${
-                showIADebug
-                  ? 'bg-violet-600 text-white border-violet-700 shadow-sm'
-                  : 'bg-violet-50 text-violet-700 border-violet-200 hover:bg-violet-100'
-              }`}
-            >
-              <svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-                <circle cx="5.5" cy="3.5" r="2.5" />
-                <path d="M1 10c0-2.5 2-4 4.5-4s4.5 1.5 4.5 4" />
-                <path d="M7 2l1.5-1M4 2L2.5 1" />
-              </svg>
-              Debug IA
-            </button>
-            {lastModeloIA && (
-              <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-mono bg-violet-50 text-violet-700 border border-violet-200" title="Último modelo IA utilizado">
-                🤖 {lastModeloIA.includes('/') ? lastModeloIA.split('/').pop() : lastModeloIA}
-              </span>
-            )}
+            {/* Se retiraron el boton "Debug IA" y el chip del modelo: son
+                herramientas de diagnostico, no de operacion, y ocupaban el
+                lugar de las acciones reales del expediente. El panel sigue en
+                el codigo tras `showIADebug` por si hace falta reactivarlo. */}
             {/* Acción manual explícita: disponible en cualquier fase. Antes estaba
                 limitada a faseIdActual === 2 y el botón no aparecía nunca si la
                 solicitud no estaba exactamente en esa fase. */}
@@ -2020,7 +2206,7 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
                 {generandoComite ? 'Generando...' : 'Generar Documentos del Comité'}
               </button>
             )}
-            {!isRO && aplicaBuroYKitLegal && !yaExisteReporteBuro && (
+            {!isRO && aplicaBuroYKitLegal && declaraBuro && !yaExisteReporteBuro && (
               <button
                 onClick={handleGenerarReporteBuro}
                 disabled={generandoBuro}
@@ -2033,7 +2219,25 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
                 {generandoBuro ? 'Generando...' : 'Generar Autorización Buró'}
               </button>
             )}
-            {!isRO && aplicaBuroYKitLegal && !kitLegalCompleto && (
+            {/* REQ-23 HU-23.1 — Pagaré solo, para productos cuya fase lo declara
+                (p. ej. Crédito Simple 2º Piso, que no tiene plantilla de contrato
+                y por eso nunca podía usar el Kit Legal). */}
+            {!isRO && requisitoPagareDeLaFase && tienePlantillaPagare && !pagareYaGenerado && (
+              <button
+                onClick={handleGenerarPagare}
+                disabled={generandoPagare}
+                title={`Genera "${requisitoPagareDeLaFase.tipoDocumento}" desde la plantilla de Pagaré del producto`}
+                className="px-3.5 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all duration-200 shadow-sm bg-[#0F766E] text-white hover:bg-[#0D5F58] disabled:opacity-60"
+              >
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M2 1.5h5L10 4v6.5H2z" />
+                  <path d="M7 1.5V4h3" />
+                  <path d="M4 7h4" />
+                </svg>
+                {generandoPagare ? 'Generando...' : 'Generar Pagaré'}
+              </button>
+            )}
+            {!isRO && aplicaBuroYKitLegal && tienePlantillaContrato && !kitLegalCompleto && (
               <button
                 onClick={handleGenerarKitLegal}
                 disabled={generandoKit}

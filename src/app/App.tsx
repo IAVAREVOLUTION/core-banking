@@ -44,7 +44,7 @@ import { InversionesModule } from './components/inversiones/InversionesModule';
 import { CuentasAhorroModule } from './components/cuentas-ahorro/CuentasAhorroModule';
 import { Dashboard } from './components/Dashboard';
 import { SplashScreen } from './components/SplashScreen';
-import { LoginScreen } from './components/LoginScreen';
+import { LoginScreen, type PerfilUsuario } from './components/LoginScreen';
 import { OriginacionModule } from './components/originacion/OriginacionModule';
 import { SolicitudActivacionDashboard } from './components/solicitudes-activacion/SolicitudActivacionDashboard';
 import { SolicitudActivacionList } from './components/solicitudes-activacion/SolicitudActivacionList';
@@ -89,6 +89,8 @@ function App() {
   const [showSplash, setShowSplash] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [currentModule, setCurrentModule] = useState<Module>('dashboard');
+  /** REQ-25 — perfil de la sesion; sin `modulosPermitidos` se ve todo (RN-03). */
+  const [perfil, setPerfil] = useState<PerfilUsuario | null>(null);
   const [products, setProducts] = useState<Product[]>(creditProducts);
 
   const [currentView, setCurrentView] = useState<View>('list');
@@ -199,7 +201,8 @@ function App() {
   const isSolicActivacionActive = currentModule === 'solicitudes-activacion' && solicitudActivacionView === 'dashboard';
   const { solicitudesActivacion: solicitudesActivacionDB, loading: loadingSolicActivacion } = useSolicitudesActivacionDB(isSolicActivacionActive);
 
-  const handleLogin = () => {
+  const handleLogin = (p: PerfilUsuario) => {
+    setPerfil(p);
     setIsAuthenticated(true);
     toast.success('Bienvenido al sistema', {
       description: 'Sesión iniciada correctamente',
@@ -696,7 +699,15 @@ function App() {
     );
   }
 
-  const navigationTabs = [
+  const permitido = (id: string) =>
+    // El Home siempre esta disponible: es la portada de la sesion, no un modulo
+    // que se conceda. Sin esta excepcion la casita mandaba al primer modulo
+    // permitido (Prospectos) y el Home quedaba inalcanzable para DEMO.
+    id === 'dashboard'
+    || !perfil?.modulosPermitidos
+    || perfil.modulosPermitidos.includes(id);
+
+  const navigationTabsTodos = [
     { id: 'configuracion', label: 'Configuración' },
     { id: 'productos', label: 'Productos' },
     { id: 'garantias', label: 'Bienes' },
@@ -716,7 +727,7 @@ function App() {
     { id: 'cobranza', label: 'Cobranza' },
     { id: 'avisos-vencimiento', label: 'Avisos de Vencimiento' },
     { id: 'banca-2o-piso', label: 'Banca 2º Piso' },
-    { id: 'cartera-credito', label: 'Cartera crédito' },
+    { id: 'cartera-credito', label: 'Cartera de Crédito 2º Piso' },
     { id: 'cartera-arrendamiento', label: 'Cartera Arrendamiento' },
     { id: 'cartera-inversion', label: 'Cartera inversión' },
     { id: 'cartera-ahorro', label: 'Cartera ahorro' },
@@ -725,6 +736,14 @@ function App() {
     { id: 'gestion-riesgos', label: 'Gestión de Riesgos' },
     { id: 'une', label: 'UNE — Quejas y Reclamaciones' },
   ];
+
+  const navigationTabs = navigationTabsTodos.filter(t => permitido(t.id));
+
+  // RN-02 — esconder del menu no restringe: si el modulo activo no esta
+  // permitido (sesion previa, estado heredado), se cae al primero permitido.
+  const moduloActivo: Module = permitido(currentModule)
+    ? currentModule
+    : ((navigationTabs[0]?.id as Module) ?? 'dashboard');
 
   return (
     <div className="min-h-screen bg-[#F5F5F5]">
@@ -748,7 +767,7 @@ function App() {
         <div className="px-4 py-2 flex items-center justify-between">
           {/* Left: Logo */}
           <div className="flex items-center gap-3">
-            <img src={efinanciaLogo} alt="eFinanciaN@t" className="h-12" />
+            <img src={efinanciaLogo} alt="CACAO Banking" className="h-12" />
           </div>
 
           {/* Center: Search Bar */}
@@ -795,8 +814,15 @@ function App() {
                   <path d="M2 14c0-3 2.5-5 6-5s6 2 6 5"/>
                 </svg>
                 <div className="flex flex-col items-start">
-                  <span className="text-xs leading-tight">Administrador</span>
-                  <span className="text-[10px] text-gray-500 leading-tight">admin</span>
+                  {/* REQ-25 — el encabezado refleja la sesion real: decir
+                      "Administrador" en una sesion DEMO confunde sobre que
+                      permisos se estan viendo. */}
+                  <span className="text-xs leading-tight">
+                    {perfil?.modulosPermitidos ? 'Usuario Demo' : 'Administrador'}
+                  </span>
+                  <span className="text-[10px] text-gray-500 leading-tight">
+                    {perfil?.usuario || 'admin'}
+                  </span>
                 </div>
               </button>
               {showUserMenu && (
@@ -852,7 +878,7 @@ function App() {
             <button 
               onClick={() => handleModuleChange('dashboard')}
               className={`p-1 rounded transition-all ${
-                currentModule === 'dashboard' ? 'bg-white/20' : 'hover:bg-white/10'
+                moduloActivo === 'dashboard' ? 'bg-white/20' : 'hover:bg-white/10'
               }`}
               title="Ir a Dashboard (Inicio)"
             >
@@ -870,11 +896,11 @@ function App() {
                 key={tab.id}
                 onClick={() => handleModuleChange(tab.id as Module)}
                 className={`px-4 py-2.5 text-xs whitespace-nowrap transition-colors ${
-                  currentModule === tab.id
+                  moduloActivo === tab.id
                     ? 'bg-white font-medium'
                     : 'text-white/90 hover:text-white hover:bg-white/10'
                 }`}
-                style={currentModule === tab.id ? {
+                style={moduloActivo === tab.id ? {
                   color: 'var(--theme-primary)',
                 } : {}}
               >
@@ -887,9 +913,9 @@ function App() {
 
       {/* Main Content */}
       <main>
-        {currentModule === 'dashboard' ? (
-          <Dashboard onNavigateToModule={(moduleId) => handleModuleChange(moduleId as Module)} />
-        ) : currentModule === 'productos' ? (
+        {moduloActivo === 'dashboard' ? (
+          <Dashboard onNavigateToModule={(moduleId) => handleModuleChange(moduleId as Module)} modulos={navigationTabs} />
+        ) : moduloActivo === 'productos' ? (
           <>
             {/* Subnavegación interna del módulo Productos */}
             <div className="bg-gray-100 border-b border-gray-300">
@@ -1097,9 +1123,9 @@ function App() {
               )
             )}
           </>
-        ) : currentModule === 'garantias' ? (
+        ) : moduloActivo === 'garantias' ? (
           <Garantias />
-        ) : currentModule === 'clientes' ? (
+        ) : moduloActivo === 'clientes' ? (
           <>
             {/* Subnavegación interna del módulo Clientes */}
             <div className="bg-gray-100 border-b border-gray-300">
@@ -1201,7 +1227,7 @@ function App() {
               />
             )}
           </>
-        ) : currentModule === 'prospectos' ? (
+        ) : moduloActivo === 'prospectos' ? (
           <>
             {/* Subnavegación interna del módulo Prospectos */}
             <div className="bg-gray-100 border-b border-gray-300">
@@ -1298,7 +1324,7 @@ function App() {
               />
             )}
           </>
-        ) : currentModule === 'oportunidades' ? (
+        ) : moduloActivo === 'oportunidades' ? (
           <OportunidadesModule
             leadParaOportunidad={leadParaOportunidad}
             onLeadParaOportunidadConsumido={() => setLeadParaOportunidad(null)}
@@ -1307,14 +1333,14 @@ function App() {
             oportunidadDeepLinkId={oportunidadDeepLinkId}
             onOportunidadDeepLinkConsumido={() => setOportunidadDeepLinkId(null)}
           />
-        ) : currentModule === 'cotizaciones' ? (
+        ) : moduloActivo === 'cotizaciones' ? (
           <CotizacionesModule
             deepLinkCotizacionId={cotizacionDeepLink?.id}
             deepLinkLinea={cotizacionDeepLink?.linea}
             onDeepLinkConsumed={() => setCotizacionDeepLink(null)}
             onCrearSolicitudDesdeCotizacion={handleCrearSolicitudDesdeCotizacion}
           />
-        ) : currentModule === 'solicitudes-creditos' ? (
+        ) : moduloActivo === 'solicitudes-creditos' ? (
           <>
             {/* Subnavegación interna del módulo Solicitudes */}
             <div className="bg-gray-100 border-b border-gray-300">
@@ -1370,7 +1396,7 @@ function App() {
               />
             )}
           </>
-        ) : currentModule === 'solicitudes-activacion' ? (
+        ) : moduloActivo === 'solicitudes-activacion' ? (
           <>
             {/* Subnavegación interna del módulo Solicitudes de Activación */}
             <div className="bg-gray-100 border-b border-gray-300">
@@ -1413,17 +1439,17 @@ function App() {
               <SolicitudActivacionList />
             )}
           </>
-        ) : currentModule === 'originacion' ? (
+        ) : moduloActivo === 'originacion' ? (
           <OriginacionModule />
-        ) : currentModule === 'creditos' ? (
+        ) : moduloActivo === 'creditos' ? (
           <CreditosModule />
-        ) : currentModule === 'inversiones' ? (
+        ) : moduloActivo === 'inversiones' ? (
           <InversionesModule />
-        ) : currentModule === 'cuentas-ahorro' ? (
+        ) : moduloActivo === 'cuentas-ahorro' ? (
           <CuentasAhorroModule />
-        ) : currentModule === 'avisos-vencimiento' ? (
+        ) : moduloActivo === 'avisos-vencimiento' ? (
           <AvisosVencimientoModule />
-        ) : currentModule === 'pld' ? (
+        ) : moduloActivo === 'pld' ? (
           <>
             {pldView === 'home' ? (
               <PLDHome onNavigate={(screen) => {
@@ -1463,31 +1489,31 @@ function App() {
               <PLDReportesCNBV onBack={() => setPLDView('home')} />
             ) : null}
           </>
-        ) : currentModule === 'configuracion' ? (
+        ) : moduloActivo === 'configuracion' ? (
           <ConfiguracionModule />
-        ) : currentModule === 'pagos-referenciados' ? (
+        ) : moduloActivo === 'pagos-referenciados' ? (
           <PagosReferenciadosModule />
-        ) : currentModule === 'casos-cobranza' ? (
+        ) : moduloActivo === 'casos-cobranza' ? (
           <CasosCobranzaModule />
-        ) : currentModule === 'cobranza' ? (
+        ) : moduloActivo === 'cobranza' ? (
           <CobranzaModule />
-        ) : currentModule === 'banca-2o-piso' ? (
+        ) : moduloActivo === 'banca-2o-piso' ? (
           <Banca2oPisoModule />
-        ) : currentModule === 'cartera-credito' ? (
+        ) : moduloActivo === 'cartera-credito' ? (
           <CarteraModule />
-        ) : currentModule === 'cartera-arrendamiento' ? (
+        ) : moduloActivo === 'cartera-arrendamiento' ? (
           <CarteraArrendamientoList />
-        ) : currentModule === 'cartera-inversion' ? (
+        ) : moduloActivo === 'cartera-inversion' ? (
           <AportacionesModule />
-        ) : currentModule === 'cartera-ahorro' ? (
+        ) : moduloActivo === 'cartera-ahorro' ? (
           <AportacionesModule />
-        ) : currentModule === 'ejec-reportes' ? (
+        ) : moduloActivo === 'ejec-reportes' ? (
           <EjecReportesModule />
-        ) : currentModule === 'polizas-contables' ? (
+        ) : moduloActivo === 'polizas-contables' ? (
           <PolizasContablesModule />
-        ) : currentModule === 'gestion-riesgos' ? (
+        ) : moduloActivo === 'gestion-riesgos' ? (
           <GestionRiesgosModule />
-        ) : currentModule === 'une' ? (
+        ) : moduloActivo === 'une' ? (
           <UNEHome />
         ) : (
           <div className="p-8 text-center text-gray-500">

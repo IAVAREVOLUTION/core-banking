@@ -3304,6 +3304,10 @@ const putSolicitudesHandler = async (c: any) => {
     const cliente_id = toNullUuid(body.cliente_id);
     const monto_sol = toNullNum(body.monto_sol);
     const monto_aut = toNullNum(body.monto_aut);
+    // REQ-20/REQ-24 — saldo de la garantia de una Linea de Credito. Faltaba
+    // leerlo: el PUT respondia {ok:true} y lo descartaba en silencio, asi que ni
+    // la siembra al liberar ni el descuento al activar llegaban a la BD.
+    const saldo_actual = toNullNum(body.saldo_actual);
     const estatus_sol = toNullStr(body.estatus_sol);
     const estatus_cuen = toNullStr(body.estatus_cuen);
     const estatus_cart = toNullStr(body.estatus_cart);
@@ -3348,6 +3352,7 @@ const putSolicitudesHandler = async (c: any) => {
         cliente_id            = COALESCE(${cliente_id}::uuid, cliente_id),
         monto_sol             = COALESCE(${monto_sol}::numeric::money, monto_sol),
         monto_aut             = COALESCE(${monto_aut}::numeric::money, monto_aut),
+        saldo_actual          = COALESCE(${saldo_actual}::numeric::money, saldo_actual),
         estatus_sol           = COALESCE(${estatus_sol}, estatus_sol),
         estatus_cuen          = COALESCE(${estatus_cuen}, estatus_cuen),
         estatus_cart          = COALESCE(${estatus_cart}, estatus_cart),
@@ -3613,6 +3618,14 @@ const activarCuentaSolicitudHandler = async (c: any) => {
     const conceptoMovimiento = esCaptacion ? 'Apertura de cuenta - Depósito inicial' : 'Apertura de cuenta - Disposición inicial';
     // Crédito: saldo_actual = monto_transaccion (deuda inicial). Aportación/Captación: saldo_actual = 0.
     const saldoFinal = esCaptacion ? 0 : montoTransaccion;
+    // REQ-20 §Conflicto — en una Línea de Crédito (2º Piso) `saldo_actual` NO
+    // significa deuda inicial: es el Saldo Monto Garantía, y lo siembra la
+    // autorización con el Monto Garantizado GPO. Si la activación lo pisara con
+    // el monto de la transacción, el saldo se vería correcto y se corrompería
+    // segundos después, según qué llamada terminara al final. Aquí se declara un
+    // solo dueño del campo por producto: fuera de Línea de Crédito manda la
+    // activación; dentro, manda la autorización.
+    const esLineaCredito = linea.includes('linea') && linea.includes('credito');
 
     // Construir primer movimiento
     const now = new Date().toISOString();
@@ -3646,7 +3659,7 @@ const activarCuentaSolicitudHandler = async (c: any) => {
         estatus_disp = ${estatus_disp},
         cta_eje_chec = COALESCE(${cta_eje_chec}, cta_eje_chec),
         no_cuenta    = COALESCE(${no_cuenta}, no_cuenta),
-        saldo_actual = ${saldoFinal}::numeric,
+        saldo_actual = COALESCE(${esLineaCredito ? null : saldoFinal}::numeric, saldo_actual),
         data         = ${newDataJson}::jsonb
       WHERE id = ${id}::uuid
     `;
@@ -5555,7 +5568,24 @@ const validarDocumentoIAHandler = async (c: any) => {
             ...elementosAVerificar.map((e: string, i: number) => `${i + 1}. ${e}`),
             ``,
           ] : [
-            `Verifica que el documento sea un "${tipoDocumento}" auténtico y legible.`,
+            // BUG FIX (2026-08-31): antes esta rama decía sólo "Verifica que el
+            // documento sea un X AUTÉNTICO y legible". Sin checklist, el modelo
+            // llenaba el vacío con sus propios criterios, y en un contrato
+            // "auténtico" se lee como "ejecutado y firmado": rechazaba las
+            // propuestas que el propio sistema genera (que por definición no
+            // están firmadas) pidiendo "firmas de ambas partes". Con eso la
+            // fase quedaba imposible de pasar. Sin criterios configurados, lo
+            // único exigible es que sea del tipo esperado y esté legible.
+            `NO hay checklist configurado para este documento.`,
+            `Valida ÚNICAMENTE dos cosas:`,
+            `1. Que el documento corresponda al tipo "${tipoDocumento}".`,
+            `2. Que su contenido sea legible.`,
+            ``,
+            `Si ambas se cumplen → "valido": true y "faltantes": [].`,
+            `NO exijas firmas, sellos, acuses, ejecución, formalización, ni ningún`,
+            `otro requisito que no esté listado arriba. Muchos de estos documentos`,
+            `los emite el propio sistema como propuesta o borrador y no llevan`,
+            `firma en esta etapa: que sea un borrador NO lo invalida.`,
             ``,
           ]),
           `Responde ÚNICAMENTE en JSON.`,
@@ -5582,7 +5612,7 @@ const validarDocumentoIAHandler = async (c: any) => {
     const OR_HDR      = { "HTTP-Referer": "https://pvzrjmsynzgfsowntywf.supabase.co", "X-Title": "CORE Bancario" };
 
     // ── Claude (Anthropic) — soporta visión nativa ──
-    const tryClaudeModel = async (model: string): Promise<{raw: string; err?: string} | null> => {
+    const tryClaudeModel = async (model: string): Promise<{raw: string; err?: string; modelo?: string} | null> => {
       if (!CLAUDE_KEY) return null;
       try {
         let content: any[];
@@ -5617,7 +5647,7 @@ const validarDocumentoIAHandler = async (c: any) => {
         const text = j.content?.[0]?.text || "";
         if (!text) return { raw: "", err: `claude:${model} devolvió contenido vacío` };
         console.log(`${LOG_IA} [claude:${model}] OK (${text.length} chars)`);
-        return { raw: text };
+        return { raw: text, modelo: `claude:${model}` };
       } catch (e: any) {
         console.log(`${LOG_IA} [claude:${model}] excepción: ${e.message}`);
         return { raw: "", err: `claude:${model} excepción: ${e.message}` };
@@ -5625,7 +5655,7 @@ const validarDocumentoIAHandler = async (c: any) => {
     };
 
     // ── Modelos OpenAI-compatibles (Groq / OpenRouter) ──
-    const tryModel = async (url: string, auth: string, model: string, extra: Record<string,string> = {}): Promise<{raw: string; err?: string} | null> => {
+    const tryModel = async (url: string, auth: string, model: string, extra: Record<string,string> = {}): Promise<{raw: string; err?: string; modelo?: string} | null> => {
       const messages = imageDataUrl
         ? [{ role: "user", content: [{ type: "text", text: textoPrincipal }, { type: "image_url", image_url: { url: imageDataUrl } }] }]
         : [{ role: "user", content: textoPrincipal }];
@@ -5644,7 +5674,7 @@ const validarDocumentoIAHandler = async (c: any) => {
         const content = j.choices?.[0]?.message?.content || "";
         if (!content) return { raw: "", err: `${model} devolvió contenido vacío` };
         console.log(`${LOG_IA} [${model}] OK (${content.length} chars)`);
-        return { raw: content };
+        return { raw: content, modelo: model };
       } catch (e: any) {
         console.log(`${LOG_IA} [${model}] excepción: ${e.message}`);
         return { raw: "", err: `${model} excepción: ${e.message}` };
@@ -5667,7 +5697,16 @@ const validarDocumentoIAHandler = async (c: any) => {
     for (const intento of intentos) {
       const r = await intento();
       if (!r) continue;
-      if (r.raw) { rawContent = r.raw; break; }
+      if (r.raw) {
+        rawContent = r.raw;
+        // BUG FIX (2026-08-31): `modeloUsado` se declaraba en "ninguno" y NUNCA
+        // se asignaba, así que TODA respuesta exitosa reportaba
+        // `"modelo": "ninguno"` — indistinguible del caso real en que ningún
+        // modelo respondió. Eso hacía imposible saber si un rechazo lo emitió
+        // la IA o el fallback de servicio caído.
+        modeloUsado = (r as { modelo?: string }).modelo || "desconocido";
+        break;
+      }
       if (r.err) errores.push(r.err);
     }
 

@@ -342,12 +342,28 @@ export function preloadSubtabsFromDBData(
   // se veían al reabrir la Solicitud en otra sesión. Las líneas calculadas de
   // Arrendamiento (prefijo ARR_) que vengan de BD las reemplaza el efecto de
   // recálculo de SolicitudCargosTab, así que no se duplican.
-  if (sol.cargos?.length > 0) {
-    saveToSession(storageId, 'cargos', sol.cargos.map((c: any, i: number) => ({
-      id: i + 1, tipoCargo: c.tipo_cargo || '', descripcion: c.descripcion || '',
-      monto: c.monto ?? 0, fechaCargo: c.fecha_cargo || '',
-      estatus: c.estatus || 'Pendiente', notas: c.notas || '',
-    })));
+  const rawCargosDB = Array.isArray(sol.cargos) && sol.cargos.length > 0
+    ? sol.cargos
+    : Array.isArray(sol.cargo) && sol.cargo.length > 0
+      ? sol.cargo
+      : Array.isArray(sol.cargoRegistros) && sol.cargoRegistros.length > 0
+        ? sol.cargoRegistros
+        : Array.isArray(d.cargos) && d.cargos.length > 0
+          ? d.cargos
+          : [];
+
+  if (rawCargosDB.length > 0) {
+    const mappedCargos = rawCargosDB.map((c: any, i: number) => ({
+      id: c.id || (i + 1),
+      tipoCargo: c.tipo_cargo || c.tipoCargo || c.tipo_comision || c.tipoComision || '',
+      descripcion: c.descripcion || c.tipo_comision || c.tipoComision || '',
+      monto: typeof c.monto === 'number' ? c.monto : (parseFloat(String(c.monto || c.montoCalculado || 0).replace(/[$,\s]/g, '')) || 0),
+      fechaCargo: c.fecha_cargo || c.fechaCargo || c.fecha || '',
+      estatus: c.estatus || 'Pendiente',
+      notas: c.notas || '',
+    }));
+    saveToSession(storageId, 'cargos', mappedCargos);
+    saveToSavedStore(storageId, 'cargos', mappedCargos);
   }
   if (sol.autorizaciones?.length > 0) {
     saveToSession(storageId, 'autorizaciones', sol.autorizaciones.map((a: any, i: number) => ({
@@ -1108,8 +1124,7 @@ estatusSolicitud: s.estatusSolicitud || d.estatusSolicitud || 'Pendiente',
             <span className="text-gray-400">|</span>
             <span className="text-gray-600">Método: <span className="font-medium text-gray-800">{fetchMethod || '(pendiente)'}</span></span>
             <span className="text-gray-400">|</span>
-            <span className="text-gray-600">Tabla: <span className="font-mono text-gray-800">J_CUENTAS_CORP_CLIENTES</span></span>
-            <span className="text-gray-400">|</span>
+<span className="text-gray-400">|</span>
             <span className="text-gray-600">Filas DB: <span className="font-medium text-gray-800">{dbRowCount}</span></span>
             {warningDB && (
               <>

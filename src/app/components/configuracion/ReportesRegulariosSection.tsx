@@ -529,8 +529,7 @@ export function ReportesRegulariosSection() {
             {selectedItem && (
               <div className="mt-6 pt-4 border-t border-gray-200 flex items-center gap-6 text-[10px] text-gray-400">
                 <span>UUID: {selectedItem.id}</span>
-                <span>Tabla: EFINANCIANET_DB.REPORTES_REGULATORIOS</span>
-              </div>
+</div>
             )}
           </div>
         </div>
@@ -750,8 +749,7 @@ export function ReportesRegulariosSection() {
             <span className="text-blue-600 ml-1">(mostrando {filteredData.length})</span>
           )}
           <span className="text-gray-300 ml-2">|</span>
-          <span className="text-gray-400 ml-2">Tabla: EFINANCIANET_DB.REPORTES_REGULATORIOS</span>
-        </span>
+</span>
       </div>
 
       {/* Modal de confirmación de eliminación */}

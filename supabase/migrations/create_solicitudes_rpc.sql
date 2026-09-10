@@ -47,7 +47,7 @@ RETURNS TABLE (
 )
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = EFINANCIANET_DB, public
+SET search_path = "EFINANCIANET_DB", public
 AS $$
 BEGIN
   RETURN QUERY
@@ -128,7 +128,7 @@ CREATE OR REPLACE FUNCTION insert_solicitud_credito(
 RETURNS TABLE (id uuid)
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = EFINANCIANET_DB, public
+SET search_path = "EFINANCIANET_DB", public
 AS $$
 DECLARE
   v_id uuid;
@@ -177,7 +177,7 @@ CREATE OR REPLACE FUNCTION update_solicitud_credito(
 RETURNS void
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = EFINANCIANET_DB, public
+SET search_path = "EFINANCIANET_DB", public
 AS $$
 BEGIN
   UPDATE "J_CUENTAS_CORP_CLIENTES"
@@ -212,7 +212,7 @@ CREATE OR REPLACE FUNCTION delete_solicitud_credito(p_id uuid)
 RETURNS void
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = EFINANCIANET_DB, public
+SET search_path = "EFINANCIANET_DB", public
 AS $$
 BEGIN
   DELETE FROM "J_CUENTAS_CORP_CLIENTES"

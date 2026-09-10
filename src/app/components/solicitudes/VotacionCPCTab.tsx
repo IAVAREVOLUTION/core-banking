@@ -107,7 +107,6 @@ export const CAT_DECISION_VOTO: { value: DecisionVoto; label: string }[] = [
   { value: 'Devolver', label: 'Devolver a Riesgos para Ajustes' },
 ];
 
-export const COMENTARIOS_MIN_CARACTERES = 100;
 
 /**
  * Folio de firma aleatorio — NO es una firma criptográfica, es un identificador único
@@ -208,9 +207,12 @@ export function VotacionCPCTab({ mode, solicitudId, onChange }: Props) {
       toast.error('Seleccione una decisión');
       return;
     }
-    if (comentarios.trim().length < COMENTARIOS_MIN_CARACTERES) {
-      toast.error('Comentario insuficiente', {
-        description: `Mínimo ${COMENTARIOS_MIN_CARACTERES} caracteres — lleva ${comentarios.trim().length}.`,
+    // El comentario es obligatorio, pero SIN longitud minima: un votante puede
+    // fundamentar en una linea o en veinte, y exigirle 100 caracteres solo
+    // invitaba a rellenar con texto vacio para poder emitir el voto.
+    if (comentarios.trim().length === 0) {
+      toast.error('Fundamente su decisión', {
+        description: 'El comentario del voto es obligatorio.',
       });
       return;
     }
@@ -333,8 +335,8 @@ export function VotacionCPCTab({ mode, solicitudId, onChange }: Props) {
               placeholder="Fundamente su decisión..."
               className={`${inputClass} resize-y`}
             />
-            <div className={`text-[10px] mt-0.5 text-right ${dLen < COMENTARIOS_MIN_CARACTERES ? 'text-amber-600' : 'text-green-600'}`}>
-              {dLen} / {COMENTARIOS_MIN_CARACTERES} caracteres mínimos
+            <div className="text-[10px] mt-0.5 text-right text-gray-400">
+              {dLen} caracter{dLen === 1 ? '' : 'es'}
             </div>
           </div>
 

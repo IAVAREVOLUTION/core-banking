@@ -160,6 +160,90 @@ export async function crearFacturaProveedorActivacion(params: {
 }
 
 /**
+ * REQ-24 HU-24.1 — Solicitud de Activación de una **dispersión**, generada al
+ * liberar el crédito simple.
+ *
+ * Se arma con la Cuenta Beneficiaria: es la que sabe a quién y a qué cuenta va
+ * el dinero (RN-03). El monto es el **Monto Dispersión** de esa cuenta, que la
+ * subpestaña sembró con el Monto Autorizado.
+ *
+ * §Decisión 1(a): una activación **por cuenta**. Cada cuenta tiene su propio
+ * destino y su propio importe; juntarlas en una sola perdería a dónde va cada
+ * parte, que es justo lo que Tesorería necesita para pagar.
+ */
+export async function crearActivacionDispersion(params: {
+  solicitudId: string;
+  /** UUID del cliente/beneficiario — `cliente_id` es NOT NULL. */
+  clienteId: string;
+  beneficiario: string;
+  /** Banco y cuenta destino, para que Tesorería sepa dónde depositar. */
+  banco?: string;
+  cuentaClabe?: string;
+  numeroCuenta?: string;
+  monto: number;
+  moneda?: string;
+  referencia?: string;
+  noSol?: string;
+}): Promise<{ ok: boolean; id?: string; error?: string }> {
+  const {
+    solicitudId, clienteId, beneficiario, banco, cuentaClabe, numeroCuenta,
+    monto, moneda = 'MXN', referencia, noSol,
+  } = params;
+
+  if (!solicitudId) return { ok: false, error: 'Falta la solicitud de origen' };
+  if (!clienteId) return { ok: false, error: 'La cuenta beneficiaria no tiene cliente asociado' };
+  if (!(monto > 0)) return { ok: false, error: 'El Monto Dispersión debe ser mayor a 0' };
+
+  const cuentaDestino = String(cuentaClabe || numeroCuenta || '').trim();
+
+  const form: SolicitudActivacionFormData = {
+    id: '',
+    solicitudId,
+    clienteId,
+    // La institución paga al beneficiario: es una cuenta por pagar, igual que la
+    // del proveedor en Arrendamiento.
+    type: 'Por Pagar',
+    fechaSolicitud: '',
+    fechaCompromiso: '',
+    estatus: 'Pendiente',
+    numeroDocumento: '',
+    cliente: beneficiario,
+    cuentaBancaria: cuentaDestino,
+    formaDePago: 'Transferencia',
+    institucionFinanciera: banco || '',
+    referencia: referencia || noSol || '',
+    montoTransaccion: monto.toFixed(2),
+    moneda,
+    nota: `Dispersión generada automáticamente al liberar ${noSol || 'la solicitud'}`
+      + `${cuentaDestino ? ` — cuenta destino ${cuentaDestino}` : ''}.`,
+    usuarioNota: 'Sistema',
+    detailClaveProducto: 'DISPERSION_CREDITO',
+    detailCantidad: 1,
+    detailMonto: monto,
+    // La dispersión no lleva IVA: se entrega el monto autorizado tal cual.
+    detailPctImpuesto: 0,
+    detailMoneda: moneda,
+    detailSubTotal: monto,
+    detailEstatus: 'Pendiente',
+  };
+
+  const payload = formToDBPayload(form);
+
+  try {
+    const res = await fetch(`${API_BASE}/solicitudes-activacion`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${publicAnonKey}` },
+      body: JSON.stringify(payload),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok || json.error) return { ok: false, error: json.error || `HTTP ${res.status}` };
+    return { ok: true, id: json.id };
+  } catch (err: unknown) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/**
  * Mapa `id → estatus` de TODAS las solicitudes de activación, en una sola
  * consulta.
  *

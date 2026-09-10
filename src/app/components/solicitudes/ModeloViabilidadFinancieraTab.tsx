@@ -43,7 +43,6 @@ export const DSCR_VERDE = 1.50;
 export const DSCR_AMARILLO = 0.75;
 
 /** Longitud mínima del dictamen técnico. */
-export const DICTAMEN_MIN_CARACTERES = 200;
 
 export interface FilaProyeccion {
   anio: number;
@@ -142,9 +141,12 @@ export function faltantesModeloViabilidad(d: ModeloViabilidadData): string[] {
       faltan.push(`Matriz de Proyecciones (${incompletas.length} año(s) sin capturar)`);
     }
   }
+  // El dictamen es obligatorio, pero SIN longitud minima: un analista puede
+  // fundamentar en dos lineas o en veinte, y exigirle 200 caracteres solo
+  // invitaba a rellenar con texto vacio para poder avanzar.
   const dict = d.dictamenRiesgoTexto.trim();
-  if (dict.length < DICTAMEN_MIN_CARACTERES) {
-    faltan.push(`Dictamen Técnico (${dict.length}/${DICTAMEN_MIN_CARACTERES} caracteres)`);
+  if (dict.length === 0) {
+    faltan.push('Dictamen Técnico (sin capturar)');
   }
   const prom = dscrPromedio(d.proyecciones);
   if (semaforoDeDscr(prom) === 'Rojo') {
@@ -553,8 +555,8 @@ export function ModeloViabilidadFinancieraTab({
           placeholder="Fundamente el grado de riesgo: comportamiento del DSCR, suficiencia del Fondo de Reserva, sensibilidad de los flujos..."
           className={`${isRO ? roClass : inputClass} resize-y`}
         />
-        <div className={`text-[10px] mt-0.5 text-right ${dictLen < DICTAMEN_MIN_CARACTERES ? 'text-amber-600' : 'text-green-600'}`}>
-          {dictLen} / {DICTAMEN_MIN_CARACTERES} caracteres mínimos
+        <div className="text-[10px] mt-0.5 text-right text-gray-400">
+          {dictLen} caracter{dictLen === 1 ? '' : 'es'}
         </div>
       </div>
 

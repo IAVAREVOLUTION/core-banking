@@ -308,8 +308,34 @@ export function validarFase4Envio(opts: {
  * Valida que existan contratos y pagarés firmados en Sección 2.
  * Por cada documento: debe existir, tener archivo adjunto, no estar rechazado y estar validado.
  */
-export function validarContratosYPagares(documentosCargados: DocumentoCargado[]): ValidationResult {
+/**
+ * REQ-23 HU-23.3 / RN-01 — qué documentos declara el producto para esta fase.
+ *
+ * Antes esta función exigía **siempre** contrato y pagaré, sin importar el
+ * producto. Crédito Simple 2º Piso declara un único requisito (el pagaré) y no
+ * tiene plantilla de contrato, así que recibía un error pidiéndole un contrato
+ * que no emite — una regla heredada del arrendamiento/crédito tradicional.
+ *
+ * Ahora se exige lo declarado. Sin lista de requisitos se conserva el
+ * comportamiento anterior (ambos), para no alterar los flujos que hoy funcionan.
+ */
+export interface RequisitoDeclarado {
+  tipoDocumento?: string;
+  obligatorio?: boolean;
+}
+
+function declara(requisitos: RequisitoDeclarado[] | undefined, patron: RegExp): boolean {
+  if (!requisitos || requisitos.length === 0) return true; // sin declaración → comportamiento previo
+  return requisitos.some(r => patron.test(String(r.tipoDocumento || '').toLowerCase()));
+}
+
+export function validarContratosYPagares(
+  documentosCargados: DocumentoCargado[],
+  requisitosDeLaFase?: RequisitoDeclarado[],
+): ValidationResult {
   const errors: string[] = [];
+  const exigePagare   = declara(requisitosDeLaFase, /pagar[ée]/);
+  const exigeContrato = declara(requisitosDeLaFase, /contrato/);
 
   const pagares = documentosCargados.filter(d => {
     const tipo = (d.tipoDocumento || '').toLowerCase();
@@ -323,7 +349,9 @@ export function validarContratosYPagares(documentosCargados: DocumentoCargado[])
 
   // ── Pagarés ──────────────────────────────────────────────────────────────
   if (pagares.length === 0) {
-    errors.push('No se han cargado pagarés. Cargue y valide el pagaré antes de avanzar.');
+    if (exigePagare) {
+      errors.push('No se han cargado pagarés. Cargue y valide el pagaré antes de avanzar.');
+    }
   } else {
     for (const d of pagares) {
       if (!d.archivo && !(d as any).url && !(d as any).fileData) {
@@ -338,7 +366,10 @@ export function validarContratosYPagares(documentosCargados: DocumentoCargado[])
 
   // ── Contratos ─────────────────────────────────────────────────────────────
   if (contratos.length === 0) {
-    errors.push('No se han cargado contratos. Cargue y valide el contrato antes de avanzar.');
+    // CA-18/CA-19 — sólo se exige si el producto lo declara en esta fase.
+    if (exigeContrato) {
+      errors.push('No se han cargado contratos. Cargue y valide el contrato antes de avanzar.');
+    }
   } else {
     for (const d of contratos) {
       if (!d.archivo && !(d as any).url && !(d as any).fileData) {
