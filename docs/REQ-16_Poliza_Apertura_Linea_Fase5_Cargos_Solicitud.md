@@ -1,5 +1,20 @@
 # HU — REQ-16: Cargo Solicitud y Póliza Contable de Fase 5 desde la guía "APERTURA_LINEA"
 
+> ⚠️ **SUPERSEDIDA EN PARTE — 31/08/2026.** La guía contabilizadora ya **no** es
+> `APERTURA_LINEA`: es **`GPO-FORMAL-001`** ("Formalización / Alta de Garantía de
+> Pago Oportuno"). Ver
+> [REQ-19](REQ-19_Avisos_2o_Piso_Bandeja_Global_y_Evento_GPO-FORMAL-001.md) §HU-19.2.
+>
+> Lo que cambió es **qué evento se busca** y con qué `event_code` se postea el
+> asiento. Todo el mecanismo que define esta HU sigue vigente y en producción: el
+> cruce guía × Cargos por componente contable, la validación de cuadre antes de
+> postear, la omisión de filas sin cargo, el marcado de cargos como `Aplicado` y
+> la degradación a póliza sin desglose. Léase esta HU para el **cómo**, y REQ-19
+> para el **cuál**.
+>
+> Las pólizas emitidas antes del cambio conservan `event_code = 'APERTURA_LINEA'`
+> y no se migran.
+
 > **Origen:** requerimiento funcional capturado el 28/08/2026 sobre el producto
 > *Garantía Financiera 2o Piso*.
 > Continúa a [REQ-15](REQ-15_Cargos_Automaticos_GPO_Componentes_Contables.md) (cargos de

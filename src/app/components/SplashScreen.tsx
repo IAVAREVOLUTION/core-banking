@@ -34,10 +34,12 @@ export function SplashScreen({ onFinish }: SplashScreenProps) {
           >
             {/* Logo con fondo blanco */}
             <div className="bg-white rounded-3xl p-12 shadow-2xl mx-auto mb-8 inline-block">
-              <img src={logo} alt="eFinanciaN@t" className="h-32" />
+              <div className="bg-white rounded-2xl px-8 py-5 shadow-xl inline-block">
+                <img src={logo} alt="CACAO Banking" className="h-20" />
+              </div>
             </div>
             <h1 className="text-4xl font-bold text-white mb-2">Sistema de Core Banking</h1>
-            <p className="text-white/90 text-lg">eFinanciaN@t</p>
+            <p className="text-white/90 text-lg">IA aplicada que transforma la Banca</p>
           </motion.div>
         </div>
       </motion.div>
@@ -62,7 +64,9 @@ export function SplashScreen({ onFinish }: SplashScreenProps) {
         >
           {/* Logo con fondo blanco - más grande */}
           <div className="bg-white rounded-3xl p-12 shadow-2xl mx-auto mb-8 inline-block">
-            <img src={logo} alt="eFinanciaN@t" className="h-32" />
+            <div className="bg-white rounded-2xl px-8 py-5 shadow-xl inline-block">
+                <img src={logo} alt="CACAO Banking" className="h-20" />
+              </div>
           </div>
         </motion.div>
 
@@ -72,7 +76,7 @@ export function SplashScreen({ onFinish }: SplashScreenProps) {
           transition={{ delay: 0.3, duration: 0.5 }}
         >
           <h1 className="text-4xl font-bold text-white mb-2">Sistema de Core Banking</h1>
-          <p className="text-white/90 text-lg">eFinanciaN@t</p>
+          <p className="text-white/90 text-lg">IA aplicada que transforma la Banca</p>
         </motion.div>
 
         <motion.div

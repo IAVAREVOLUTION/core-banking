@@ -10,14 +10,40 @@ import {
 import type { SimulacionArrendamiento } from '../cotizaciones/cotizacionArrendamientoTypes';
 import { useComponentesContablesCatalogo } from '@/app/hooks/useComponentesContablesCatalogo';
 
+/** Un renglón de `cargosLinea` — lo que escribe el subtab Movimientos de la Línea. */
+export interface CargoLineaTDC {
+  id?: string;
+  clave: string;
+  nombre: string;
+  descripcion?: string;
+  naturaleza?: string;
+  monto: number;
+  fecha: string;
+  bFactura?: string;
+  bCargo?: string;
+  estatus?: string;
+  cxcId?: string | null;
+}
+
 interface Props {
   mode: 'nuevo' | 'editar' | 'ver';
   solicitudId: number | string | 'new';
   lineaProducto?: string;
   tipoProducto?: string;
+  /**
+   * Cargos que generaron los Movimientos de la Línea (bCargo = 'S').
+   * Sólo lo manda Cartera TDC; para el resto de productos queda indefinido y
+   * este subtab se comporta exactamente como antes.
+   */
+  cargosLineaTDC?: CargoLineaTDC[];
+  /**
+   * Eliminar un cargo generado por un Movimiento. Lo resuelve el padre porque
+   * la fuente (`cargosLinea`) vive fuera de este subtab.
+   */
+  onEliminarCargoLinea?: (origenId: string) => void;
 }
 
-export function SolicitudCargosTab({ mode, solicitudId, lineaProducto, tipoProducto }: Props) {
+export function SolicitudCargosTab({ mode, solicitudId, lineaProducto, tipoProducto, cargosLineaTDC, onEliminarCargoLinea }: Props) {
   // REQ-15 — el Tipo de Cargo sale del catálogo de Componentes Contables;
   // CAT_TIPO_CARGO queda como respaldo si el catálogo no responde.
   const { opcionesTipoCargo, desdeCatalogo } = useComponentesContablesCatalogo();
@@ -99,6 +125,47 @@ export function SolicitudCargosTab({ mode, solicitudId, lineaProducto, tipoProdu
 
   useEffect(() => { if (mode !== 'ver') saveToSession(solicitudId, 'cargos', items); }, [items, solicitudId, mode]);
 
+  // ── Cargos generados por los Movimientos de la Línea (TDC) ──
+  //
+  // Se DERIVAN de `cargosLinea`, el mismo almacén que escribe el subtab
+  // Movimientos y que consume el Cierre de Corte. Antes se empujaban una sola
+  // vez al aplicar el movimiento, y cualquier cosa que reescribiera `cargos`
+  // después — incluido el efecto de arriba al montar este subtab con la lista
+  // vieja — los borraba sin dejar rastro.
+  //
+  // Derivarlos elimina esa clase de bug entera: no hay dos copias que puedan
+  // divergir, y abrir este subtab siempre muestra lo que hay.
+  useEffect(() => {
+    if (mode === 'ver' || !cargosLineaTDC) return;
+
+    setItems(prev => {
+      // Los capturados a mano se conservan intactos; sólo se reemplaza la
+      // proyección anterior de movimientos.
+      const manuales = prev.filter(c => !c.generadoPorMovimiento);
+
+      const proyectados: CargoSolicitud[] = cargosLineaTDC.map((c, idx) => ({
+        // Rango negativo alto, reservado: no colisiona con generateId() ni con
+        // el rango -1000… que ya usa el desglose de Arrendamiento.
+        id: -500000 - idx,
+        tipoCargo: `${c.clave} — ${c.nombre}`,
+        descripcion: c.descripcion || c.nombre || '',
+        monto: Number(c.monto) || 0,
+        fechaCargo: c.fecha || '',
+        estatus: c.estatus || 'Pendiente',
+        notas: c.cxcId ? `Facturado en ${c.cxcId}` : '',
+        clave: c.clave,
+        naturaleza: c.naturaleza === 'Abono' ? 'Abono' : 'Cargo',
+        bCargo: c.bCargo === 'N' ? 'N' : 'S',
+        bFactura: c.bFactura === 'S' ? 'S' : 'N',
+        generadoPorMovimiento: true,
+        origenId: String(c.id ?? ''),
+      }));
+
+      if (proyectados.length === 0 && manuales.length === prev.length) return prev;
+      return [...proyectados, ...manuales];
+    });
+  }, [cargosLineaTDC, mode]);
+
   // ── Sincronizar el desglose calculado de Arrendamiento hacia 'cargos' ──
   // avanzarFase (envío a originación) lee sessionStorage['cargos'] para
   // persistir a BD — sin esto, el desglose que se ve en pantalla nunca
@@ -133,6 +200,36 @@ export function SolicitudCargosTab({ mode, solicitudId, lineaProducto, tipoProdu
 
   const handleEliminar = () => {
     if (selectedId === null) { toast.error('Seleccione un cargo'); return; }
+
+    const cargo = items.find(c => c.id === selectedId);
+
+    // Un cargo generado por un Movimiento se DERIVA de `cargosLinea`: quitarlo
+    // sólo de esta lista no sirve, vuelve a aparecer en cuanto el subtab se
+    // vuelve a montar. Hay que sacarlo de la fuente, y de eso sabe el padre.
+    if (cargo?.generadoPorMovimiento) {
+      if (!onEliminarCargoLinea) {
+        toast.error('Este cargo no se puede eliminar aquí', {
+          description: 'Lo generó un Movimiento de la Línea; elimínelo desde Cartera TDC.',
+        });
+        return;
+      }
+      // Un cargo ya facturado sostiene una CxC emitida y su póliza.
+      if (cargo.estatus && cargo.estatus !== 'Pendiente') {
+        toast.error('No se puede eliminar un cargo ya facturado', {
+          description: `Está en estatus "${cargo.estatus}" y forma parte de una Cuenta por Cobrar emitida.`,
+          duration: 10000,
+        });
+        return;
+      }
+      onEliminarCargoLinea(cargo.origenId || '');
+      setSelectedId(null);
+      toast.success('Cargo eliminado', {
+        description: 'Presione "Guardar Línea" para que el cambio quede permanente.',
+        duration: 7000,
+      });
+      return;
+    }
+
     setItems(p => p.filter(c => c.id !== selectedId));
     setSelectedId(null);
     toast.success('Cargo eliminado');
@@ -148,6 +245,16 @@ export function SolicitudCargosTab({ mode, solicitudId, lineaProducto, tipoProdu
   // El CRUD manual de abajo solo muestra cargos capturados a mano — los
   // calculados de Arrendamiento (prefijo ARR_) ya se ven en la tabla de
   // Desembolso Inicial de arriba; evita duplicar la misma info dos veces.
+  /**
+   * Un Cargo ya cortado es de sólo lectura: sostiene una CxC emitida y su
+   * detalle. Cambiarle el monto o la fecha dejaría el documento sin respaldo,
+   * que es justo lo que la ESPECIFICACIÓN 3 prohíbe al pedir que no se
+   * reprocesen. 'Procesado' se contempla por las filas escritas antes del
+   * cambio de nomenclatura.
+   */
+  const cargoBloqueado = (c: CargoSolicitud): boolean =>
+    c.estatus === 'Aplicado' || c.estatus === 'Procesado' || c.estatus === 'Cancelado';
+
   const itemsManuales = items.filter(c => !c.tipoCargo.startsWith('ARR_'));
   const totalMonto = itemsManuales.reduce((sum, c) => sum + (c.monto || 0), 0);
 
@@ -249,14 +356,20 @@ export function SolicitudCargosTab({ mode, solicitudId, lineaProducto, tipoProdu
                   <th className="px-3 py-2.5 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Monto</th>
                   <th className="px-3 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Fecha Cargo</th>
                   <th className="px-3 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Estatus</th>
+                  <th className="px-3 py-2.5 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Nat.</th>
+                  <th className="px-3 py-2.5 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider">bCargo</th>
+                  <th className="px-3 py-2.5 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider">bFactura</th>
                   <th className="px-3 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Notas</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {itemsManuales.map((c) => (
-                  <tr key={c.id} className={`cursor-pointer ${selectedId === c.id ? 'bg-blue-50' : 'hover:bg-gray-50'}`} onClick={() => !isRO && setSelectedId(c.id)}>
+                  <tr key={c.id}
+                      title={cargoBloqueado(c) ? `Cargo ${c.estatus}: ya forma parte de una Cuenta por Cobrar emitida y no se puede editar.` : undefined}
+                      className={`cursor-pointer ${selectedId === c.id ? 'bg-blue-50' : cargoBloqueado(c) ? 'bg-gray-50' : 'hover:bg-gray-50'}`}
+                      onClick={() => !isRO && setSelectedId(c.id)}>
                     <td className="px-3 py-2">
-                      <select value={c.tipoCargo} onChange={e => { e.stopPropagation(); update(c.id, 'tipoCargo', e.target.value); }} disabled={isRO} onClick={e => e.stopPropagation()} className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-lg bg-white focus:ring-2 focus:ring-[#4A6FA5]/30 focus:border-[#4A6FA5]">
+                      <select value={c.tipoCargo} onChange={e => { e.stopPropagation(); update(c.id, 'tipoCargo', e.target.value); }} disabled={isRO || cargoBloqueado(c)} onClick={e => e.stopPropagation()} className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-lg bg-white focus:ring-2 focus:ring-[#4A6FA5]/30 focus:border-[#4A6FA5]">
                         <option value="">Seleccione...</option>
                         {opcionesTipo.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
                         {c.tipoCargo && !opcionesTipo.some(t => t.value === c.tipoCargo) && (
@@ -265,21 +378,36 @@ export function SolicitudCargosTab({ mode, solicitudId, lineaProducto, tipoProdu
                       </select>
                     </td>
                     <td className="px-3 py-2">
-                      <input type="text" value={c.descripcion} onChange={e => { e.stopPropagation(); update(c.id, 'descripcion', e.target.value); }} disabled={isRO} onClick={e => e.stopPropagation()} className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-lg bg-white focus:ring-2 focus:ring-[#4A6FA5]/30 focus:border-[#4A6FA5]" placeholder="Descripción..." />
+                      <input type="text" value={c.descripcion} onChange={e => { e.stopPropagation(); update(c.id, 'descripcion', e.target.value); }} disabled={isRO || cargoBloqueado(c)} onClick={e => e.stopPropagation()} className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-lg bg-white focus:ring-2 focus:ring-[#4A6FA5]/30 focus:border-[#4A6FA5]" placeholder="Descripción..." />
                     </td>
                     <td className="px-3 py-2">
-                      <input type="number" step="0.01" min="0" value={c.monto} onChange={e => { e.stopPropagation(); update(c.id, 'monto', parseFloat(e.target.value) || 0); }} disabled={isRO} onClick={e => e.stopPropagation()} className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-lg bg-white text-right focus:ring-2 focus:ring-[#4A6FA5]/30 focus:border-[#4A6FA5]" />
+                      <input type="number" step="0.01" min="0" value={c.monto} onChange={e => { e.stopPropagation(); update(c.id, 'monto', parseFloat(e.target.value) || 0); }} disabled={isRO || cargoBloqueado(c)} onClick={e => e.stopPropagation()} className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-lg bg-white text-right focus:ring-2 focus:ring-[#4A6FA5]/30 focus:border-[#4A6FA5]" />
                     </td>
                     <td className="px-3 py-2" onClick={e => e.stopPropagation()}>
-                      <DatePicker value={c.fechaCargo} onChange={v => update(c.id, 'fechaCargo', v)} disabled={isRO} placeholder="dd/mm/aaaa" className="px-2 py-1.5" />
+                      <DatePicker value={c.fechaCargo} onChange={v => update(c.id, 'fechaCargo', v)} disabled={isRO || cargoBloqueado(c)} placeholder="dd/mm/aaaa" className="px-2 py-1.5" />
                     </td>
                     <td className="px-3 py-2">
-                      <select value={c.estatus} onChange={e => { e.stopPropagation(); update(c.id, 'estatus', e.target.value); }} disabled={isRO} onClick={e => e.stopPropagation()} className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-lg bg-white focus:ring-2 focus:ring-[#4A6FA5]/30 focus:border-[#4A6FA5]">
+                      <select value={c.estatus} onChange={e => { e.stopPropagation(); update(c.id, 'estatus', e.target.value); }} disabled={isRO || cargoBloqueado(c)} onClick={e => e.stopPropagation()} className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-lg bg-white focus:ring-2 focus:ring-[#4A6FA5]/30 focus:border-[#4A6FA5]">
                         {CAT_ESTATUS_CARGO.map(s => <option key={s} value={s}>{s}</option>)}
                       </select>
                     </td>
+                    {/* Naturaleza y banderas: salen de Afectación de la Línea del
+                        producto, no se capturan. En un cargo manual no aplican. */}
+                    <td className="px-3 py-2 text-center text-xs text-gray-700">
+                      {c.naturaleza || '—'}
+                    </td>
+                    <td className="px-3 py-2 text-center text-xs">
+                      {c.bCargo
+                        ? <span className={c.bCargo === 'S' ? 'text-gray-800' : 'text-gray-400'}>{c.bCargo}</span>
+                        : <span className="text-gray-300">—</span>}
+                    </td>
+                    <td className="px-3 py-2 text-center text-xs">
+                      {c.bFactura
+                        ? <span className={c.bFactura === 'S' ? 'text-gray-800' : 'text-gray-400'}>{c.bFactura}</span>
+                        : <span className="text-gray-300">—</span>}
+                    </td>
                     <td className="px-3 py-2">
-                      <input type="text" value={c.notas} onChange={e => { e.stopPropagation(); update(c.id, 'notas', e.target.value); }} disabled={isRO} onClick={e => e.stopPropagation()} className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-lg bg-white focus:ring-2 focus:ring-[#4A6FA5]/30 focus:border-[#4A6FA5]" placeholder="Notas..." />
+                      <input type="text" value={c.notas} onChange={e => { e.stopPropagation(); update(c.id, 'notas', e.target.value); }} disabled={isRO || cargoBloqueado(c)} onClick={e => e.stopPropagation()} className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-lg bg-white focus:ring-2 focus:ring-[#4A6FA5]/30 focus:border-[#4A6FA5]" placeholder="Notas..." />
                     </td>
                   </tr>
                 ))}

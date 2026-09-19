@@ -22,6 +22,14 @@ export interface Amortizacion {
   iva_seguro: number;
   pago_total: number;
   estatus: string; // 'Pendiente' | 'Facturada' | 'Pagada' | 'Cancelado'
+  /**
+   * REQ-21 — conceptos propios del documento. Cuando viajan, el backend los usa
+   * tal cual para `J_FACTURAS_DETALLE` en vez del desglose clásico de crédito
+   * (Capital / Interés / IVA Interés / Seguro / IVA Seguro). Es el camino que ya
+   * usaba Arrendamiento y el que permite que un Aviso GPO salga con sus propios
+   * conceptos sin tocar el backend.
+   */
+  conceptos?: { cve: string; desc: string; monto: number }[];
 }
 
 export interface Factura {

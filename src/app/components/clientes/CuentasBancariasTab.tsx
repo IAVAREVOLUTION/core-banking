@@ -21,6 +21,13 @@ import { useCatalogoBancario } from '@/app/hooks/useCatalogoBancario';
 interface CuentasBancariasTabProps {
   mode: 'nuevo' | 'editar' | 'ver';
   clienteId?: string | number;
+  /**
+   * Personas Relacionadas del cliente: son las unicas entidades que pueden ser
+   * Beneficiario de una cuenta. Se reciben por prop en vez de volver a leerlas,
+   * porque el formulario del cliente ya las tiene en memoria y asi el combo
+   * refleja de inmediato lo que el usuario acaba de agregar.
+   */
+  personasRelacionadas?: any[];
 }
 
 const EMPTY_FORM: CuentaBancariaData = {
@@ -30,11 +37,13 @@ const EMPTY_FORM: CuentaBancariaData = {
   numeroCuenta: '',
   moneda: 'MXN',
   cuentaSwift: '',
+  beneficiario: '',
+  beneficiarioId: '',
 };
 
 const ESTATUS_OPTIONS = ['Activo', 'Inactivo'];
 
-export function CuentasBancariasTab({ mode, clienteId }: CuentasBancariasTabProps) {
+export function CuentasBancariasTab({ mode, clienteId, personasRelacionadas = [] }: CuentasBancariasTabProps) {
   const isView = mode === 'ver';
   const cid = clienteId != null ? String(clienteId) : undefined;
 
@@ -48,6 +57,19 @@ export function CuentasBancariasTab({ mode, clienteId }: CuentasBancariasTabProp
   const [form, setForm] = useState<CuentaBancariaData & { estatus: string }>({ ...EMPTY_FORM, estatus: 'Activo' });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+
+  // Opciones del combo Beneficiario. El nombre se arma con los mismos campos
+  // que usa el listado de Personas Relacionadas, para que ambos coincidan.
+  const opcionesBeneficiario = (personasRelacionadas || [])
+    .map((p: any) => {
+      const nombre = String(
+        p?.nombreCompleto || p?.nombreCliente
+        || [p?.nombre, p?.apellidoPaterno, p?.apellidoMaterno].filter(Boolean).join(' ')
+        || '',
+      ).trim();
+      return { id: String(p?.clienteUuid || p?.id || ''), clave: String(p?.claveCliente || ''), nombre };
+    })
+    .filter(o => o.nombre !== '');
 
   const nombreCatalogo = (items: { clave: string; nombre: string }[], clave: string) =>
     items.find(i => i.clave === clave)?.nombre || clave || '—';
@@ -68,6 +90,9 @@ export function CuentasBancariasTab({ mode, clienteId }: CuentasBancariasTabProp
       numeroCuenta: cuenta.numeroCuenta,
       moneda: cuenta.moneda,
       cuentaSwift: cuenta.cuentaSwift,
+      // Sin esto, editar cualquier campo borraba el beneficiario al guardar.
+      beneficiario: cuenta.beneficiario || '',
+      beneficiarioId: cuenta.beneficiarioId || '',
       estatus: cuenta.estatus,
     });
     setErrors({});
@@ -175,6 +200,7 @@ export function CuentasBancariasTab({ mode, clienteId }: CuentasBancariasTabProp
           <table className="w-full text-xs border-collapse">
             <thead>
               <tr style={{ backgroundColor: '#D0D0D0' }} className="border-b border-gray-300">
+                <th className="px-3 py-2 text-left font-semibold text-[10px] text-gray-700 border-r border-gray-300">BENEFICIARIO</th>
                 <th className="px-3 py-2 text-left font-semibold text-[10px] text-gray-700 border-r border-gray-300">PAÍS</th>
                 <th className="px-3 py-2 text-left font-semibold text-[10px] text-gray-700 border-r border-gray-300">BANCO</th>
                 <th className="px-3 py-2 text-left font-semibold text-[10px] text-gray-700 border-r border-gray-300">CLABE</th>
@@ -199,6 +225,7 @@ export function CuentasBancariasTab({ mode, clienteId }: CuentasBancariasTabProp
                     className="border-b border-gray-200"
                     style={{ backgroundColor: idx % 2 === 0 ? '#FFFFFF' : '#EEEEEE' }}
                   >
+                    <td className="px-3 py-2 border-r border-gray-200 text-gray-700">{c.beneficiario || '—'}</td>
                     <td className="px-3 py-2 border-r border-gray-200 text-gray-700">{nombreCatalogo(paises, c.pais)}</td>
                     <td className="px-3 py-2 border-r border-gray-200 text-gray-700">{nombreCatalogo(bancos, c.banco)}</td>
                     <td className="px-3 py-2 border-r border-gray-200 text-gray-700 font-mono">{c.cuentaClabe || '—'}</td>
@@ -238,6 +265,39 @@ export function CuentasBancariasTab({ mode, clienteId }: CuentasBancariasTabProp
               </button>
             </div>
             <div className="p-4 space-y-3">
+              {/* Beneficiario: sólo entidades que están en Personas Relacionadas
+                  del cliente. Es lo que después consume el subtab Cuenta(s)
+                  Beneficiaria(s) de la Solicitud. */}
+              <div>
+                <label className="block text-xs text-gray-700 mb-1">Beneficiario</label>
+                <select
+                  value={form.beneficiarioId || ''}
+                  onChange={(e) => {
+                    const sel = opcionesBeneficiario.find(o => o.id === e.target.value);
+                    setForm(prev => ({
+                      ...prev,
+                      beneficiarioId: sel?.id || '',
+                      beneficiario: sel?.nombre || '',
+                    }));
+                  }}
+                  disabled={opcionesBeneficiario.length === 0}
+                  className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded disabled:bg-gray-100"
+                >
+                  <option value="">Seleccione...</option>
+                  {opcionesBeneficiario.map(o => (
+                    <option key={o.id} value={o.id}>
+                      {o.clave ? `${o.clave} — ${o.nombre}` : o.nombre}
+                    </option>
+                  ))}
+                </select>
+                {opcionesBeneficiario.length === 0 && (
+                  <span className="block text-[10px] text-amber-700 mt-1">
+                    El cliente no tiene Personas Relacionadas. Agréguelas en esa subpestaña
+                    para poder elegir un beneficiario (el titular también puede agregarse).
+                  </span>
+                )}
+              </div>
+
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs text-gray-700 mb-1">País <span className="text-red-500">*</span></label>

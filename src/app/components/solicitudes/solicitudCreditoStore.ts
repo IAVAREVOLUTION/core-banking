@@ -56,6 +56,9 @@ export interface TerminosCondiciones {
   montoSolicitado: string;
   fechaPrimerPago: string;
   fechaPrimeraAportacion: string;
+  /** Vigencia del financiamiento — se captura también en Términos y Condiciones. */
+  fechaInicio: string;
+  fechaFin: string;
   plazo: string;
   frecuencia: string;
   tasa: string;
@@ -297,6 +300,22 @@ export interface CargoSolicitud {
   fechaCargo: string;
   estatus: string;
   notas: string;
+
+  // ── Campos de un Cargo generado por un Movimiento de Línea (TDC) ──
+  // Opcionales: un cargo capturado a mano no los tiene, y ningún otro producto
+  // los usa. Vienen de "Afectación de la Línea" del producto y los consume el
+  // Cierre de Corte — sobre todo `bFactura`, que decide si el concepto se
+  // factura al cliente.
+  /** Clave del concepto en el Catálogo de Componentes. */
+  clave?: string;
+  naturaleza?: 'Cargo' | 'Abono';
+  /** Siempre 'S' en los proyectados: es la bandera que los hace existir. */
+  bCargo?: 'S' | 'N';
+  bFactura?: 'S' | 'N';
+  /** true si lo generó un movimiento; ausente si se capturó a mano. */
+  generadoPorMovimiento?: boolean;
+  /** Id del renglón en `cargosLinea` — la fuente de la que se deriva. */
+  origenId?: string;
 }
 
 export interface Aviso {
@@ -428,6 +447,55 @@ export function loadFromSavedStore<T>(solId: SolId, subtab: string): T | null {
   const key = String(solId);
   const data = SAVED_DATA[key]?.[subtab];
   return data ? structuredClone(data) as T : null;
+}
+
+/** Normaliza para comparar conceptos/componentes: sin acentos, sin espacios extra. */
+const _normCargo = (v: unknown) =>
+  String(v ?? '').trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+
+/**
+ * Marca como **Aplicado** los Cargos de la Solicitud que ya se procesaron
+ * dentro de una factura o de una póliza contable.
+ *
+ * El cargo deja de estar "Pendiente" en el momento en que su importe se
+ * incorpora a un documento con efecto real: la póliza de apertura lo lleva a
+ * contabilidad (REQ-16) o la factura de desembolso inicial lo cobra (REQ-6).
+ * Antes había que cambiarlo a mano, así que un cargo ya contabilizado seguía
+ * apareciendo como pendiente.
+ *
+ * Sólo toca los que están en 'Pendiente': un cargo 'Cancelado' no se reactiva,
+ * y uno ya 'Aplicado' no se vuelve a contar. Es idempotente a propósito, porque
+ * la póliza puede reintentarse.
+ *
+ * @param claves  tipos de cargo / componentes efectivamente procesados
+ * @returns       cuántos cambiaron y la lista resultante
+ */
+export function marcarCargosAplicados(
+  solId: SolId,
+  claves: string[],
+): { actualizados: number; cargos: CargoSolicitud[] } {
+  const cargos =
+    loadFromSession<CargoSolicitud[]>(solId, 'cargos') ||
+    loadFromSavedStore<CargoSolicitud[]>(solId, 'cargos') ||
+    [];
+  if (!Array.isArray(cargos) || cargos.length === 0) return { actualizados: 0, cargos: [] };
+
+  const buscadas = new Set(claves.map(_normCargo).filter(Boolean));
+  if (buscadas.size === 0) return { actualizados: 0, cargos };
+
+  let actualizados = 0;
+  const siguientes = cargos.map(c => {
+    if (c.estatus !== 'Pendiente') return c;
+    if (!buscadas.has(_normCargo(c.tipoCargo))) return c;
+    actualizados++;
+    return { ...c, estatus: 'Aplicado' };
+  });
+
+  if (actualizados > 0) {
+    saveToSession(solId, 'cargos', siguientes);
+    saveToSavedStore(solId, 'cargos', siguientes);
+  }
+  return { actualizados, cargos: siguientes };
 }
 
 /** Elimina todos los datos de un ID del saved store (in-memory + sessionStorage) */
@@ -617,6 +685,21 @@ const _normProd = (s?: string) =>
 /** true si el producto es Arrendamiento — Puro o Financiero. */
 export function esArrendamiento(lineaProducto?: string, tipoProducto?: string): boolean {
   return `${_normProd(lineaProducto)} ${_normProd(tipoProducto)}`.includes('arrendamiento');
+}
+
+/**
+ * true si el producto es Tarjeta de Crédito.
+ *
+ * La TDC vive bajo la línea "Línea de Crédito", igual que la Garantía
+ * Financiera 2o Piso, así que sin esta distinción una cotización de TDC
+ * heredaba las reglas del 2o Piso (plazo en años, sección GPO, validación de
+ * Periodicidad Cobro Comisión). Se acepta tanto el nombre completo como la
+ * abreviatura, y se revisa también el nombre/clave del producto porque el
+ * tipo puede venir genérico.
+ */
+export function esTarjetaCredito(...valores: (string | undefined)[]): boolean {
+  const s = valores.map(_normProd).join(' ');
+  return s.includes('tarjeta de credito') || /tdc/.test(s);
 }
 
 /**
@@ -1132,6 +1215,8 @@ export const EMPTY_TERMINOS: TerminosCondiciones = {
   montoSolicitado: '',
   fechaPrimerPago: '',
   fechaPrimeraAportacion: '',
+  fechaInicio: '',
+  fechaFin: '',
   plazo: '',
   frecuencia: 'Mensual',
   tasa: '',

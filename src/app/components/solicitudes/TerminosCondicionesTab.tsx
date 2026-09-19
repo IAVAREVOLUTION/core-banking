@@ -4,6 +4,7 @@ import {
   TerminosCondiciones, RendimientoRow, EMPTY_TERMINOS,
   saveToSession, loadFromSession, loadFromSavedStore,
   MOCK_TERMINOS, parseCurrency, formatCurrency, CAT_FRECUENCIA, CAT_TIPO_TASA, CAT_TIPO_CALCULO, CAT_MONEDA,
+  esTarjetaCredito,
 } from './solicitudCreditoStore';
 import type { ProductoCatalogo } from '../../hooks/useProductosCatalogoDB';
 import { useProductosSeguros } from '../../hooks/useProductosSeguros';
@@ -23,6 +24,11 @@ interface Props {
   montoSolicitadoHeader?: string;
   /** Fecha Inicio del formulario principal — se usa como Fecha Primera Aportación en captación */
   fechaInicioHeader?: string;
+  /** Fecha Fin del encabezado — mismo dato que el campo de Términos. */
+  fechaFinHeader?: string;
+  /** Escriben el encabezado: Fecha Inicio y Fecha Fin son UN solo dato en dos pantallas. */
+  onFechaInicioChange?: (fecha: string) => void;
+  onFechaFinChange?: (fecha: string) => void;
   /** Tasa pre-cargada desde cotización — tiene prioridad sobre la del producto */
   tasaCotizacion?: string;
   /** Plazo pre-cargado desde cotización — tiene prioridad sobre el del producto */
@@ -286,7 +292,7 @@ function extractTerminosFromProduct(prod: ProductoCatalogo): Partial<TerminosCon
   return result;
 }
 
-export function TerminosCondicionesTab({ mode, solicitudId, lineaProducto, tipoProducto, productoSeleccionado, montoSolicitadoHeader, fechaInicioHeader, tasaCotizacion, plazoCotizacion, cotizacionTerminos, onFechaPrimeraAportacionChange, onValidationChange, onMontoAutorizadoChange, onTasaChange, onFrecuenciaChange, porcentajeEngancheHeader, plazoHeader, onPlazoLoaded, tasaHeader, frecuenciaHeader, tasaRangoMatriz, plazoRangoMatriz }: Props) {
+export function TerminosCondicionesTab({ mode, solicitudId, lineaProducto, tipoProducto, productoSeleccionado, montoSolicitadoHeader, fechaInicioHeader, fechaFinHeader, onFechaInicioChange, onFechaFinChange, tasaCotizacion, plazoCotizacion, cotizacionTerminos, onFechaPrimeraAportacionChange, onValidationChange, onMontoAutorizadoChange, onTasaChange, onFrecuenciaChange, porcentajeEngancheHeader, plazoHeader, onPlazoLoaded, tasaHeader, frecuenciaHeader, tasaRangoMatriz, plazoRangoMatriz }: Props) {
   console.log('[TerminosTab] MOUNT - productoSeleccionado:', productoSeleccionado?.nombreProducto, '| productoId:', productoSeleccionado?.id);
   // Track which productoId was last applied to avoid re-applying
   const lastAppliedProductoId = useRef<string>('');
@@ -714,6 +720,26 @@ export function TerminosCondicionesTab({ mode, solicitudId, lineaProducto, tipoP
     }
   }, [fechaInicioHeader, lineaProducto]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Fecha Inicio / Fecha Fin: un solo dato ──
+  // Se capturan en el encabezado de la Solicitud y aquí; el encabezado es la
+  // fuente y este efecto guarda la copia dentro de Términos para que viaje con
+  // el resto de las condiciones. Editar en cualquiera de las dos pantallas
+  // actualiza la otra (la escritura inversa va por onFechaInicio/FinChange).
+  useEffect(() => {
+    if (isRO) return;
+    setData(prev => {
+      const next = { ...prev };
+      let cambio = false;
+      if (fechaInicioHeader !== undefined && fechaInicioHeader !== prev.fechaInicio) {
+        next.fechaInicio = fechaInicioHeader; cambio = true;
+      }
+      if (fechaFinHeader !== undefined && fechaFinHeader !== prev.fechaFin) {
+        next.fechaFin = fechaFinHeader; cambio = true;
+      }
+      return cambio ? next : prev;
+    });
+  }, [fechaInicioHeader, fechaFinHeader, isRO]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── Captación: cuando cambia el plazo, buscar la tasa correspondiente en tasaInversionRegistros ──
   useEffect(() => {
     if (isRO) return;
@@ -975,6 +1001,21 @@ export function TerminosCondicionesTab({ mode, solicitudId, lineaProducto, tipoP
   const isLineaCredito = lineaProducto === 'Línea de Crédito';
 
   /**
+   * Tarjeta de Crédito. La TDC es un producto de Línea de Crédito, así que
+   * entraba por `isLineaCredito` y se trataba como Garantía Financiera 2o
+   * Piso: sección GPO visible, plazo en años y Periodicidad Cobro Comisión
+   * obligatoria. Una TDC se cotiza como una línea de crédito normal.
+   */
+  const esTDC = esTarjetaCredito(
+    tipoProducto,
+    (productoSeleccionado as any)?.sublineaProducto,
+    (productoSeleccionado as any)?.tipoProducto,
+    productoSeleccionado?.nombreProducto,
+    (productoSeleccionado as any)?.claveProducto,
+    (productoSeleccionado as any)?.rawData?.subTipo,
+  );
+
+  /**
    * Valores GPO con respaldo directo del JSONB original.
    *
    * BUG FIX (2026-08-25): estos 6 campos llegaban a `data` por una cadena
@@ -1024,11 +1065,16 @@ export function TerminosCondicionesTab({ mode, solicitudId, lineaProducto, tipoP
    * tipo_producto = "Simple" y linea_producto = "Línea de Crédito"), así que
    * la señal confiable son los propios datos GPO heredados.
    */
-  const esGPO = _tpRaw.includes('garant')
+  // Una TDC nunca es GPO, aunque arrastre datos heredados de la Oportunidad:
+  // sin este corte, `sectorInfraestructura` heredado bastaba para tratarla
+  // como Garantía Financiera 2o Piso.
+  const esGPO = !esTDC && (
+    _tpRaw.includes('garant')
     || !!gpo('periodicidadCobroGpo')
     || !!gpo('porcentajeCoberturaGpo')
     || !!gpo('montoGarantizadoGpo')
-    || !!gpo('sectorInfraestructura');
+    || !!gpo('sectorInfraestructura')
+  );
 
   /**
    * Unidad del Plazo. Crédito/Arrendamiento lo capturan en meses; Garantía
@@ -1096,6 +1142,32 @@ export function TerminosCondicionesTab({ mode, solicitudId, lineaProducto, tipoP
                   set('fechaPrimerPago', v);
                   onFechaPrimeraAportacionChange?.(v);
                 }}
+                disabled={isRO} placeholder="dd/mm/aaaa"
+                className="px-2 py-1.5"
+              />
+            </div>
+          )}
+
+          {/* Vigencia del financiamiento — se captura aquí además del encabezado,
+              porque es donde el analista arma las condiciones. */}
+          {!isCaptacion && (
+            <div>
+              <label className="block text-xs text-gray-700 mb-1">Fecha Inicio</label>
+              <DatePicker
+                value={fechaInicioHeader ?? data.fechaInicio ?? ''}
+                onChange={(v: string) => { set('fechaInicio', v); onFechaInicioChange?.(v); }}
+                disabled={isRO} placeholder="dd/mm/aaaa"
+                className="px-2 py-1.5"
+              />
+            </div>
+          )}
+
+          {!isCaptacion && (
+            <div>
+              <label className="block text-xs text-gray-700 mb-1">Fecha Fin</label>
+              <DatePicker
+                value={fechaFinHeader ?? data.fechaFin ?? ''}
+                onChange={(v: string) => { set('fechaFin', v); onFechaFinChange?.(v); }}
                 disabled={isRO} placeholder="dd/mm/aaaa"
                 className="px-2 py-1.5"
               />
@@ -1356,8 +1428,8 @@ export function TerminosCondicionesTab({ mode, solicitudId, lineaProducto, tipoP
         </div>
       )}
 
-      {/* ── Bien (Garantía) — solo Crédito y Línea de Crédito, nunca GPO ── */}
-      {!isCaptacion && !esGPO && (
+      {/* ── Bien (Garantía) — solo Crédito y Línea de Crédito, nunca GPO ni TDC ── */}
+      {!isCaptacion && !esGPO && !esTDC && (
         <div className="mt-4 pt-4 border-t border-gray-200">
           <div className="flex items-center gap-3 mb-3">
             <label className="flex items-center gap-2 text-xs font-semibold text-gray-700 uppercase tracking-wide cursor-pointer">
@@ -1475,8 +1547,8 @@ export function TerminosCondicionesTab({ mode, solicitudId, lineaProducto, tipoP
         </div>
       )}
 
-      {/* ── Seguro Financiado — solo Crédito y Línea de Crédito, nunca GPO ── */}
-      {!isCaptacion && !esGPO && (
+      {/* ── Seguro Financiado — solo Crédito y Línea de Crédito, nunca GPO ni TDC ── */}
+      {!isCaptacion && !esGPO && !esTDC && (
         <div className="mt-4 pt-4 border-t border-gray-200">
           <div className="flex items-center gap-3 mb-3">
             <label className="flex items-center gap-2 text-xs font-semibold text-gray-700 uppercase tracking-wide cursor-pointer">
@@ -1699,8 +1771,9 @@ export function TerminosCondicionesTab({ mode, solicitudId, lineaProducto, tipoP
         </div>
       )}
 
-      {/* Resumen dinámico */}
-      {isLineaCredito && (
+      {/* Resumen dinámico — no aplica a TDC: su simulación no es una tabla de
+          amortización de disposiciones sino el ciclo revolvente de la tarjeta. */}
+      {isLineaCredito && !esTDC && (
         <div className="mt-4 bg-purple-50 border border-purple-200 rounded px-3 py-2">
           <p className="text-xs text-purple-800">
             <strong>Línea de Crédito:</strong> La simulación generará una tabla de amortización para disposiciones sobre la línea.
@@ -1723,7 +1796,13 @@ export function TerminosCondicionesTab({ mode, solicitudId, lineaProducto, tipoP
           por tipo de producto: se muestra siempre en Línea de Crédito / GPO,
           y los valores que falten se ven como "—". Un hueco visible es mucho
           más útil que una sección invisible. */}
-      {(isLineaCredito || gpo('periodicidadCobroGpo') || gpo('sectorInfraestructura') || gpo('porcentajeCoberturaGpo')) && (
+      {/* CAMBIO (14/09/2026): la condición era `isLineaCredito || <hay datos GPO>`,
+          así que la sección salía en TODA solicitud de Línea de Crédito — incluida
+          una TDC — aunque el producto no fuera Garantía Financiera 2o Piso. Ahora
+          se usa `esGPO`, que ya combina el nombre del producto con la presencia de
+          datos GPO heredados y excluye TDC: una línea de crédito normal deja de ver
+          una sección que nunca le aplicó. */}
+      {esGPO && (
         <div className="mt-4 border border-teal-200 rounded overflow-hidden">
           <div className="bg-teal-50 border-b border-teal-200 px-3 py-2">
             <span className="text-xs font-medium text-teal-800 uppercase">

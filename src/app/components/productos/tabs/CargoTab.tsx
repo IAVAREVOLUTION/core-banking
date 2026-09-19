@@ -2,6 +2,8 @@ import { useState, useEffect, forwardRef, useImperativeHandle } from 'react';
 import { toast } from 'sonner';
 import { useTabPersistence } from '@/app/hooks/useProductoPersistence';
 import { useComponentesContablesCatalogo } from '@/app/hooks/useComponentesContablesCatalogo';
+// REQ-21 — momento del ciclo en el que aplica cada cargo.
+import { MOMENTOS_CARGO } from '@/app/lib/cargosProductoGPO';
 
 interface Cargo {
   id: number;
@@ -11,6 +13,8 @@ interface Cargo {
   tipoCargo: string;
   descripcion: string;
   moneda: string;
+  /** REQ-21 — 'FASE_4_PROVISION' | 'AVISO_COMISION' | '' (catálogos anteriores). */
+  momento?: string;
 }
 
 interface CargoTabProps {
@@ -21,13 +25,15 @@ interface CargoTabProps {
   initialData?: Cargo[];
   persistToStorage?: boolean;
   storagePrefix?: string;
+  /** Encabezado del tab. Default 'Cargos'; Línea de Crédito usa 'Cargos Permitidos'. */
+  titulo?: string;
 }
 
 // Catálogos — Tipo de Cargo sale del catálogo de Componentes Contables (REQ-15)
 const MONEDA_OPTIONS = ['MXN', 'USD', 'EUR', 'CAD', 'GBP'];
 
 export const CargoTab = forwardRef<{ getData: () => Cargo[] }, CargoTabProps>(
-  ({ mode, productId, lineaProducto = '', sublinea = '', initialData, persistToStorage, storagePrefix }, ref) => {
+  ({ mode, productId, lineaProducto = '', sublinea = '', initialData, persistToStorage, storagePrefix, titulo = 'Cargos' }, ref) => {
     const prefix = storagePrefix || 'credito';
     const storageKey = persistToStorage && productId ? `${prefix}_cargo_${productId}` : '';
 
@@ -47,6 +53,7 @@ export const CargoTab = forwardRef<{ getData: () => Cargo[] }, CargoTabProps>(
     );
 
     useImperativeHandle(ref, () => ({ getData: () => data }), [data]);
+
 
     const [selectedRow, setSelectedRow] = useState<number | null>(null);
     const [showConsulta, setShowConsulta] = useState(false);
@@ -122,7 +129,7 @@ export const CargoTab = forwardRef<{ getData: () => Cargo[] }, CargoTabProps>(
       <>
         <div className="bg-white">
           <div className="mb-3">
-            <span className="text-sm font-medium text-gray-800">Cargos</span>
+            <span className="text-sm font-medium text-gray-800">{titulo}</span>
           </div>
 
           <div className="flex items-center gap-2 mb-3">
@@ -167,7 +174,8 @@ export const CargoTab = forwardRef<{ getData: () => Cargo[] }, CargoTabProps>(
                   <th className="px-3 py-2 text-left font-medium text-xs border-r border-white/20 whitespace-nowrap">Sublínea</th>
                   <th className="px-3 py-2 text-left font-medium text-xs border-r border-white/20 whitespace-nowrap">Tipo de Cargo</th>
                   <th className="px-3 py-2 text-left font-medium text-xs border-r border-white/20 whitespace-nowrap">Descripción</th>
-                  <th className="px-3 py-2 text-left font-medium text-xs whitespace-nowrap">Moneda</th>
+                  <th className="px-3 py-2 text-left font-medium text-xs border-r border-white/20 whitespace-nowrap">Moneda</th>
+                  <th className="px-3 py-2 text-left font-medium text-xs whitespace-nowrap">Momento</th>
                 </tr>
               </thead>
               <tbody className="bg-white">
@@ -197,7 +205,8 @@ export const CargoTab = forwardRef<{ getData: () => Cargo[] }, CargoTabProps>(
                       <td className="px-3 py-2 text-xs text-gray-700 border-r border-gray-300">{item.sublinea}</td>
                       <td className="px-3 py-2 text-xs text-gray-700 border-r border-gray-300">{item.tipoCargo}</td>
                       <td className="px-3 py-2 text-xs text-gray-700 border-r border-gray-300">{item.descripcion}</td>
-                      <td className="px-3 py-2 text-xs text-gray-700">{item.moneda}</td>
+                      <td className="px-3 py-2 text-xs text-gray-700 border-r border-gray-300">{item.moneda}</td>
+                      <td className="px-3 py-2 text-xs text-gray-700">{MOMENTOS_CARGO.find(m => m.value === (item.momento || ''))?.label || 'Sin especificar'}</td>
                     </tr>
                   ))
                 )}
@@ -245,6 +254,8 @@ function FormModal({ mode, item, productId, lineaProducto, sublinea, onSave, onC
     tipoCargo: item?.tipoCargo || '',
     descripcion: item?.descripcion || '',
     moneda: item?.moneda || '',
+    // REQ-21 §Decisión 1(a) — en qué momento del ciclo aplica este cargo.
+    momento: item?.momento || '',
   });
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -368,6 +379,26 @@ function FormModal({ mode, item, productId, lineaProducto, sublinea, onSave, onC
                       <option key={moneda} value={moneda}>{moneda}</option>
                     ))}
                   </select>
+                </div>
+
+                {/* REQ-21 §Decisión 1(a) — sin esto, el catálogo no dice en qué
+                    momento aplica cada cargo y Fase 4 los copiaba todos. */}
+                <div>
+                  <label className="block text-xs text-gray-700 mb-1 font-medium">Momento</label>
+                  <select
+                    value={formData.momento}
+                    onChange={(e) => handleChange('momento', e.target.value)}
+                    disabled={isViewMode}
+                    className={inputClassName()}
+                  >
+                    {MOMENTOS_CARGO.map((m) => (
+                      <option key={m.value} value={m.value}>{m.label}</option>
+                    ))}
+                  </select>
+                  <span className="block text-[10px] text-gray-500 mt-1">
+                    Determina si el cargo se genera al autorizar la Fase 4 o si nombra los
+                    conceptos del Aviso de Vencimiento.
+                  </span>
                 </div>
 
                 <div className="col-span-2">

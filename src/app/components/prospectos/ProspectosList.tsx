@@ -65,6 +65,13 @@ export interface Prospecto {
   monedaInversion?: string;
   tipoFinanciamiento?: string;
   descripcionObra?: string;
+  // ── Perfil TDC — datos financieros del solicitante ──
+  tdcIngresoComprobado?: string;
+  tdcOtrosIngresos?: string;
+  tdcDeudaMensual?: string;
+  tdcGastosMensuales?: string;
+  tdcAntiguedadLaboral?: string;
+  tdcActividadEconomica?: string;
   /** Datos crudos del JSONB de J_CLIENTES — para detectar archivos (constanciaResidencia, etc.) */
   _rawData?: Record<string, any>;
 }

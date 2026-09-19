@@ -33,6 +33,19 @@ export function DefaultTab({ credito }: Props) {
   const isCredito = (credito.lineaProducto || '').toLowerCase().includes('créd') ||
                     (credito.lineaProducto || '').toLowerCase().includes('cred');
 
+  /**
+   * Unidad del Plazo. Crédito y Arrendamiento lo capturan en MESES; Garantía
+   * Financiera 2o Piso lo captura en AÑOS — un GPO a 20 son 20 años, no 20
+   * meses. Mismo criterio que `unidadPlazo` en TerminosCondicionesTab, más la
+   * frecuencia Anual, que es la que delata a una línea capturada por años
+   * aunque el nombre del producto no diga "garantía".
+   */
+  const esGarantia = /garant/i.test(
+    `${credito.productoNombre || ''} ${credito.tipoProducto || ''} ${credito.lineaProducto || ''}`,
+  );
+  const esAnual = /anual/i.test(credito.frecuencia || '');
+  const unidadPlazo = esGarantia || esAnual ? 'años' : 'meses';
+
   return (
     <div className="bg-white border border-gray-300 p-4 space-y-6">
 
@@ -67,7 +80,7 @@ export function DefaultTab({ credito }: Props) {
             <Field label="Tasa de Interés"    value={credito.tasa ? `${credito.tasa}%` : undefined} />
           </div>
           <div>
-            <Field label="Plazo"              value={credito.plazo ? `${credito.plazo} meses` : undefined} />
+            <Field label="Plazo"              value={credito.plazo ? `${credito.plazo} ${unidadPlazo}` : undefined} />
             <Field label="Frecuencia de Pago" value={credito.frecuencia} />
             <Field label="Moneda"             value={credito.moneda || 'MXN'} />
           </div>
@@ -81,7 +94,7 @@ export function DefaultTab({ credito }: Props) {
           {[
             { label: 'Monto Autorizado', value: fmtMoney(credito.montoAut), color: 'text-blue-700' },
             { label: 'Tasa Anual',       value: credito.tasa ? `${credito.tasa}%` : '—', color: 'text-purple-700' },
-            { label: 'Plazo',            value: credito.plazo ? `${credito.plazo} meses` : '—', color: 'text-amber-700' },
+            { label: 'Plazo',            value: credito.plazo ? `${credito.plazo} ${unidadPlazo}` : '—', color: 'text-amber-700' },
             { label: 'Frecuencia',       value: credito.frecuencia || '—', color: 'text-green-700' },
           ].map(kpi => (
             <div key={kpi.label} className="bg-gray-50 border border-gray-200 rounded p-3">

@@ -58,7 +58,8 @@ interface Props {
   };
   /**
    * Componentes y montos del Detail de la entidad (CxC/CxP).
-   * Si no se proveen, se usa [{id_componente: 'CAPITAL', monto: credito.montoAut}] como fallback.
+   * Si no se proveen, NO se fabrica ninguno: el backend usa las lineas del
+   * Motor Contable del producto para el evento elegido.
    */
   readonly componentes?: ComponenteContable[];
 }
@@ -199,9 +200,18 @@ export function GeneracionContableTab({ solicitudId, credito, componentes }: Pro
     setGenerando(ev.id);
     try {
       // Construir lista de componentes
-      const comps: ComponenteContable[] = componentes && componentes.length > 0
-        ? componentes.filter(c => c.monto > 0)
-        : [{ id_componente: 'CAPITAL', monto: credito.montoAut }];
+      // Sin componentes NO se inventa uno.
+      //
+      // Antes se enviaba `[{ id_componente: 'CAPITAL', monto: montoAut }]`: un
+      // componente fabricado en el front, con el monto global, que muchas veces
+      // ni existe en el Motor Contable del producto. Por eso la misma operacion
+      // salia con "CAPITAL" desde Cartera y con sus conceptos reales (Comision
+      // GPO / IVA) desde el Aviso, que si pasa el detalle.
+      //
+      // Con la lista vacia el backend usa las lineas del Motor Contable del
+      // producto para ese evento — que es la configuracion real — en vez de un
+      // nombre inventado aqui.
+      const comps: ComponenteContable[] = (componentes || []).filter(c => c.monto > 0);
 
       if (!isUUID) {
         // Modo local (sesión) — simular generación
@@ -551,7 +561,7 @@ export function GeneracionContableTab({ solicitudId, credito, componentes }: Pro
                     <tbody>
                       {(componentes && componentes.filter(c => c.monto > 0).length > 0
                         ? componentes.filter(c => c.monto > 0)
-                        : [{ id_componente: 'CAPITAL', monto: credito.montoAut }]
+                        : []   /* ver nota en handleGenerarPoliza: no se inventa CAPITAL */
                       ).map((c, i) => (
                         <tr key={i} className="border-t border-gray-100">
                           <td className="px-2.5 py-1.5 font-medium text-gray-800">{c.id_componente}</td>

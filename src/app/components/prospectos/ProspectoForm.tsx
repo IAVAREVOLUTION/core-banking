@@ -23,6 +23,16 @@ import { currentUser } from '../../data/mockData';
 // ═══════════════════════════════════════════════════════════════════
 // HU-CRM-02 — Catálogos de la pestaña Perfil
 // ═══════════════════════════════════════════════════════════════════
+/** Actividad económica del solicitante — subtab Perfil TDC. */
+const CAT_ACTIVIDAD_ECONOMICA_TDC = [
+  'Empleado',
+  'Independiente / Profesionista',
+  'Empresario',
+  'Comerciante',
+  'Jubilado / Pensionado',
+  'Otro',
+];
+
 const CAT_SECTOR_INFRAESTRUCTURA = [
   'Transporte/Carreteras',
   'Energía',
@@ -263,6 +273,15 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
         monedaInversion: 'MXN',
         tipoFinanciamiento: '',
         descripcionObra: '',
+        // ── Perfil TDC — datos financieros del solicitante ──
+        // Ingreso total, capacidad de pago y % deuda/ingreso NO se guardan:
+        // son derivados y se recalculan para que nunca queden desfasados.
+        tdcIngresoComprobado: '',
+        tdcOtrosIngresos: '',
+        tdcDeudaMensual: '',
+        tdcGastosMensuales: '',
+        tdcAntiguedadLaboral: '',
+        tdcActividadEconomica: '',
       };
     }
 
@@ -313,6 +332,13 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
       monedaInversion: (prospecto as any)?.monedaInversion || 'MXN',
       tipoFinanciamiento: (prospecto as any)?.tipoFinanciamiento || '',
       descripcionObra: (prospecto as any)?.descripcionObra || '',
+      // ── Perfil TDC ──
+      tdcIngresoComprobado: (prospecto as any)?.tdcIngresoComprobado || '',
+      tdcOtrosIngresos: (prospecto as any)?.tdcOtrosIngresos || '',
+      tdcDeudaMensual: (prospecto as any)?.tdcDeudaMensual || '',
+      tdcGastosMensuales: (prospecto as any)?.tdcGastosMensuales || '',
+      tdcAntiguedadLaboral: (prospecto as any)?.tdcAntiguedadLaboral || '',
+      tdcActividadEconomica: (prospecto as any)?.tdcActividadEconomica || '',
     };
   });
 
@@ -363,6 +389,13 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
             monedaInversion: (prospecto as any)?.monedaInversion || 'MXN',
             tipoFinanciamiento: (prospecto as any)?.tipoFinanciamiento || '',
             descripcionObra: (prospecto as any)?.descripcionObra || '',
+            // ── Perfil TDC ──
+            tdcIngresoComprobado: (prospecto as any)?.tdcIngresoComprobado || '',
+            tdcOtrosIngresos: (prospecto as any)?.tdcOtrosIngresos || '',
+            tdcDeudaMensual: (prospecto as any)?.tdcDeudaMensual || '',
+            tdcGastosMensuales: (prospecto as any)?.tdcGastosMensuales || '',
+            tdcAntiguedadLaboral: (prospecto as any)?.tdcAntiguedadLaboral || '',
+            tdcActividadEconomica: (prospecto as any)?.tdcActividadEconomica || '',
           };
         }
         return prev;
@@ -678,6 +711,13 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
           monedaInversion: (formData as any).monedaInversion,
           tipoFinanciamiento: (formData as any).tipoFinanciamiento,
           descripcionObra: (formData as any).descripcionObra,
+          // ── Perfil TDC ──
+          tdcIngresoComprobado: (formData as any).tdcIngresoComprobado,
+          tdcOtrosIngresos: (formData as any).tdcOtrosIngresos,
+          tdcDeudaMensual: (formData as any).tdcDeudaMensual,
+          tdcGastosMensuales: (formData as any).tdcGastosMensuales,
+          tdcAntiguedadLaboral: (formData as any).tdcAntiguedadLaboral,
+          tdcActividadEconomica: (formData as any).tdcActividadEconomica,
           fechaOriginacion: isCreate
             ? new Date().toISOString().split('T')[0]
             : (prospecto?.fechaOriginacion || new Date().toISOString().split('T')[0]),
@@ -879,38 +919,20 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
 
   // ── HU-CRM-02: validación de la pestaña Perfil ──
   // Devuelve la lista de campos obligatorios sin capturar.
-  const validarPerfil = (): string[] => {
-    const f = formData as any;
-    const faltantes: string[] = [];
-    if (!f.sectorInfraestructura?.trim()) faltantes.push('Sector Infraestructura');
-    const monto = parseFloat(String(f.montoInversion ?? '').replace(/,/g, ''));
-    if (isNaN(monto) || monto <= 0) faltantes.push('Monto Inversión');
-    if (!f.monedaInversion?.trim()) faltantes.push('Moneda');
-    if (!f.tipoFinanciamiento?.trim()) faltantes.push('Tipo Financiamiento');
-    if (!f.descripcionObra?.trim()) faltantes.push('Descripción Obra');
-    return faltantes;
-  };
-
-  // ── HU-CRM-03 RN-01 / CA-01 / CA-02 ──
-  // El botón [Calificar Lead] solo se habilita con Sector capturado y Monto > 0.
-  const montoInversionNum = (() => {
-    const n = parseFloat(String((formData as any).montoInversion ?? '').replace(/,/g, ''));
-    return isNaN(n) ? 0 : n;
-  })();
-  const sectorCapturado = !!(formData as any).sectorInfraestructura?.trim();
+  // Todos los datos del Perfil son opcionales: no bloquean la calificación.
+  const validarPerfil = (): string[] => [];
 
   // ── HU-CRM-03 RN-03 — idempotencia ──
+  // Los campos del Perfil pasaron a ser opcionales, así que ya no condicionan el
+  // botón (antes RN-01/CA-01/CA-02 exigían Sector capturado y Monto > 0). Sólo
+  // queda el candado de no calificar dos veces el mismo Lead.
   const leadYaCalificado = formData.estatusProspecto === 'Calificado';
 
-  const puedeCalificar = sectorCapturado && montoInversionNum > 0 && !leadYaCalificado;
+  const puedeCalificar = !leadYaCalificado;
 
   const motivoNoCalificable = leadYaCalificado
     ? 'Este Lead ya fue calificado previamente.'
-    : !sectorCapturado
-      ? 'Capture el Sector Infraestructura para poder calificar.'
-      : montoInversionNum <= 0
-        ? 'El Monto Inversión debe ser mayor a cero.'
-        : '';
+    : '';
 
   const [calificando, setCalificando] = useState(false);
   // Mientras el campo está enfocado se edita el número crudo; al salir se formatea
@@ -969,6 +991,13 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
           monedaInversion: f.monedaInversion,
           tipoFinanciamiento: f.tipoFinanciamiento,
           descripcionObra: f.descripcionObra,
+          // ── Perfil TDC — la Oportunidad lo hereda en Cierre Comercial ──
+          tdcIngresoComprobado: f.tdcIngresoComprobado,
+          tdcOtrosIngresos: f.tdcOtrosIngresos,
+          tdcDeudaMensual: f.tdcDeudaMensual,
+          tdcGastosMensuales: f.tdcGastosMensuales,
+          tdcAntiguedadLaboral: f.tdcAntiguedadLaboral,
+          tdcActividadEconomica: f.tdcActividadEconomica,
         },
         label: 'Lead calificado',
         existingId: dbUuid,
@@ -995,6 +1024,15 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
         monedaInversion: f.monedaInversion || 'MXN',
         tipoFinanciamiento: f.tipoFinanciamiento || '',
         descripcionObra: f.descripcionObra || '',
+        // ── Perfil TDC — se hereda tal cual en la Oportunidad ──
+        perfilTDC: {
+          ingresoComprobado: f.tdcIngresoComprobado || '',
+          otrosIngresos: f.tdcOtrosIngresos || '',
+          deudaMensual: f.tdcDeudaMensual || '',
+          gastosMensuales: f.tdcGastosMensuales || '',
+          antiguedadLaboral: f.tdcAntiguedadLaboral || '',
+          actividadEconomica: f.tdcActividadEconomica || '',
+        },
       };
 
       toast.success('Lead calificado', {
@@ -1022,6 +1060,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
   const tabs = [
     { id: 'general', label: 'Default' },
     { id: 'perfil', label: 'Perfil' },
+    { id: 'perfil-tdc', label: 'Perfil TDC' },
     { id: 'direcciones', label: 'Direcciones' },
     { id: 'expedientes', label: 'Expedientes Electrónicos' },
     { id: 'sic', label: 'SIC' },
@@ -2075,7 +2114,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
               <div className="grid grid-cols-2 gap-x-6 gap-y-3 mb-4">
                 {/* Sector Infraestructura */}
                 <div className="flex items-center gap-2">
-                  <label className="text-xs w-40 flex-shrink-0 text-gray-700">SECTOR INFRAESTRUCTURA <span className="text-red-600">*</span></label>
+                  <label className="text-xs w-40 flex-shrink-0 text-gray-700">SECTOR INFRAESTRUCTURA</label>
                   {isView ? (
                     <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100">{(formData as any).sectorInfraestructura || '—'}</div>
                   ) : (
@@ -2094,7 +2133,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
 
                 {/* Tipo Financiamiento */}
                 <div className="flex items-center gap-2">
-                  <label className="text-xs w-40 flex-shrink-0 text-gray-700">TIPO FINANCIAMIENTO <span className="text-red-600">*</span></label>
+                  <label className="text-xs w-40 flex-shrink-0 text-gray-700">TIPO FINANCIAMIENTO</label>
                   {isView ? (
                     <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100">{(formData as any).tipoFinanciamiento || '—'}</div>
                   ) : (
@@ -2113,7 +2152,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
 
                 {/* Monto Inversión */}
                 <div className="flex items-center gap-2">
-                  <label className="text-xs w-40 flex-shrink-0 text-gray-700">MONTO INVERSIÓN <span className="text-red-600">*</span></label>
+                  <label className="text-xs w-40 flex-shrink-0 text-gray-700">MONTO INVERSIÓN</label>
                   {isView ? (
                     <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100 text-right font-mono">
                       {formatMiles((formData as any).montoInversion)}
@@ -2148,7 +2187,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
 
                 {/* Moneda */}
                 <div className="flex items-center gap-2">
-                  <label className="text-xs w-40 flex-shrink-0 text-gray-700">MONEDA <span className="text-red-600">*</span></label>
+                  <label className="text-xs w-40 flex-shrink-0 text-gray-700">MONEDA</label>
                   {isView ? (
                     <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100">{(formData as any).monedaInversion || 'MXN'}</div>
                   ) : (
@@ -2167,7 +2206,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
 
               {/* Descripción Obra */}
               <div className="flex items-start gap-2 mb-4">
-                <label className="text-xs w-40 flex-shrink-0 text-gray-700 pt-1">DESCRIPCIÓN OBRA <span className="text-red-600">*</span></label>
+                <label className="text-xs w-40 flex-shrink-0 text-gray-700 pt-1">DESCRIPCIÓN OBRA</label>
                 {isView ? (
                   <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100 min-h-[64px] whitespace-pre-wrap">
                     {(formData as any).descripcionObra || '—'}
@@ -2183,29 +2222,168 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
                   />
                 )}
               </div>
-
-              {/* Calificar Lead — HU-CRM-03 CA-01/CA-02/CA-07 */}
-              {!isView && (
-                <div className="flex items-center justify-end gap-3 pt-3 border-t border-gray-200">
-                  {motivoNoCalificable && (
-                    <span className="text-[11px] text-gray-500 italic">{motivoNoCalificable}</span>
-                  )}
-                  <button
-                    onClick={handleCalificarLead}
-                    disabled={!puedeCalificar || calificando}
-                    title={motivoNoCalificable || 'Calificar el Lead y convertirlo en Oportunidad'}
-                    className={`px-5 py-1.5 rounded text-xs font-medium transition-colors ${
-                      puedeCalificar && !calificando
-                        ? 'bg-[#0099CC] text-white hover:bg-[#0088BB]'
-                        : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                    }`}
-                  >
-                    {calificando ? 'Calificando…' : 'Calificar Lead'}
-                  </button>
-                </div>
-              )}
             </div>
           )}
+
+
+          {/* ═══ Perfil TDC — datos financieros y calificación del Lead ═══ */}
+          {activeTab === 'perfil-tdc' && (() => {
+            const f = formData as any;
+            // '' y undefined no son 0: sólo suma lo efectivamente capturado.
+            const num = (v: any) => {
+              const n = parseFloat(String(v ?? '').replace(/,/g, ''));
+              return isNaN(n) ? 0 : n;
+            };
+            const fmtMoney = (n: number) =>
+              `$${n.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+            const ingresoTotal = num(f.tdcIngresoComprobado) + num(f.tdcOtrosIngresos);
+            const deuda = num(f.tdcDeudaMensual);
+            const capacidadPago = ingresoTotal - deuda - num(f.tdcGastosMensuales);
+            const pctDeudaIngreso = ingresoTotal > 0 ? (deuda / ingresoTotal) * 100 : null;
+
+            const labelCol = 'text-xs w-52 flex-shrink-0 text-gray-700';
+            const inputCls = 'w-full pl-5 pr-2 py-1 text-xs border border-gray-300 rounded text-right font-mono';
+            const calcCls = 'flex-1 px-2 py-1 text-xs bg-[#EEF3FA] border border-gray-200 rounded text-right font-mono text-gray-800';
+
+            const campoMoneda = (label: string, campo: string) => (
+              <div className="flex items-center gap-2">
+                <label className={labelCol}>{label}</label>
+                {isView ? (
+                  <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100 text-right font-mono">
+                    {f[campo] ? fmtMoney(num(f[campo])) : '—'}
+                  </div>
+                ) : (
+                  <div className="relative flex-1">
+                    <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">$</span>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={f[campo] || ''}
+                      onChange={(e) => {
+                        const limpio = e.target.value.replace(/[^0-9.]/g, '');
+                        if (limpio.split('.').length > 2) return;
+                        handleChange(campo as any, limpio);
+                      }}
+                      onBlur={(e) => {
+                        const raw = e.target.value.trim();
+                        if (raw === '') return;
+                        const n = parseFloat(raw);
+                        handleChange(campo as any, isNaN(n) ? '' : n.toFixed(2));
+                      }}
+                      placeholder="0.00"
+                      className={inputCls}
+                    />
+                  </div>
+                )}
+              </div>
+            );
+
+            return (
+              <div>
+                <div className="bg-primary-light-theme px-3 py-2 mb-3 text-sm font-medium text-gray-800 border-l-4 border-primary-theme">
+                  DATOS FINANCIEROS
+                </div>
+
+                {/* Ingresos */}
+                <div className="grid grid-cols-2 gap-x-6 gap-y-3 mb-4">
+                  {campoMoneda('INGRESO MENSUAL COMPROBADO', 'tdcIngresoComprobado')}
+                  {campoMoneda('OTROS INGRESOS', 'tdcOtrosIngresos')}
+
+                  <div className="flex items-center gap-2">
+                    <label className={labelCol}>INGRESO MENSUAL TOTAL</label>
+                    <div className={calcCls} title="Comprobado + otros ingresos">{fmtMoney(ingresoTotal)}</div>
+                  </div>
+                  <div />
+
+                  {/* Egresos */}
+                  {campoMoneda('DEUDA MENSUAL ACTUAL', 'tdcDeudaMensual')}
+                  {campoMoneda('GASTOS MENSUALES ESTIMADOS', 'tdcGastosMensuales')}
+
+                  {/* Resultado del análisis */}
+                  <div className="flex items-center gap-2">
+                    <label className={labelCol}>CAPACIDAD DE PAGO ESTIMADA</label>
+                    <div
+                      className={`${calcCls} ${capacidadPago < 0 ? 'text-red-600' : ''}`}
+                      title="Ingreso total − deuda − gastos"
+                    >
+                      {fmtMoney(capacidadPago)}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <label className={labelCol}>% DEUDA / INGRESO</label>
+                    <div className={calcCls} title="Deuda ÷ ingreso total">
+                      {pctDeudaIngreso === null ? '—' : `${pctDeudaIngreso.toFixed(2)} %`}
+                    </div>
+                  </div>
+
+                  {/* Perfil laboral */}
+                  <div className="flex items-center gap-2">
+                    <label className={labelCol}>ANTIGÜEDAD LABORAL (MESES)</label>
+                    {isView ? (
+                      <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100">
+                        {f.tdcAntiguedadLaboral ? `${f.tdcAntiguedadLaboral} meses` : '—'}
+                      </div>
+                    ) : (
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        value={f.tdcAntiguedadLaboral || ''}
+                        onChange={(e) => handleChange('tdcAntiguedadLaboral' as any, e.target.value.replace(/[^0-9]/g, ''))}
+                        placeholder="0"
+                        className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded"
+                      />
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <label className={labelCol}>ACTIVIDAD ECONÓMICA</label>
+                    {isView ? (
+                      <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100">{f.tdcActividadEconomica || '—'}</div>
+                    ) : (
+                      <select
+                        value={f.tdcActividadEconomica || ''}
+                        onChange={(e) => handleChange('tdcActividadEconomica' as any, e.target.value)}
+                        className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded bg-white"
+                      >
+                        <option value="">-- Seleccione --</option>
+                        {CAT_ACTIVIDAD_ECONOMICA_TDC.map((a) => (
+                          <option key={a} value={a}>{a}</option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
+                </div>
+
+                <p className="text-[10px] text-gray-500 italic mb-3">
+                  Ingreso mensual total, capacidad de pago y % deuda/ingreso se calculan solos a
+                  partir de lo capturado; no se capturan ni se guardan por separado.
+                </p>
+
+                {/* Calificar Lead — HU-CRM-03 CA-06/CA-07 */}
+                {!isView && (
+                  <div className="flex items-center justify-end gap-3 pt-3 border-t border-gray-200">
+                    {motivoNoCalificable && (
+                      <span className="text-[11px] text-gray-500 italic">{motivoNoCalificable}</span>
+                    )}
+                    <button
+                      onClick={handleCalificarLead}
+                      disabled={!puedeCalificar || calificando}
+                      title={motivoNoCalificable || 'Calificar el Lead y convertirlo en Oportunidad'}
+                      className={`px-5 py-1.5 rounded text-xs font-medium transition-colors ${
+                        puedeCalificar && !calificando
+                          ? 'bg-[#0099CC] text-white hover:bg-[#0088BB]'
+                          : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                      }`}
+                    >
+                      {calificando ? 'Calificando…' : 'Calificar Lead'}
+                    </button>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           {/* Tab Direcciones - Tabla con botones Nuevo/Eliminar */}
           {activeTab === 'direcciones' && (

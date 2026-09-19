@@ -17,13 +17,15 @@ import { supabase } from '../../lib/supabaseClient';
 import {
   SolicitudFormData, EMPTY_FORM, MOCK_FORMS, SOLICITUDES_LISTA,
   saveToSession, loadFromSession, loadFromSavedStore, saveToSavedStore, commitAndClearSession, clearSession,
-  formatCurrency, parseCurrency, generateNoSol, consumeNoSol, getFechaSolicitudNow,
+  marcarCargosAplicados,
+  formatCurrency, parseCurrency, generateNoSol, consumeNoSol, getFechaSolicitudNow, generateId,
   CAT_LINEA_PRODUCTO, CAT_TIPO_PRODUCTO, CAT_TIPO_PERSONA, CAT_PRODUCTOS,
   CAT_FASES, CAT_SUCURSAL, CAT_ESTATUS_SOLICITUD,
   calcularCargosArrendamiento, generarFacturaDesembolsoInicial,
   generarXMLProveedor, leerXMLProveedor,
   type DocumentoCargado, type RequisitoProducto, type FacturaArrendamiento,
   esArrendamiento,
+  esTarjetaCredito,
 } from './solicitudCreditoStore';
 import { TerminosCondicionesTab } from './TerminosCondicionesTab';
 import {
@@ -43,7 +45,20 @@ import {
   type EmitirOficioPayload, type EmitirOficioResultado,
 } from './ResolucionFinalCICTab';
 import { SimulacionTab, calcularNumeroPeriodos } from './SimulacionTab';
+import { CuentasBeneficiariasTab } from './CuentasBeneficiariasTab';
+import { generarPagareDesdePlantilla } from '../../hooks/generarDocumentosFase4';
+import { contabilizarActivacion } from '../../lib/contabilizarEventoTDC';
+import { indicador } from '../../lib/motorMovimientosTDC';
+import { useComponentesContablesCatalogo } from '../../hooks/useComponentesContablesCatalogo';
+// REQ-24 HU-24.1 — alta automatica de la Solicitud de Activacion al liberar.
+import { crearActivacionDispersion } from '../../hooks/useSolicitudesActivacionDB';
+import { fetchLineaPadre, fetchCuentasBeneficiarias } from '../banca-2o-piso/banca2oPisoStore';
 import { formalizarGarantiaGPO } from '../../hooks/formalizacionCarteraGPO';
+// REQ-20 — el saldo de la garantía lo lee y lo escribe el mismo módulo, para que
+// el significado de `saldo_actual` en una línea GPO tenga un solo dueño.
+import { sembrarSaldoGarantia } from '../banca-2o-piso/banca2oPisoStore';
+// REQ-21 HU-21.2 — no todos los cargos del producto son de Fase 4.
+import { cargosDeFase4 } from '../../lib/cargosProductoGPO';
 import { ExpedienteElectronicoTab } from './ExpedienteElectronicoTab';
 import { GarantiasTab } from './GarantiasTab';
 import { ComisionesTab } from './ComisionesTab';
@@ -53,6 +68,8 @@ import { DatePicker } from '../ui/DatePicker';
 import { FasesSolicitudTab } from './tabs/FasesSolicitudTab';
 import { SeleccionarClienteModal } from './SeleccionarClienteModal';
 import { PartesRelacionadasTab } from './tabs/PartesRelacionadasTab';
+import { DatosFinancierosTab } from './tabs/DatosFinancierosTab';
+import { CondicionesTarjetaTab } from './tabs/CondicionesTarjetaTab';
 import { useProductosCatalogoDB, type ProductoCatalogo } from '../../hooks/useProductosCatalogoDB';
 import { useSolicitudesDB, fetchNextNoSol, updateFaseSolicitudDB, avanzarFaseSolicitudDB, regresarFaseSolicitudDB, formalizarContratoSolicitudDB, activarCuentaDB, actualizarEstatusSolicitudDB, crearCuentaDesdeSolicitudDB, actualizarDispersionDB, actualizarFacturasDB } from '../../hooks/useSolicitudesDB';
 import {
@@ -320,6 +337,8 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
     }
   }, [formData.lineaProducto, activeSection]);
   const [showClienteModal, setShowClienteModal] = useState(false);
+  /** Se incrementa al marcar Cargos como Aplicado: obliga al subtab a releer su sesion. */
+  const [cargosKey, setCargosKey] = useState(0);
 
   const isRO = mode === 'ver';
   // modo: controla qué botones de fase se muestran
@@ -439,12 +458,23 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
     toast.success('Solicitud enviada', { description: 'Estatus actualizado a "En proceso". La solicitud aparece en Originación.' });
   }, [formData, storageId]);
 
+  // Catálogo de Componentes Contables — resuelve el nombre de la clave '023'
+  // al generar el cargo automático de activación de una línea TDC.
+  const { componentes: componentesCatalogo } = useComponentesContablesCatalogo();
+
   // ── Producto seleccionado (rawData para auto-llenar Términos y Condiciones) ──
   const productoSeleccionado = useMemo(() => {
     if (!formData.productoId) return undefined;
     const found = productosDB.find(p => p.id === formData.productoId);
     return found;
   }, [formData.productoId, productosDB]);
+
+  // Reglas de Pago y Corte TDC configuradas en el producto (subtab del producto
+  // Línea de Crédito). Alimentan la precarga del acordeón Condiciones de la Tarjeta.
+  const reglaTDCProducto = useMemo(() => {
+    const r = productoSeleccionado?.rawData?.reglasPagoCorteTDC;
+    return r && typeof r === 'object' && !Array.isArray(r) ? r : undefined;
+  }, [productoSeleccionado]);
 
   // ── % Enganche — visible en el encabezado (solo Arrendamiento) ──
   const isArrendamientoHeader = (formData.tipoProducto || '').toLowerCase().includes('arrendamiento');
@@ -469,6 +499,12 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
     return t?.frecuencia || '';
   });
   type FilaMatriz = {
+    /**
+     * REQ-22 — identidad de la fila. Ya viajaba en los datos (`id: 1`, `id: 2`)
+     * y sólo faltaba en esta declaración; sin ella la fila se comparaba por
+     * plazo y dos filas con el mismo plazo salían ambas “Seleccionada”.
+     */
+    id?: number | string;
     plazoMinimo?: number; plazoMaximo?: number; plazoDefault?: number;
     montoMinimo?: number; montoMaximo?: number; montoDefault?: number;
     tasaMinima?: string; tasaMaxima?: string; tasaDefault?: string; tasaAplicable?: string;
@@ -477,11 +513,44 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
   // Fila completa de la Matriz que corresponde al Plazo actual — fuente de
   // verdad para validar que Monto/Plazo/Tasa se mantengan en su rango.
   const [filaMatrizSeleccionada, setFilaMatrizSeleccionada] = useState<FilaMatriz | null>(null);
+  /** REQ-22 CA-09 — evita repetir el aviso de empate en cada re-evaluación. */
+  const avisoMatrizAmbiguaRef = useRef<string>('');
   const matrizTasaFijaProducto = useMemo(() => {
     const rd = productoSeleccionado?.rawData;
     const arr = Array.isArray(rd?.matrizTasaFija) ? rd.matrizTasaFija : [];
     return arr as FilaMatriz[];
   }, [productoSeleccionado]);
+
+  /**
+   * REQ-22 RN-01 — dos filas son la misma sólo si coinciden en TODO lo que las
+   * distingue, no sólo en el plazo. Con `id` basta; sin él se compara el
+   * conjunto, porque un producto puede ofrecer el mismo plazo con distinta
+   * periodicidad y distinta tasa (que es justamente el caso reportado).
+   */
+  const mismaFilaMatriz = useCallback((a?: FilaMatriz | null, b?: FilaMatriz | null): boolean => {
+    if (!a || !b) return false;
+    if (a.id != null && b.id != null) return String(a.id) === String(b.id);
+    return a.plazoMinimo === b.plazoMinimo
+      && a.plazoMaximo === b.plazoMaximo
+      && String(a.periodo ?? '') === String(b.periodo ?? '')
+      && a.montoMinimo === b.montoMinimo
+      && a.montoMaximo === b.montoMaximo
+      && String(a.tasaMinima ?? '') === String(b.tasaMinima ?? '');
+  }, []);
+
+  /**
+   * CA-12 — filas del producto que comparten plazo con otra. Si hay alguna, la
+   * columna FRECUENCIA es lo que decide, y conviene decirlo en el modal.
+   */
+  const hayFilasMatrizAmbiguas = useMemo(() => {
+    const vistos = new Set<string>();
+    for (const f of matrizTasaFijaProducto) {
+      const clave = `${f.plazoMinimo}|${f.plazoMaximo}`;
+      if (vistos.has(clave)) return true;
+      vistos.add(clave);
+    }
+    return false;
+  }, [matrizTasaFijaProducto]);
 
   /**
    * Periodicidades que declara la Matriz de Tasa Fija (columna FRECUENCIA).
@@ -523,9 +592,60 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
     const porPlazo = (f: FilaMatriz) =>
       plazoNum >= (f.plazoMinimo || 0) && plazoNum <= (f.plazoMaximo || Infinity);
 
-    const fila =
-      matrizTasaFijaProducto.find(f => porPlazo(f) && enRango(montoNum, f.montoMinimo, f.montoMaximo))
-      ?? matrizTasaFijaProducto.find(porPlazo);
+    // REQ-22 RN-02 — el orden del arreglo no es un criterio de negocio. Antes
+    // esto era un `.find()`, así que con dos filas que empataban en plazo Y en
+    // monto se aplicaba siempre la primera **en silencio**: en Crédito Simple 2º
+    // Piso eso amarraba Mensual al 8% y volvía inalcanzable Trimestral al 7%.
+    // Ahora se desempata en cascada y, si el empate sobrevive, decide el usuario.
+    let candidatas = matrizTasaFijaProducto.filter(
+      f => porPlazo(f) && enRango(montoNum, f.montoMinimo, f.montoMaximo),
+    );
+    // Respaldo: si ninguna cuadra con el monto, se cae al criterio de sólo plazo
+    // para no dejar a la Solicitud sin matriz (comportamiento previo).
+    if (candidatas.length === 0) candidatas = matrizTasaFijaProducto.filter(porPlazo);
+
+    // CA-07 — desempate por la frecuencia ya capturada.
+    if (candidatas.length > 1) {
+      const frecActual = String(frecuenciaSeleccionadaHeader || formData.frecuencia || '').trim().toLowerCase();
+      if (frecActual) {
+        const porFrecuencia = candidatas.filter(f => String(f.periodo ?? '').trim().toLowerCase() === frecActual);
+        if (porFrecuencia.length > 0) candidatas = porFrecuencia;
+      }
+    }
+
+    // CA-08 — desempate por la tasa ya capturada (Solicitud que se reabre).
+    if (candidatas.length > 1) {
+      const tasaActual = parseFloat(String(tasaSeleccionadaHeader || '')) || 0;
+      if (tasaActual > 0) {
+        const porTasa = candidatas.filter(f => {
+          const min = parseFloat(String(f.tasaMinima ?? '0')) || 0;
+          const max = parseFloat(String(f.tasaMaxima ?? f.tasaMinima ?? '0')) || min;
+          return tasaActual >= min && tasaActual <= max;
+        });
+        if (porTasa.length > 0) candidatas = porTasa;
+      }
+    }
+
+    // CA-09/CA-10 — sin forma de resolverlo, NO se elige por posición: se avisa
+    // con el detalle de en qué difieren, y el usuario confirma en el modal.
+    if (candidatas.length > 1) {
+      // El efecto se re-evalúa con cada cambio de plazo/monto; sin esta guarda
+      // el mismo aviso saldría varias veces por la misma situación.
+      const claveAviso = `${plazoNum}|${montoNum}|${candidatas.length}`;
+      if (avisoMatrizAmbiguaRef.current !== claveAviso) {
+        avisoMatrizAmbiguaRef.current = claveAviso;
+        const opciones = candidatas
+          .map(f => `${f.periodo || 'sin frecuencia'} ${(parseFloat(String(f.tasaMinima ?? '0')) || 0).toFixed(2)}%`)
+          .join(' · ');
+        toast.warning(`Hay ${candidatas.length} filas de matriz para este plazo`, {
+          description: `Difieren en frecuencia y tasa (${opciones}). Abra la Matriz de Tasa Fija y elija cuál aplica.`,
+          duration: 12000,
+        });
+      }
+      return;
+    }
+
+    const fila = candidatas[0];
     if (!fila) return;
     const tasaAnual = parseFloat(String(fila.tasaMinima ?? fila.tasaAplicable ?? '0')) || 0;
     const tasaDefault = parseFloat(String(fila.tasaDefault ?? '')) || tasaAnual;
@@ -570,6 +690,73 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
     if (min <= 0 && max <= 0) return null;
     return { min, max: max > 0 ? max : min };
   }, [filaMatrizSeleccionada]);
+
+  /**
+   * Plantillas del producto — para que FaseActionsComponent no ofrezca imprimir
+   * documentos que este producto no emite (REQ-23 RN-01).
+   */
+  /**
+   * Genera el Pagare desde la barra de fase. Reusa el mismo generador que el
+   * boton del Expediente (`generarPagareDesdePlantilla`), asi que comparten las
+   * guardas: sin plantilla activa no se improvisa un PDF, y no se duplica si el
+   * documento ya existe.
+   */
+  const handleGenerarPagareFase = useCallback(async () => {
+    const rdP: any = productoSeleccionado?.rawData;
+    const plantillas =
+      (Array.isArray((productoSeleccionado as any)?.plantillas) && (productoSeleccionado as any).plantillas.length > 0
+        ? (productoSeleccionado as any).plantillas
+        : null) ?? (Array.isArray(rdP?.plantillas) ? rdP.plantillas : []);
+
+    // `requisitosProducto` es local de otras funciones; aqui se deriva igual
+    // que alla, con el mismo helper, en vez de asumir que existe en este ambito.
+    const reqsProd: any[] = getRequisitosFromRawData(rdP) || [];
+    const reqPagare = reqsProd.find((r: any) =>
+      /pagar[ée]/i.test(String(r?.tipoDocumento || r?.tipo_documento || r?.tipo || '')),
+    );
+
+    const res = await generarPagareDesdePlantilla({
+      storageId,
+      datos: {
+        noSol: formData.noSol || '',
+        cliente: [formData.nombrePersona, formData.apellidoPaternoPersona, formData.apellidoMaternoPersona].filter(Boolean).join(' ') || 'Cliente',
+        lineaProducto: formData.lineaProducto || '',
+        tipoProducto: formData.tipoProducto || '',
+        productoNombre: productoSeleccionado?.nombreProducto || formData.nombreProducto || '',
+        terminos: loadFromSession<any>(storageId, 'terminos') || loadFromSavedStore<any>(storageId, 'terminos') || {},
+        rfc: (formData as any)._rfc || '',
+        curp: (formData as any)._curp || '',
+        sucursal: formData.sucursal || '',
+      },
+      plantillas,
+      supabase,
+      projectId,
+      tipoDocumento: reqPagare?.tipoDocumento,
+      fase: formData.descripcionFase,
+      faseId: parseInt(String(formData.faseId || '1'), 10) || 1,
+    });
+
+    if (!res.exito) {
+      toast.error('No se pudo generar el Pagaré', { description: res.error, duration: 10000 });
+      return;
+    }
+    if (res.documentosCreados.length === 0) {
+      toast.info('El Pagaré ya existía en el Expediente.');
+      return;
+    }
+    setExpedienteKey(k => k + 1);   // el subtab relee sus documentos
+    toast.success('Pagaré generado', {
+      description: `${res.documentosCreados[0]} — pendiente de firma y validación IA.`,
+      duration: 7000,
+    });
+  }, [productoSeleccionado, storageId, formData]);
+
+  const plantillasDelProducto = useMemo(() => {
+    const rd: any = productoSeleccionado?.rawData;
+    const desdeProd = (productoSeleccionado as any)?.plantillas;
+    if (Array.isArray(desdeProd) && desdeProd.length > 0) return desdeProd;
+    return Array.isArray(rd?.plantillas) ? rd.plantillas : [];
+  }, [productoSeleccionado]);
 
   // ── Fases del producto seleccionado — fuente de verdad ──
   const fasesDelProducto = useMemo(() => {
@@ -1160,11 +1347,34 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
           // No bloquea el avance de fase: si falta configuración, se avisa.
           try {
             const rawProd4 = productoSeleccionado?.rawData as Record<string, any> | undefined;
-            const cargosProducto: any[] =
+            const cargosCatalogo: any[] =
               (Array.isArray((productoSeleccionado as any)?.cargos)
                 ? (productoSeleccionado as any).cargos
                 : null) ??
               (Array.isArray(rawProd4?.cargo) ? rawProd4!.cargo : []);
+
+            // REQ-21 HU-21.2 — el catálogo de Cargos del producto sirve a varios
+            // momentos del ciclo. Aquí sólo corresponden los de Fase 4: copiarlos
+            // todos ponía la Comisión GPO y su IVA con el Monto Garantizado, que
+            // es ~400 veces la comisión real de un periodo (§Defecto activo).
+            const motorContable4: any[] =
+              (Array.isArray((productoSeleccionado as any)?.motorContable)
+                ? (productoSeleccionado as any).motorContable
+                : null) ??
+              (Array.isArray(rawProd4?.motorContable) ? rawProd4!.motorContable : []);
+            const seleccion4 = cargosDeFase4(cargosCatalogo, motorContable4);
+            const cargosProducto = seleccion4.cargos;
+
+            if (cargosCatalogo.length > 0 && seleccion4.criterio === 'sin-criterio' && cargosCatalogo.length > 1) {
+              // CA-13 — se copia todo (comportamiento histórico), pero se dice:
+              // callarlo es lo que dejó pasar el defecto la primera vez.
+              toast.warning('No se pudo distinguir qué cargos son de esta fase', {
+                description:
+                  'El producto no marca el momento de sus cargos ni tiene guía de formalización en el ' +
+                  'Motor Contable, así que se copiaron todos. Revise los montos antes de continuar.',
+                duration: 12000,
+              });
+            }
             const terminosGPO: any =
               loadFromSession<any>(storageId, 'terminos') ||
               loadFromSavedStore<any>(storageId, 'terminos') ||
@@ -1173,8 +1383,12 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
               parseFloat(parseCurrency(String(terminosGPO.montoGarantizadoGpo || '0'))) || 0;
 
             if (cargosProducto.length === 0) {
+              // CA-15 — se distingue "no hay catálogo" de "hay, pero ninguno es
+              // de esta fase": la acción del usuario es distinta en cada caso.
               toast.warning('No se generaron cargos', {
-                description: 'El producto no tiene cargos configurados en su subtab Cargos.',
+                description: cargosCatalogo.length === 0
+                  ? 'El producto no tiene cargos configurados en su subtab Cargos.'
+                  : 'Ninguno de los cargos del producto corresponde a la Fase 4 (Provisión de garantía).',
                 duration: 10000,
               });
             } else if (montoGarantizado <= 0) {
@@ -1385,12 +1599,70 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
             || loadFromSavedStore<any>(storageId, 'terminos')
             || {};
 
+          // -- Cuenta(s) Beneficiaria(s) para el PROMPT de la fase --------------
+          // NO se valida aqui a proposito: la validacion se define en el prompt
+          // de la fase que configura el producto, "siempre y cuando aplique".
+          // Una Linea de Credito no dispersa, asi que su prompt sencillamente no
+          // la pide y este bloque queda como dato informativo. Mismo principio
+          // que REQ-23 RN-01: manda lo que el producto declara, no el codigo.
+          const cuentasBenef: any[] =
+            loadFromSession<any[]>(storageId, 'cuentasBeneficiarias')
+            || loadFromSavedStore<any[]>(storageId, 'cuentasBeneficiarias')
+            || [];
+          const montoAutNum = parseFloat(
+            parseCurrency(String(formData.montoAutorizado || formData.montoSolicitado || '0')),
+          ) || 0;
+          const totalDispersionNum = cuentasBenef.reduce(
+            (acc: number, c: any) => acc + (Number(c?.montoDispersion) || 0), 0,
+          );
+          const resumenCuentasBenef = cuentasBenef.length === 0
+            ? 'Sin cuentas beneficiarias registradas.'
+            : cuentasBenef.map((c: any) =>
+                `  - ${c.beneficiario || '(sin beneficiario)'} | Banco: ${c.banco || 'N/D'}`
+                + ` | CLABE: ${c.cuentaClabe || 'N/D'} | Cuenta: ${c.numeroCuenta || 'N/D'}`
+                + ` | Monto Dispersion: ${c.montoDispersion ?? 0} ${c.moneda || 'MXN'}`
+              ).join('\n');
+
           // Construir prompt enriquecido con todos los datos embebidos directamente
           const reqResumen = requisitosDeEstaFase.length > 0
             ? requisitosDeEstaFase.map((r: any) =>
                 `  - ${r.tipoDocumento}${r.obligatorio ? ' (OBLIGATORIO)' : ' (opcional)'}${r.area ? ` [${r.area}]` : ''}`
               ).join('\n')
             : '  Sin requisitos configurados para esta fase.';
+
+          // Una tarjeta no dispersa: pedirle cuentas beneficiarias la reprueba siempre.
+          const esTDCFase = esTarjetaCredito(
+            formData.tipoProducto,
+            formData.nombreProducto,
+            productoSeleccionado?.nombreProducto,
+          );
+
+          // ── Criterios de validación ──────────────────────────────────────────
+          // Sin esto la IA rechaza por hechos que en México son normales: el
+          // comprobante de domicilio suele estar a nombre del titular del
+          // servicio (padre, arrendador, cónyuge) y el domicilio del INE es el
+          // que tenía al emitirse la credencial, no el actual.
+          const criteriosValidacion = [
+            '=== CRITERIOS DE VALIDACIÓN (obligatorios) ===',
+            '1. El Comprobante de Domicilio PUEDE estar a nombre de un TERCERO (titular del',
+            '   servicio: arrendador, familiar, cónyuge). Que el nombre no coincida con el INE',
+            '   NO es motivo de rechazo ni una discrepancia crítica.',
+            '2. El domicilio del INE PUEDE diferir del Comprobante de Domicilio: la credencial',
+            '   trae el domicilio vigente al momento de su emisión. NO es motivo de rechazo.',
+            '3. Sólo marca discrepancia crítica cuando el documento impida identificar al',
+            '   solicitante: ilegible, alterado, vencido, o que claramente no corresponde al',
+            '   tipo de documento requerido.',
+            '4. Valida PRESENCIA y LEGIBILIDAD de los documentos obligatorios de la fase. No',
+            '   inventes requisitos que no estén en la lista de documentos obligatorios ni',
+            '   exijas documentos generados que el expediente no declare como obligatorios.',
+            '5. El tipo de persona del expediente (Física/Moral) es un dato del sistema, no se',
+            '   deduce de los documentos: no lo reportes como inconsistencia.',
+            ...(esTDCFase ? [
+              '6. Este producto es una TARJETA DE CRÉDITO: no dispersa recursos, así que NO',
+              '   requiere cuentas beneficiarias ni monto a dispersar. No lo tomes como falta.',
+            ] : []),
+            '', '',
+          ].join('\n');
 
           // ── Payload e instrucción de respuesta según tipo de fase ────────────
           let promptConContexto: string;
@@ -1404,6 +1676,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
               'Debes hacer matching SEMÁNTICO: si el nombre del documento cargado corresponde al tipo requerido ' +
               '(aunque el texto sea diferente), considera que SÍ está cubierto. Documentos sin fase asignada ' +
               '(faseId=0 o vacío) también deben considerarse presentes para la validación.\n\n' +
+              criteriosValidacion +
               '=== DATOS DEL CLIENTE ===\n' +
               `Nombre: ${nombreCliente}\n` +
               `Tipo persona: ${formData.tipoPersona || 'No especificado'}\n` +
@@ -1416,6 +1689,12 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
               `Plazo: ${terminos.plazo || terminos.plazoMeses || 'No especificado'}\n` +
               `Moneda: ${terminos.moneda || 'MXN'}\n\n` +
               `=== FASE ACTUAL: ${faseNombre} (Fase ${seqActual}) ===\n\n` +
+              // En TDC se omite: mandarlo en 0 hacía que la IA lo reportara
+              // como "falta de cuenta beneficiaria" y reprobara la fase.
+              (esTDCFase ? '' :
+                '=== CUENTA(S) BENEFICIARIA(S) — DISPERSIÓN ===\n' +
+                resumenCuentasBenef + '\n' +
+                `Cuentas registradas: ${cuentasBenef.length} | Monto Autorizado: ${montoAutNum} | Total a dispersar: ${totalDispersionNum}\n\n`) +
               '=== DOCUMENTOS OBLIGATORIOS PARA ESTA FASE ===\n' +
               reqResumen + '\n\n' +
               '=== DOCUMENTOS CARGADOS EN EL EXPEDIENTE (incluyendo banca móvil) ===\n' +
@@ -1429,6 +1708,30 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
               faseNumero: seqActual,
               botonPresionado: 'enviarFase',
               promptIA: promptConContexto,
+              // BUG FIX: la edge function arma su `contextoFase` con
+              // `datosCliente` y `datosCredito`, pero aquí sólo se mandaban los
+              // campos sueltos (nombreSolicitante, monto, plazo…). El modelo
+              // recibía `datosCliente: {}` / `datosCredito: {}` y rechazaba la
+              // fase por "datos vacíos" aunque el prompt sí los traía en texto.
+              datosCliente: {
+                nombre: nombreCliente,
+                tipoPersona: formData.tipoPersona || '',
+                noCliente: formData.noCliente || '',
+                curp: formData._curp || '',
+                rfc: formData._rfc || '',
+                noSolicitud: formData.noSol || '',
+              },
+              datosCredito: {
+                lineaProducto: formData.lineaProducto || '',
+                tipoProducto: formData.tipoProducto || '',
+                producto: productoSeleccionado?.nombreProducto || formData.tipoProducto || '',
+                montoSolicitado: terminos.montoSolicitado || terminos.monto || '',
+                montoAutorizado: formData.montoAutorizado || '',
+                plazo: terminos.plazo || terminos.plazoMeses || '',
+                tasa: terminos.tasa || '',
+                frecuencia: terminos.frecuencia || '',
+                moneda: terminos.moneda || 'MXN',
+              },
               nombreSolicitante: nombreCliente,
               tipoPersona: formData.tipoPersona,
               noSol: formData.noSol || '',
@@ -1440,6 +1743,9 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
               moneda: terminos.moneda || 'MXN',
               documentos: contextoDocs,
               resumenDocumentos: resumenDocs || 'Sin documentos registrados.',
+              cuentasBeneficiarias: cuentasBenef,
+              montoAutorizado: montoAutNum,
+              totalDispersion: totalDispersionNum,
               requisitosObligatorios: requisitosDeEstaFase,
               totalDocumentosCargados: docsCargados,
               documentosValidadosIA: docsValidados,
@@ -1529,6 +1835,17 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
       }
 
       // ── 3b. Fase 4: validar Términos, Garantías, Comités y contratos/pagarés formalizados ──
+      // REQ-23 HU-23.3 — lo exigible en una fase es lo que ESTE producto declara
+      // en ella. Antes las validaciones se ataban al número de fase, así que un
+      // producto sin contrato (Crédito Simple 2º Piso) recibía exigencias del
+      // flujo de arrendamiento/crédito tradicional.
+      const requisitosDeclaradosFase = (requisitosProducto || [])
+        .filter((r: any) => Number(r.faseId ?? r.fase_id ?? 0) === seqActual)
+        .map((r: any) => ({
+          tipoDocumento: r.tipoDocumento || r.tipo_documento || '',
+          obligatorio: r.obligatorio !== false,
+        }));
+
       if (seqActual === 4) {
         const terminos4: any = loadFromSession<any>(storageId, 'terminos') || loadFromSavedStore<any>(storageId, 'terminos') || {};
         const garantias4: any[] = loadFromSession<any[]>(storageId, 'garantias') || loadFromSavedStore<any[]>(storageId, 'garantias') || [];
@@ -1553,7 +1870,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
         // en número de fase con el flujo de Crédito. Su equivalente real para GPO es
         // faltantesValidacionClausulas (contrato GPO firmado + cláusulas blindadas).
         if (!esGPOForm) {
-          const resultContratos4 = validarContratosYPagares(documentos);
+          const resultContratos4 = validarContratosYPagares(documentos, requisitosDeclaradosFase);
           if (!resultContratos4.valid) {
             toast.error('Formaliza el contrato antes de avanzar', {
               description: resultContratos4.errors.join(' · '),
@@ -1616,7 +1933,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
       // CFDI del proveedor y no exige pagarés; en GPO la fase 5 es "Activación
       // de Línea 2o Piso" (detonación contable), que tampoco los maneja.
       if (seqActual === 5 && !esArrPuro && !esGPOForm) {
-        const resultContratos = validarContratosYPagares(documentos);
+        const resultContratos = validarContratosYPagares(documentos, requisitosDeclaradosFase);
         if (!resultContratos.valid) {
           toast.error('Contratos y pagarés pendientes', {
             description: resultContratos.errors.join(' · '),
@@ -1647,6 +1964,289 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
         if (!dbIdCierre) {
           toast.error('No se puede cerrar el proceso', {
             description: 'La solicitud aún no está guardada en base de datos.',
+          });
+          return;
+        }
+
+        // ── REQ-23 RN-01 — este cierre es el del ARRENDAMIENTO ──────────────
+        // Exige la factura del proveedor (compra del bien), verifica que esté
+        // pagada, dispersa y pasa el contrato a Cartera de Arrendamiento. Nada
+        // de eso existe en un producto sin bien ni proveedor: Crédito Simple 2º
+        // Piso quedaba atrapado en la última fase pidiéndole una factura de una
+        // fase ("Recepción del Activo y Cierre") que su flujo ni siquiera tiene.
+        //
+        // Se decide por lo que el producto DECLARA, no por el número de fase.
+        const normFase = (v: unknown) =>
+          String(v ?? '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+        const declaraRecepcionActivo = fasesDelProducto.some(f => {
+          const n = normFase(f.fase);
+          return n.includes('recepcion') && n.includes('activo');
+        });
+        const cierreDeArrendamiento = esArrPuro || declaraRecepcionActivo;
+
+        // REQ-24 — una disposicion es una Solicitud colgada de una linea (REQ-20
+        // §Decision 2a). Es lo que la distingue de una solicitud suelta y lo que
+        // determina que su liberacion deba generar la dispersion.
+        //
+        // Se consulta a la BD: el vinculo se sella con un PUT directo que no pasa
+        // por `formToDBPayload`, asi que puede no estar en la copia local que
+        // tiene abierta esta pantalla. Antes se leia solo de sesion y por eso la
+        // liberacion no generaba nada, en silencio.
+        const _dataCierre: any =
+          loadFromSession<any>(storageId, '_originalData')
+          || loadFromSavedStore<any>(storageId, '_originalData')
+          || {};
+        const lineaPadreCierre =
+          String(_dataCierre?.solicitud?.disposicionDe || '')
+          || await fetchLineaPadre(dbIdCierre);
+        const esDisposicionCreditoSimple = Boolean(lineaPadreCierre);
+
+        if (!cierreDeArrendamiento) {
+          // ── REQ-24 HU-24.1 — al liberar, se genera la Solicitud de Activación
+          // con los datos de Cuenta(s) Beneficiaria(s). Corre ANTES de marcar
+          // Autorizada: si no hay a dónde dispersar, no se libera (CA-07).
+          // De sesion primero; si no hay, de BD (pudo capturarse en otra sesion).
+          let cuentasBenefCierre: any[] =
+            loadFromSession<any[]>(storageId, 'cuentasBeneficiarias')
+            || loadFromSavedStore<any[]>(storageId, 'cuentasBeneficiarias')
+            || [];
+          if (cuentasBenefCierre.length === 0) {
+            cuentasBenefCierre = await fetchCuentasBeneficiarias(dbIdCierre);
+          }
+
+          if (esDisposicionCreditoSimple) {
+            if (cuentasBenefCierre.length === 0) {
+              toast.error('No se puede liberar: falta la cuenta beneficiaria', {
+                description: 'Capture al menos una en la subpestaña Cuenta(s) Beneficiaria(s) — es a donde se dispersa el dinero.',
+                duration: 12000,
+              });
+              return;
+            }
+
+            // CA-08 — idempotente: si ya se generaron, no se duplican.
+            const yaGeneradas: string[] =
+              loadFromSession<string[]>(storageId, 'activacionesDispersion')
+              || loadFromSavedStore<string[]>(storageId, 'activacionesDispersion')
+              || [];
+
+            const creadas: string[] = [...yaGeneradas];
+            const fallidas: string[] = [];
+            for (const cb of cuentasBenefCierre) {
+              const clave = String(cb?.cuentaBancariaId || cb?.id || '');
+              if (yaGeneradas.includes(clave)) continue;
+              const alta = await crearActivacionDispersion({
+                solicitudId: dbIdCierre,
+                clienteId: String(cb?.clienteId || formData._clienteId || ''),
+                beneficiario: String(cb?.beneficiario || ''),
+                banco: cb?.banco,
+                cuentaClabe: cb?.cuentaClabe,
+                numeroCuenta: cb?.numeroCuenta,
+                monto: Number(cb?.montoDispersion) || 0,
+                moneda: cb?.moneda || 'MXN',
+                noSol: formData.noSol || '',
+              });
+              if (alta.ok) creadas.push(clave);
+              else fallidas.push(`${cb?.banco || 'cuenta'}: ${alta.error}`);
+            }
+
+            saveToSession(storageId, 'activacionesDispersion', creadas);
+            saveToSavedStore(storageId, 'activacionesDispersion', creadas);
+
+            // CA-10 — un fallo aquí NO se reporta como liberación exitosa.
+            if (fallidas.length > 0) {
+              toast.error('No se generaron todas las Solicitudes de Activación', {
+                description: `${fallidas.join(' · ')}. La solicitud no se cerró; corrija y vuelva a intentar.`,
+                duration: 14000,
+              });
+              return;
+            }
+
+            const nuevas = creadas.length - yaGeneradas.length;
+            if (nuevas > 0) {
+              toast.success(`${nuevas} Solicitud(es) de Activación generada(s)`, {
+                description: 'Continúe la dispersión en el módulo Sol. Activación.',
+                duration: 8000,
+              });
+            }
+          }
+
+          // Cierre simple: se marca Autorizada y se termina el proceso.
+          const cierreSimple = await actualizarEstatusSolicitudDB(dbIdCierre, 'Autorizada');
+          if (!cierreSimple.ok) {
+            toast.error('No se pudo cerrar la solicitud', {
+              description: cierreSimple.error || 'El estatus no se actualizó en base de datos.',
+              duration: 9000,
+            });
+            return;
+          }
+          setFormData(prev => ({ ...prev, estatusSolicitud: 'Autorizada' }));
+
+          // ── ESPEC 5.1 — ACTIVACION_LINEA ──
+          // El disparador NO se asume: es este punto exacto, cuando
+          // `actualizarEstatusSolicitudDB(..., 'Autorizada')` ya confirmó en BD.
+          // 'Autorizada' es el estatus real con el que CACAO Banking libera una
+          // Solicitud y la pasa a cartera; para TDC no hay dispersión de por
+          // medio, así que liberar y activar son el mismo instante.
+          //
+          // Sólo Tarjeta de Crédito: las demás líneas siguen su propio flujo y
+          // esta especificación no las alcanza.
+          if (esTarjetaCredito(
+                formData.tipoProducto,
+                formData.nombreProducto,
+                productoSeleccionado?.nombreProducto,
+                (productoSeleccionado as any)?.sublineaProducto,
+              )) {
+            const fechaActivacion = new Date().toISOString().slice(0, 10);
+
+            // ── Cargo automático "023 — Saldo Anterior" ──
+            // Nace con toda línea TDC al activarse, en cero. Es el renglón que
+            // el primer Cierre de Corte usará para arrastrar lo no pagado del
+            // periodo anterior; sin él habría que crearlo a mano justo cuando
+            // más prisa hay.
+            //
+            // Va aquí, no en un efecto ni en el guardado, porque el disparador
+            // es la transición confirmada en BD: si el UPDATE de arriba hubiera
+            // fallado, este bloque nunca se alcanza.
+            try {
+              const cargosPrevios: any[] =
+                loadFromSession<any[]>(storageId, 'cargos') ||
+                loadFromSavedStore<any[]>(storageId, 'cargos') ||
+                [];
+
+              // Idempotencia por CLAVE, no por nombre: el nombre lo pone el
+              // catálogo y puede cambiar; la clave es el contrato.
+              const yaExiste = cargosPrevios.some(
+                (c: any) =>
+                  String(c?.clave ?? '').trim() === CLAVE_SALDO_ANTERIOR ||
+                  String(c?.tipoCargo ?? '').trim().startsWith(`${CLAVE_SALDO_ANTERIOR} `),
+              );
+
+              if (!yaExiste) {
+                // El nombre sale del Catálogo de Componentes; la constante sólo
+                // entra si el catálogo no respondió.
+                const delCatalogo = (componentesCatalogo || []).find(
+                  (x: any) => String(x?.codigo ?? '').trim() === CLAVE_SALDO_ANTERIOR,
+                );
+                const nombreConcepto =
+                  String(delCatalogo?.nombre ?? '').trim() || NOMBRE_SALDO_ANTERIOR_RESPALDO;
+
+                // ── Las banderas salen de Afectación de la Línea del producto ──
+                // No se escriben aquí: son configuración, y el mismo criterio
+                // que ya usa el motor de movimientos para cualquier concepto.
+                // Para 023 el producto declara bFactura = S, así que fijarlas
+                // en código habría creado el cargo con el valor equivocado y el
+                // Cierre de Corte no lo habría facturado.
+                const afectacion: any[] = Array.isArray(
+                  (productoSeleccionado as any)?.rawData?.afectacionLinea,
+                ) ? (productoSeleccionado as any).rawData.afectacionLinea : [];
+
+                const filaAfectacion = afectacion.find(
+                  (a: any) => String(a?.clave ?? '').trim() === CLAVE_SALDO_ANTERIOR,
+                );
+
+                if (!filaAfectacion) {
+                  // Sin configuración no se inventan las banderas: se avisa y se
+                  // usa lo mínimo seguro (Cargo, genera cargo, no factura).
+                  console.warn(
+                    `[SolicitudCreditoForm] El concepto ${CLAVE_SALDO_ANTERIOR} no está en ` +
+                    '"Afectación de la Línea" del producto; el cargo se crea con valores por omisión.',
+                  );
+                }
+
+                // `indicador` normaliza S/s/" S "/Y/y — el mismo criterio del
+                // motor, para que "Sí" capturado de cualquier forma valga igual.
+                const naturaleza =
+                  String(filaAfectacion?.naturaleza ?? '').trim().toLowerCase() === 'abono'
+                    ? 'Abono' : 'Cargo';
+
+                const cargoSaldoAnterior = {
+                  id: generateId(),
+                  clave: CLAVE_SALDO_ANTERIOR,
+                  // El subtab muestra "clave — nombre", igual que los cargos
+                  // que vienen de Movimientos de la Línea.
+                  tipoCargo: `${CLAVE_SALDO_ANTERIOR} — ${nombreConcepto}`,
+                  descripcion: nombreConcepto,
+                  monto: 0,
+                  fechaCargo: fechaActivacion,
+                  estatus: 'Pendiente',
+                  naturaleza,
+                  bCargo: filaAfectacion ? indicador(filaAfectacion.bCargo) : 'S',
+                  bFactura: filaAfectacion ? indicador(filaAfectacion.bFactura) : 'N',
+                  notas: filaAfectacion
+                    ? 'Generado automáticamente al activar la Línea de Crédito. ' +
+                      'Banderas tomadas de Afectación de la Línea del producto.'
+                    : 'Generado automáticamente al activar la Línea de Crédito. ' +
+                      `El concepto ${CLAVE_SALDO_ANTERIOR} no está en Afectación de la Línea del producto.`,
+                };
+
+                const todosLosCargos = [...cargosPrevios, cargoSaldoAnterior];
+                saveToSession(storageId, 'cargos', todosLosCargos);
+                saveToSavedStore(storageId, 'cargos', todosLosCargos);
+                // `cargos` sólo viaja a BD cuando se incluye explícitamente en
+                // _allSubtabs — mismo camino que el cargo automático de la
+                // Formalización GPO.
+                await onSave?.({ ...formData, _allSubtabs: { cargos: todosLosCargos } });
+              }
+            } catch (errCargo) {
+              // No se aborta la liberación: la línea ya quedó Autorizada y ése
+              // es el efecto principal. Pero se dice, no se traga.
+              console.error('[SolicitudCreditoForm] No se generó el cargo 023:', errCargo);
+              toast.warning('La línea se activó, pero no se generó el cargo "Saldo Anterior"', {
+                description: 'Agréguelo manualmente en el subtab Cargos antes del primer corte.',
+                duration: 12000,
+              });
+            }
+
+            // §12 — el monto es el APROBADO, no el dispuesto ni el disponible.
+            const montoAprobado = parseFloat(
+              String(formData.montoAutorizado || '0').replace(/[^0-9.-]/g, ''),
+            ) || 0;
+
+            const contab = await contabilizarActivacion({
+              ctx: {
+                // §2 — la Guía Contabilizadora del producto. Sin cuentas en código.
+                guia: (productoSeleccionado as any)?.rawData?.motorContable,
+                productoId: String(formData.productoId || ''),
+                claveProducto: (productoSeleccionado as any)?.claveProducto,
+                nombreProducto: productoSeleccionado?.nombreProducto,
+                clienteId: String(formData._clienteId || ''),
+                lineaId: String(dbIdCierre),
+                cuentaId: String(dbIdCierre),
+                // Este formulario no tiene contexto de usuario; el RPC usa
+                // 'Sistema' por omisión.
+                usuario: undefined,
+                // §16 — la clave lógica de idempotencia sale de la línea, no de
+                // la hora: reintentar la liberación no genera una segunda póliza.
+                correlationId: `activacion|${dbIdCierre}`,
+              },
+              idLineaCredito: String(dbIdCierre),
+              montoAprobado,
+              fechaActivacion,
+            });
+
+            if (!contab.ok) {
+              // §81 — no se reporta como contabilizado lo que no lo está.
+              // La línea ya quedó Autorizada (el efecto de negocio principal);
+              // se dice con claridad y, como la contabilización es idempotente,
+              // se puede reintentar desde Cartera TDC.
+              toast.error('La línea se liberó pero NO quedó contabilizada', {
+                description: contab.error,
+                duration: 15000,
+              });
+            } else if (contab.persistido && !contab.yaEstaba) {
+              toast.success(`Póliza contable ${contab.numeroPoliza} generada`, {
+                description:
+                  `ACTIVACION_LINEA · Debe ${contab.poliza.totalDebe.toFixed(2)} = ` +
+                  `Haber ${contab.poliza.totalHaber.toFixed(2)} · ` +
+                  `${contab.poliza.partidas.length} partidas. Consulte Pólizas Contables.`,
+                duration: 10000,
+              });
+            }
+          }
+
+          toast.success('Proceso completado', {
+            description: `${formData.noSol}: última fase (${faseNombre}) concluida.`,
+            duration: 8000,
           });
           return;
         }
@@ -1735,7 +2335,15 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
       // Fase 2 (Análisis y Dictaminación): Reporte de Buró simulado, adjuntado
       // automáticamente al Expediente Electrónico. No bloquea el avance de fase
       // si falla — solo se registra el error en consola.
-      if (String(sigFase.faseId) === '2') {
+      // REQ-23 CA-20 / RN-01 — el Buro se generaba por "ser la fase 2", sin
+      // mirar el producto. Garantia Financiera 2o Piso no declara ese documento
+      // entre sus requisitos (ni lo necesita: el acreditado es un fideicomiso
+      // emisor, no una persona con historial crediticio), y aun asi le aparecia
+      // en el expediente. Ahora se genera solo si el producto lo declara.
+      const declaraBuro = (requisitosProducto || []).some((r: any) =>
+        /bur[oó]/i.test(String(r?.tipoDocumento || r?.tipo_documento || r?.claveDocumento || '')),
+      );
+      if (String(sigFase.faseId) === '2' && declaraBuro) {
         try {
           const terminosBuro: any = loadFromSession<any>(storageId, 'terminos') || loadFromSavedStore<any>(storageId, 'terminos') || {};
           const clienteBuro = [formData.nombrePersona, formData.apellidoPaternoPersona, formData.apellidoMaternoPersona]
@@ -1868,7 +2476,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
         // Guardar el estado completo de la solicitud para no perder datos al cambiar de fase
         try {
           const subtabsAutoSave: Record<string, any> = {};
-          const subtabKeys = ['terminos', 'simulacion', 'simulacion_cal', 'simulacion_inv', 'simulacion_arrendamiento', 'documentos', 'garantias', 'comisiones', 'autorizaciones', 'notas', 'partesRelacionadas', 'facturas', 'estructura2oPiso', 'modeloViabilidad', 'votacionCPC', 'resolucionCIC', 'validacionClausulas', '_originalData'];
+          const subtabKeys = ['terminos', 'simulacion', 'simulacion_cal', 'simulacion_inv', 'simulacion_arrendamiento', 'documentos', 'garantias', 'comisiones', 'autorizaciones', 'notas', 'partesRelacionadas', 'facturas', 'cargos', 'datosFinancieros', 'condicionesTarjeta', 'estructura2oPiso', 'modeloViabilidad', 'votacionCPC', 'resolucionCIC', 'validacionClausulas', '_originalData'];
           for (const key of subtabKeys) {
             const data = loadFromSession(storageId, key) ?? loadFromSavedStore(storageId, key);
             if (data) subtabsAutoSave[key] = data;
@@ -2761,8 +3369,10 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
     if (formData.idGarantiaCartera) return;
     const terminosGPO: any = loadFromSession<any>(storageId, 'terminos') || loadFromSavedStore<any>(storageId, 'terminos') || {};
     const monto = parseFloat(parseCurrency(String(terminosGPO.montoGarantizadoGpo || '0'))) || 0;
-    // REQ-16 — la guía contabilizadora APERTURA_LINEA vive en el Motor Contable del
-    // producto, y los importes de cada partida en los Cargos de la Solicitud (REQ-15).
+
+    // REQ-19 — la guía contabilizadora GPO-FORMAL-001 ("Formalización / Alta de
+    // Garantía de Pago Oportuno") vive en el Motor Contable del producto, y los
+    // importes de cada partida en los Cargos de la Solicitud (REQ-15).
     const rawProdGPO = productoSeleccionado?.rawData as Record<string, any> | undefined;
     const motorContableProducto: any[] =
       (Array.isArray((productoSeleccionado as any)?.motorContable)
@@ -2784,6 +3394,24 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
       })),
     });
     if (resultado.ok && resultado.idGarantiaCartera && resultado.polizaContableApertura) {
+      // REQ-20 CA-20…CA-26 — con la poliza ya generada, se registra el Monto
+      // Garantizado en `saldo_actual`. Va DESPUES de la poliza a proposito: si
+      // el asiento no cuadra, `formalizarGarantiaGPO` aborta y la linea no debe
+      // quedar con saldo sembrado sin su contabilidad.
+      const siembra = await sembrarSaldoGarantia(dbId, monto);
+      if (!siembra.ok) {
+        toast.warning('No se pudo registrar el Saldo Monto Garantía', {
+          description: siembra.error, duration: 9000,
+        });
+      } else if (!siembra.escrito) {
+        // CA-26 — con monto ausente NO se escribe cero: una garantia sin
+        // capturar quedaria indistinguible de una agotada.
+        toast.warning('La línea quedó sin Saldo Monto Garantía', {
+          description: 'La Solicitud no tiene Monto Garantizado GPO en Términos y Condiciones.',
+          duration: 9000,
+        });
+      }
+
       const idGarantiaCartera = resultado.idGarantiaCartera;
       const polizaContableApertura = resultado.polizaContableApertura;
       setFormData(prev => ({ ...prev, idGarantiaCartera, polizaContableApertura, estatusSolicitud: 'En Administración' }));
@@ -2792,6 +3420,18 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
       } catch (err: any) {
         toast.warning('Garantía formalizada, pero no se pudo guardar de inmediato', { description: err?.message || String(err) });
       }
+      // Los Cargos que entraron al asiento ya están contabilizados: pasan a
+      // "Aplicado". Antes había que cambiarlos a mano y un cargo ya
+      // contabilizado seguía apareciendo como Pendiente.
+      const aplicados = marcarCargosAplicados(storageId, resultado.cargosAplicados || []);
+      if (aplicados.actualizados > 0) {
+        setCargosKey(k => k + 1); // el subtab relee su sesión
+        toast.success(`${aplicados.actualizados} cargo(s) marcados como Aplicado`, {
+          description: 'Se incorporaron a la póliza contable de apertura.',
+          duration: 6000,
+        });
+      }
+
       // REQ-16 — decir con qué quedó la póliza: con desglose de la guía, o sin él y por qué.
       if ((resultado.partidas ?? 0) > 0) {
         toast.success(`Póliza generada desde la guía ${resultado.eventCode}`, {
@@ -3231,7 +3871,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
 
     // ── Recopilar datos de TODAS las subtabs ANTES de commitAndClearSession ──
     const allSubtabs: Record<string, any> = {};
-    const subtabKeys = ['terminos', 'simulacion', 'simulacion_cal', 'simulacion_inv', 'simulacion_arrendamiento', 'documentos', 'garantias', 'comisiones', 'autorizaciones', 'notas', 'partesRelacionadas', 'facturas', 'estructura2oPiso', 'modeloViabilidad', 'votacionCPC', 'resolucionCIC', 'validacionClausulas', '_originalData'];
+    const subtabKeys = ['terminos', 'simulacion', 'simulacion_cal', 'simulacion_inv', 'simulacion_arrendamiento', 'documentos', 'garantias', 'comisiones', 'autorizaciones', 'notas', 'partesRelacionadas', 'facturas', 'cargos', 'datosFinancieros', 'condicionesTarjeta', 'estructura2oPiso', 'modeloViabilidad', 'votacionCPC', 'resolucionCIC', 'validacionClausulas', '_originalData'];
     for (const key of subtabKeys) {
       // _originalData puede haber sido limpiado de session por commitAndClearSession en el save anterior;
       // usar savedStore como fallback para no perder los datos de banca móvil al hacer deep merge
@@ -3286,6 +3926,19 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
     </label>
   );
 
+  /**
+   * Encabezado de grupo dentro de la rejilla del formulario general. Ocupa el
+   * ancho completo (col-span-3) para que los campos que siguen arranquen en
+   * una fila limpia; asi los grupos se leen como bloques sin romper la
+   * alineacion de las tres columnas.
+   */
+  const GrupoHdr = ({ children }: { children: string }) => (
+    <div className="col-span-3 flex items-center gap-2 pt-2 first:pt-0">
+      <span className="text-[10px] font-semibold tracking-wider text-[#4A6FA5] uppercase whitespace-nowrap">{children}</span>
+      <span className="flex-1 h-px bg-gray-200" />
+    </div>
+  );
+
   // ── Detección de tipo de producto ──────────────────────────────────────────
   const _linea = (formData.lineaProducto || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   const isCaptacionForm    = _linea.includes('captac') || _linea.includes('ahorro') || _linea.includes('invers');
@@ -3296,7 +3949,23 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
    * tipo_producto = "Simple" y linea_producto = "Línea de Crédito" — ninguno
    * contiene "garantía", así que el nombre por sí solo no basta.
    */
+  /**
+   * Concepto del cargo que nace con toda línea TDC al activarse.
+   * La clave es el contrato con el Catálogo de Componentes Contables; el
+   * nombre es sólo respaldo por si el catálogo no responde.
+   */
+  const CLAVE_SALDO_ANTERIOR = '023';
+  const NOMBRE_SALDO_ANTERIOR_RESPALDO = 'Saldo Anterior';
+
   const esGPOForm = useMemo(() => {
+    // Una TDC comparte línea con la GPO pero no es GPO: sin este corte
+    // aparecían sus 5 subtabs de 2o Piso y sus validaciones de fase.
+    if (esTarjetaCredito(
+      formData.tipoProducto,
+      formData.nombreProducto,
+      productoSeleccionado?.nombreProducto,
+      (productoSeleccionado as any)?.sublineaProducto,
+    )) return false;
     const nombre = `${productoSeleccionado?.nombreProducto || ''} ${formData.nombreProducto || ''} ${formData.tipoProducto || ''}`
       .toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
     if (nombre.includes('garant')) return true;
@@ -3324,6 +3993,8 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
   const sections = [
     { id: 'default',           label: 'Default' },
     { id: 'terminos',          label: 'Términos y Condiciones' },
+    { id: 'datosFinancieros',  label: 'Datos Financieros' },
+    { id: 'condicionesTarjeta',label: 'Condiciones de la Tarjeta' },
     // REQ-9 — solo en Garantía Financiera 2o Piso; va antes de cotizar porque el
     // analista "viste" el ecosistema al admitir la solicitud.
     ...(esGPOForm ? [{ id: 'estructura2oPiso', label: 'Estructura Operativa de 2o Piso' }] : []),
@@ -3348,6 +4019,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
     { id: 'comites',           label: 'Comités' },
     { id: 'autorizaciones',    label: 'Autorizaciones' },
     { id: 'fases',             label: 'Fases' },
+    { id: 'cuentasBeneficiarias', label: 'Cuenta(s) Beneficiaria(s)' },
     { id: 'cargos',            label: 'Cargos' },
     { id: 'comisiones',        label: 'Comisiones' },
     { id: 'notas',             label: 'Notas' },
@@ -3369,14 +4041,28 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
                 : mode === 'editar' ? `Edición Solicitud — ${formData.noSol}`
                 : `Detalle Solicitud — ${formData.noSol}`}
             </span>
-            {/* Badge tipo de producto */}
+            {/* Badge tipo de producto. Los emojis se ven distinto en cada
+                sistema operativo y desentonan con el resto de la interfaz, que
+                usa SVG de trazo; se sustituyen por iconos del mismo lenguaje. */}
             {formData.lineaProducto && (
-              <span className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium border ${
+              <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-medium border ${
                 isCaptacionForm    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                : isLineaCreditoForm ? 'bg-purple-50 text-purple-700 border-purple-200'
+                : isLineaCreditoForm ? 'bg-violet-50 text-violet-700 border-violet-200'
                 :                     'bg-blue-50 text-blue-700 border-blue-200'
               }`}>
-                {isCaptacionForm ? '💼 Captación' : isLineaCreditoForm ? '🔄 Línea de Crédito' : '📄 Crédito'}
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  {isCaptacionForm ? (
+                    /* Captacion: alcancia / deposito */
+                    <><rect x="2" y="7" width="20" height="14" rx="2" /><path d="M16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2" /></>
+                  ) : isLineaCreditoForm ? (
+                    /* Linea de Credito: revolvente */
+                    <><path d="M21 12a9 9 0 01-9 9 9 9 0 01-8-4.9" /><path d="M3 12a9 9 0 019-9 9 9 0 018 4.9" /><path d="M3 21v-5h5M21 3v5h-5" /></>
+                  ) : (
+                    /* Credito: documento */
+                    <><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" /><path d="M14 2v6h6" /></>
+                  )}
+                </svg>
+                {isCaptacionForm ? 'Captación' : isLineaCreditoForm ? 'Línea de Crédito' : 'Crédito'}
               </span>
             )}
           </div>
@@ -3434,10 +4120,12 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
           onRegresarFase={handleRegresarFase}
           onGenerarSolicitud={handleGenerarSolicitud}
           onFormalizarContrato={handleFormalizarContrato}
+          onGenerarPagare={handleGenerarPagareFase}
           onSolicitudActivacion={handleSolicitudActivacion}
           onActivarCuenta={handleActivarCuenta}
           canActivarCuenta={canActivarCuenta}
           enviandoFase={enviandoFase}
+          plantillasProducto={plantillasDelProducto}
           existingActivacion={activacionForThisSol}
         />
       </div>
@@ -3667,286 +4355,271 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
       )}
 
       <div className="px-6 py-6">
-        {/* ═══ DIAGNÓSTICO TEMPORAL — eliminar después de verificar ═══ */}
-        <details className="mb-4 border border-orange-300 rounded bg-orange-50 text-xs">
-          <summary className="px-3 py-1.5 cursor-pointer text-orange-800 font-medium">
-            🔍 Debug formData  {Object.values(formData).filter(v => v && v !== '' && v !== '0.00').length}/{Object.keys(formData).length} campos con datos | storageId={String(storageId)} | mode={mode}
-          </summary>
-          <div className="px-3 py-2 space-y-1 text-[10px] font-mono text-gray-700 max-h-48 overflow-auto">
-            {Object.entries(formData).map(([k, v]) => (
-              <div key={k} className={`flex gap-2 ${!v || v === '' || v === '0.00' ? 'text-red-500' : 'text-green-700'}`}>
-                <span className="w-44 shrink-0 font-semibold">{k}:</span>
-                <span className="truncate">{String(v) || '(vacío)'}</span>
-              </div>
-            ))}
-          </div>
-        </details>
 
         {/* ═══════════════════════════════════════════════════════════════
             HEADER — Siempre visible (Spec §3)
             ══════════════════════════════════════════════════════════════ */}
 
-        {/* Banner origen cotización — spec §4 */}
+        {/* Origen cotización — spec §4.
+            Antes ocupaba una franja completa repitiendo, en cada apertura, algo
+            que sólo interesa la primera vez: de dónde salió la solicitud. Ahora
+            es una marca discreta que revela el detalle al pulsarla. */}
         {formData.cotizacionId && (
-          <div className="bg-green-50 border border-green-200 rounded px-4 py-2.5 mb-4 flex items-center gap-3">
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#0E7B1F" strokeWidth="1.5">
-              <path d="M14 2H6a2 2 0 00-2 2v8a2 2 0 002 2h8a2 2 0 002-2V4a2 2 0 00-2-2z" />
-              <path d="M4 6H2a2 2 0 00-2 2v4a2 2 0 002 2h2" /><path d="M8 7l2 2 3-3" />
-            </svg>
-            <span className="text-xs text-green-800">
-              <strong>Solicitud generada desde Cotización</strong> — N° {formData.cotizacionId}
-              {' '}| Los datos del header y términos fueron pre-llenados automáticamente.
-            </span>
-          </div>
+          <details className="mb-4 group">
+            <summary className="inline-flex items-center gap-1.5 px-2 py-1 rounded text-[11px] text-green-800 bg-green-50 border border-green-200 cursor-pointer hover:bg-green-100 list-none w-fit [&::-webkit-details-marker]:hidden">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M20 6L9 17l-5-5" />
+              </svg>
+              Generada desde Cotización
+              <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"
+                   className="transition-transform group-open:rotate-180">
+                <path d="M6 9l6 6 6-6" />
+              </svg>
+            </summary>
+            <div className="mt-1.5 px-3 py-2 rounded bg-green-50/60 border border-green-200 text-[11px] text-green-900 space-y-0.5">
+              <div>
+                Cotización <span className="font-mono text-green-800">{formData.cotizacionId}</span>
+              </div>
+              <div className="text-green-700">
+                Los datos del encabezado y de Términos y Condiciones se pre-llenaron
+                automáticamente desde esa cotización.
+              </div>
+            </div>
+          </details>
         )}
 
         <div className="bg-[#D9E2F3] border-l-4 border-[#4A6FA5] px-4 py-2 mb-5">
           <h3 className="text-sm text-gray-800 uppercase">Información de la Solicitud</h3>
         </div>
 
+        {/* Formulario general reorganizado por grupos.
+            Antes eran tres columnas fijas (space-y-3): los campos de producto
+            quedaban repartidos entre las tres y la tercera terminaba antes,
+            dejando un hueco abajo a la derecha. Ahora es UNA sola rejilla con
+            encabezados de grupo a lo ancho, asi los campos fluyen y las
+            columnas quedan siempre parejas. */}
         <div className="grid grid-cols-3 gap-x-6 gap-y-3 mb-8">
-          {/* ── Col 1 ── */}
-          <div className="space-y-3">
-            <div>
-              <Lbl>ID</Lbl>
-              <input type="text" value={formData.id || 'Automático'} disabled className={ic(false, true)} />
-            </div>
-            <div>
-              <Lbl>N° Solicitud</Lbl>
-              <input type="text" value={formData.noSol || 'Automático'} disabled className={ic(false, true)} />
-            </div>
-            <div>
-              <Lbl>Cotización ID</Lbl>
-              <input type="text" value={formData.cotizacionId || '(creación directa)'} disabled className={ic(false, true)} />
-            </div>
-            <div>
-              <Lbl req error={errors.lineaProducto}>Línea de Producto</Lbl>
-              <select value={formData.lineaProducto} onChange={e => { set('lineaProducto', e.target.value); setActiveSection('fases'); }} disabled={isRO} className={sc(!!errors.lineaProducto)}>
-                {CAT_LINEA_PRODUCTO.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
-              </select>
-              {errors.lineaProducto && <span className="text-[10px] text-red-500 mt-0.5 block">{errors.lineaProducto}</span>}
-            </div>
-            <div>
-              <Lbl req error={errors.tipoProducto}>Tipo de Producto</Lbl>
-              <input
-                type="text"
-                value={formData.tipoProducto}
-                disabled
-                placeholder="(se llena al seleccionar producto)"
-                className={ic(!!errors.tipoProducto, true)}
-              />
-              {errors.tipoProducto && <span className="text-[10px] text-red-500 mt-0.5 block">{errors.tipoProducto}</span>}
-            </div>
-            <div>
-              <Lbl req error={errors.sucursal}>Sucursal</Lbl>
-              <select value={formData.sucursal} onChange={e => set('sucursal', e.target.value)} disabled={isRO} className={sc(!!errors.sucursal)}>
-                {CAT_SUCURSAL.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
-              </select>
-              {errors.sucursal && <span className="text-[10px] text-red-500 mt-0.5 block">{errors.sucursal}</span>}
-            </div>
+
+          <GrupoHdr>Identificación</GrupoHdr>
+
+          <div>
+            <Lbl>ID</Lbl>
+            <input type="text" value={formData.id || 'Automático'} disabled className={ic(false, true)} />
+          </div>
+          <div>
+            <Lbl>N° Solicitud</Lbl>
+            <input type="text" value={formData.noSol || 'Automático'} disabled className={ic(false, true)} />
+          </div>
+          <div>
+            <Lbl>Cotización ID</Lbl>
+            <input type="text" value={formData.cotizacionId || '(creación directa)'} disabled className={ic(false, true)} />
+          </div>
+          <div>
+            <Lbl>Fecha Solicitud</Lbl>
+            <input type="text" value={formData.fechaSolicitud} disabled className={ic(false, true)} />
+          </div>
+          <div>
+            <Lbl>Estatus Solicitud</Lbl>
+            <select value={formData.estatusSolicitud} onChange={e => set('estatusSolicitud', e.target.value)} disabled={isRO} className={sc()}>
+              {CAT_ESTATUS_SOLICITUD.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+            </select>
+          </div>
+          <div>
+            <Lbl req error={errors.sucursal}>Sucursal</Lbl>
+            <select value={formData.sucursal} onChange={e => set('sucursal', e.target.value)} disabled={isRO} className={sc(!!errors.sucursal)}>
+              {CAT_SUCURSAL.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+            </select>
+            {errors.sucursal && <span className="text-[10px] text-red-500 mt-0.5 block">{errors.sucursal}</span>}
           </div>
 
-          {/* ── Col 2 ── */}
-          <div className="space-y-3">
-            <div>
-              <Lbl req error={errors.tipoPersona}>Tipo de Persona</Lbl>
-              <select value={formData.tipoPersona} onChange={e => set('tipoPersona', e.target.value)} disabled={isRO} className={sc(!!errors.tipoPersona)}>
-                <option value="">Seleccionar...</option>
-                {CAT_TIPO_PERSONA.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
-              </select>
-              {errors.tipoPersona && <span className="text-[10px] text-red-500 mt-0.5 block">{errors.tipoPersona}</span>}
-            </div>
-            <div>
-              <Lbl req error={errors.nombrePersona}>Cliente</Lbl>
-              <div
-                onClick={() => !isRO && setShowClienteModal(true)}
-                className={`flex items-center gap-2 px-3 py-2 text-xs border rounded-lg transition-colors ${
-                  isRO
-                    ? 'bg-gray-100 text-gray-600 cursor-not-allowed border-gray-200'
-                    : errors.nombrePersona
-                      ? 'border-red-400 cursor-pointer hover:border-[#4A6FA5] hover:bg-blue-50/30'
-                      : 'border-gray-200 cursor-pointer hover:border-[#4A6FA5] hover:bg-blue-50/30'
-                }`}
-              >
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="#9CA3AF" strokeWidth="1.5" className="shrink-0">
-                  <circle cx="7" cy="5" r="2.5" />
-                  <path d="M2 13c0-3 2.2-5 5-5s5 2 5 5" />
-                </svg>
-                <span className={`flex-1 truncate ${formData.nombrePersona ? 'text-gray-700' : 'text-gray-400'}`}>
-                  {formData.nombrePersona
-                    ? `${formData.nombrePersona} ${formData.apellidoPaternoPersona || ''} ${formData.apellidoMaternoPersona || ''}`.trim()
-                    : 'Seleccionar cliente...'
-                  }
+          <GrupoHdr>Cliente</GrupoHdr>
+
+          {/* El selector de cliente es un control rico (nombre + tipo + folio):
+              a una sola columna se truncaba, por eso ocupa dos. */}
+          <div className="col-span-2">
+            <Lbl req error={errors.nombrePersona}>Cliente</Lbl>
+            <div
+              onClick={() => !isRO && setShowClienteModal(true)}
+              className={`flex items-center gap-2 px-3 py-2 text-xs border rounded-lg transition-colors ${
+                isRO
+                  ? 'bg-gray-100 text-gray-600 cursor-not-allowed border-gray-200'
+                  : errors.nombrePersona
+                    ? 'border-red-400 cursor-pointer hover:border-[#4A6FA5] hover:bg-blue-50/30'
+                    : 'border-gray-200 cursor-pointer hover:border-[#4A6FA5] hover:bg-blue-50/30'
+              }`}
+            >
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="#9CA3AF" strokeWidth="1.5" className="shrink-0">
+                <circle cx="7" cy="5" r="2.5" />
+                <path d="M2 13c0-3 2.2-5 5-5s5 2 5 5" />
+              </svg>
+              <span className={`flex-1 truncate ${formData.nombrePersona ? 'text-gray-700' : 'text-gray-400'}`}>
+                {formData.nombrePersona
+                  ? `${formData.nombrePersona} ${formData.apellidoPaternoPersona || ''} ${formData.apellidoMaternoPersona || ''}`.trim()
+                  : 'Seleccionar cliente...'
+                }
+              </span>
+              {formData.tipoPersona && (
+                <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-semibold shrink-0 ${
+                  formData.tipoPersona === 'Moral' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'
+                }`}>
+                  {formData.tipoPersona}
                 </span>
-                {formData.tipoPersona && (
-                  <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-semibold shrink-0 ${
-                    formData.tipoPersona === 'Moral' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'
-                  }`}>
-                    {formData.tipoPersona}
-                  </span>
-                )}
-                {formData.noCliente && (
-                  <span className="text-[10px] text-gray-400 font-mono shrink-0">ID: {formData.noCliente}</span>
-                )}
-                {!isRO && (
-                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="#9CA3AF" strokeWidth="1.5" className="shrink-0">
-                    <path d="M5 3l4 4-4 4" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
-                )}
-              </div>
-              {errors.nombrePersona && <span className="text-[10px] text-red-500 mt-0.5 block">{errors.nombrePersona}</span>}
+              )}
+              {formData.noCliente && (
+                <span className="text-[10px] text-gray-400 font-mono shrink-0">ID: {formData.noCliente}</span>
+              )}
+              {!isRO && (
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="#9CA3AF" strokeWidth="1.5" className="shrink-0">
+                  <path d="M5 3l4 4-4 4" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              )}
             </div>
-            {/* BUG FIX (2026-08-25): el RFC del emisor ya viajaba internamente
-                como formData._rfc (Buró de Crédito, Expediente Electrónico),
-                pero nunca se mostraba como campo visible en el Formulario
-                General — para el usuario "no llegaba" aunque sí estaba ahí. */}
-            {(formData as any)._rfc && (
-              <div>
-                <Lbl>RFC Emisor</Lbl>
-                <input type="text" value={(formData as any)._rfc} disabled className={ic(false, true)} />
-              </div>
-            )}
-            {/* id_cliente_crm — sí viajaba en formData.noCliente, pero solo se
-                pintaba como un "ID: xxx" gris diminuto dentro del selector de
-                Cliente; la spec lo pide como campo del Formulario General. */}
-            {formData.noCliente && (
-              <div>
-                <Lbl>ID Cliente CRM</Lbl>
-                <input type="text" value={formData.noCliente} disabled className={ic(false, true)} />
-              </div>
-            )}
+            {errors.nombrePersona && <span className="text-[10px] text-red-500 mt-0.5 block">{errors.nombrePersona}</span>}
+          </div>
+          <div>
+            <Lbl req error={errors.tipoPersona}>Tipo de Persona</Lbl>
+            <select value={formData.tipoPersona} onChange={e => set('tipoPersona', e.target.value)} disabled={isRO} className={sc(!!errors.tipoPersona)}>
+              <option value="">Seleccionar...</option>
+              {CAT_TIPO_PERSONA.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+            </select>
+            {errors.tipoPersona && <span className="text-[10px] text-red-500 mt-0.5 block">{errors.tipoPersona}</span>}
+          </div>
+          {/* BUG FIX (2026-08-25): el RFC del emisor ya viajaba internamente
+              como formData._rfc (Buró de Crédito, Expediente Electrónico),
+              pero nunca se mostraba como campo visible en el Formulario
+              General — para el usuario "no llegaba" aunque sí estaba ahí. */}
+          {(formData as any)._rfc && (
             <div>
-              <Lbl req error={errors.productoId}>Producto</Lbl>
-              <select value={formData.productoId} onChange={e => handleProductoChange(e.target.value)} disabled={isRO} className={sc(!!errors.productoId)}>
-                <option value="">{ loadingProductos ? 'Cargando productos...' : 'Seleccionar...' }</option>
-                {/* Fallback: si el productoId actual no está en productosFiltrados, mostrarlo como opción para no perder la selección */}
-                {formData.productoId && !productosFiltrados.some(p => p.id === formData.productoId) && (
-                  <option key={formData.productoId} value={formData.productoId}>
-                    {formData.nombreProducto || formData.productoId}
-                  </option>
-                )}
-                {productosFiltrados.map(p => (
-                  <option key={p.id} value={p.id}>
-                    {p.claveProducto ? `${p.claveProducto} — ${p.nombreProducto}` : p.nombreProducto}
-                  </option>
-                ))}
-              </select>
-              {errors.productoId && <span className="text-[10px] text-red-500 mt-0.5 block">{errors.productoId}</span>}
-              {/* ═══ DIAGNÓSTICO: conteo de productos ═══ */}
-              <div className="mt-1 p-1.5 bg-amber-50 border border-amber-200 rounded text-[10px] text-amber-800 space-y-0.5">
-                <div className="font-semibold">Diag Productos:</div>
-                <div>DB total: <b>{productosDB.length}</b> | Filtrados: <b>{productosFiltrados.length}</b> | Loading: {loadingProductos ? 'Sí' : 'No'}</div>
-                <div>Filtro línea: <b>"{formData.lineaProducto || '(ninguna)'}"</b> | Filtro tipo: <b>"{formData.tipoProducto || '(ninguno)'}"</b></div>
-                {productosDB.length > 0 && (
-                  <details className="cursor-pointer">
-                    <summary className="text-amber-700 hover:underline">Ver {productosDB.length} productos de DB</summary>
-                    <div className="mt-1 max-h-32 overflow-auto bg-white/70 rounded p-1 text-[9px] font-mono">
-                      {productosDB.map((p, i) => (
-                        <div key={p.id ?? `prod-${i}`} className={i % 2 === 0 ? 'bg-amber-50/50' : ''}>
-                          {i+1}. [{p.type ?? '?'}] linea="{p.lineaProducto ?? ''}" tipo="{p.tipoProducto ?? ''}" → <b>{p.nombreProducto ?? '(sin nombre)'}</b> (id: {(p.id ?? '').slice(0,8)}...)
-                        </div>
-                      ))}
-                    </div>
-                  </details>
-                )}
-                {(() => {
-                  try {
-                    if (productosDB.length > 0) console.log('[DIAG Producto] Todos los productos DB:', productosDB.map(p => ({ id: (p.id ?? '').slice(0,8), nombre: p.nombreProducto, linea: p.lineaProducto, tipo: p.tipoProducto, type: p.type, source: p.source })));
-                  } catch (e) { console.warn('[DIAG Producto] error logging:', e); }
-                  return null;
-                })()}
-              </div>
+              <Lbl>RFC Emisor</Lbl>
+              <input type="text" value={(formData as any)._rfc} disabled className={ic(false, true)} />
             </div>
+          )}
+          {/* id_cliente_crm — sí viajaba en formData.noCliente, pero solo se
+              pintaba como un "ID: xxx" gris diminuto dentro del selector de
+              Cliente; la spec lo pide como campo del Formulario General. */}
+          {formData.noCliente && (
             <div>
-              <Lbl>Nombre Producto</Lbl>
-              <input type="text" value={formData.nombreProducto} disabled className={ic(false, true)} />
+              <Lbl>ID Cliente CRM</Lbl>
+              <input type="text" value={formData.noCliente} disabled className={ic(false, true)} />
             </div>
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <Lbl req error={errors.plazo}>Plazo</Lbl>
-                {matrizTasaFijaProducto.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => setShowMatrizModal(true)}
-                    className="text-[10px] text-[#0066CC] hover:underline"
-                  >
-                    Ver Matriz de Tasa Fija
-                  </button>
-                )}
-              </div>
+          )}
+
+          <GrupoHdr>Producto y condiciones</GrupoHdr>
+
+          <div>
+            <Lbl req error={errors.lineaProducto}>Línea de Producto</Lbl>
+            <select value={formData.lineaProducto} onChange={e => { set('lineaProducto', e.target.value); setActiveSection('fases'); }} disabled={isRO} className={sc(!!errors.lineaProducto)}>
+              {CAT_LINEA_PRODUCTO.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+            </select>
+            {errors.lineaProducto && <span className="text-[10px] text-red-500 mt-0.5 block">{errors.lineaProducto}</span>}
+          </div>
+          <div>
+            <Lbl req error={errors.tipoProducto}>Tipo de Producto</Lbl>
+            <input
+              type="text"
+              value={formData.tipoProducto}
+              disabled
+              placeholder="(se llena al seleccionar producto)"
+              className={ic(!!errors.tipoProducto, true)}
+            />
+            {errors.tipoProducto && <span className="text-[10px] text-red-500 mt-0.5 block">{errors.tipoProducto}</span>}
+          </div>
+          <div>
+            <Lbl req error={errors.productoId}>Producto</Lbl>
+            <select value={formData.productoId} onChange={e => handleProductoChange(e.target.value)} disabled={isRO} className={sc(!!errors.productoId)}>
+              <option value="">{ loadingProductos ? 'Cargando productos...' : 'Seleccionar...' }</option>
+              {/* Fallback: si el productoId actual no está en productosFiltrados, mostrarlo como opción para no perder la selección */}
+              {formData.productoId && !productosFiltrados.some(p => p.id === formData.productoId) && (
+                <option key={formData.productoId} value={formData.productoId}>
+                  {formData.nombreProducto || formData.productoId}
+                </option>
+              )}
+              {productosFiltrados.map(p => (
+                <option key={p.id} value={p.id}>
+                  {p.claveProducto ? `${p.claveProducto} — ${p.nombreProducto}` : p.nombreProducto}
+                </option>
+              ))}
+            </select>
+            {errors.productoId && <span className="text-[10px] text-red-500 mt-0.5 block">{errors.productoId}</span>}
+          </div>
+          <div>
+            <Lbl>Nombre Producto</Lbl>
+            <input type="text" value={formData.nombreProducto} disabled className={ic(false, true)} />
+          </div>
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <Lbl req error={errors.plazo}>Plazo</Lbl>
+              {matrizTasaFijaProducto.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setShowMatrizModal(true)}
+                  className="text-[10px] text-[#0066CC] hover:underline"
+                >
+                  Ver Matriz de Tasa Fija
+                </button>
+              )}
+            </div>
+            <input
+              type="text" inputMode="decimal"
+              value={formData.plazo || ''}
+              onChange={e => handleNumeric('plazo', e.target.value)}
+              disabled={isRO}
+              placeholder="Ej: 12"
+              className={ic(false, !!errors.plazo)}
+            />
+            {errors.plazo && <span className="text-[10px] text-red-500 mt-0.5 block">{errors.plazo}</span>}
+          </div>
+          <div>
+            <Lbl req error={errors.montoSolicitado}>Monto Autorizado</Lbl>
+            <div className="relative">
+              <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-500">$</span>
               <input
                 type="text" inputMode="decimal"
-                value={formData.plazo || ''}
-                onChange={e => handleNumeric('plazo', e.target.value)}
-                disabled={isRO}
-                placeholder="Ej: 12"
-                className={ic(false, !!errors.plazo)}
+                value={formData.montoSolicitado}
+                onChange={e => handleNumeric('montoSolicitado', e.target.value)}
+                onBlur={() => handleCurrencyBlur('montoSolicitado')}
+                disabled={isRO} placeholder="0.00"
+                className={`${ic(!!errors.montoSolicitado)} pl-5`}
               />
-              {errors.plazo && <span className="text-[10px] text-red-500 mt-0.5 block">{errors.plazo}</span>}
             </div>
+            {errors.montoSolicitado && <span className="text-[10px] text-red-500 mt-0.5 block">{errors.montoSolicitado}</span>}
+            {!errors.montoSolicitado && matrizRangoError && (
+              <span className="text-[10px] text-red-500 mt-0.5 block">{matrizRangoError}</span>
+            )}
+            {isArrendamientoHeader && (
+              <p className="text-[10px] text-gray-400 mt-0.5">Monto financiado (post-enganche) se calcula en Términos y Condiciones</p>
+            )}
           </div>
 
-          {/* ── Col 3 ── */}
-          <div className="space-y-3">
-            <div>
-              <Lbl>Fecha Solicitud</Lbl>
-              <input type="text" value={formData.fechaSolicitud} disabled className={ic(false, true)} />
-            </div>
-            <div>
-              <Lbl>Estatus Solicitud</Lbl>
-              <select value={formData.estatusSolicitud} onChange={e => set('estatusSolicitud', e.target.value)} disabled={isRO} className={sc()}>
-                {CAT_ESTATUS_SOLICITUD.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
-              </select>
-            </div>
-            <div>
-              <Lbl req error={errors.montoSolicitado}>Monto Autorizado</Lbl>
-              <div className="relative">
-                <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-500">$</span>
-                <input
-                  type="text" inputMode="decimal"
-                  value={formData.montoSolicitado}
-                  onChange={e => handleNumeric('montoSolicitado', e.target.value)}
-                  onBlur={() => handleCurrencyBlur('montoSolicitado')}
-                  disabled={isRO} placeholder="0.00"
-                  className={`${ic(!!errors.montoSolicitado)} pl-5`}
-                />
-              </div>
-              {errors.montoSolicitado && <span className="text-[10px] text-red-500 mt-0.5 block">{errors.montoSolicitado}</span>}
-              {!errors.montoSolicitado && matrizRangoError && (
-                <span className="text-[10px] text-red-500 mt-0.5 block">{matrizRangoError}</span>
-              )}
-              {isArrendamientoHeader && (
-                <p className="text-[10px] text-gray-400 mt-0.5">Monto financiado (post-enganche) se calcula en Términos y Condiciones</p>
-              )}
-            </div>
-            {isArrendamientoHeader && (
-              <div>
-                <Lbl>% Enganche</Lbl>
-                <select
-                  value={formData.porcentajeEnganche || ''}
-                  onChange={e => set('porcentajeEnganche', e.target.value)}
-                  disabled={isRO}
-                  className={sc()}
-                >
-                  <option value="">Seleccione...</option>
-                  {enganchesProductoHeader.map(o => (
-                    <option key={o.id} value={o.valor}>{o.valor}%</option>
-                  ))}
-                </select>
-                {enganchesProductoHeader.length === 0 && (
-                  <span className="text-[10px] text-amber-600 mt-0.5 block">Sin opciones activas en el producto</span>
-                )}
-              </div>
-            )}
-            <div>
-              <Lbl>Fecha Inicio</Lbl>
-              <DatePicker value={formData.fechaInicio || ''} onChange={v => set('fechaInicio', v)} disabled={isRO} placeholder="DD/MM/YYYY" className={ic()} />
-            </div>
-            <div>
-              <Lbl>Fecha Fin</Lbl>
-              <DatePicker value={formData.fechaFin || ''} onChange={v => set('fechaFin', v)} disabled={isRO} placeholder="DD/MM/YYYY" className={ic()} />
-            </div>
+          <GrupoHdr>Vigencia</GrupoHdr>
+
+          <div>
+            <Lbl>Fecha Inicio</Lbl>
+            <DatePicker value={formData.fechaInicio || ''} onChange={v => set('fechaInicio', v)} disabled={isRO} placeholder="DD/MM/YYYY" className={ic()} />
           </div>
+          <div>
+            <Lbl>Fecha Fin</Lbl>
+            <DatePicker value={formData.fechaFin || ''} onChange={v => set('fechaFin', v)} disabled={isRO} placeholder="DD/MM/YYYY" className={ic()} />
+          </div>
+          {isArrendamientoHeader && (
+            <div>
+              <Lbl>% Enganche</Lbl>
+              <select
+                value={formData.porcentajeEnganche || ''}
+                onChange={e => set('porcentajeEnganche', e.target.value)}
+                disabled={isRO}
+                className={sc()}
+              >
+                <option value="">Seleccione...</option>
+                {enganchesProductoHeader.map(o => (
+                  <option key={o.id} value={o.valor}>{o.valor}%</option>
+                ))}
+              </select>
+              {enganchesProductoHeader.length === 0 && (
+                <span className="text-[10px] text-amber-600 mt-0.5 block">Sin opciones activas en el producto</span>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Descripción (textarea 1024) */}
@@ -4091,10 +4764,12 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
                       onRegresarFase={handleRegresarFase}
                       onGenerarSolicitud={handleGenerarSolicitud}
                       onFormalizarContrato={handleFormalizarContrato}
+                      onGenerarPagare={handleGenerarPagareFase}
                       onSolicitudActivacion={handleSolicitudActivacion}
                       onActivarCuenta={handleActivarCuenta}
                       canActivarCuenta={canActivarCuenta}
                       enviandoFase={enviandoFase}
+                      plantillasProducto={plantillasDelProducto}
                       existingActivacion={activacionForThisSol}
                     />
 
@@ -4171,6 +4846,31 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
                     clienteId={formData._clienteId}
                   />
                 )}
+                {sec.id === 'datosFinancieros' && (
+                  /* La `key` con hidratacionKey lo obliga a remontar cuando la
+                     auto-hidratación siembra la sesión: si no, un acordeón ya
+                     montado se queda con su estado vacío para siempre. */
+                  <DatosFinancierosTab
+                    key={`datfin-${storageId}-${hidratacionKey}`}
+                    mode={mode}
+                    solicitudId={storageId}
+                  />
+                )}
+                {sec.id === 'condicionesTarjeta' && (
+                  <CondicionesTarjetaTab
+                    key={`condtdc-${storageId}-${hidratacionKey}`}
+                    mode={mode}
+                    solicitudId={storageId}
+                    reglaTDC={reglaTDCProducto}
+                    tasaMoratoriaProducto={
+                      String(
+                        (productoSeleccionado as any)?.rawData?.porcentajeInteresMoratorio ??
+                        (productoSeleccionado as any)?.rawData?.factorMoratorio ??
+                        ''
+                      )
+                    }
+                  />
+                )}
                 {sec.id === 'terminos' && (
                   <TerminosCondicionesTab
                     key={`term-${storageId}-${hidratacionKey}`}
@@ -4184,6 +4884,9 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
                     tasaCotizacion={(cotizacionData as any)?._terminosCondiciones?.tasa || ''}
                     plazoCotizacion={(cotizacionData as any)?._terminosCondiciones?.plazo || ''}
                     cotizacionTerminos={(cotizacionData as any)?._terminosCondiciones}
+                    fechaFinHeader={formData.fechaFin}
+                    onFechaInicioChange={v => set('fechaInicio', v)}
+                    onFechaFinChange={v => set('fechaFin', v)}
                     onFechaPrimeraAportacionChange={v => set('fechaInicio', v)}
                     onMontoAutorizadoChange={v => set('montoAutorizado', v)}
                     onTasaChange={v => setTasaSeleccionadaHeader(v)}
@@ -4267,8 +4970,24 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
                 {sec.id === 'comites' && (
                   <ComitesTab mode={mode} solicitudId={storageId} />
                 )}
+                {sec.id === 'cuentasBeneficiarias' && (
+                  <CuentasBeneficiariasTab
+                    mode={mode}
+                    solicitudId={storageId}
+                    clienteId={formData._clienteId}
+                    nombreCliente={[formData.nombrePersona, formData.apellidoPaternoPersona, formData.apellidoMaternoPersona].filter(Boolean).join(' ')}
+                    montoAutorizado={formData.montoAutorizado}
+                    montoSolicitado={(() => {
+                      // El encabezado puede no traer el monto si sólo se capturó
+                      // en Términos: se toma de ahí como respaldo.
+                      const _t: any = loadFromSession<any>(storageId, 'terminos')
+                        || loadFromSavedStore<any>(storageId, 'terminos') || {};
+                      return formData.montoSolicitado || _t.montoSolicitado || '';
+                    })()}
+                  />
+                )}
                 {sec.id === 'cargos' && (
-                  <SolicitudCargosTab mode={mode} solicitudId={storageId} lineaProducto={formData.lineaProducto} tipoProducto={formData.tipoProducto} />
+                  <SolicitudCargosTab key={`cargos-${storageId}-${cargosKey}`} mode={mode} solicitudId={storageId} lineaProducto={formData.lineaProducto} tipoProducto={formData.tipoProducto} />
                 )}
                 {sec.id === 'flujoTrabajo' && (
                   <div className="bg-white border border-gray-200 p-4">
@@ -4405,21 +5124,16 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
                 </div>
               </div>
             </div>
-            <div className="flex flex-col gap-2">
-              <button
-                disabled
-                title="Módulo de Monitoreo de Cartera GPO — próximamente"
-                className="w-full px-4 py-2 rounded text-sm font-medium bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200"
-              >
-                Ir a Monitoreo de Cartera GPO (próximamente)
-              </button>
-              <button
-                onClick={() => setFormalizacionExitosaGPO(null)}
-                className="w-full px-4 py-2 rounded text-sm font-medium bg-[#2E5C91] text-white hover:bg-[#254A75]"
-              >
-                Cerrar
-              </button>
-            </div>
+            {/* Se retiro el boton deshabilitado "Ir a Monitoreo de Cartera GPO
+                (proximamente)": una accion que no se puede ejecutar solo ocupa
+                espacio y da la impresion de que algo fallo. Cuando el modulo
+                exista, se agrega aqui como boton real. */}
+            <button
+              onClick={() => setFormalizacionExitosaGPO(null)}
+              className="w-full px-4 py-2 rounded text-sm font-medium bg-[#2E5C91] text-white hover:bg-[#254A75]"
+            >
+              Cerrar
+            </button>
           </div>
         </div>
       )}
@@ -4487,9 +5201,9 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
                     const min = f.montoMinimo || 0;
                     const max = f.montoMaximo || 0;
                     const fueraDeRango = montoNum > 0 && ((min > 0 && montoNum < min) || (max > 0 && montoNum > max));
-                    const esSeleccionada = !!filaMatrizSeleccionada
-                      && filaMatrizSeleccionada.plazoMinimo === f.plazoMinimo
-                      && filaMatrizSeleccionada.plazoMaximo === f.plazoMaximo;
+                    // REQ-22 CA-01/CA-03 — antes se comparaba sólo el plazo, así
+                    // que dos filas con el mismo plazo salían ambas marcadas.
+                    const esSeleccionada = mismaFilaMatriz(filaMatrizSeleccionada, f);
                     return (
                       <tr key={idx} className={esSeleccionada ? 'bg-blue-50 ring-1 ring-inset ring-blue-300' : idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
                         <td className="px-3 py-1.5 text-center border-r border-gray-200 font-medium">
@@ -4553,7 +5267,21 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
                 if (!algunoEnRango) {
                   return <p className="text-[10px] text-red-600 mt-3">El Monto Autorizado no está dentro del rango de ningún plazo de este producto.</p>;
                 }
-                return <p className="text-[10px] text-gray-400 mt-3">Seleccione el plazo correspondiente al Monto Autorizado.</p>;
+                return (
+                  <>
+                    <p className="text-[10px] text-gray-400 mt-3">Seleccione el plazo correspondiente al Monto Autorizado.</p>
+                    {/* REQ-22 CA-12 — con filas que comparten plazo, lo que las
+                        distingue es la frecuencia (y su tasa). Decirlo evita que
+                        se elija una y se crea haber elegido la otra. */}
+                    {hayFilasMatrizAmbiguas && (
+                      <p className="text-[10px] text-amber-700 mt-1">
+                        Este producto tiene varias filas con el mismo plazo: se distinguen por
+                        la <strong>frecuencia</strong> y su <strong>tasa</strong>. Verifique la columna FRECUENCIA
+                        antes de seleccionar.
+                      </p>
+                    )}
+                  </>
+                );
               })()}
             </div>
           </div>

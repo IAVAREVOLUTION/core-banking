@@ -1,100 +1,34 @@
 import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { memo, useState } from 'react';
-import { ProcessFlowMap } from './ProcessFlowMap';
+import { memo, useMemo } from 'react';
+import { useClientesDB } from '../hooks/useClientesDB';
+import { useSolicitudesDB } from '../hooks/useSolicitudesDB';
+import {
+  clientesRecientes as calcClientesRecientes,
+  solicitudesPendientes as calcSolicitudesPendientes,
+  creditosRecientes as calcCreditosRecientes,
+  serieColocacion, distribucionPorEstatus, carteraPorProducto, insightsReales,
+  diasEnTramite, prioridadPorAntiguedad, fechaCorta, money, montoEje, pct,
+} from '../lib/dashboardReal';
 
-// Datos mock para el dashboard
-const clientesRecientes = [
-  { id: 1, nombre: 'María González Pérez', fechaAlta: '08/01/26', tipoCliente: 'Persona Física', ejecutivo: 'Juan Ramírez' },
-  { id: 2, nombre: 'Comercializadora ABC S.A. de C.V.', fechaAlta: '07/01/26', tipoCliente: 'Persona Moral', ejecutivo: 'Ana Torres' },
-  { id: 3, nombre: 'Roberto Martínez López', fechaAlta: '06/01/26', tipoCliente: 'Persona Física', ejecutivo: 'Carlos Medina' },
-  { id: 4, nombre: 'Inversiones DEF S.A.', fechaAlta: '05/01/26', tipoCliente: 'Persona Moral', ejecutivo: 'Laura Sánchez' },
-  { id: 5, nombre: 'Patricia Hernández Silva', fechaAlta: '04/01/26', tipoCliente: 'Persona Física', ejecutivo: 'Juan Ramírez' },
-];
+/**
+ * Home. Todo lo que se muestra sale de la base real (J_CLIENTES y
+ * J_CUENTAS_CORP_CLIENTES) via los mismos hooks que usan los modulos; no hay
+ * datos de ejemplo. Las derivaciones viven en lib/dashboardReal.ts.
+ */
 
-const solicitudesPendientes = [
-  { id: 1, tipo: 'Apertura de cuenta', cliente: 'José Luis Fernández', prioridad: 'Alta', fechaLimite: '15/01/26', estado: 'En revisión' },
-  { id: 2, tipo: 'Crédito personal', cliente: 'Ana María Castro', prioridad: 'Media', fechaLimite: '18/01/26', estado: 'Pendiente documentación' },
-  { id: 3, tipo: 'Actualización de datos', cliente: 'Constructora XYZ S.A.', prioridad: 'Baja', fechaLimite: '20/01/26', estado: 'En proceso' },
-  { id: 4, tipo: 'Crédito hipotecario', cliente: 'Ricardo Gómez Ruiz', prioridad: 'Alta', fechaLimite: '16/01/26', estado: 'En análisis' },
-  { id: 5, tipo: 'Apertura de inversión', cliente: 'Servicios MNO S.C.', prioridad: 'Media', fechaLimite: '22/01/26', estado: 'Pendiente firma' },
-];
+// ─── Graficas aisladas: reciben sus datos ya calculados ─────────────────────
 
-const creditosRecientes = [
-  { id: 1, cliente: 'Pedro Sánchez López', monto: '$250,000.00', producto: 'Crédito Personal', fechaDesembolso: '10/01/26', estado: 'Vigente' },
-  { id: 2, cliente: 'Transportes RST S.A.', monto: '$1,500,000.00', producto: 'Crédito Empresarial', fechaDesembolso: '09/01/26', estado: 'Vigente' },
-  { id: 3, cliente: 'Carmen Reyes García', monto: '$850,000.00', producto: 'Crédito Hipotecario', fechaDesembolso: '08/01/26', estado: 'Vigente' },
-  { id: 4, cliente: 'PYME Soluciones S.C.', monto: '$450,000.00', producto: 'Crédito PYME', fechaDesembolso: '07/01/26', estado: 'En proceso' },
-  { id: 5, cliente: 'Miguel Ángel Torres', monto: '$120,000.00', producto: 'Crédito Automotriz', fechaDesembolso: '06/01/26', estado: 'Vigente' },
-];
-
-// Datos para gráficas
-const colocacionData = [
-  { mes: 'Ago', monto: 2400 },
-  { mes: 'Sep', monto: 3200 },
-  { mes: 'Oct', monto: 2800 },
-  { mes: 'Nov', monto: 3800 },
-  { mes: 'Dic', monto: 4200 },
-  { mes: 'Ene', monto: 3600 },
-];
-
-const cobranzaData = [
-  { mes: 'Ago', esperado: 2800, real: 2600 },
-  { mes: 'Sep', esperado: 3000, real: 2900 },
-  { mes: 'Oct', esperado: 3200, real: 3100 },
-  { mes: 'Nov', esperado: 3400, real: 3200 },
-  { mes: 'Dic', esperado: 3600, real: 3500 },
-  { mes: 'Ene', esperado: 3800, real: 3600 },
-];
-
-const antiguedadSaldosData = [
-  { categoria: 'Al corriente', valor: 68, color: '#2E5C91' },
-  { categoria: '1-30 días', valor: 18, color: 'var(--theme-primary)' },
-  { categoria: '31-60 días', valor: 8, color: '#F59E0B' },
-  { categoria: '61-90 días', valor: 4, color: '#EF4444' },
-  { categoria: '>90 días', valor: 2, color: '#991B1B' },
-];
-
-const carteraPorRiesgoData = [
-  { nivel: 'A', monto: 4500, porcentaje: 65 },
-  { nivel: 'B', monto: 1800, porcentaje: 26 },
-  { nivel: 'C', monto: 450, porcentaje: 6 },
-  { nivel: 'D', monto: 150, porcentaje: 2 },
-  { nivel: 'E', monto: 50, porcentaje: 1 },
-];
-
-const insights = [
-  { 
-    tipo: 'tendencia', 
-    titulo: 'Colocación en crecimiento',
-    descripcion: 'La colocación de créditos aumentó 15% vs. mes anterior. Se recomienda ampliar capacidad de análisis.',
-    prioridad: 'media'
-  },
-  { 
-    tipo: 'alerta', 
-    titulo: 'Incremento en cartera vencida',
-    descripcion: 'Se detectó aumento de 8% en cartera con antigüedad >60 días. Requiere seguimiento inmediato.',
-    prioridad: 'alta'
-  },
-  { 
-    tipo: 'oportunidad', 
-    titulo: 'Alta conversión en créditos PYME',
-    descripcion: 'Tasa de aprobación PYME alcanzó 82%. Oportunidad de aumentar promoción en este segmento.',
-    prioridad: 'baja'
-  },
-];
-
-// ─── Isolated chart components to prevent Recharts internal key collisions ───
-const ColocacionChart = memo(function ColocacionChart() {
+const ColocacionChart = memo(function ColocacionChart({ data }: { data: any[] }) {
   return (
     <ResponsiveContainer width="100%" height={240}>
-      <BarChart data={colocacionData}>
+      <BarChart data={data}>
         <CartesianGrid key="grid" strokeDasharray="3 3" stroke="#E5E7EB" />
         <XAxis key="x" dataKey="mes" tick={{ fontSize: 11 }} stroke="#6B7280" />
-        <YAxis key="y" tick={{ fontSize: 11 }} stroke="#6B7280" />
+        <YAxis key="y" tick={{ fontSize: 10 }} stroke="#6B7280" tickFormatter={montoEje} width={70} />
         <Tooltip
           key="tooltip"
           contentStyle={{ fontSize: '12px', border: '1px solid #D1D5DB', borderRadius: '4px' }}
-          formatter={(value: any) => [`$${value}K`, 'Monto']}
+          formatter={(value: any) => [money(value), 'Autorizado']}
         />
         <Bar key="bar" dataKey="monto" fill="#2E5C91" radius={[4, 4, 0, 0]} />
       </BarChart>
@@ -102,56 +36,68 @@ const ColocacionChart = memo(function ColocacionChart() {
   );
 });
 
-const CobranzaChart = memo(function CobranzaChart() {
+const SolicitadoVsAutorizadoChart = memo(function SolicitadoVsAutorizadoChart({ data }: { data: any[] }) {
   return (
     <ResponsiveContainer width="100%" height={240}>
-      <LineChart data={cobranzaData}>
+      <LineChart data={data}>
         <CartesianGrid key="grid" strokeDasharray="3 3" stroke="#E5E7EB" />
         <XAxis key="x" dataKey="mes" tick={{ fontSize: 11 }} stroke="#6B7280" />
-        <YAxis key="y" tick={{ fontSize: 11 }} stroke="#6B7280" />
+        <YAxis key="y" tick={{ fontSize: 10 }} stroke="#6B7280" tickFormatter={montoEje} width={70} />
         <Tooltip
           key="tooltip"
           contentStyle={{ fontSize: '12px', border: '1px solid #D1D5DB', borderRadius: '4px' }}
-          formatter={(value: any) => `$${value}K`}
+          formatter={(value: any) => money(value)}
         />
         <Legend key="legend" wrapperStyle={{ fontSize: '11px' }} />
-        <Line key="esperado" type="monotone" dataKey="esperado" stroke="#9CA3AF" strokeWidth={2} name="Esperado" strokeDasharray="5 5" />
-        <Line key="real" type="monotone" dataKey="real" stroke="#2E5C91" strokeWidth={2} name="Real" />
+        <Line key="sol" type="monotone" dataKey="solicitado" stroke="#9CA3AF" strokeWidth={2} name="Solicitado" strokeDasharray="5 5" />
+        <Line key="aut" type="monotone" dataKey="monto" stroke="#2E5C91" strokeWidth={2} name="Autorizado" />
       </LineChart>
     </ResponsiveContainer>
   );
 });
 
-const AntiguedadChart = memo(function AntiguedadChart() {
+const EstatusChart = memo(function EstatusChart({ data }: { data: any[] }) {
   return (
     <ResponsiveContainer width="100%" height={240}>
       <PieChart>
         <Pie
-          data={antiguedadSaldosData}
-          cx="50%"
-          cy="50%"
-          labelLine={false}
+          data={data} cx="50%" cy="50%" labelLine={false}
           label={({ categoria, valor }: any) => `${categoria}: ${valor}%`}
-          outerRadius={80}
-          fill="#8884d8"
-          dataKey="valor"
-          nameKey="categoria"
+          outerRadius={80} fill="#8884d8" dataKey="valor" nameKey="categoria"
         >
-          {antiguedadSaldosData.map((entry) => (
-            <Cell key={`cell-${entry.categoria}`} fill={entry.color} />
-          ))}
+          {data.map((entry: any) => (<Cell key={`cell-${entry.categoria}`} fill={entry.color} />))}
         </Pie>
         <Tooltip
           contentStyle={{ fontSize: '12px', border: '1px solid #D1D5DB', borderRadius: '4px' }}
-          formatter={(value: any) => `${value}%`}
+          formatter={(value: any, _n: any, p: any) => [`${p?.payload?.cantidad ?? 0} solicitud(es) — ${value}%`, p?.payload?.categoria]}
         />
       </PieChart>
     </ResponsiveContainer>
   );
 });
 
-export function Dashboard({ onNavigateToModule }: { onNavigateToModule?: (moduleId: string) => void }) {
-  const [showFlowMap, setShowFlowMap] = useState(false);
+const VACIO = (
+  <tr><td colSpan={9} className="px-3 py-6 text-center text-xs text-gray-500">Sin registros</td></tr>
+);
+
+export function Dashboard({ onNavigateToModule, modulos }: {
+  onNavigateToModule?: (moduleId: string) => void;
+  /**
+   * REQ-25 — accesos del Home. Llegan YA FILTRADOS por el perfil de la sesion,
+   * asi que el Home nunca ofrece un modulo que el usuario no puede abrir.
+   */
+  modulos?: { id: string; label: string }[];
+}) {
+  const { clientes, loading: cargandoClientes } = useClientesDB(true);
+  const { solicitudes, loading: cargandoSols } = useSolicitudesDB(true);
+
+  const ultimosClientes = useMemo(() => calcClientesRecientes(clientes as any), [clientes]);
+  const pendientes      = useMemo(() => calcSolicitudesPendientes(solicitudes as any), [solicitudes]);
+  const colocados       = useMemo(() => calcCreditosRecientes(solicitudes as any), [solicitudes]);
+  const colocacion      = useMemo(() => serieColocacion(solicitudes as any), [solicitudes]);
+  const porEstatus      = useMemo(() => distribucionPorEstatus(solicitudes as any), [solicitudes]);
+  const porProducto     = useMemo(() => carteraPorProducto(solicitudes as any), [solicitudes]);
+  const insights        = useMemo(() => insightsReales(solicitudes as any, clientes as any), [solicitudes, clientes]);
 
   const getPrioridadColor = (prioridad: string) => {
     switch (prioridad.toLowerCase()) {
@@ -190,43 +136,47 @@ export function Dashboard({ onNavigateToModule }: { onNavigateToModule?: (module
     }
   };
 
+  const Cargando = ({ n }: { n: number }) => (
+    <tr><td colSpan={n} className="px-3 py-6 text-center text-xs text-gray-500">Cargando...</td></tr>
+  );
+
   return (
     <div className="p-6 space-y-6">
-      {/* Toggle Mapa de Flujo */}
-      <div className="flex items-center gap-3">
-        <button
-          onClick={() => setShowFlowMap(!showFlowMap)}
-          className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg border-2 transition-colors"
-          style={{
-            borderColor: 'var(--theme-primary)',
-            color: showFlowMap ? 'white' : 'var(--theme-primary)',
-            backgroundColor: showFlowMap ? 'var(--theme-primary)' : 'transparent',
-          }}
-        >
-          <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5">
-            <path d="M2 3h4v4H2zM12 3h4v4h-4zM7 11h4v4H7z"/>
-            <path d="M4 7v2h5V9M14 7v2H9V9"/>
-            <path d="M9 11V9"/>
-          </svg>
-          {showFlowMap ? 'Ocultar' : 'Mostrar'} Mapa de Flujo del Proceso
-        </button>
-        {showFlowMap && (
-          <span className="text-xs text-gray-500">Haz clic en cada paso para ver detalles y navegar al módulo</span>
-        )}
-      </div>
-
-      {/* Mapa de Flujo del Proceso General */}
-      {showFlowMap && onNavigateToModule && (
-        <ProcessFlowMap onNavigateToModule={onNavigateToModule} />
+      {/* Accesos a los modulos visibles de la sesion */}
+      {onNavigateToModule && (modulos?.length ?? 0) > 0 && (
+        <div className="mb-6">
+          <div className="bg-primary-light-theme border-l-4 border-primary-theme px-3 py-2 mb-3">
+            <span className="text-sm font-medium text-gray-800">ACCESOS</span>
+            <span className="text-[11px] text-gray-500 ml-2">{modulos!.length} módulo(s) disponibles</span>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+            {modulos!.map(m => (
+              <button
+                key={m.id}
+                onClick={() => onNavigateToModule(m.id)}
+                className="group flex items-center gap-2.5 px-3 py-3 bg-white border border-gray-200 rounded-lg text-left hover:border-primary-theme hover:shadow-md transition-all"
+              >
+                <span className="shrink-0 w-8 h-8 rounded-lg bg-primary-light-theme flex items-center justify-center text-primary-theme group-hover:bg-primary-theme group-hover:text-white transition-colors">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" />
+                    <rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" />
+                  </svg>
+                </span>
+                <span className="text-xs font-medium text-gray-700 leading-tight">{m.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
       )}
 
       {/* Grid principal: 2 columnas en desktop */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        
-        {/* Registros Recientes de Clientes */}
+
+        {/* Registros Recientes de Clientes — reales */}
         <div className="bg-white border border-gray-300 rounded">
-          <div className="bg-white border-b border-gray-300 px-4 py-3">
+          <div className="bg-white border-b border-gray-300 px-4 py-3 flex items-baseline justify-between">
             <h2 className="text-base font-medium text-gray-900">Registros Recientes de Clientes</h2>
+            <span className="text-[11px] text-gray-500">{clientes.length} en total</span>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
@@ -235,20 +185,20 @@ export function Dashboard({ onNavigateToModule }: { onNavigateToModule?: (module
                   <th className="text-left px-3 py-2 font-medium text-gray-700">Nombre</th>
                   <th className="text-left px-3 py-2 font-medium text-gray-700">Fecha Alta</th>
                   <th className="text-left px-3 py-2 font-medium text-gray-700">Tipo</th>
-                  <th className="text-left px-3 py-2 font-medium text-gray-700">Ejecutivo</th>
-                  <th className="text-center px-3 py-2 font-medium text-gray-700">Acciones</th>
+                  <th className="text-left px-3 py-2 font-medium text-gray-700">Sucursal</th>
+                  <th className="text-left px-3 py-2 font-medium text-gray-700">Estatus</th>
                 </tr>
               </thead>
               <tbody>
-                {clientesRecientes.map((cliente, idx) => (
-                  <tr key={cliente.id} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                    <td className="px-3 py-2 text-gray-900">{cliente.nombre}</td>
-                    <td className="px-3 py-2 text-gray-700">{cliente.fechaAlta}</td>
-                    <td className="px-3 py-2 text-gray-700">{cliente.tipoCliente}</td>
-                    <td className="px-3 py-2 text-gray-700">{cliente.ejecutivo}</td>
-                    <td className="px-3 py-2 text-center">
-                      <button className="text-[#2E5C91] hover:underline text-xs">Ver</button>
-                    </td>
+                {cargandoClientes && ultimosClientes.length === 0 ? <Cargando n={5} />
+                  : ultimosClientes.length === 0 ? VACIO
+                  : ultimosClientes.map((c: any, idx: number) => (
+                  <tr key={c.dbUuid || c.idCliente || idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                    <td className="px-3 py-2 text-gray-900">{c.nombreCompleto || '—'}</td>
+                    <td className="px-3 py-2 text-gray-700">{fechaCorta(c.fechaOriginacion || c.fechaAlta)}</td>
+                    <td className="px-3 py-2 text-gray-700">{c.subtipo || c.tipo || '—'}</td>
+                    <td className="px-3 py-2 text-gray-700">{c.sucursal || '—'}</td>
+                    <td className="px-3 py-2 text-gray-700">{c.estatus || '—'}</td>
                   </tr>
                 ))}
               </tbody>
@@ -256,75 +206,81 @@ export function Dashboard({ onNavigateToModule }: { onNavigateToModule?: (module
           </div>
         </div>
 
-        {/* Solicitudes Pendientes */}
+        {/* Solicitudes en tramite — reales */}
         <div className="bg-white border border-gray-300 rounded">
-          <div className="bg-white border-b border-gray-300 px-4 py-3">
-            <h2 className="text-base font-medium text-gray-900">Solicitudes Pendientes</h2>
+          <div className="bg-white border-b border-gray-300 px-4 py-3 flex items-baseline justify-between">
+            <div>
+              <h2 className="text-base font-medium text-gray-900">Solicitudes en Trámite</h2>
+              <p className="text-[11px] text-gray-500 mt-0.5">La prioridad se calcula por antigüedad, no es un dato capturado</p>
+            </div>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
               <thead className="bg-gray-50 border-b border-gray-300">
                 <tr>
-                  <th className="text-left px-3 py-2 font-medium text-gray-700">Tipo</th>
+                  <th className="text-left px-3 py-2 font-medium text-gray-700">Producto</th>
                   <th className="text-left px-3 py-2 font-medium text-gray-700">Cliente</th>
                   <th className="text-left px-3 py-2 font-medium text-gray-700">Prioridad</th>
-                  <th className="text-left px-3 py-2 font-medium text-gray-700">Fecha Límite</th>
-                  <th className="text-left px-3 py-2 font-medium text-gray-700">Estado</th>
+                  <th className="text-left px-3 py-2 font-medium text-gray-700">Fecha</th>
+                  <th className="text-left px-3 py-2 font-medium text-gray-700">Estatus</th>
                 </tr>
               </thead>
               <tbody>
-                {solicitudesPendientes.map((solicitud, idx) => (
-                  <tr key={solicitud.id} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                    <td className="px-3 py-2 text-gray-900">{solicitud.tipo}</td>
-                    <td className="px-3 py-2 text-gray-700">{solicitud.cliente}</td>
-                    <td className="px-3 py-2">
-                      <span className={`px-2 py-0.5 rounded text-xs ${getPrioridadColor(solicitud.prioridad)}`}>
-                        {solicitud.prioridad}
-                      </span>
-                    </td>
-                    <td className="px-3 py-2 text-gray-700">{solicitud.fechaLimite}</td>
-                    <td className="px-3 py-2 text-gray-700">{solicitud.estado}</td>
-                  </tr>
-                ))}
+                {cargandoSols && pendientes.length === 0 ? <Cargando n={5} />
+                  : pendientes.length === 0 ? VACIO
+                  : pendientes.map((s: any, idx: number) => {
+                  const dias = diasEnTramite(s);
+                  const prio = prioridadPorAntiguedad(dias);
+                  return (
+                    <tr key={s.id || s.noSol || idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                      <td className="px-3 py-2 text-gray-900">{s.tipoProducto || s.nombreProducto || '—'}</td>
+                      <td className="px-3 py-2 text-gray-700">{s.nombreCompleto || '—'}</td>
+                      <td className="px-3 py-2">
+                        <span className={`px-2 py-0.5 rounded text-xs ${getPrioridadColor(prio)}`} title={dias != null ? `${dias} día(s) en trámite` : ''}>
+                          {prio}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2 text-gray-700">{fechaCorta(s.fechaSolicitud)}</td>
+                      <td className="px-3 py-2 text-gray-700">{s.estatusSolicitud || s.faseDescripcion || '—'}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
         </div>
       </div>
 
-      {/* Créditos Recientes - Ancho completo */}
+      {/* Creditos colocados — reales */}
       <div className="bg-white border border-gray-300 rounded">
         <div className="bg-white border-b border-gray-300 px-4 py-3">
-          <h2 className="text-base font-medium text-gray-900">Créditos Recientes</h2>
+          <h2 className="text-base font-medium text-gray-900">Créditos Colocados Recientes</h2>
+          <p className="text-[11px] text-gray-500 mt-0.5">Solicitudes con monto autorizado</p>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-xs">
             <thead className="bg-gray-50 border-b border-gray-300">
               <tr>
                 <th className="text-left px-3 py-2 font-medium text-gray-700">Cliente</th>
-                <th className="text-right px-3 py-2 font-medium text-gray-700">Monto</th>
+                <th className="text-right px-3 py-2 font-medium text-gray-700">Monto Autorizado</th>
                 <th className="text-left px-3 py-2 font-medium text-gray-700">Producto</th>
-                <th className="text-left px-3 py-2 font-medium text-gray-700">Fecha Desembolso</th>
-                <th className="text-left px-3 py-2 font-medium text-gray-700">Estado</th>
-                <th className="text-center px-3 py-2 font-medium text-gray-700">Acciones</th>
+                <th className="text-left px-3 py-2 font-medium text-gray-700">Folio</th>
+                <th className="text-left px-3 py-2 font-medium text-gray-700">Fecha</th>
+                <th className="text-left px-3 py-2 font-medium text-gray-700">Estatus</th>
               </tr>
             </thead>
             <tbody>
-              {creditosRecientes.map((credito, idx) => (
-                <tr key={credito.id} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                  <td className="px-3 py-2 text-gray-900">{credito.cliente}</td>
-                  <td className="px-3 py-2 text-right text-gray-900 font-medium">{credito.monto}</td>
-                  <td className="px-3 py-2 text-gray-700">{credito.producto}</td>
-                  <td className="px-3 py-2 text-gray-700">{credito.fechaDesembolso}</td>
+              {cargandoSols && colocados.length === 0 ? <Cargando n={6} />
+                : colocados.length === 0 ? VACIO
+                : colocados.map((c: any, idx: number) => (
+                <tr key={c.id || c.noSol || idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                  <td className="px-3 py-2 text-gray-900">{c.nombreCompleto || '—'}</td>
+                  <td className="px-3 py-2 text-right text-gray-900 font-medium">{money(c.montoAutorizado)}</td>
+                  <td className="px-3 py-2 text-gray-700">{c.tipoProducto || c.nombreProducto || '—'}</td>
+                  <td className="px-3 py-2 text-gray-600 font-mono text-[11px]">{c.noSol || '—'}</td>
+                  <td className="px-3 py-2 text-gray-700">{fechaCorta(c.fechaSolicitud)}</td>
                   <td className="px-3 py-2">
-                    <span className={`px-2 py-0.5 rounded text-xs ${
-                      credito.estado === 'Vigente' ? 'text-green-700 bg-green-50' : 'text-yellow-700 bg-yellow-50'
-                    }`}>
-                      {credito.estado}
-                    </span>
-                  </td>
-                  <td className="px-3 py-2 text-center">
-                    <button className="text-[#2E5C91] hover:underline text-xs">Ver detalle</button>
+                    <span className="px-2 py-0.5 rounded text-xs text-green-700 bg-green-50">{c.estatusSolicitud || '—'}</span>
                   </td>
                 </tr>
               ))}
@@ -333,102 +289,98 @@ export function Dashboard({ onNavigateToModule }: { onNavigateToModule?: (module
         </div>
       </div>
 
-      {/* Gráficas KPI - Grid de 2 columnas */}
+      {/* Graficas KPI */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        
-        {/* Colocación */}
+
         <div className="bg-white border border-gray-300 rounded">
           <div className="bg-white border-b border-gray-300 px-4 py-3">
             <h2 className="text-base font-medium text-gray-900">Colocación Mensual</h2>
-            <p className="text-xs text-gray-600 mt-0.5">Últimos 6 meses (en miles de pesos)</p>
+            <p className="text-xs text-gray-600 mt-0.5">Monto autorizado, últimos 6 meses</p>
           </div>
-          <div className="p-4">
-            <ColocacionChart />
-          </div>
+          <div className="p-4"><ColocacionChart data={colocacion} /></div>
         </div>
 
-        {/* Cobranza */}
         <div className="bg-white border border-gray-300 rounded">
           <div className="bg-white border-b border-gray-300 px-4 py-3">
-            <h2 className="text-base font-medium text-gray-900">Cobranza vs Esperado</h2>
-            <p className="text-xs text-gray-600 mt-0.5">Últimos 6 meses (en miles de pesos)</p>
+            <h2 className="text-base font-medium text-gray-900">Solicitado vs Autorizado</h2>
+            <p className="text-xs text-gray-600 mt-0.5">Últimos 6 meses. La cobranza real requiere el módulo de pagos</p>
           </div>
-          <div className="p-4">
-            <CobranzaChart />
-          </div>
+          <div className="p-4"><SolicitadoVsAutorizadoChart data={colocacion} /></div>
         </div>
 
-        {/* Antigüedad de Saldos */}
         <div className="bg-white border border-gray-300 rounded">
           <div className="bg-white border-b border-gray-300 px-4 py-3">
-            <h2 className="text-base font-medium text-gray-900">Antigüedad de Saldos</h2>
-            <p className="text-xs text-gray-600 mt-0.5">Distribución de cartera por días vencidos (%)</p>
+            <h2 className="text-base font-medium text-gray-900">Solicitudes por Estatus</h2>
+            <p className="text-xs text-gray-600 mt-0.5">Distribución de las {solicitudes.length} solicitudes registradas</p>
           </div>
           <div className="p-4 flex items-center justify-center">
             <div className="w-full max-w-sm">
-              <AntiguedadChart />
+              {porEstatus.length === 0
+                ? <p className="text-xs text-gray-500 text-center py-12">Sin solicitudes registradas</p>
+                : <EstatusChart data={porEstatus} />}
             </div>
           </div>
         </div>
 
-        {/* Cartera por Nivel de Riesgo */}
         <div className="bg-white border border-gray-300 rounded">
           <div className="bg-white border-b border-gray-300 px-4 py-3">
-            <h2 className="text-base font-medium text-gray-900">Cartera por Nivel de Riesgo</h2>
-            <p className="text-xs text-gray-600 mt-0.5">Clasificación de cartera activa</p>
+            <h2 className="text-base font-medium text-gray-900">Cartera por Tipo de Producto</h2>
+            <p className="text-xs text-gray-600 mt-0.5">Monto autorizado colocado, por línea de producto</p>
           </div>
           <div className="p-4">
-            <div className="space-y-3">
-              {carteraPorRiesgoData.map((item) => (
-                <div key={item.nivel} className="space-y-1">
-                  <div className="flex justify-between text-xs">
-                    <span className="text-gray-700 font-medium">Nivel {item.nivel}</span>
-                    <span className="text-gray-900">${item.monto}K ({item.porcentaje}%)</span>
+            {porProducto.length === 0 ? (
+              <p className="text-xs text-gray-500 text-center py-12">Sin cartera colocada</p>
+            ) : (
+              <div className="space-y-3">
+                {porProducto.map((item: any, i: number) => (
+                  <div key={item.nivel} className="space-y-1">
+                    <div className="flex justify-between text-xs gap-2">
+                      <span className="text-gray-700 font-medium truncate">{item.nivel}</span>
+                      <span className="text-gray-900 whitespace-nowrap">{montoEje(item.monto)} ({pct(item.porcentaje, item.monto)})</span>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-2">
+                      <div
+                        className="h-2 rounded-full"
+                        style={{
+                          width: `${Math.max(item.porcentaje, item.monto > 0 ? 1 : 0)}%`,
+                          backgroundColor: ['#2E5C91', 'var(--theme-primary)', '#10B981', '#F59E0B', '#EF4444'][i % 5],
+                        }}
+                      />
+                    </div>
                   </div>
-                  <div className="w-full bg-gray-200 rounded-full h-2">
-                    <div 
-                      className="h-2 rounded-full" 
-                      style={{ 
-                        width: `${item.porcentaje}%`,
-                        backgroundColor: item.nivel === 'A' ? '#2E5C91' : 
-                                        item.nivel === 'B' ? 'var(--theme-primary)' : 
-                                        item.nivel === 'C' ? '#F59E0B' : 
-                                        item.nivel === 'D' ? '#EF4444' : '#991B1B'
-                      }}
-                    />
-                  </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </div>
 
-      {/* Propuestas Inteligentes */}
+      {/* Senales calculadas sobre los datos reales */}
       <div className="bg-white border border-gray-300 rounded">
         <div className="bg-white border-b border-gray-300 px-4 py-3">
           <h2 className="text-base font-medium text-gray-900">Propuestas Inteligentes</h2>
-          <p className="text-xs text-gray-600 mt-0.5">Insights y alertas basadas en análisis de datos</p>
+          <p className="text-xs text-gray-600 mt-0.5">Señales calculadas sobre los registros de la base</p>
         </div>
         <div className="p-4">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {insights.map((insight, idx) => (
-              <div 
-                key={idx} 
-                className="border border-gray-200 rounded p-4 hover:border-gray-300 transition-colors"
-              >
-                <div className="flex items-start gap-3">
-                  <div className="flex-shrink-0 mt-0.5">
-                    {getInsightIcon(insight.tipo)}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <h3 className="text-sm font-medium text-gray-900 mb-1">{insight.titulo}</h3>
-                    <p className="text-xs text-gray-600 leading-relaxed">{insight.descripcion}</p>
+          {insights.length === 0 ? (
+            <p className="text-xs text-gray-500 text-center py-6">
+              Aún no hay suficientes registros para calcular señales.
+            </p>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {insights.map((insight, idx) => (
+                <div key={idx} className="border border-gray-200 rounded p-4 hover:border-gray-300 transition-colors">
+                  <div className="flex items-start gap-3">
+                    <div className="flex-shrink-0 mt-0.5">{getInsightIcon(insight.tipo)}</div>
+                    <div className="flex-1 min-w-0">
+                      <h3 className="text-sm font-medium text-gray-900 mb-1">{insight.titulo}</h3>
+                      <p className="text-xs text-gray-600 leading-relaxed">{insight.descripcion}</p>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 

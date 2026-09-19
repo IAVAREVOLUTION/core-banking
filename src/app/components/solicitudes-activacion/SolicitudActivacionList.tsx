@@ -654,8 +654,7 @@ estatus:               initialEditItem.estatus || d.estatus || 'Pendiente',
             <span className="text-gray-400">|</span>
             <span className="text-gray-600">Método: <span className="font-medium text-gray-800">{fetchMethod || '(pendiente)'}</span></span>
             <span className="text-gray-400">|</span>
-            <span className="text-gray-600">Tabla: <span className="font-mono text-gray-800">J_SOLICITUDES_ACTIVACION</span></span>
-            <span className="text-gray-400">|</span>
+<span className="text-gray-400">|</span>
             <span className="text-gray-600">Filas DB: <span className="font-medium text-gray-800">{dbRowCount}</span></span>
             {warningDB && (
               <>

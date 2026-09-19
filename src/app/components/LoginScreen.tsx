@@ -2,8 +2,24 @@ import { useState } from 'react';
 import efinanciaLogo from '@/assets/7b6cb23c00b7817818c638af3eae0a416e1e9f57.png';
 import { useTheme, Theme } from '@/app/contexts/ThemeContext';
 
+/**
+ * REQ-25 — modulos que ve el usuario DEMO. Es una restriccion de INTERFAZ: las
+ * llamadas a Supabase usan la misma llave para todos (ver §Alcance de la HU).
+ */
+export const MODULOS_DEMO = [
+  'prospectos', 'cotizaciones', 'oportunidades', 'solicitudes-creditos',
+  'solicitudes-activacion', 'banca-2o-piso', 'cartera-credito',
+  'cobranza', 'polizas-contables',
+];
+
+export interface PerfilUsuario {
+  usuario: string;
+  /** Sin lista = acceso completo (RN-03). */
+  modulosPermitidos?: string[];
+}
+
 interface LoginScreenProps {
-  onLogin: () => void;
+  onLogin: (perfil: PerfilUsuario) => void;
 }
 
 export function LoginScreen({ onLogin }: LoginScreenProps) {
@@ -28,10 +44,14 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
     setError('');
     setLoading(true);
 
-    // Validación básica: admin / admin
+    // Validación básica: admin / admin · demo / demo
     setTimeout(() => {
-      if (usuario === 'admin' && password === 'admin') {
-        onLogin();
+      const u = usuario.trim().toLowerCase();
+      const p = password.trim().toLowerCase();
+      if (u === 'admin' && p === 'admin') {
+        onLogin({ usuario: 'admin' });          // sin lista = ve todo
+      } else if (u === 'demo' && p === 'demo') {
+        onLogin({ usuario: 'demo', modulosPermitidos: MODULOS_DEMO });
       } else {
         setError('Usuario o contraseña incorrectos');
         setLoading(false);
@@ -64,27 +84,22 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
         
         <div className="relative z-10">
           {/* Logo Section - Centrado y más grande */}
-          <div className="flex flex-col items-center mb-16">
-            {/* Fondo ovalado blanco detrás del logo */}
-            <div className="relative flex items-center justify-center mb-6">
-              <div 
-                className="absolute bg-white rounded-full" 
-                style={{
-                  width: '280px',
-                  height: '110px'
-                }}
-              ></div>
-              <img 
-                src={efinanciaLogo} 
-                alt="assets\7b6cb23c00b7817818c638af3eae0a416e1e9f57.png" 
-                className="h-52 relative z-10"
+          <div className="flex flex-col items-center mb-10">
+            {/* Placa blanca: el logo es transparente y el panel oscuro, asi que
+                necesita respaldo. Se dimensiona AL CONTENIDO (padding) en vez de
+                un rectangulo fijo: con medidas fijas el logo horizontal dejaba
+                mas de 50px de blanco arriba y abajo y se leia como un bloque. */}
+            <div className="bg-white rounded-2xl px-7 py-4 shadow-lg">
+              <img
+                src={efinanciaLogo}
+                alt="CACAO Banking"
+                className="h-16"
               />
             </div>
-            <h1 className="text-4xl font-light text-white">Bienvenido</h1>
           </div>
 
           {/* Main Title */}
-          <div className="mt-24 text-center">
+          <div className="mt-10 text-center">
             <h1 className="text-5xl font-light mb-6 leading-tight">
               SISTEMA DE<br />
               CORE BANKING
@@ -136,7 +151,7 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
         <div className="w-full max-w-md">
           {/* Mobile Logo */}
           <div className="lg:hidden flex items-center justify-center mb-8">
-            <img src={efinanciaLogo} alt="eFinanciaN@t" className="h-12" />
+            <img src={efinanciaLogo} alt="CACAO Banking" className="h-12" />
           </div>
 
           {/* Login Card */}
@@ -341,34 +356,11 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
                 )}
               </button>
             </form>
-
-            {/* Info Box */}
-            <div 
-              className="mt-6 p-4 border rounded"
-              style={{
-                backgroundColor: 'var(--login-primary-light)',
-                borderColor: 'var(--login-primary)',
-              }}
-            >
-              <p 
-                className="text-xs mb-1 font-medium"
-                style={{ color: 'var(--login-primary-hover)' }}
-              >
-                Credenciales de prueba:
-              </p>
-              <p 
-                className="text-xs"
-                style={{ color: 'var(--login-primary)' }}
-              >
-                Usuario: <span className="font-mono font-medium">admin</span> / 
-                Contraseña: <span className="font-mono font-medium">admin</span>
-              </p>
-            </div>
           </div>
 
           {/* Footer */}
           <div className="mt-8 text-center text-xs text-gray-500">
-            <p>© 2025 eFinanciaN@t - Core Banking System</p>
+            <p>© 2026 CACAO Banking — Core Banking System</p>
             <p className="mt-1">Todos los derechos reservados</p>
           </div>
         </div>

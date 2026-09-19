@@ -312,26 +312,6 @@ export function ProductoPickerModal({ open, onClose, onSelect }: ProductoPickerM
                 <p className="text-[10px] text-amber-700 mb-2">{errorMsg}</p>
               )}
 
-              {/* Debug log */}
-              {debugLog.length > 0 && (
-                <div className="mt-3 px-3 py-2 bg-gray-50 border border-gray-200 rounded text-left max-h-[200px] overflow-auto">
-                  <p className="text-[10px] text-gray-500 mb-1">Diagnóstico de conexión ({debugLog.length} pasos):</p>
-                  <div className="space-y-0.5">
-                    {debugLog.map((line, i) => (
-                      <p
-                        key={i}
-                        className={`text-[9px] font-mono ${
-                          line.includes('✓') ? 'text-green-600' :
-                          line.includes('✗') ? 'text-red-500' :
-                          line.startsWith('  ') ? 'text-gray-500' : 'text-gray-700'
-                        }`}
-                      >
-                        {line}
-                      </p>
-                    ))}
-                  </div>
-                </div>
-              )}
 
               {/* SQL de migración */}
               <details className="mt-3 text-left">

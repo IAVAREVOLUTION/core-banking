@@ -318,7 +318,7 @@ export function TarjetaDebito({ clienteId, mode, isView, titularNombre, numeroCu
 
                   {/* Bank name watermark */}
                   <div className="absolute top-5 left-0 right-0 text-center">
-                    <span className="text-white/20 text-[10px] tracking-[0.4em] uppercase">eFinanciaNet Banking</span>
+                    <span className="text-white/20 text-[10px] tracking-[0.4em] uppercase">CACAO Banking</span>
                   </div>
                 </div>
 
@@ -349,7 +349,7 @@ export function TarjetaDebito({ clienteId, mode, isView, titularNombre, numeroCu
                   {/* Info */}
                   <div className="mx-6 mt-4 space-y-2">
                     <p className="text-white/40 text-[8px] leading-tight">
-                      Esta tarjeta es propiedad de eFinanciaNet Banking. En caso de encontrarla favor de reportar al 800-123-4567.
+                      Esta tarjeta es propiedad de CACAO Banking. En caso de encontrarla favor de reportar al 800-123-4567.
                       Uso exclusivo del titular autorizado.
                     </p>
                     {numeroCuenta && (

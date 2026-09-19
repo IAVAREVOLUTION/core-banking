@@ -22,7 +22,7 @@ CREATE OR REPLACE FUNCTION update_fase_solicitud(
 RETURNS void
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = EFINANCIANET_DB, public
+SET search_path = "EFINANCIANET_DB", public
 AS $$
 BEGIN
   UPDATE "J_CUENTAS_CORP_CLIENTES"
@@ -65,7 +65,7 @@ CREATE OR REPLACE FUNCTION get_notas_solicitud(p_id uuid)
 RETURNS jsonb
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = EFINANCIANET_DB, public
+SET search_path = "EFINANCIANET_DB", public
 AS $$
 DECLARE
   v_notas jsonb;

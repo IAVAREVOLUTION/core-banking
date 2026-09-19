@@ -1,8 +1,13 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { GeneracionContableTab } from './GeneracionContableTab';
+import { AvisosTDCVista } from '../cartera-tdc/AvisosTDCVista';
 import { toast } from 'sonner';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 import { INSTITUCION_RAZON_SOCIAL } from '../solicitudes/solicitudCreditoStore';
+// REQ-19 — el sub_tipo se importa de donde se ESCRIBE (Banca 2º Piso lo manda al
+// crear el aviso). Duplicar el literal aquí dejaría que las dos puntas se
+// separen sin que nada falle: la bandeja simplemente saldría vacía.
+import { SUB_TIPO_COMISION_GPO } from '../banca-2o-piso/banca2oPisoStore';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-7e2d13d9`;
 const HDR = { Authorization: `Bearer ${publicAnonKey}` };
@@ -383,7 +388,17 @@ function AvisoForm({ aviso: inicial, mode, onBack, onPagado }: {
       });
       const json = await res.json();
       if (!res.ok || json.ok === false) { toast.error(`Error: ${json.error}`); return; }
-      toast.success('Pago aplicado exitosamente');
+      // REQ-19 RN-03 — la prelación de 2º Piso suma sólo los avisos `Pendiente`,
+      // así que cobrar aquí baja el monto de la próxima cascada de esa línea. El
+      // usuario que cobra no suele ser el que genera la prelación: se le dice.
+      if (aviso.sub_tipo === SUB_TIPO_COMISION_GPO) {
+        toast.success('Pago aplicado exitosamente', {
+          description: 'Este pago reduce el monto de comisión de la próxima prelación de la línea.',
+          duration: 8000,
+        });
+      } else {
+        toast.success('Pago aplicado exitosamente');
+      }
       setAviso(prev => ({ ...prev, estatus: 'Pagado' }));
       onPagado(aviso.id);
     } catch (e: any) { toast.error(`Error: ${e.message}`); }
@@ -924,7 +939,7 @@ function AvisosVencimientoPanel({ subTipoFijo, titulo }: { subTipoFijo?: string;
 
 // ─── Módulo principal ─────────────────────────────────────────────────────────
 export function CobranzaModule() {
-  const [activeTab, setActiveTab] = useState<'creditos' | 'arrendamiento' | 'aportaciones'>('creditos');
+  const [activeTab, setActiveTab] = useState<'creditos' | 'arrendamiento' | 'aportaciones' | 'segundo-piso' | 'tdc'>('creditos');
 
   return (
     <>
@@ -951,6 +966,25 @@ export function CobranzaModule() {
             </svg>
             Avisos de Aportación — Captación
           </button>
+          {/* REQ-19 CA-01 — misma bandeja, cuarto sub_tipo. */}
+          <button onClick={() => setActiveTab('segundo-piso')}
+            className={`flex items-center gap-2 px-3 py-1.5 rounded text-sm transition-colors ${activeTab === 'segundo-piso' ? 'tab-active' : 'tab-inactive'}`}>
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+              <path d="M2 13h12M4 13V7h3v6M9 13V4h3v9" strokeLinejoin="round"/>
+            </svg>
+            Avisos de Vencimiento — 2º Piso
+          </button>
+          {/* Tarjeta de Crédito: sus Avisos NO viven en J_FACTURAS como los
+              demás, sino en J_CXC_LINEA — los emite el Cierre de Corte con su
+              monto mínimo y su detalle en orden de prelación. Por eso es una
+              bandeja propia y no un sub_tipo más del panel genérico. */}
+          <button onClick={() => setActiveTab('tdc')}
+            className={`flex items-center gap-2 px-3 py-1.5 rounded text-sm transition-colors ${activeTab === 'tdc' ? 'tab-active' : 'tab-inactive'}`}>
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+              <rect x="1.5" y="3.5" width="13" height="9" rx="1.5"/><path d="M1.5 6.5h13"/>
+            </svg>
+            Avisos TDC
+          </button>
         </div>
       </div>
 
@@ -962,6 +996,19 @@ export function CobranzaModule() {
       )}
       {activeTab === 'aportaciones' && (
         <AvisosVencimientoPanel key="aportaciones" subTipoFijo="Aportacion" titulo="Avisos de Aportación — Captación" />
+      )}
+      {activeTab === 'segundo-piso' && (
+        <AvisosVencimientoPanel key="segundo-piso" subTipoFijo={SUB_TIPO_COMISION_GPO} titulo="Avisos de Vencimiento — 2º Piso" />
+      )}
+      {activeTab === 'tdc' && (
+        <div className="p-6">
+          <h2 className="text-lg font-normal text-gray-800 mb-1">Avisos de Vencimiento — Tarjeta de Crédito</h2>
+          <p className="text-xs text-gray-500 mb-4">
+            Emitidos por el Cierre de Corte. Abra un renglón para ver sus conceptos
+            en el orden de prelación con que se aplicarán los pagos.
+          </p>
+          <AvisosTDCVista variante="modulo" />
+        </div>
       )}
     </>
   );

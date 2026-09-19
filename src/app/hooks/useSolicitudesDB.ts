@@ -472,6 +472,9 @@ function formToDBPayload(form: SolicitudFormData, allSubtabs?: Record<string, an
   }
   // REQ-10 — plazo de la emisión bursátil (años de la matriz de proyecciones).
   if ((terminos as any).plazoBonosAnios) coreTerminosRaw.plazoBonosAnios = (terminos as any).plazoBonosAnios;
+  // REQ-26 — Perfil TDC heredado del Cierre Comercial; alimenta el subtab
+  // Datos Financieros de la Solicitud/Originación.
+  if ((terminos as any).perfilTDC) coreTerminosRaw.perfilTDC = (terminos as any).perfilTDC;
 
   const origRaw = origSol.terminos_condiciones?._raw || {};
   const mergedRaw = Object.keys(coreTerminosRaw).length > 0
@@ -826,6 +829,12 @@ async function tryRPC(): Promise<{ ok: boolean; rows: SolicitudDBRow[]; method: 
 async function insertSolicitud(payload: ReturnType<typeof formToDBPayload>): Promise<{ ok: boolean; id?: string; error?: string }> {
   if (!DB_AVAILABLE) return { ok: false, error: 'DB no disponible' };
 
+  // Se conserva el error del Intento 1 para reportarlo junto con el del
+  // fallback: cuando el Edge falla y la RPC también, el usuario sólo veía el
+  // error de la RPC ("relation efinancianet_db.J_CUENTAS_CORP_CLIENTES does not
+  // exist"), que apunta al síntoma y no a la causa de por qué se llegó ahí.
+  let errorEdge = '';
+
   // ── Intento 1: Edge Function (prioridad — resuelve cliente_id por nombre) ──
   try {
     console.log('[SolicDB] INSERT via Edge Function (prioridad)...');
@@ -842,9 +851,11 @@ async function insertSolicitud(payload: ReturnType<typeof formToDBPayload>): Pro
       console.log('[SolicDB] INSERT Edge OK — id:', json.id);
       return { ok: true, id: json.id };
     }
-    console.warn('[SolicDB] INSERT Edge FALLÓ:', json.error);
+    errorEdge = json.error || `HTTP ${res.status}`;
+    console.warn('[SolicDB] INSERT Edge FALLÓ:', errorEdge);
   } catch (err: any) {
-    console.warn('[SolicDB] INSERT Edge EXCEPCIÓN:', err?.message);
+    errorEdge = err?.message || String(err);
+    console.warn('[SolicDB] INSERT Edge EXCEPCIÓN:', errorEdge);
   }
 
   // ── Intento 2: RPC (fallback) ──
@@ -874,10 +885,11 @@ async function insertSolicitud(payload: ReturnType<typeof formToDBPayload>): Pro
       return { ok: true, id };
     }
     console.warn('[SolicDB] INSERT RPC FALLÓ:', error.message);
-    return { ok: false, error: error.message };
+    return { ok: false, error: `RPC: ${error.message}${errorEdge ? ` | Edge: ${errorEdge}` : ''}` };
   } catch (err: any) {
     console.error('[SolicDB] INSERT RPC EXCEPCIÓN:', err?.message);
-    return { ok: false, error: err?.message || String(err) };
+    const msg = err?.message || String(err);
+    return { ok: false, error: `RPC: ${msg}${errorEdge ? ` | Edge: ${errorEdge}` : ''}` };
   }
 }
 

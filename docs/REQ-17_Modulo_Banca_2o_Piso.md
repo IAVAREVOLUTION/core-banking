@@ -177,8 +177,20 @@ Ambos campos vienen ya mapeados. El filtro es del listado, no del endpoint.
 | 1 | Default | Montar `DefaultTab` con la fila seleccionada |
 | 2 | Términos y Condiciones | Según §Decisión #4: `TerminosCondicionesTab` en `ver`, o vista de sólo lectura sobre `terminos_condiciones._raw` |
 | 3 | Expediente Electrónico | `ExpedienteElectronicoTab` en `mode='ver'`, con `solicitudId`, `productoId` y `faseIdActual` de la fila |
-| 4 | Solicitudes Extraordinarias | Montar `SolicitudesExtTab` con `solicitudId` |
-| 5 | Disposiciones | **Bloqueada** por §Decisión #1 |
+| 4 | Cargos | `SolicitudCargosTab` en `mode='ver'` — muestra los cargos que REQ-15 genera al cerrar la Fase 4. **Añadida el 31/08/2026 a petición del usuario**, después de Expediente Electrónico |
+| 5 | Solicitudes Extraordinarias | Montar `SolicitudesExtTab` con `solicitudId` |
+| 6 | Disposiciones | **Bloqueada** por §Decisión #1 |
+
+---
+
+### Arreglo de la unidad del Plazo (31/08/2026)
+
+`cartera/DefaultTab.tsx` rotulaba el plazo como **meses** para todos los productos. Una
+Línea de Crédito de 2o Piso a 20 con frecuencia Anual se leía como "20 meses" cuando son
+**20 años**. Ahora la unidad se decide igual que `unidadPlazo` de `TerminosCondicionesTab`
+(producto con "garant" en el nombre) y además por frecuencia **Anual**, que delata a una
+línea capturada en años aunque el producto no se llame así. El componente es compartido:
+el arreglo aplica también a Cartera Crédito.
 
 ---
 

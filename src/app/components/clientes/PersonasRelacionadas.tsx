@@ -472,10 +472,10 @@ export function PersonasRelacionadas({
   const clientesFiltrados = useMemo(() => {
     let filtered = clientesDisponibles;
 
-    // Excluir el cliente actual (no auto-referencia — spec §8)
-    if (clienteUuid) {
-      filtered = filtered.filter(c => c.dbUuid !== clienteUuid);
-    }
+    // El titular SÍ aparece en la lista: un cliente puede figurar entre sus
+    // propias personas relacionadas (p. ej. PROS-017 relacionándose a sí mismo
+    // en otro rol). Antes se ocultaba por la regla de "no auto-referencia", que
+    // impedía un caso de negocio legítimo.
 
     // Excluir clientes ya relacionados (no duplicados — spec §8)
     const uuidsRelacionados = new Set(items.map(p => p.clienteUuid).filter(Boolean));
@@ -516,11 +516,9 @@ export function PersonasRelacionadas({
       return;
     }
 
-    // Validación: no auto-referencia (spec §8)
-    if (clienteUuid && cliente.dbUuid === clienteUuid) {
-      toast.error('No se puede relacionar un cliente consigo mismo');
-      return;
-    }
+    // Auto-referencia permitida: el titular puede agregarse a sí mismo como
+    // persona relacionada. La guarda de duplicados de arriba sigue impidiendo
+    // que aparezca dos veces, que es el problema real que había que evitar.
 
     // Validación spec §7: No permitir guardar sin nombre, RFC o personalidad
     if (!cliente.nombreCompleto || cliente.nombreCompleto === 'Sin nombre') {
@@ -970,8 +968,12 @@ export function PersonasRelacionadas({
                   <tbody className="divide-y divide-gray-100">
                     {clientesFiltrados.map((cliente) => {
                       const isAlreadyRelated = items.some(p => p.clienteUuid === cliente.dbUuid);
+                      // El titular puede agregarse a sí mismo: sólo lo bloquea
+                      // estar ya en la lista. Antes se deshabilitaba con la
+                      // etiqueta "Auto-ref", que era la última barrera que
+                      // quedaba para un caso de negocio válido.
                       const isSelf = cliente.dbUuid === clienteUuid;
-                      const isDisabled = isAlreadyRelated || isSelf;
+                      const isDisabled = isAlreadyRelated;
                       
                       return (
                         <tr
@@ -1009,7 +1011,7 @@ export function PersonasRelacionadas({
                                   : 'bg-[#4A6FA5] text-white hover:bg-[#3E5C91] shadow-sm hover:shadow'
                               }`}
                             >
-                              {isAlreadyRelated ? 'Ya agregado' : isSelf ? 'Auto-ref' : '+ Agregar'}
+                              {isAlreadyRelated ? 'Ya agregado' : isSelf ? '+ Agregar (titular)' : '+ Agregar'}
                             </button>
                           </td>
                         </tr>

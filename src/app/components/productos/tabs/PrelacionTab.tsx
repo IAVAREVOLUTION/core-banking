@@ -1,11 +1,7 @@
 import { useState, useEffect, forwardRef, useImperativeHandle } from 'react';
 import { toast } from 'sonner';
 import { useTabPersistence } from '@/app/hooks/useProductoPersistence';
-import { projectId, publicAnonKey } from '/utils/supabase/info';
-
-const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-7e2d13d9`;
-const HDR = { Authorization: `Bearer ${publicAnonKey}` };
-
+import { useComponentesContablesCatalogo } from '@/app/hooks/useComponentesContablesCatalogo';
 interface Prelacion {
   id: number;
   productId: number;
@@ -18,11 +14,18 @@ interface PrelacionTabProps {
   productId: number | string;
   initialData?: Prelacion[];
   persistToStorage?: boolean;
+  /**
+   * Prefijo del storage. Default 'credito' (Producto Activo). Línea de Crédito
+   * pasa 'linea_credito' porque sus ids son una secuencia distinta: sin esto,
+   * el producto LC #3 y el de Crédito #3 compartirían la misma prelación.
+   */
+  storagePrefix?: string;
 }
 
 export const PrelacionTab = forwardRef<{ getData: () => Prelacion[] }, PrelacionTabProps>(
-  ({ mode, productId, initialData, persistToStorage }, ref) => {
-    const storageKey = persistToStorage && productId ? `credito_prelacion_${productId}` : '';
+  ({ mode, productId, initialData, persistToStorage, storagePrefix }, ref) => {
+    const prefix = storagePrefix || 'credito';
+    const storageKey = persistToStorage && productId ? `${prefix}_prelacion_${productId}` : '';
 
     // ══════════════════════════════════════════════════════════════
     // FIX: Prelación de Cargos es 100% manual. Sin defaults hardcodeados.
@@ -225,20 +228,8 @@ function FormModal({ mode, item, productId, onSave, onClose }: FormModalProps) {
     ordenAplicacion: item?.ordenAplicacion || '',
     productosCargos: item?.productosCargos || '',
   });
-  const [componentes, setComponentes] = useState<{ id: number; codigo: string; nombre: string }[]>([]);
-
-  useEffect(() => {
-    fetch(`${API_BASE}/componentes-contables`, { headers: HDR })
-      .then(r => r.json())
-      .then(j => {
-        if (j.success && Array.isArray(j.data)) {
-          setComponentes(
-            [...j.data].sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'))
-          );
-        }
-      })
-      .catch(() => {});
-  }, []);
+  // ── Catálogo de Componentes (Configuración → Componentes Contables) ──
+  const { componentes, loading: cargandoCatalogo } = useComponentesContablesCatalogo();
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -312,11 +303,24 @@ function FormModal({ mode, item, productId, onSave, onClose }: FormModalProps) {
                     disabled={isViewMode}
                     className={inputClassName()}
                   >
-                    <option value="">Seleccione...</option>
+                    <option value="">
+                      {cargandoCatalogo ? 'Cargando catálogo...' : 'Seleccione...'}
+                    </option>
                     {componentes.map(c => (
-                      <option key={c.id} value={c.nombre}>{c.nombre}</option>
+                      <option key={c.id} value={c.nombre}>{c.codigo} — {c.nombre}</option>
                     ))}
+                    {/* Un valor guardado que ya no esté en el catálogo no debe desaparecer del combo */}
+                    {formData.productosCargos && !componentes.some(c => c.nombre === formData.productosCargos) && (
+                      <option value={formData.productosCargos}>{formData.productosCargos}</option>
+                    )}
                   </select>
+                  <span className="text-[10px] text-gray-500 italic">
+                    {cargandoCatalogo
+                      ? 'Consultando Catálogo de Componentes...'
+                      : componentes.length > 0
+                        ? `Catálogo de Componentes (${componentes.length} registros)`
+                        : 'No se pudo cargar el Catálogo de Componentes. Revise Configuración → Componentes Contables.'}
+                  </span>
                 </div>
               </div>
             </div>

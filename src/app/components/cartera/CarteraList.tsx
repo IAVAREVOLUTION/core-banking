@@ -9,6 +9,7 @@ import { SolicitudesExtGestion } from './SolicitudesExtGestion';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 import { esArrendamientoPuroRow } from './CarteraArrendamientoList';
 import { esLineaCredito2oPisoRow } from '../banca-2o-piso/banca2oPisoStore';
+import { esCuentaTDCRow } from '../cartera-tdc/carteraTDCStore';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-7e2d13d9`;
 const HDR = { Authorization: `Bearer ${publicAnonKey}` };
@@ -52,6 +53,13 @@ function useCreditos() {
           if (esLineaCredito2oPisoRow(
             r.linea_produc || h.linea_producto || '',
             r.estatus_sol || h.estatus || '',
+          )) return false;
+          // Las Tarjetas de Crédito se administran en Cartera TDC: no pasan por
+          // Solicitud de Activación, así que tienen su propio módulo.
+          if (esCuentaTDCRow(
+            r.linea_produc || h.linea_producto || '',
+            r.tipo_produc || h.tipo_producto || '',
+            r.producto_nombre || h.nombre_producto || '',
           )) return false;
           return true;
         })
@@ -446,7 +454,7 @@ function ListScreen({ rows, loading, error, refetch, onVer, onEditar }: {
           <span className="text-sm text-gray-700">Ver</span>
           <div className="relative">
             <select className="px-3 py-1.5 border border-gray-400 rounded text-sm bg-white pr-8 appearance-none min-w-[280px]">
-              <option>Vista general de Cartera de Crédito</option>
+              <option>Vista general de Cartera de Crédito 2º Piso</option>
             </select>
             <svg className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" width="12" height="12" viewBox="0 0 12 12" fill="#666">
               <path d="M6 8l-4-4h8z" />

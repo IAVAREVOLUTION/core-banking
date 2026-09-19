@@ -10,9 +10,6 @@
  * ResolucionCIC).
  */
 import { useState, useEffect, useRef } from 'react';
-import { toast } from 'sonner';
-import { supabase } from '../../lib/supabaseClient';
-import { projectId } from '/utils/supabase/info';
 import { loadFromSession, loadFromSavedStore, saveToSession } from './solicitudCreditoStore';
 
 export const SUBTAB_VALIDACION_CLAUSULAS = 'validacionClausulas';
@@ -57,32 +54,7 @@ export function faltantesValidacionClausulas(d: ValidacionClausulasData): string
   if (!d.fechaFirmaContratos.trim()) faltan.push('Fecha de Firma de Contratos');
   if (!d.clausula41AgotamientoFondoReserva) faltan.push('Cláusula 4.1 — Agotamiento del Fondo de Reserva');
   if (!d.clausula72CascadaPagosPreferencial) faltan.push('Cláusula 7.2 — Cascada de Pagos Preferencial');
-  if (!d.contratoArchivo) faltan.push('Contrato GPO Firmado (PDF)');
   return faltan;
-}
-
-async function subirContratoGPO(file: File, solicitudId: string): Promise<ArchivoContratoGPO | null> {
-  const timestamp = Date.now();
-  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-  const storagePath = `expedientes-electronicos/solicitudes/${solicitudId}/${timestamp}_${safeName}`;
-  try {
-    const { data, error } = await supabase.storage
-      .from(BUCKET_EXPEDIENTES)
-      .upload(storagePath, file, { cacheControl: '3600', upsert: false, contentType: file.type || 'application/pdf' });
-    if (error || !data?.path) {
-      console.warn('[ValidacionClausulas] subida a Storage falló:', error?.message);
-      return null;
-    }
-    let url = `https://${projectId}.supabase.co/storage/v1/object/public/${BUCKET_EXPEDIENTES}/${data.path}`;
-    try {
-      const { data: signedData } = await supabase.storage.from(BUCKET_EXPEDIENTES).createSignedUrl(data.path, 3600);
-      if (signedData?.signedUrl) url = signedData.signedUrl;
-    } catch { /* usa la URL pública */ }
-    return { nombre: file.name, url, storagePath: data.path, mime: file.type || 'application/pdf', tamanoKB: Math.round(file.size / 1024) };
-  } catch (err: any) {
-    console.warn('[ValidacionClausulas] excepción subiendo Storage:', err?.message);
-    return null;
-  }
 }
 
 interface Props {
@@ -94,7 +66,6 @@ interface Props {
 export function ValidacionClausulasFiduciariasTab({ mode, solicitudId, onChange }: Props) {
   const isRO = mode === 'ver';
   const [datos, setDatos] = useState<ValidacionClausulasData>(() => leerValidacionClausulas(solicitudId));
-  const [subiendo, setSubiendo] = useState(false);
 
   const huboDatosRef = useRef(false);
   const hayAlgo = !!(datos.cuentaClabeFideicomiso.trim() || datos.fechaFirmaContratos.trim() ||
@@ -112,28 +83,6 @@ export function ValidacionClausulasFiduciariasTab({ mode, solicitudId, onChange 
   const set = <K extends keyof ValidacionClausulasData>(campo: K, valor: ValidacionClausulasData[K]) => {
     if (isRO) return;
     setDatos(prev => ({ ...prev, [campo]: valor }));
-  };
-
-  const handleArchivo = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = '';
-    if (!file || isRO) return;
-    if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
-      toast.error('El contrato debe ser un archivo PDF');
-      return;
-    }
-    setSubiendo(true);
-    try {
-      const subido = await subirContratoGPO(file, String(solicitudId));
-      if (subido) {
-        set('contratoArchivo', subido);
-        toast.success('Contrato GPO cargado', { description: subido.nombre, duration: 5000 });
-      } else {
-        toast.error('No se pudo subir el contrato', { description: 'Intente de nuevo — revise su conexión.' });
-      }
-    } finally {
-      setSubiendo(false);
-    }
   };
 
   const claveEnPantalla = (v: string) => v.replace(/\D/g, '').slice(0, 18);
@@ -222,36 +171,10 @@ export function ValidacionClausulasFiduciariasTab({ mode, solicitudId, onChange 
         </label>
       </div>
 
-      {/* ═══ Bloque C — archivo legal ═══ */}
-      <div className="bg-primary-light-theme px-3 py-2 mb-3 text-sm font-medium text-gray-800 border-l-4 border-primary-theme">
-        ARCHIVO LEGAL
-      </div>
-      <div className="mb-5">
-        <label className="block text-xs text-gray-700 mb-1">
-          Contrato GPO Firmado (PDF notariado) <span className="text-red-500">*</span>
-        </label>
-        {datos.contratoArchivo ? (
-          <div className="flex items-center justify-between px-3 py-2 bg-green-50 border border-green-200 rounded">
-            <a href={datos.contratoArchivo.url} target="_blank" rel="noreferrer" className="text-xs text-green-800 underline truncate">
-              {datos.contratoArchivo.nombre} ({datos.contratoArchivo.tamanoKB} KB)
-            </a>
-            {!isRO && (
-              <button onClick={() => set('contratoArchivo', null)} className="text-[11px] text-red-600 hover:underline ml-3 whitespace-nowrap">
-                Quitar
-              </button>
-            )}
-          </div>
-        ) : (
-          <input
-            type="file"
-            accept="application/pdf,.pdf"
-            onChange={handleArchivo}
-            disabled={isRO || subiendo}
-            className="w-full text-xs text-gray-600 file:mr-3 file:px-3 file:py-1.5 file:rounded file:border-0 file:bg-[#4A6FA5] file:text-white file:text-xs hover:file:bg-[#3d5c87]"
-          />
-        )}
-        {subiendo && <span className="text-[10px] text-gray-400 mt-1 block">Subiendo…</span>}
-      </div>
+      {/* El Contrato GPO firmado se carga y valida en el Expediente
+          Electronico, que es el repositorio documental de la Solicitud. Tenerlo
+          tambien aqui duplicaba el archivo y su validacion: el mismo PDF podia
+          quedar cargado en un sitio y no en el otro. */}
 
       {!isRO && faltantes.length > 0 && (
         <div className="pt-3 border-t border-gray-200 text-right">

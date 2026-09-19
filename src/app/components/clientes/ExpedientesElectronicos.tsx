@@ -772,55 +772,6 @@ export function ExpedientesElectronicos({ isView = false, clienteId, mode = 'nue
 
   return (
     <div className="flex-1">
-      {/* ═══ PANEL DIAGNÓSTICO ═══ */}
-      {(mode === 'editar' || mode === 'ver') && diagData && (
-        <div className="mb-3 border border-amber-300 rounded bg-amber-50">
-          <button
-            onClick={() => setShowDiag(!showDiag)}
-            className="w-full px-3 py-2 flex items-center justify-between text-xs text-amber-800 hover:bg-amber-100 transition-colors"
-          >
-            <span className="flex items-center gap-2">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
-              <span className="font-semibold">DIAGNÓSTICO DB — EXPEDIENTES</span>
-              <span className="font-normal">
-                — Fuente: {diagData.rawNode ? `encontrado (${Array.isArray(diagData.rawNode) ? diagData.rawNode.length : 1} crudo)` : 'NO encontrado'}
-                {` | Mostradas: ${allExpedientes.length}`}
-                {` | UUID: ${diagUuid}`}
-              </span>
-            </span>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={`transition-transform ${showDiag ? 'rotate-180' : ''}`}>
-              <path d="M6 9l6 6 6-6"/>
-            </svg>
-          </button>
-          {showDiag && (
-            <div className="px-3 pb-3 space-y-2 border-t border-amber-200">
-              <div className="mt-2">
-                <span className="text-xs font-semibold text-amber-900">Keys en _rawData ({diagKeys.length}):</span>
-                <div className="mt-1 flex flex-wrap gap-1">
-                  {diagKeys.map(k => (
-                    <span key={k} className={`px-1.5 py-0.5 text-[10px] rounded ${['expedientesElectronicos','expedientes_electronicos','expedientes','documents','archivos'].includes(k) ? 'bg-green-200 text-green-800 font-bold' : 'bg-gray-200 text-gray-700'}`}>
-                      {k}
-                    </span>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <span className="text-xs font-semibold text-amber-900">JSON crudo de "expedientes" de J_CLIENTES.data:</span>
-                <pre className="mt-1 p-2 bg-white border border-amber-200 rounded text-[10px] text-gray-800 max-h-48 overflow-auto whitespace-pre-wrap break-all">
-                  {diagData.rawNode
-                    ? JSON.stringify(diagData.rawNode, null, 2)
-                    : '(null — no existe nodo de expedientes en el JSONB)'}
-                </pre>
-              </div>
-              {!diagData.rawNode && (
-                <div className="p-2 bg-red-50 border border-red-200 rounded text-xs text-red-700">
-                  <strong>No se encontró nodo de expedientes en _rawData.</strong> Keys que SÍ existen: {diagKeys.join(', ') || '(ninguna)'}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      )}
 
       {/* Encabezado institucional */}
       <div className="bg-[rgb(239,246,255)] border-l-4 border-primary-theme px-3 py-2 mb-3 flex items-center justify-between">

@@ -4,10 +4,11 @@ import {
   SimulacionRow, TerminosCondiciones, EMPTY_TERMINOS,
   saveToSession, loadFromSession, loadFromSavedStore,
   MOCK_SIMULACION, MOCK_TERMINOS, formatCurrency, generarSimulacion, parseCurrency,
-  CAT_FRECUENCIA,
+  CAT_FRECUENCIA, esTarjetaCredito,
 } from './solicitudCreditoStore';
 import { FlujInversionRow, calcularFlujInversion, TASA_ISR_ANUAL } from '../cotizaciones/cotizacionCaptacionTypes';
 import { generarTablaArrendamiento, generarTablaArrendamientoFinanciero, type SimulacionArrendamiento } from '../cotizaciones/cotizacionArrendamientoTypes';
+import { fechasCobroComision } from '../../lib/fechasComisionGPO';
 
 interface AportacionRow {
   noAportacion: number;
@@ -166,6 +167,34 @@ function generarCalendarioAportaciones(
   return rows;
 }
 
+/**
+ * Dias que dura un periodo segun la frecuencia de pago. Se usa para derivar la
+ * Fecha Fin de un credito: Fecha Fin = Fecha Inicio + (plazo x dias del periodo).
+ * Convencion comercial (mes de 30 dias, anio de 360), la misma con la que se
+ * calculan los intereses en este sistema.
+ */
+const DIAS_POR_PERIODO: Record<string, number> = {
+  Diario: 1,
+  Semanal: 7,
+  Catorcenal: 14,
+  Quincenal: 15,
+  Mensual: 30,
+  Bimestral: 60,
+  Trimestral: 90,
+  Cuatrimestral: 120,
+  Semestral: 180,
+  Anual: 360,
+};
+
+/** Suma dias a una fecha ISO (YYYY-MM-DD) y devuelve ISO. */
+function sumarDias(fechaIso: string, dias: number): string {
+  if (!fechaIso || !Number.isFinite(dias)) return '';
+  const d = new Date(`${fechaIso}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return '';
+  d.setDate(d.getDate() + dias);
+  return d.toISOString().split('T')[0];
+}
+
 export function SimulacionTab({ mode, solicitudId, lineaProducto, tipoProducto, calendarioAportaciones, simulacionInicial, montoAutorizado, montoSolicitadoHeader, plazoHeader, tasaHeader, fechaInicioHeader, frecuenciaHeader, onFechaFinChange }: Props) {
   const isRO = mode === 'ver';
   const isCap = esCaptacion(lineaProducto, tipoProducto);
@@ -198,7 +227,10 @@ export function SimulacionTab({ mode, solicitudId, lineaProducto, tipoProducto, 
     (loadFromSession<any>(solicitudId, '_originalData') ||
       loadFromSavedStore<any>(solicitudId, '_originalData'))
       ?.solicitud?.terminos_condiciones?._raw || {};
-  const isGPO = !isCap && !isArrendamiento && (
+  // La TDC se cotiza como línea de crédito normal, aunque haya heredado
+  // datos GPO de la Oportunidad.
+  const esTDCSim = esTarjetaCredito(_tpRaw, lineaProducto, tipoProducto);
+  const isGPO = !isCap && !isArrendamiento && !esTDCSim && (
     _tpRaw.includes('garant') ||
     !!_terminosGPO?.periodicidadCobroGpo ||
     !!_terminosGPO?.porcentajeCoberturaGpo ||
@@ -290,12 +322,30 @@ export function SimulacionTab({ mode, solicitudId, lineaProducto, tipoProducto, 
     if (!isRO && isCap && calRows) saveToSession(solicitudId, 'simulacion_cal', calRows);
   }, [calRows, solicitudId, isRO, isCap]);
 
-  // Notificar fecha del último pago a SolicitudCreditoForm → campo "Fecha Fin"
+  // Fecha Fin del crédito → campo "Fecha Fin" de SolicitudCreditoForm.
+  //
+  // Formula: Fecha Fin = Fecha Inicio + (plazo x dias del periodo).
+  // Antes se tomaba la fecha del ULTIMO PAGO de la tabla, que no es lo mismo:
+  // con 12 mensualidades el ultimo pago cae al mes 11 desde el primero, no al
+  // final del plazo contratado. Si faltan datos para la formula se conserva el
+  // comportamiento anterior en vez de dejar el campo vacio.
   useEffect(() => {
     if (!onFechaFinChange || isCap) return;
+
+    const t = readTerminos();
+    const inicio = toIsoDate(fechaInicioHeader || t.fechaPrimerPago || '');
+    const plazoNum = parseInt(String(plazoHeader || t.plazo || '0'), 10) || 0;
+    const frec = String(t.frecuencia || frecuenciaHeader || 'Mensual');
+    const dias = DIAS_POR_PERIODO[frec] ?? 0;
+
+    if (inicio && plazoNum > 0 && dias > 0) {
+      const fin = sumarDias(inicio, plazoNum * dias);
+      if (fin) { onFechaFinChange(fin); return; }
+    }
+
     const last = rows[rows.length - 1];
     if (last?.fechaPago) onFechaFinChange(last.fechaPago);
-  }, [rows]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [rows, fechaInicioHeader, plazoHeader, frecuenciaHeader]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!onFechaFinChange || !isCap) return;
@@ -492,34 +542,45 @@ export function SimulacionTab({ mode, solicitudId, lineaProducto, tipoProducto, 
     const ingresoAnual = montoGarantizado * (tasaComision / 100);
     const ingresoPorPeriodo = ingresoAnual / periodosPorAnio;
     const ivaPorPeriodo = ingresoPorPeriodo * (ivaPct / 100);
-    const mesesPorPeriodo = 12 / periodosPorAnio;
+    // Horizonte = TODO EL PLAZO de la garantía, no un año.
+    //
+    // CAMBIO (2026-08-31): antes se fijaba en `periodosPorAnio` (Mensual→12,
+    // Trimestral→4, Anual→1) siguiendo la regla "las comisiones a pagar
+    // durante el año". Para una emisión a 20 años eso mostraba 4 renglones de
+    // 80 y la tabla no representaba la obligación real: los totales salían
+    // por un año y no por el contrato. El plazo de la GPO va en AÑOS (ver
+    // DefaultTab.tsx:38). Si no hay plazo capturado se cae a 1 año, que es el
+    // comportamiento anterior, en vez de generar una tabla vacía.
+    const plazoAnios =
+      parseInt(String(plazoHeader || ''), 10) ||
+      parseInt(String(readTerminos().plazo || ''), 10) ||
+      parseInt(String(gpoVal('plazoBonosAnios') || ''), 10) ||
+      1;
+    const totalPeriodos = Math.max(1, Math.round(periodosPorAnio * plazoAnios));
 
-    // Horizonte fijo de 1 AÑO: la proyección de comisión es anual y no se
-    // extiende al plazo contratado del producto. Mensual→12, Trimestral→4,
-    // Semestral→2, Anual→1.
-    const totalPeriodos = periodosPorAnio;
+    // Ancla en la Fecha Inicio de la Solicitud, no en "hoy": antes las fechas
+    // cambiaban cada vez que se volvía a cotizar. `fechasCobroComision` además
+    // evita el desbordamiento de fin de mes (31-ago + 3 meses daba 01-dic).
+    const terminos = readTerminos();
+    const anclaCobro = terminos.fechaPrimerPago || fechaInicioHeader || '';
+    const fechas = fechasCobroComision(totalPeriodos, periodosPorAnio, anclaCobro);
 
-    const nuevas: SimulacionRow[] = [];
-    let fecha = new Date();
-    for (let i = 0; i < totalPeriodos; i++) {
-      fecha = new Date(fecha.getFullYear(), fecha.getMonth() + mesesPorPeriodo, fecha.getDate());
-      nuevas.push({
-        noPago: i + 1,
-        fechaPago: fecha.toISOString().split('T')[0],
-        saldoInsoluto: montoGarantizado,
-        pagoCapital: 0,
-        pagoInteres: ingresoPorPeriodo,
-        ivaInteres: ivaPorPeriodo,
-        pagoPeriodo: ingresoPorPeriodo,
-        pagoSeguro: 0,
-        pagoTotal: ingresoPorPeriodo + ivaPorPeriodo,
-      });
-    }
+    const nuevas: SimulacionRow[] = fechas.map((fechaPago, i) => ({
+      noPago: i + 1,
+      fechaPago,
+      saldoInsoluto: montoGarantizado,
+      pagoCapital: 0,
+      pagoInteres: ingresoPorPeriodo,
+      ivaInteres: ivaPorPeriodo,
+      pagoPeriodo: ingresoPorPeriodo,
+      pagoSeguro: 0,
+      pagoTotal: ingresoPorPeriodo + ivaPorPeriodo,
+    }));
 
     setRows(nuevas);
     saveToSession(solicitudId, 'simulacion', nuevas);
     toast.success('Cotización generada', {
-      description: `${nuevas.length} comisión(es) al año · ${periodicidad} · Total ${formatCurrency(nuevas.reduce((s, r) => s + r.pagoTotal, 0))}`,
+      description: `${nuevas.length} comisión(es) · ${periodicidad} · ${plazoAnios} año(s) · Total ${formatCurrency(nuevas.reduce((s, r) => s + r.pagoTotal, 0))}`,
       duration: 4000,
     });
   };
@@ -1059,7 +1120,7 @@ export function SimulacionTab({ mode, solicitudId, lineaProducto, tipoProducto, 
             </table>
           </div>
           <div className="mt-3 text-xs text-gray-500 flex items-center gap-4">
-            <span>Comisiones por año: {rows.length}</span>
+            <span>Total de comisiones: {rows.length}</span>
             <span>Total con IVA: {formatCurrency(totalPago)}</span>
           </div>
         </>
