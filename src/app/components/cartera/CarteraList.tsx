@@ -9,6 +9,7 @@ import { SolicitudesExtGestion } from './SolicitudesExtGestion';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 import { esArrendamientoPuroRow } from './CarteraArrendamientoList';
 import { esLineaCredito2oPisoRow } from '../banca-2o-piso/banca2oPisoStore';
+import { esCuentaTDCRow } from '../cartera-tdc/carteraTDCStore';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-7e2d13d9`;
 const HDR = { Authorization: `Bearer ${publicAnonKey}` };
@@ -52,6 +53,13 @@ function useCreditos() {
           if (esLineaCredito2oPisoRow(
             r.linea_produc || h.linea_producto || '',
             r.estatus_sol || h.estatus || '',
+          )) return false;
+          // Las Tarjetas de Crédito se administran en Cartera TDC: no pasan por
+          // Solicitud de Activación, así que tienen su propio módulo.
+          if (esCuentaTDCRow(
+            r.linea_produc || h.linea_producto || '',
+            r.tipo_produc || h.tipo_producto || '',
+            r.producto_nombre || h.nombre_producto || '',
           )) return false;
           return true;
         })

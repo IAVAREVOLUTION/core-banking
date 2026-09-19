@@ -68,46 +68,58 @@ interface InsertCuentaAhorroPayload {
   p_data: Record<string, any>;
 }
 
-/**
- * Verifica si un cliente ya tiene una cuenta eje en J_CUENTAS_CORP_CLIENTES.
- * Retorna true si ya existe, false si no tiene cuenta eje.
- *
- * Estrategias en orden:
- *  1. GET /cuentas-ahorro — consulta J_CUENTAS_CORP_CLIENTES directamente (fuente autoritativa)
- *  2. GET /clientes/:id   — lee J_CLIENTES.data.cuentaEje (campo cacheado)
- *  3. sessionStorage      — fallback offline
- */
-export async function clienteTieneCuentaEje(clienteUuid: string): Promise<boolean> {
-  const LOG_CE = '[CuentaEjeGenerator:check]';
+/** ¿El valor de `cta_eje_chec` que devuelve el API marca la cuenta como eje? */
+function esMarcadaComoEje(v: unknown): boolean {
+  return v === true || v === 't' || v === '1' || v === 'true' || v === 1;
+}
 
-  // Fuente autoritativa: J_CUENTAS_CORP_CLIENTES via GET /cuentas-ahorro
-  // J_CLIENTES.data.cuentaEje es solo un campo cacheado — no es fuente de verdad
+/**
+ * Busca la Cuenta Eje de un cliente en J_CUENTAS_CORP_CLIENTES y devuelve la
+ * fila completa, o null si no tiene ninguna.
+ *
+ * Fuente autoritativa: GET /cuentas-ahorro. `J_CLIENTES.data.cuentaEje` es sólo
+ * un campo cacheado y no se consulta aquí.
+ *
+ * Este es el único punto del sistema que resuelve la relación Cliente → Cuenta
+ * Eje: la ESPECIFICACIÓN 2 §1.1.2 prohíbe asumir `IdCliente == IdCuentaEje`, y
+ * tener un solo resolver evita que una pantalla lo asuma por su cuenta.
+ */
+export async function buscarCuentaEje(clienteUuid: string): Promise<any | null> {
+  const LOG_CE = '[CuentaEjeGenerator:check]';
+  if (!clienteUuid) return null;
+
   try {
     const res = await fetch(`${BASE_URL}/cuentas-ahorro`, {
       method: 'GET',
       headers: { 'Authorization': `Bearer ${publicAnonKey}` },
     });
     if (res.ok) {
-      const cuentas: any[] = await res.json();
-      if (Array.isArray(cuentas)) {
-        const encontrada = cuentas.find(
-          (c: any) => String(c.cliente_id) === clienteUuid &&
-            (c.cta_eje_chec === true || c.cta_eje_chec === 't' || c.cta_eje_chec === '1')
-        );
-        if (encontrada) {
-          console.log(`${LOG_CE} ✓ Cuenta eje en J_CUENTAS_CORP_CLIENTES: ${encontrada.no_cuenta}`);
-          return true;
-        }
-        console.log(`${LOG_CE} GET /cuentas-ahorro OK — ${cuentas.length} cuentas, ninguna eje para ${clienteUuid}`);
-        return false;
+      const json = await res.json();
+      const cuentas: any[] = Array.isArray(json) ? json : (json?.data || []);
+      const encontrada = cuentas.find(
+        (c: any) => String(c.cliente_id ?? c.cliente_id_eff) === clienteUuid && esMarcadaComoEje(c.cta_eje_chec),
+      );
+      if (encontrada) {
+        console.log(`${LOG_CE} ✓ Cuenta eje en J_CUENTAS_CORP_CLIENTES: ${encontrada.no_cuenta}`);
+        return encontrada;
       }
+      console.log(`${LOG_CE} GET /cuentas-ahorro OK — ${cuentas.length} cuentas, ninguna eje para ${clienteUuid}`);
+      return null;
     }
   } catch (e: any) {
     console.warn(`${LOG_CE} GET /cuentas-ahorro falló: ${e?.message || e}`);
   }
 
   console.log(`${LOG_CE} No se pudo verificar — asumiendo sin cuenta eje para evitar bloqueo`);
-  return false;
+  return null;
+}
+
+/**
+ * Verifica si un cliente ya tiene una cuenta eje en J_CUENTAS_CORP_CLIENTES.
+ * Retorna true si ya existe, false si no tiene cuenta eje.
+ */
+export async function clienteTieneCuentaEje(clienteUuid: string): Promise<boolean> {
+  return (await buscarCuentaEje(clienteUuid)) !== null;
 }
 
 /**

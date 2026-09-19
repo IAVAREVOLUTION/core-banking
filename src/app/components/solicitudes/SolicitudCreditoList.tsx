@@ -152,6 +152,21 @@ export function preloadSubtabsFromDBData(
   const ps = tc.parametros_simulacion || {};
   const rawTerminos = tc._raw || {};
   const hasRowExtras = rowExtras?.montoCubrirGarantia != null || rowExtras?.porcentajeAforo != null;
+
+  // ── Datos Financieros — heredado del Perfil TDC del Cierre Comercial ──
+  // El Cierre Comercial lo guarda en terminos._raw.perfilTDC con sus propios
+  // nombres; aquí se traduce a los campos que captura DatosFinancierosTab.
+  const perfilTDC = rawTerminos.perfilTDC;
+  if (perfilTDC && typeof perfilTDC === 'object') {
+    saveToSession(storageId, 'datosFinancieros', {
+      ingresoMensualComprobado: String(perfilTDC.ingresoComprobado ?? ''),
+      otrosIngresos: String(perfilTDC.otrosIngresos ?? ''),
+      deudaMensualActual: String(perfilTDC.deudaMensual ?? ''),
+      gastosMensualesEstimados: String(perfilTDC.gastosMensuales ?? ''),
+      antiguedadLaboralMeses: String(perfilTDC.antiguedadLaboral ?? ''),
+      actividadEconomica: String(perfilTDC.actividadEconomica ?? ''),
+    });
+  }
   if (Object.keys(tc).length > 0 || hasRowExtras) {
     saveToSession(storageId, 'terminos', {
       montoSolicitado: ps.monto_solicitado || rawTerminos.montoSolicitado || '',

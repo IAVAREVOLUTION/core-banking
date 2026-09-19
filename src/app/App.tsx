@@ -28,6 +28,7 @@ import { ProspectosList } from './components/prospectos/ProspectosList';
 import { ProspectosDashboard } from './components/prospectos/ProspectosDashboard';
 import { ProspectoForm } from './components/prospectos/ProspectoForm';
 import { OportunidadesModule } from './components/oportunidades/OportunidadesModule';
+import { CarteraTDCModule } from './components/cartera-tdc/CarteraTDCModule';
 import { useProspectosDB } from './hooks/useProspectosDB';
 import { useClientesDB } from './hooks/useClientesDB';
 import { SolicitudCredito } from '@/types/solicitudCredito';
@@ -70,7 +71,7 @@ import { useProductosCaptacionDB } from './hooks/useProductosCaptacionDB';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 
 type View = 'list' | 'form' | 'direccion';
-type Module = 'dashboard' | 'configuracion' | 'productos' | 'garantias' | 'prospectos' | 'clientes' | 'oportunidades' | 'cotizaciones' | 'cuentas-ahorro' | 'solicitudes-creditos' | 'solicitudes-activacion' | 'originacion' | 'creditos' | 'inversiones' | 'cartera-credito' | 'cartera-arrendamiento' | 'cartera-inversion' | 'cartera-ahorro' | 'avisos-vencimiento' | 'pld' | 'pagos-referenciados' | 'casos-cobranza' | 'cobranza' | 'ejec-reportes' | 'polizas-contables' | 'gestion-riesgos' | 'banca-2o-piso' | 'une';
+type Module = 'dashboard' | 'configuracion' | 'productos' | 'garantias' | 'prospectos' | 'clientes' | 'oportunidades' | 'cotizaciones' | 'cuentas-ahorro' | 'solicitudes-creditos' | 'solicitudes-activacion' | 'originacion' | 'creditos' | 'inversiones' | 'cartera-credito' | 'cartera-tdc' | 'cartera-arrendamiento' | 'cartera-inversion' | 'cartera-ahorro' | 'avisos-vencimiento' | 'pld' | 'pagos-referenciados' | 'casos-cobranza' | 'cobranza' | 'ejec-reportes' | 'polizas-contables' | 'gestion-riesgos' | 'banca-2o-piso' | 'une';
 type ClienteView = 'dashboard' | 'list' | 'form' | 'direccion';
 type ProspectoView = 'dashboard' | 'list' | 'form';
 type SolicitudView = 'dashboard' | 'list' | 'form';
@@ -728,6 +729,7 @@ function App() {
     { id: 'avisos-vencimiento', label: 'Avisos de Vencimiento' },
     { id: 'banca-2o-piso', label: 'Banca 2º Piso' },
     { id: 'cartera-credito', label: 'Cartera de Crédito 2º Piso' },
+    { id: 'cartera-tdc', label: 'Cartera TDC' },
     { id: 'cartera-arrendamiento', label: 'Cartera Arrendamiento' },
     { id: 'cartera-inversion', label: 'Cartera inversión' },
     { id: 'cartera-ahorro', label: 'Cartera ahorro' },
@@ -1501,6 +1503,8 @@ function App() {
           <Banca2oPisoModule />
         ) : moduloActivo === 'cartera-credito' ? (
           <CarteraModule />
+        ) : moduloActivo === 'cartera-tdc' ? (
+          <CarteraTDCModule />
         ) : moduloActivo === 'cartera-arrendamiento' ? (
           <CarteraArrendamientoList />
         ) : moduloActivo === 'cartera-inversion' ? (

@@ -4,7 +4,7 @@ import {
   SimulacionRow, TerminosCondiciones, EMPTY_TERMINOS,
   saveToSession, loadFromSession, loadFromSavedStore,
   MOCK_SIMULACION, MOCK_TERMINOS, formatCurrency, generarSimulacion, parseCurrency,
-  CAT_FRECUENCIA,
+  CAT_FRECUENCIA, esTarjetaCredito,
 } from './solicitudCreditoStore';
 import { FlujInversionRow, calcularFlujInversion, TASA_ISR_ANUAL } from '../cotizaciones/cotizacionCaptacionTypes';
 import { generarTablaArrendamiento, generarTablaArrendamientoFinanciero, type SimulacionArrendamiento } from '../cotizaciones/cotizacionArrendamientoTypes';
@@ -227,7 +227,10 @@ export function SimulacionTab({ mode, solicitudId, lineaProducto, tipoProducto, 
     (loadFromSession<any>(solicitudId, '_originalData') ||
       loadFromSavedStore<any>(solicitudId, '_originalData'))
       ?.solicitud?.terminos_condiciones?._raw || {};
-  const isGPO = !isCap && !isArrendamiento && (
+  // La TDC se cotiza como línea de crédito normal, aunque haya heredado
+  // datos GPO de la Oportunidad.
+  const esTDCSim = esTarjetaCredito(_tpRaw, lineaProducto, tipoProducto);
+  const isGPO = !isCap && !isArrendamiento && !esTDCSim && (
     _tpRaw.includes('garant') ||
     !!_terminosGPO?.periodicidadCobroGpo ||
     !!_terminosGPO?.porcentajeCoberturaGpo ||

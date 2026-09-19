@@ -25,13 +25,15 @@ interface CargoTabProps {
   initialData?: Cargo[];
   persistToStorage?: boolean;
   storagePrefix?: string;
+  /** Encabezado del tab. Default 'Cargos'; Línea de Crédito usa 'Cargos Permitidos'. */
+  titulo?: string;
 }
 
 // Catálogos — Tipo de Cargo sale del catálogo de Componentes Contables (REQ-15)
 const MONEDA_OPTIONS = ['MXN', 'USD', 'EUR', 'CAD', 'GBP'];
 
 export const CargoTab = forwardRef<{ getData: () => Cargo[] }, CargoTabProps>(
-  ({ mode, productId, lineaProducto = '', sublinea = '', initialData, persistToStorage, storagePrefix }, ref) => {
+  ({ mode, productId, lineaProducto = '', sublinea = '', initialData, persistToStorage, storagePrefix, titulo = 'Cargos' }, ref) => {
     const prefix = storagePrefix || 'credito';
     const storageKey = persistToStorage && productId ? `${prefix}_cargo_${productId}` : '';
 
@@ -51,6 +53,7 @@ export const CargoTab = forwardRef<{ getData: () => Cargo[] }, CargoTabProps>(
     );
 
     useImperativeHandle(ref, () => ({ getData: () => data }), [data]);
+
 
     const [selectedRow, setSelectedRow] = useState<number | null>(null);
     const [showConsulta, setShowConsulta] = useState(false);
@@ -126,7 +129,7 @@ export const CargoTab = forwardRef<{ getData: () => Cargo[] }, CargoTabProps>(
       <>
         <div className="bg-white">
           <div className="mb-3">
-            <span className="text-sm font-medium text-gray-800">Cargos</span>
+            <span className="text-sm font-medium text-gray-800">{titulo}</span>
           </div>
 
           <div className="flex items-center gap-2 mb-3">

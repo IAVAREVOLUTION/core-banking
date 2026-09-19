@@ -14,6 +14,7 @@
  */
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { toast } from 'sonner';
+import { generarCuentaEje, buscarCuentaEje } from '../../hooks/useCuentaEjeGenerator';
 import type { CotizacionCredito, BitacoraEstatusOportunidad, ArchivoAdjuntoOportunidad, SolicitudLOSRef, BitacoraCierreComercial } from '../cotizaciones/cotizacionCreditoTypes';
 import { generarCartaOferta, subirCartaOferta, CartaOfertaError, subirDocumentoAceptacion, esPDFValido, DocumentoAceptacionError } from './cartaOfertaPDF';
 import { CAT_ESTATUS_OPORTUNIDAD, CAT_ESTATUS_OPORTUNIDAD_CIERRE, ESTATUS_OPORTUNIDAD_GANADA, ESTATUS_OPORTUNIDAD_PERDIDA } from '../cotizaciones/cotizacionCreditoTypes';
@@ -74,6 +75,16 @@ const CAT_SECTOR_INFRAESTRUCTURA = [
   'Energía',
   'Agua/Medio Ambiente',
   'Social/Urbano',
+];
+
+/** Actividad económica del solicitante — mismo catálogo que el Perfil TDC del Prospecto. */
+const ACTIVIDADES_ECONOMICAS_TDC = [
+  'Empleado',
+  'Independiente / Profesionista',
+  'Empresario',
+  'Comerciante',
+  'Jubilado / Pensionado',
+  'Otro',
 ];
 
 /** Cierre Comercial — periodos por año para prorratear el ingreso anual estimado. */
@@ -290,6 +301,68 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
     return vistos.sort((a, b) => (parseFloat(a) || 0) - (parseFloat(b) || 0));
   })();
 
+  // ══════════════════════════════════════════════════════════════
+  // Modo TDC — Tarjeta de Crédito
+  //
+  // Se activa por cualquiera de las dos vías que pidió negocio:
+  //   a) el producto seleccionado es de tipo Tarjeta de Crédito, o
+  //   b) la Oportunidad nació de un Lead que traía capturado su Perfil TDC.
+  //
+  // En este modo la emisión bursátil no aplica: "Monto Emisión" es sólo el
+  // monto de la línea y "Tasa Bonos" la tasa de la tarjeta, así que cambian de
+  // etiqueta, se muestra el periodo del producto y el Cierre Comercial resume
+  // el perfil financiero del solicitante en vez de la estructura de la emisión.
+  // ══════════════════════════════════════════════════════════════
+  const perfilTDC: any = data.perfilTDC || null;
+
+  const productoEsTDC = (() => {
+    const p: any = productoSel;
+    if (!p) return false;
+    const campos = [p.subTipo, p.sublineaProducto, p.tipoLinea, p.nombre, p.clave]
+      .map(v => String(v || '').toLowerCase());
+    return campos.some(v => v.includes('tarjeta de cr') || v.includes('tdc'));
+  })();
+
+  const esTDC = productoEsTDC || !!perfilTDC;
+
+  /** Periodos configurados en el producto (subtab Periodos). */
+  const periodosProducto: any[] = Array.isArray((productoSel as any)?.periodosRegistros)
+    ? ((productoSel as any).periodosRegistros as any[])
+    : [];
+
+  const periodoProductoTexto = periodosProducto.length === 0
+    ? ''
+    : periodosProducto
+        .map(pr => {
+          const desc = String(pr?.descripcion || '').trim();
+          const dias = pr?.dias ? `${pr.dias} días` : '';
+          return desc && dias ? `${desc} (${dias})` : desc || dias;
+        })
+        .filter(Boolean)
+        .join(' · ');
+
+  /**
+   * Escribe un campo del Perfil TDC heredado. En Cierre Comercial el ejecutivo
+   * puede ajustarlo: lo del Lead es el punto de partida, no un dato congelado.
+   * Los derivados (ingreso total, capacidad de pago, % deuda/ingreso) no se
+   * tocan aquí — se recalculan solos a partir de estos campos.
+   */
+  const setPerfilTDC = (campo: string, valor: string) =>
+    setData({ perfilTDC: { ...(data.perfilTDC || {}), [campo]: valor } });
+
+  /** Derivados del Perfil TDC heredado — se recalculan, no se guardan. */
+  const tdcCalc = (() => {
+    const n = (v: any) => {
+      const x = parseFloat(String(v ?? '').replace(/,/g, ''));
+      return isNaN(x) ? 0 : x;
+    };
+    const ingresoTotal = n(perfilTDC?.ingresoComprobado) + n(perfilTDC?.otrosIngresos);
+    const deuda = n(perfilTDC?.deudaMensual);
+    const capacidadPago = ingresoTotal - deuda - n(perfilTDC?.gastosMensuales);
+    const pctDeudaIngreso = ingresoTotal > 0 ? (deuda / ingresoTotal) * 100 : null;
+    return { ingresoTotal, deuda, capacidadPago, pctDeudaIngreso };
+  })();
+
   /** Plazos marcados en la Oportunidad (selección múltiple). */
   const plazosSeleccionados: string[] = Array.isArray(data.plazosProducto)
     ? (data.plazosProducto as any[]).map(String)
@@ -398,20 +471,28 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
    * Ya NO deshabilita el botón (quedaba muerto y sin explicación); se usa para
    * avisar en pantalla qué falta, y handleCerrarGanada lo vuelve a validar.
    */
-  const faltaEvidenciaCierre = !documentoAceptacion;
+  // En TDC no existe Carta Oferta, así que no hay evidencia documental que exigir.
+  const faltaEvidenciaCierre = !esTDC && !documentoAceptacion;
 
   /** Valida el payload antes de disparar el gatillo — no se ejecuta con campos obligatorios nulos. */
   const faltantesCierreComercial = (): string[] => {
     const f: string[] = [];
-    if (!documentoAceptacion) f.push('Carta Oferta firmada por el cliente');
     if (!form.cliente_id) f.push('Cliente Emisor');
     if (!data.cliente?.nombreCompleto) f.push('Nombre del Emisor');
-    if (!rfcEmisor) f.push('RFC del Emisor (no encontrado en el expediente del cliente)');
-    if (!data.sectorInfraestructura) f.push('Sector de Infraestructura');
-    if (montoEmision <= 0) f.push('Monto Emisión');
-    if (pctCobertura <= 0) f.push('% Cobertura GPO');
-    if (pctComision <= 0) f.push('Tasa Comisión Anual Pactada');
-    if (!data.periodicidadCobroComision) f.push('Periodicidad de Cobro');
+
+    // ── Requisitos exclusivos de la emisión bursátil (GPO) ──
+    // En TDC estos campos ni siquiera se muestran en el formulario, así que
+    // exigirlos dejaría el cierre bloqueado para siempre.
+    if (!esTDC) {
+      if (!documentoAceptacion) f.push('Carta Oferta firmada por el cliente');
+      if (!rfcEmisor) f.push('RFC del Emisor (no encontrado en el expediente del cliente)');
+      if (!data.sectorInfraestructura) f.push('Sector de Infraestructura');
+      if (pctCobertura <= 0) f.push('% Cobertura GPO');
+      if (pctComision <= 0) f.push('Tasa Comisión Anual Pactada');
+      if (!data.periodicidadCobroComision) f.push('Periodicidad de Cobro');
+    }
+
+    if (montoEmision <= 0) f.push(esTDC ? 'Monto' : 'Monto Emisión');
     return f;
   };
 
@@ -609,6 +690,14 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
         // de `plazo` (duración del financiamiento) y de la periodicidad de
         // comisión; sin mapearlo, la Solicitud no sabe cuántos años proyectar.
         plazoBonosAnios: data.plazoBonosAnios || '',
+        // BUG: la Oportunidad TDC EXIGE capturar la Tasa (ver
+        // faltantesCierreComercial) y luego no la mapeaba a ningún lado — sólo
+        // viajaba `tasaComisionAnualPactada`, que es la comisión GPO, no la tasa.
+        // La Solicitud nacía con Tasa vacía, y de ahí Condiciones de la Tarjeta
+        // sacaba "Tasa ordinaria anual" en blanco, porque la lee de Términos.
+        // Sólo para TDC: en GPO "Tasa Bonos" es otro concepto y no debe pisar
+        // la tasa del financiamiento.
+        ...(esTDC ? { tasa: String(data.tasaBonosAnios || '') } : {}),
         // BUG FIX: la Solicitud nacía SIN `frecuencia` — solo con
         // periodicidadCobroGpo, que en Términos y Condiciones se pinta
         // deshabilitado. El select de Frecuencia quedaba en "" y el
@@ -618,6 +707,13 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
         // quedaba con la de la Oportunidad". Sembrarla deja el campo
         // editable con el valor heredado y permite cambiarlo de verdad.
         frecuencia: data.periodicidadCobroComision || '',
+        // ── Perfil TDC → subtab "Datos Financieros" de la Solicitud ──
+        // Viaja dentro de Términos porque su `_raw` es el único nodo del JSON
+        // que acepta campos fuera del esquema fijo; preloadSubtabsFromDBData lo
+        // desdobla al abrir la Solicitud. Sin esto, el acordeón Datos
+        // Financieros nacía vacío y había que recapturar lo que el Cierre
+        // Comercial ya tenía.
+        ...(perfilTDC ? { perfilTDC } : {}),
       };
 
       // Pestaña Simulación — flujo de comisiones proyectado (no es amortización de crédito).
@@ -666,6 +762,50 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
           toast.warning('Oportunidad Ganada, pero no se pudo activar el Cliente', {
             description: 'Revise el registro del Prospecto manualmente.',
           });
+        }
+
+        // ── Cuenta Eje / Ahorro ──
+        // El botón "Activar Prospecto" hace DOS cosas: convierte el Lead en
+        // Cliente y le genera su Cuenta Eje. Este cierre sólo hacía la primera,
+        // así que un Lead que llegó por Perfil TDC → Calificar Lead → Oportunidad
+        // se volvía Cliente SIN Cuenta Eje — y sin ella la TDC no puede abonar
+        // cash back ni recibir pagos referenciados.
+        //
+        // Se usa `generarCuentaEje`, la misma función que Alta de Cliente: una
+        // sola cuenta CAPTACION/Ahorro marcada `cta_eje_chec`, que es a la vez
+        // la de ahorro y la eje.
+        if (esTDC) {
+          try {
+            // Idempotencia: si ya tiene una (por "Activar Prospecto" o por un
+            // cierre previo), no se crea una segunda.
+            const yaTiene = await buscarCuentaEje(idClienteACerrar);
+            if (yaTiene) {
+              console.log('[OportunidadForm] El cliente ya tiene Cuenta Eje:', yaTiene.no_cuenta);
+            } else {
+              const nombreTitular =
+                data.cliente?.nombreCompleto || 'Cliente';
+              const cuenta = await generarCuentaEje(idClienteACerrar, nombreTitular);
+              if (cuenta) {
+                toast.success('Cuenta Eje generada', {
+                  description: `Cuenta ${cuenta.noCuenta} — de ahorro y eje del cliente.`,
+                  duration: 8000,
+                });
+              } else {
+                toast.warning('Oportunidad Ganada, pero no se generó la Cuenta Eje', {
+                  description: 'El cliente la necesita para operar la Tarjeta de Crédito. Genérela desde Alta de Cliente.',
+                  duration: 12000,
+                });
+              }
+            }
+          } catch (errEje) {
+            // No se aborta el cierre: la Solicitud LOS ya existe y es el efecto
+            // de negocio principal. Pero se dice, no se traga.
+            console.error('[OportunidadForm] Cerrada-Ganada: falló la generación de Cuenta Eje:', errEje);
+            toast.warning('Oportunidad Ganada, pero no se generó la Cuenta Eje', {
+              description: 'Revísela manualmente antes de operar la Tarjeta de Crédito.',
+              duration: 12000,
+            });
+          }
         }
       }
 
@@ -900,13 +1040,20 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
   const faltantesCartaOferta = (): string[] => {
     const f: string[] = [];
     if (!form.producto_id) f.push('Producto');
-    if (montoEmision <= 0) f.push('Monto Emisión');
-    if (!data.plazoBonosAnios) f.push('Plazo Bonos');
-    if (!data.tasaBonosAnios) f.push('Tasa Bonos');
-    if (pctCobertura <= 0) f.push('% Cobertura GPO');
-    if (pctComision <= 0) f.push('Tasa Comisión Anual GPO');
-    // HU-CRM-07 CA-04 — aquí es donde la periodicidad se vuelve exigible.
-    if (!data.periodicidadCobroComision) f.push('Periodicidad Cobro Comisión');
+    if (montoEmision <= 0) f.push(esTDC ? 'Monto' : 'Monto Emisión');
+    if (!data.tasaBonosAnios) f.push(esTDC ? 'Tasa' : 'Tasa Bonos');
+
+    // ── Exigencias de la emisión bursátil (GPO) ──
+    // En TDC estos campos ni se muestran: la cobertura, la comisión de garantía
+    // y su periodicidad son de la Garantía de Pago Oportuno, no de una tarjeta.
+    // Pedirlos dejaba la Carta Oferta imposible de generar.
+    if (!esTDC) {
+      if (!data.plazoBonosAnios) f.push('Plazo Bonos');
+      if (pctCobertura <= 0) f.push('% Cobertura GPO');
+      if (pctComision <= 0) f.push('Tasa Comisión Anual GPO');
+      // HU-CRM-07 CA-04 — aquí es donde la periodicidad se vuelve exigible.
+      if (!data.periodicidadCobroComision) f.push('Periodicidad Cobro Comisión');
+    }
     return f;
   };
 
@@ -1067,7 +1214,8 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
               Guardar
             </button>
           )}
-          {!isView && (
+          {/* La Carta Oferta es un artefacto de la emisión bursátil (GPO): en TDC no aplica. */}
+          {!isView && !esTDC && (
             <button
               onClick={handleGenerarCartaOferta}
               disabled={generandoCarta}
@@ -1229,9 +1377,26 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
                   </span>
                 </div>
 
-                {/* Monto Emisión — base del cálculo de CA-06 */}
+                {/* Periodo del producto — sólo lectura, del subtab Periodos del producto */}
+                {esTDC && (
+                  <div className="flex flex-col">
+                    <label className="text-[10px] text-gray-600 mb-0.5">PERIODO DEL PRODUCTO</label>
+                    <input
+                      value={
+                        !productoSel
+                          ? '— Elija primero un producto —'
+                          : periodoProductoTexto || 'El producto no tiene periodos configurados.'
+                      }
+                      disabled
+                      className={readonlyClass}
+                    />
+                    <span className="text-[9px] text-gray-400 mt-0.5">Configurado en el subtab Periodos del producto.</span>
+                  </div>
+                )}
+
+                {/* Monto Emisión — base del cálculo de CA-06. En TDC es el monto de la línea. */}
                 <div className="flex flex-col">
-                  <label className="text-[10px] text-gray-600 mb-0.5">MONTO EMISIÓN</label>
+                  <label className="text-[10px] text-gray-600 mb-0.5">{esTDC ? 'MONTO' : 'MONTO EMISIÓN'}</label>
                   <input
                     type="text"
                     inputMode="decimal"
@@ -1261,7 +1426,7 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
 
                 {/* CA-04 — Tasa Bonos (editable, RN-02) */}
                 <div className="flex flex-col">
-                  <label className="text-[10px] text-gray-600 mb-0.5">TASA BONOS (%)</label>
+                  <label className="text-[10px] text-gray-600 mb-0.5">{esTDC ? 'TASA' : 'TASA BONOS (%)'}</label>
                   <input
                     type="text"
                     inputMode="decimal"
@@ -1273,6 +1438,8 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
                   {matrizSel && <span className="text-[9px] text-gray-400 mt-0.5">Mapeado de {matrizSel.tasaDefault}%; editable.</span>}
                 </div>
 
+                {/* Cobertura y garantía: sólo aplican a la Garantía Financiera 2o Piso. */}
+                {!esTDC && (<>
                 {/* CA-05 — % Cobertura GPO Estimado */}
                 <div className="flex flex-col">
                   <label className="text-[10px] text-gray-600 mb-0.5">% COBERTURA GPO ESTIMADO</label>
@@ -1312,20 +1479,23 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
                     {errorCobertura}
                   </div>
                 )}
+                </>)}
 
                 {/* ── Heredado del Lead (HU-CRM-03 CA-05) ── */}
-                <div className="flex flex-col">
-                  <label className="text-[10px] text-gray-600 mb-0.5">MONTO INVERSIÓN</label>
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    value={data.montoInversion ?? ''}
-                    disabled={isView}
-                    onChange={e => { const c = limpiarDecimal(e.target.value); if (c !== null) setData({ montoInversion: c }); }}
-                    onBlur={e => { const n = parseFloat(e.target.value); setData({ montoInversion: isNaN(n) ? '0.00' : n.toFixed(2) }); }}
-                    className={`${fieldClass} text-right font-mono`}
-                  />
-                </div>
+                {!esTDC && (
+                  <div className="flex flex-col">
+                    <label className="text-[10px] text-gray-600 mb-0.5">MONTO INVERSIÓN</label>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={data.montoInversion ?? ''}
+                      disabled={isView}
+                      onChange={e => { const c = limpiarDecimal(e.target.value); if (c !== null) setData({ montoInversion: c }); }}
+                      onBlur={e => { const n = parseFloat(e.target.value); setData({ montoInversion: isNaN(n) ? '0.00' : n.toFixed(2) }); }}
+                      className={`${fieldClass} text-right font-mono`}
+                    />
+                  </div>
+                )}
                 <div className="flex flex-col">
                   <label className="text-[10px] text-gray-600 mb-0.5">MONEDA</label>
                   <select
@@ -1339,32 +1509,38 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
                     <option value="EUR">EUR - Euro</option>
                   </select>
                 </div>
-                <div className="flex flex-col">
-                  <label className="text-[10px] text-gray-600 mb-0.5">TIPO FINANCIAMIENTO</label>
-                  <select
-                    value={data.tipoFinanciamiento || ''}
-                    disabled={isView}
-                    onChange={e => setData({ tipoFinanciamiento: e.target.value })}
-                    className={fieldClass}
-                  >
-                    <option value="">— Seleccionar —</option>
-                    <option value="Emisión de Deuda Bursátil">Emisión de Deuda Bursátil</option>
-                    <option value="Crédito Bancario Tradicional">Crédito Bancario Tradicional</option>
-                  </select>
-                </div>
-                <div className="flex flex-col md:col-span-3">
-                  <label className="text-[10px] text-gray-600 mb-0.5">DESCRIPCIÓN OBRA</label>
-                  <textarea
-                    rows={3}
-                    maxLength={1000}
-                    value={data.descripcionObra || ''}
-                    disabled={isView}
-                    onChange={e => setData({ descripcionObra: e.target.value })}
-                    className={`${fieldClass} resize-y`}
-                  />
-                </div>
+                {!esTDC && (
+                  <div className="flex flex-col">
+                    <label className="text-[10px] text-gray-600 mb-0.5">TIPO FINANCIAMIENTO</label>
+                    <select
+                      value={data.tipoFinanciamiento || ''}
+                      disabled={isView}
+                      onChange={e => setData({ tipoFinanciamiento: e.target.value })}
+                      className={fieldClass}
+                    >
+                      <option value="">— Seleccionar —</option>
+                      <option value="Emisión de Deuda Bursátil">Emisión de Deuda Bursátil</option>
+                      <option value="Crédito Bancario Tradicional">Crédito Bancario Tradicional</option>
+                    </select>
+                  </div>
+                )}
+                {!esTDC && (
+                  <div className="flex flex-col md:col-span-3">
+                    <label className="text-[10px] text-gray-600 mb-0.5">DESCRIPCIÓN OBRA</label>
+                    <textarea
+                      rows={3}
+                      maxLength={1000}
+                      value={data.descripcionObra || ''}
+                      disabled={isView}
+                      onChange={e => setData({ descripcionObra: e.target.value })}
+                      className={`${fieldClass} resize-y`}
+                    />
+                  </div>
+                )}
               </div>
 
+              {/* Cotización de Comisiones: es la comisión de la GPO, no aplica a TDC. */}
+              {!esTDC && (<>
               {/* ── Cotización de Comisiones ── */}
               {seccion('Cotización de Comisiones')}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-x-4 gap-y-2 p-3">
@@ -1450,6 +1626,7 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
                   </div>
                 )}
               </div>
+              </>)}
 
               {/* ── Estatus ── */}
               {seccion('Estatus')}
@@ -1560,6 +1737,165 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
                 )}
               </div>
 
+              {/* ── Resumen Definitivo ──
+                  En TDC la emisión bursátil no aplica: el resumen son las
+                  condiciones pactadas más el Perfil TDC heredado del Lead. */}
+              {esTDC ? (
+                <>
+                  {seccion('Condiciones Pactadas')}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-x-4 gap-y-2 p-3">
+                    <div className="flex flex-col">
+                      <label className="text-[10px] text-gray-600 mb-0.5">MONTO</label>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={data.montoEmision ?? ''}
+                        disabled={cierreLocked}
+                        onChange={e => { const c = limpiarDecimal(e.target.value); if (c !== null) setData({ montoEmision: c }); }}
+                        onBlur={e => { const n = parseFloat(e.target.value); if (!isNaN(n)) setData({ montoEmision: n.toFixed(2) }); }}
+                        placeholder={formatMoney(montoInversion)}
+                        className={`${cierreLocked ? readonlyClass : fieldClass} text-right font-mono`}
+                      />
+                    </div>
+                    <div className="flex flex-col">
+                      <label className="text-[10px] text-gray-600 mb-0.5">TASA (%)</label>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={data.tasaBonosAnios ?? ''}
+                        disabled={cierreLocked}
+                        onChange={e => { const c = limpiarDecimal(e.target.value); if (c !== null) setData({ tasaBonosAnios: c }); }}
+                        className={`${cierreLocked ? readonlyClass : fieldClass} text-right font-mono`}
+                      />
+                    </div>
+                    <div className="flex flex-col">
+                      <label className="text-[10px] text-gray-600 mb-0.5">PERIODO DEL PRODUCTO</label>
+                      <input value={periodoProductoTexto || '—'} disabled className={readonlyClass} />
+                    </div>
+                  </div>
+
+                  {seccion('Perfil TDC — heredado del Lead')}
+                  {!perfilTDC ? (
+                    <div className="px-4 py-3 flex items-center gap-3">
+                      <span className="text-xs text-gray-500 italic">
+                        Esta Oportunidad no viene de un Lead con Perfil TDC capturado.
+                      </span>
+                      {!cierreLocked && (
+                        <button
+                          onClick={() => setData({ perfilTDC: {} })}
+                          className="px-3 py-1 rounded text-xs border border-[#0099CC] text-[#0099CC] hover:bg-[#E8F6FB]"
+                        >
+                          Capturar Perfil TDC
+                        </button>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-x-4 gap-y-2 p-3">
+                      <div className="flex flex-col">
+                        <label className="text-[10px] text-gray-600 mb-0.5">INGRESO MENSUAL COMPROBADO</label>
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          value={perfilTDC.ingresoComprobado ?? ''}
+                          disabled={cierreLocked}
+                          onChange={e => { const c = limpiarDecimal(e.target.value); if (c !== null) setPerfilTDC('ingresoComprobado', c); }}
+                          onBlur={e => { const n = parseFloat(e.target.value); if (!isNaN(n)) setPerfilTDC('ingresoComprobado', n.toFixed(2)); }}
+                          placeholder="0.00"
+                          className={`${cierreLocked ? readonlyClass : fieldClass} text-right font-mono`}
+                        />
+                      </div>
+                      <div className="flex flex-col">
+                        <label className="text-[10px] text-gray-600 mb-0.5">OTROS INGRESOS</label>
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          value={perfilTDC.otrosIngresos ?? ''}
+                          disabled={cierreLocked}
+                          onChange={e => { const c = limpiarDecimal(e.target.value); if (c !== null) setPerfilTDC('otrosIngresos', c); }}
+                          onBlur={e => { const n = parseFloat(e.target.value); if (!isNaN(n)) setPerfilTDC('otrosIngresos', n.toFixed(2)); }}
+                          placeholder="0.00"
+                          className={`${cierreLocked ? readonlyClass : fieldClass} text-right font-mono`}
+                        />
+                      </div>
+                      <div className="flex flex-col">
+                        <label className="text-[10px] text-gray-600 mb-0.5">INGRESO MENSUAL TOTAL</label>
+                        <input value={formatMoney(tdcCalc.ingresoTotal)} disabled className={`${readonlyClass} text-right font-mono`} />
+                      </div>
+
+                      <div className="flex flex-col">
+                        <label className="text-[10px] text-gray-600 mb-0.5">DEUDA MENSUAL ACTUAL</label>
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          value={perfilTDC.deudaMensual ?? ''}
+                          disabled={cierreLocked}
+                          onChange={e => { const c = limpiarDecimal(e.target.value); if (c !== null) setPerfilTDC('deudaMensual', c); }}
+                          onBlur={e => { const n = parseFloat(e.target.value); if (!isNaN(n)) setPerfilTDC('deudaMensual', n.toFixed(2)); }}
+                          placeholder="0.00"
+                          className={`${cierreLocked ? readonlyClass : fieldClass} text-right font-mono`}
+                        />
+                      </div>
+                      <div className="flex flex-col">
+                        <label className="text-[10px] text-gray-600 mb-0.5">GASTOS MENSUALES ESTIMADOS</label>
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          value={perfilTDC.gastosMensuales ?? ''}
+                          disabled={cierreLocked}
+                          onChange={e => { const c = limpiarDecimal(e.target.value); if (c !== null) setPerfilTDC('gastosMensuales', c); }}
+                          onBlur={e => { const n = parseFloat(e.target.value); if (!isNaN(n)) setPerfilTDC('gastosMensuales', n.toFixed(2)); }}
+                          placeholder="0.00"
+                          className={`${cierreLocked ? readonlyClass : fieldClass} text-right font-mono`}
+                        />
+                      </div>
+                      <div className="flex flex-col">
+                        <label className="text-[10px] text-gray-600 mb-0.5">CAPACIDAD DE PAGO ESTIMADA</label>
+                        <input
+                          value={formatMoney(tdcCalc.capacidadPago)}
+                          disabled
+                          className={`${readonlyClass} text-right font-mono ${tdcCalc.capacidadPago < 0 ? 'text-red-600' : ''}`}
+                        />
+                      </div>
+
+                      <div className="flex flex-col">
+                        <label className="text-[10px] text-gray-600 mb-0.5">% DEUDA / INGRESO</label>
+                        <input
+                          value={tdcCalc.pctDeudaIngreso === null ? '—' : `${tdcCalc.pctDeudaIngreso.toFixed(2)}%`}
+                          disabled
+                          className={`${readonlyClass} text-right font-mono`}
+                        />
+                      </div>
+                      <div className="flex flex-col">
+                        <label className="text-[10px] text-gray-600 mb-0.5">ANTIGÜEDAD LABORAL (MESES)</label>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          value={perfilTDC.antiguedadLaboral ?? ''}
+                          disabled={cierreLocked}
+                          onChange={e => setPerfilTDC('antiguedadLaboral', e.target.value.replace(/[^0-9]/g, ''))}
+                          placeholder="0"
+                          className={cierreLocked ? readonlyClass : fieldClass}
+                        />
+                      </div>
+                      <div className="flex flex-col">
+                        <label className="text-[10px] text-gray-600 mb-0.5">ACTIVIDAD ECONÓMICA</label>
+                        <select
+                          value={perfilTDC.actividadEconomica || ''}
+                          disabled={cierreLocked}
+                          onChange={e => setPerfilTDC('actividadEconomica', e.target.value)}
+                          className={cierreLocked ? readonlyClass : fieldClass}
+                        >
+                          <option value="">— Seleccionar —</option>
+                          {ACTIVIDADES_ECONOMICAS_TDC.map(act => (
+                            <option key={act} value={act}>{act}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <>
               {seccion('Resumen Definitivo')}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-x-4 gap-y-2 p-3">
                 <div className="flex flex-col">
@@ -1596,11 +1932,13 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
                   <input value={data.sectorInfraestructura || '—'} disabled className={readonlyClass} />
                 </div>
               </div>
+                </>
+              )}
 
               {seccion('Evidencia Comercial')}
               <div className="p-4">
                 <label className="text-[10px] text-gray-600 mb-1 block uppercase">
-                  Carta Oferta firmada por el cliente <span className="text-red-600">*</span>
+                  Carta Oferta firmada por el cliente {!esTDC && <span className="text-red-600">*</span>}
                 </label>
                 {!documentoAceptacion ? (
                   <input

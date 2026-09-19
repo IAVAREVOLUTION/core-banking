@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { GeneracionContableTab } from './GeneracionContableTab';
+import { AvisosTDCVista } from '../cartera-tdc/AvisosTDCVista';
 import { toast } from 'sonner';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 import { INSTITUCION_RAZON_SOCIAL } from '../solicitudes/solicitudCreditoStore';
@@ -938,7 +939,7 @@ function AvisosVencimientoPanel({ subTipoFijo, titulo }: { subTipoFijo?: string;
 
 // ─── Módulo principal ─────────────────────────────────────────────────────────
 export function CobranzaModule() {
-  const [activeTab, setActiveTab] = useState<'creditos' | 'arrendamiento' | 'aportaciones' | 'segundo-piso'>('creditos');
+  const [activeTab, setActiveTab] = useState<'creditos' | 'arrendamiento' | 'aportaciones' | 'segundo-piso' | 'tdc'>('creditos');
 
   return (
     <>
@@ -973,6 +974,17 @@ export function CobranzaModule() {
             </svg>
             Avisos de Vencimiento — 2º Piso
           </button>
+          {/* Tarjeta de Crédito: sus Avisos NO viven en J_FACTURAS como los
+              demás, sino en J_CXC_LINEA — los emite el Cierre de Corte con su
+              monto mínimo y su detalle en orden de prelación. Por eso es una
+              bandeja propia y no un sub_tipo más del panel genérico. */}
+          <button onClick={() => setActiveTab('tdc')}
+            className={`flex items-center gap-2 px-3 py-1.5 rounded text-sm transition-colors ${activeTab === 'tdc' ? 'tab-active' : 'tab-inactive'}`}>
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+              <rect x="1.5" y="3.5" width="13" height="9" rx="1.5"/><path d="M1.5 6.5h13"/>
+            </svg>
+            Avisos TDC
+          </button>
         </div>
       </div>
 
@@ -987,6 +999,16 @@ export function CobranzaModule() {
       )}
       {activeTab === 'segundo-piso' && (
         <AvisosVencimientoPanel key="segundo-piso" subTipoFijo={SUB_TIPO_COMISION_GPO} titulo="Avisos de Vencimiento — 2º Piso" />
+      )}
+      {activeTab === 'tdc' && (
+        <div className="p-6">
+          <h2 className="text-lg font-normal text-gray-800 mb-1">Avisos de Vencimiento — Tarjeta de Crédito</h2>
+          <p className="text-xs text-gray-500 mb-4">
+            Emitidos por el Cierre de Corte. Abra un renglón para ver sus conceptos
+            en el orden de prelación con que se aplicarán los pagos.
+          </p>
+          <AvisosTDCVista variante="modulo" />
+        </div>
       )}
     </>
   );

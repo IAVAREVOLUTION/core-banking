@@ -56,6 +56,9 @@ export interface TerminosCondiciones {
   montoSolicitado: string;
   fechaPrimerPago: string;
   fechaPrimeraAportacion: string;
+  /** Vigencia del financiamiento — se captura también en Términos y Condiciones. */
+  fechaInicio: string;
+  fechaFin: string;
   plazo: string;
   frecuencia: string;
   tasa: string;
@@ -297,6 +300,22 @@ export interface CargoSolicitud {
   fechaCargo: string;
   estatus: string;
   notas: string;
+
+  // ── Campos de un Cargo generado por un Movimiento de Línea (TDC) ──
+  // Opcionales: un cargo capturado a mano no los tiene, y ningún otro producto
+  // los usa. Vienen de "Afectación de la Línea" del producto y los consume el
+  // Cierre de Corte — sobre todo `bFactura`, que decide si el concepto se
+  // factura al cliente.
+  /** Clave del concepto en el Catálogo de Componentes. */
+  clave?: string;
+  naturaleza?: 'Cargo' | 'Abono';
+  /** Siempre 'S' en los proyectados: es la bandera que los hace existir. */
+  bCargo?: 'S' | 'N';
+  bFactura?: 'S' | 'N';
+  /** true si lo generó un movimiento; ausente si se capturó a mano. */
+  generadoPorMovimiento?: boolean;
+  /** Id del renglón en `cargosLinea` — la fuente de la que se deriva. */
+  origenId?: string;
 }
 
 export interface Aviso {
@@ -666,6 +685,21 @@ const _normProd = (s?: string) =>
 /** true si el producto es Arrendamiento — Puro o Financiero. */
 export function esArrendamiento(lineaProducto?: string, tipoProducto?: string): boolean {
   return `${_normProd(lineaProducto)} ${_normProd(tipoProducto)}`.includes('arrendamiento');
+}
+
+/**
+ * true si el producto es Tarjeta de Crédito.
+ *
+ * La TDC vive bajo la línea "Línea de Crédito", igual que la Garantía
+ * Financiera 2o Piso, así que sin esta distinción una cotización de TDC
+ * heredaba las reglas del 2o Piso (plazo en años, sección GPO, validación de
+ * Periodicidad Cobro Comisión). Se acepta tanto el nombre completo como la
+ * abreviatura, y se revisa también el nombre/clave del producto porque el
+ * tipo puede venir genérico.
+ */
+export function esTarjetaCredito(...valores: (string | undefined)[]): boolean {
+  const s = valores.map(_normProd).join(' ');
+  return s.includes('tarjeta de credito') || /tdc/.test(s);
 }
 
 /**
@@ -1181,6 +1215,8 @@ export const EMPTY_TERMINOS: TerminosCondiciones = {
   montoSolicitado: '',
   fechaPrimerPago: '',
   fechaPrimeraAportacion: '',
+  fechaInicio: '',
+  fechaFin: '',
   plazo: '',
   frecuencia: 'Mensual',
   tasa: '',

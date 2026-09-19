@@ -213,6 +213,19 @@ function mapRowToProduct(row: ProductoLineaCreditoRow, index: number): ProductoL
     // ── Garantía Financiera 2o Piso (REQ-8) ──
     prelacion2oPiso: Array.isArray(d.prelacion2oPiso) ? d.prelacion2oPiso : undefined,
     cobertura2oPiso: Array.isArray(d.cobertura2oPiso) ? d.cobertura2oPiso : undefined,
+    // ── Prelación de cargos — acepta el nodo de Producto Activo en ambas formas ──
+    prelacionCargos: Array.isArray(d.prelacionCargos) ? d.prelacionCargos
+      : (Array.isArray(d.prelacion) ? d.prelacion : undefined),
+    // ── Comisiones e IVA por cargo permitido ──
+    comisionesIva: Array.isArray(d.comisionesIva) ? d.comisionesIva : undefined,
+    // ── Afectación de la línea por cargo permitido ──
+    afectacionLinea: Array.isArray(d.afectacionLinea) ? d.afectacionLinea : undefined,
+    // ── Prom Comis e Impue ──
+    promComisImpuestos: Array.isArray(d.promComisImpuestos) ? d.promComisImpuestos : undefined,
+    // ── Reglas de Pago y Corte TDC (configuración única, no lista) ──
+    reglasPagoCorteTDC: d.reglasPagoCorteTDC && typeof d.reglasPagoCorteTDC === 'object' && !Array.isArray(d.reglasPagoCorteTDC)
+      ? d.reglasPagoCorteTDC
+      : undefined,
   } as ProductoLineaCredito;
 }
 

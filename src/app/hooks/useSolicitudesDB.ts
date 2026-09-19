@@ -472,6 +472,9 @@ function formToDBPayload(form: SolicitudFormData, allSubtabs?: Record<string, an
   }
   // REQ-10 — plazo de la emisión bursátil (años de la matriz de proyecciones).
   if ((terminos as any).plazoBonosAnios) coreTerminosRaw.plazoBonosAnios = (terminos as any).plazoBonosAnios;
+  // REQ-26 — Perfil TDC heredado del Cierre Comercial; alimenta el subtab
+  // Datos Financieros de la Solicitud/Originación.
+  if ((terminos as any).perfilTDC) coreTerminosRaw.perfilTDC = (terminos as any).perfilTDC;
 
   const origRaw = origSol.terminos_condiciones?._raw || {};
   const mergedRaw = Object.keys(coreTerminosRaw).length > 0
