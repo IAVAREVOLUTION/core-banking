@@ -251,7 +251,22 @@ export interface Comision {
 }
 
 // === Plantillas Institucionales (subtab Plantillas) ===
-export type TipoPlantilla = 'solicitud' | 'contrato' | 'pagare' | 'minuta' | 'carta-oferta' | 'contrato-gpo';
+/**
+ * Los tipos de plantilla ahora son DATOS: viven en
+ * EFINANCIANET_DB.J_CATALOGO_TIPOS_PLANTILLA y se administran en
+ * Configuración → Tipos de Plantilla.
+ *
+ * Las claves listadas abajo son las que el CÓDIGO busca literalmente
+ * ('contrato' y 'pagare' en el kit legal de Fase 4, 'carta-oferta' en
+ * Oportunidades, 'estado-cuenta' en Cartera TDC…), así que se conservan
+ * escritas para no perder el autocompletado ni la verificación de errores de
+ * dedo. `(string & {})` abre el tipo a las claves que el usuario dé de alta
+ * en el catálogo sin colapsar la unión a `string`.
+ */
+export type TipoPlantilla =
+  | 'solicitud' | 'contrato' | 'pagare' | 'minuta'
+  | 'carta-oferta' | 'contrato-gpo' | 'estado-cuenta'
+  | (string & {});
 
 export interface PlantillaInstitucional {
   id: number;
@@ -266,7 +281,7 @@ export interface PlantillaInstitucional {
   fechaModificacion: string;
 }
 
-export const TIPO_PLANTILLA_OPTIONS: TipoPlantilla[] = ['solicitud', 'contrato', 'pagare', 'minuta', 'carta-oferta', 'contrato-gpo'];
+export const TIPO_PLANTILLA_OPTIONS: TipoPlantilla[] = ['solicitud', 'contrato', 'pagare', 'minuta', 'carta-oferta', 'contrato-gpo', 'estado-cuenta'];
 
 export interface TipoPlantillaOption {
   value: TipoPlantilla;
@@ -281,28 +296,28 @@ export const TIPO_PLANTILLA_CATALOGO: TipoPlantillaOption[] = [
     value: 'solicitud',
     label: 'Solicitud de Crédito',
     descripcion: 'Formato de solicitud formal del producto financiero por parte del cliente',
-    icon: '📋',
+    icon: 'ClipboardList',
     color: '#2196F3',
   },
   {
     value: 'contrato',
     label: 'Contrato de Operación',
     descripcion: 'Instrumento legal que formaliza la relación jurídica entre la institución y el cliente',
-    icon: '📄',
+    icon: 'FileSignature',
     color: '#4CAF50',
   },
   {
     value: 'pagare',
     label: 'Pagare',
     descripcion: 'Título de crédito que ampara la obligación de pago a favor de la institución',
-    icon: '📝',
+    icon: 'Banknote',
     color: '#FF9800',
   },
   {
     value: 'minuta',
     label: 'Minuta de Acuerdos',
     descripcion: 'Registro formal de acuerdos, términos y condiciones pactados entre las partes',
-    icon: '📑',
+    icon: 'FileText',
     color: '#9C27B0',
   },
   {
@@ -310,7 +325,7 @@ export const TIPO_PLANTILLA_CATALOGO: TipoPlantillaOption[] = [
     value: 'carta-oferta',
     label: 'Carta Oferta',
     descripcion: 'Propuesta comercial formal con la estructura bursátil y la cotización de comisiones de la Oportunidad',
-    icon: '📨',
+    icon: 'Mail',
     color: '#0099CC',
   },
   {
@@ -318,8 +333,16 @@ export const TIPO_PLANTILLA_CATALOGO: TipoPlantillaOption[] = [
     value: 'contrato-gpo',
     label: 'Contrato de Garantía de Pago Oportuno',
     descripcion: 'Instrumento que documenta la garantía financiera de segundo piso sobre la emisión bursátil',
-    icon: '🛡️',
+    icon: 'ShieldCheck',
     color: '#7C3AED',
+  },
+  {
+    // REQ-31 — plantilla que consume Cartera TDC → Estado de Cuenta
+    value: 'estado-cuenta',
+    label: 'Estado de Cuenta',
+    descripcion: 'Documento periódico con el corte, los movimientos y los pagos de la Línea de Crédito',
+    icon: 'Receipt',
+    color: '#0EA5E9',
   },
 ];
 

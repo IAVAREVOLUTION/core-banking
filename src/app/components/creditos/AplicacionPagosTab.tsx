@@ -45,6 +45,17 @@ export function AplicacionPagosTab({ sid, isRO, producto = '', sublinea = '', cl
     [productos, producto],
   );
 
+  /**
+   * §40 — "LIBERA LÍNEA CUANDO SE PAGA" del subtab Afectación de la Línea.
+   * Es lo que decide si el pago de cada concepto restituye línea disponible.
+   */
+  const afectacionLinea = useMemo(
+    () => (Array.isArray((productoSel as any)?.afectacionLinea)
+      ? (productoSel as any).afectacionLinea
+      : []),
+    [productoSel],
+  );
+
   const [referencia, setReferencia] = useState('');
   const [monto, setMonto] = useState('');
   const [fechaPago, setFechaPago] = useState(hoy());
@@ -82,6 +93,7 @@ export function AplicacionPagosTab({ sid, isRO, producto = '', sublinea = '', cl
           idCuentaEje: idEje,
           idCliente: clienteId,
           idPagoReferenciado: referencia.trim(),
+          afectacionLinea,
         })
       : null;
 
@@ -99,6 +111,7 @@ export function AplicacionPagosTab({ sid, isRO, producto = '', sublinea = '', cl
       idCliente: clienteId,
       montoPago: montoNum,
       fechaPago,
+      afectacionLinea,
     });
     setAplicando(false);
 
@@ -238,6 +251,9 @@ export function AplicacionPagosTab({ sid, isRO, producto = '', sublinea = '', cl
               ['Avisos afectados', String(resumen.cxcAfectadas)],
               ['Conceptos afectados', String(resumen.lineasAfectadas)],
               ['Contratos afectados', String(resumen.contratosAfectados)],
+              // §40 — no todo lo aplicado restituye línea: los conceptos que
+              // no la consumieron tampoco la liberan.
+              ['Libera línea', fmt(resumen.montoTotalLiberaLinea)],
             ] as [string, string][]).map(([k, v]) => (
               <div key={k}>
                 <div className="text-[11px] text-gray-500">{k}</div>
@@ -245,6 +261,15 @@ export function AplicacionPagosTab({ sid, isRO, producto = '', sublinea = '', cl
               </div>
             ))}
           </div>
+
+          {resumen.conceptosSinAfectacion.length > 0 && (
+            <div className="px-3 pb-3">
+              <div className="text-xs text-amber-700">
+                No liberan línea porque no están configurados en “Afectación de la Línea”
+                del producto: {resumen.conceptosSinAfectacion.join(', ')}.
+              </div>
+            </div>
+          )}
 
           {resumen.descuadres.length > 0 && (
             <div className="px-3 pb-3 space-y-1">
@@ -272,6 +297,7 @@ export function AplicacionPagosTab({ sid, isRO, producto = '', sublinea = '', cl
                 <th className={`${th} text-right`}>Aplicado</th>
                 <th className={`${th} text-right`}>Saldo posterior</th>
                 <th className={th}>Estatus</th>
+                <th className={`${th} text-center`}>Libera línea</th>
               </tr>
             </thead>
             <tbody>
@@ -290,6 +316,11 @@ export function AplicacionPagosTab({ sid, isRO, producto = '', sublinea = '', cl
                         a.estatusPagoNuevo === 'Pagado' ? 'text-green-700'
                         : a.estatusPagoNuevo === 'Parcial' ? 'text-amber-700' : 'text-gray-600'
                       }>{a.estatusPagoNuevo}</span>
+                    </td>
+                    <td className={`${td} text-center`}>
+                      <span className={a.liberaLinea ? 'text-green-700' : 'text-gray-400'}>
+                        {a.liberaLinea ? 'Sí' : 'No'}
+                      </span>
                     </td>
                   </tr>
                 );
@@ -310,6 +341,7 @@ export function AplicacionPagosTab({ sid, isRO, producto = '', sublinea = '', cl
               <tr>
                 <th className={th}>Contrato</th>
                 <th className={`${th} text-right`}>Monto abonado</th>
+                <th className={`${th} text-right`}>Restituye línea</th>
               </tr>
             </thead>
             <tbody>
@@ -317,6 +349,9 @@ export function AplicacionPagosTab({ sid, isRO, producto = '', sublinea = '', cl
                 <tr key={a.idContrato} className="border-t border-gray-200">
                   <td className={td}>{a.idContrato}</td>
                   <td className={`${td} text-right font-mono`}>{fmt(a.monto)}</td>
+                  <td className={`${td} text-right font-mono ${a.montoLibera > 0 ? '' : 'text-gray-400'}`}>
+                    {fmt(a.montoLibera)}
+                  </td>
                 </tr>
               ))}
             </tbody>

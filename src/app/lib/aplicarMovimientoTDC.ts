@@ -181,3 +181,38 @@ function traducirErrorRPC(msg: string): string {
   }
   return `No se pudo aplicar el movimiento: ${msg}`;
 }
+
+/**
+ * Saldo de la Línea tal como lo tiene la base.
+ *
+ * `J_SALDOS_LINEA` es la AUTORIDAD sobre el disponible: lo bajan los cargos
+ * (`aplicar_movimiento_tdc`) y lo suben los pagos cuyos conceptos liberan
+ * línea (`aplicar_pago_referenciado`, §40). Derivarlo sumando los movimientos
+ * que la pantalla trae en sesión deja fuera lo segundo, porque la liberación
+ * ocurre en la base y no produce un renglón en esa lista.
+ *
+ * Devuelve `null` cuando la función todavía no está desplegada o la línea aún
+ * no tiene fila — en ambos casos la pantalla debe seguir con su cálculo local
+ * en vez de quedarse sin saldo.
+ */
+export async function leerSaldoLinea(
+  idLineaCredito: string,
+): Promise<{ montoAutorizado: number; saldoDisponible: number } | null> {
+  if (!idLineaCredito) return null;
+  try {
+    const { data, error } = await supabase.rpc('obtener_saldo_linea', {
+      p_linea_id: String(idLineaCredito),
+    });
+    if (error) return null;
+
+    const fila = Array.isArray(data) ? data[0] : data;
+    if (!fila || fila.saldo_disponible == null) return null;
+
+    return {
+      montoAutorizado: Number(fila.monto_autorizado) || 0,
+      saldoDisponible: Number(fila.saldo_disponible) || 0,
+    };
+  } catch {
+    return null;
+  }
+}

@@ -200,7 +200,11 @@ export async function subirCartaOferta(
 }
 
 // ══════════════════════════════════════════════════════════════════
-// Cierre Comercial — Carta Oferta firmada por el cliente (evidencia)
+// Cierre Comercial — Cotización firmada por el cliente (evidencia)
+//
+// Es el MISMO documento que genera `generarCartaOferta`; en el Cierre Comercial
+// el negocio lo llama Cotización. El tipo de plantilla sigue siendo
+// 'carta-oferta' porque esa clave es un contrato con el código.
 // ══════════════════════════════════════════════════════════════════
 export class DocumentoAceptacionError extends Error {}
 
@@ -210,7 +214,7 @@ export function esPDFValido(file: File): boolean {
 }
 
 /**
- * Sube la Carta Oferta firmada (evidencia de aceptación del cliente) que el
+ * Sube la Cotización firmada (evidencia de aceptación del cliente) que el
  * ejecutivo carga manualmente — a diferencia de `subirCartaOferta`, aquí el
  * PDF no se genera: ya viene firmado y capturado por el usuario.
  * Misma estrategia de degradación a blob URL local si Storage falla.
@@ -220,7 +224,7 @@ export async function subirDocumentoAceptacion(
   oportunidadId: string,
 ): Promise<SubidaCartaOferta> {
   if (!esPDFValido(file)) {
-    throw new DocumentoAceptacionError('Solo se acepta un archivo PDF para la Carta Oferta firmada.');
+    throw new DocumentoAceptacionError('Solo se acepta un archivo PDF para la Cotización firmada.');
   }
 
   const nombreSeguro = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');

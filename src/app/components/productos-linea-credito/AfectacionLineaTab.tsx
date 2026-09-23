@@ -11,10 +11,16 @@
  *   bCargo                       → si el movimiento genera cargo a la cuenta
  *   Libera línea cuando se paga  → si al pagarlo se restituye el disponible
  *
- * Dos reglas de coherencia se aplican solas, porque la combinación contraria no
- * existe en una línea revolvente:
- *   - Un Abono no consume línea y no la libera.
- *   - Lo que no consumió línea no puede liberarla al pagarse.
+ * Una regla de coherencia se aplica sola: un Abono no consume línea y no la
+ * libera, porque un abono no es un cargo que se pague.
+ *
+ * "Libera línea cuando se paga" es independiente de "Consume línea
+ * disponible". Antes se forzaba a No cuando el concepto no consumía línea
+ * —"lo que no consumió no puede liberar"—, pero el negocio pidió poder
+ * capturar las dos combinaciones: hay conceptos que no descuentan disponible
+ * al generarse y que, al cobrarse, sí deben restituirlo. El tope de
+ * `LEAST(monto_autorizado, ...)` del RPC impide que esa combinación deje la
+ * línea con más disponible que su propio límite.
  *
  * La configuración se guarda indexada por concepto (no por id de renglón), para
  * que sobreviva a que un cargo se borre y se vuelva a dar de alta.
@@ -52,9 +58,6 @@ const CONFIG_NUEVA = (concepto = ''): ConfigAfectacion => ({
 const normalizar = (cfg: ConfigAfectacion): ConfigAfectacion => {
   if (cfg.naturaleza === 'Abono') {
     return { ...cfg, naturaleza: 'Abono', consumeLineaDisponible: 'N', liberaLineaAlPagar: 'N' };
-  }
-  if (cfg.consumeLineaDisponible === 'N') {
-    return { ...cfg, liberaLineaAlPagar: 'N' };
   }
   return cfg;
 };
@@ -349,7 +352,6 @@ function FormModal({
     setForm(prev => normalizar({ ...prev, [campo]: valor } as ConfigAfectacion));
 
   const esAbono = form.naturaleza === 'Abono';
-  const noConsume = form.consumeLineaDisponible === 'N';
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -467,8 +469,8 @@ function FormModal({
               {campoSiNo('bCargo', 'bCargo', false, '')}
               {campoSiNo(
                 'Libera línea cuando se paga', 'liberaLineaAlPagar',
-                esAbono || noConsume,
-                esAbono ? 'Un Abono no libera línea' : 'Lo que no consume línea no puede liberarla'
+                esAbono,
+                'Un Abono no libera línea'
               )}
             </div>
 

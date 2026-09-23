@@ -154,5 +154,49 @@ const segunda = M.ejecutarCierreCorte({ linea, config, prelacion, cargos: trasCi
 eq('la segunda corrida no genera CxC', segunda.ok, false);
 ok_('porque ya no hay pendientes', segunda.error.includes('No existen cargos pendientes'));
 
+
+console.log('');
+console.log('-- Periodo encadenado al corte anterior --');
+
+// Sin corte anterior: comportamiento historico, corte a corte del mes.
+const pSin = M.calcularPeriodoCorte(15, new Date(2026, 8, 22));
+eq('sin anterior: inicio', pSin.fechaInicio, '2026-08-16');
+eq('sin anterior: fin', pSin.fechaFin, '2026-09-15');
+
+// Con corte anterior en el MISMO mes: el fin salta al mes siguiente, porque
+// el dia de corte de septiembre ya quedo antes del inicio.
+const pMismo = M.calcularPeriodoCorte(15, new Date(2026, 8, 22), '2026-09-15');
+eq('inicio = anterior + 1', pMismo.fechaInicio, '2026-09-16');
+eq('fin = siguiente dia de corte', pMismo.fechaFin, '2026-10-15');
+
+// Con corte anterior en el mes previo: el fin es el de este mes.
+const pPrevio = M.calcularPeriodoCorte(15, new Date(2026, 8, 22), '2026-08-15');
+eq('inicio', pPrevio.fechaInicio, '2026-08-16');
+eq('fin', pPrevio.fechaFin, '2026-09-15');
+
+// Cierre en fecha irregular: el encadenado no deja hueco ni traslape.
+const pIrreg = M.calcularPeriodoCorte(15, new Date(2026, 8, 22), '2026-09-03');
+eq('inicio pegado al anterior', pIrreg.fechaInicio, '2026-09-04');
+eq('fin en el dia de corte de ese mes', pIrreg.fechaFin, '2026-09-15');
+
+// El dia de corte se acota al ultimo dia del mes.
+const pFeb = M.calcularPeriodoCorte(31, new Date(2026, 1, 20), '2026-01-31');
+eq('inicio', pFeb.fechaInicio, '2026-02-01');
+eq('fin acotado a fin de febrero', pFeb.fechaFin, '2026-02-28');
+
+// Cruce de anio.
+const pAnio = M.calcularPeriodoCorte(15, new Date(2027, 0, 20), '2026-12-15');
+eq('inicio', pAnio.fechaInicio, '2026-12-16');
+eq('fin', pAnio.fechaFin, '2027-01-15');
+
+// Una fecha invalida no rompe: cae al calculo sin encadenar.
+const pMala = M.calcularPeriodoCorte(15, new Date(2026, 8, 22), 'no-es-fecha');
+eq('fecha basura: se ignora', pMala.fechaInicio, '2026-08-16');
+
+// Invariante: el periodo nunca queda invertido.
+for (const [n, p] of [['sin', pSin], ['mismo', pMismo], ['previo', pPrevio],
+                      ['irreg', pIrreg], ['feb', pFeb], ['anio', pAnio]]) {
+  ok_(n + ': inicio <= fin', p.fechaInicio <= p.fechaFin);
+}
 console.log(`\n${pass} aserciones OK, ${fail} fallas\n`);
 process.exit(fail === 0 ? 0 : 1);

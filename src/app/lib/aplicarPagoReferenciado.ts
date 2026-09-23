@@ -115,6 +115,12 @@ export async function aplicarPagoReferenciado(params: {
   usuario?: string;
   correlationId?: string;
   soloSimular?: boolean;
+  /**
+   * Subtab "Afectación de la Línea" del producto. Decide, concepto por
+   * concepto, si el pago restituye línea disponible (§40). Sin esto el motor
+   * asume que todo libera, que es como se comportaba antes de REQ-31.
+   */
+  afectacionLinea?: any[];
 }): Promise<ResultadoAplicacion> {
   const { idPagoReferenciado, idCliente, montoPago, fechaPago, soloSimular } = params;
 
@@ -129,6 +135,7 @@ export async function aplicarPagoReferenciado(params: {
     idCuentaEje: eje.id,
     idCliente,
     idPagoReferenciado,
+    afectacionLinea: params.afectacionLinea,
   });
 
   if (!motor.ok) {

@@ -134,7 +134,7 @@ eq('el cargo a la EJE es lo aplicado, no el pago', r30.montoTotalAplicado === 85
 console.log('\n── §36/§38/§39 Varios contratos ──');
 eq('dos contratos afectados', r30.contratosAfectados, 2);
 eq('distribución real por contrato', r30.abonosPorContrato,
-   [{ idContrato: 'CRE-20003', monto: 2500 }, { idContrato: 'LIN-10001', monto: 6000 }]);
+   [{ idContrato: 'CRE-20003', monto: 2500, montoLibera: 2500 }, { idContrato: 'LIN-10001', monto: 6000, montoLibera: 6000 }]);
 eq('la suma de abonos = total aplicado',
    r30.abonosPorContrato.reduce((a, x) => a + x.monto, 0), r30.montoTotalAplicado);
 
@@ -207,6 +207,67 @@ const rCent = run(0.3, [cxc('A', '2026-09-10', 0.3, [det('a', 1, 0.1), det('b', 
 eq('liquida los 0.30 exactos', rCent.montoTotalAplicado, 0.3);
 eq('la CxC queda Pagada', rCent.aplicacionesCxC[0].estatusNuevo, 'Pagado');
 eq('sin remanente fantasma', rCent.saldoRemanenteEje, 0);
+
+
+console.log('');
+console.log('-- 40 LIBERA LINEA CUANDO SE PAGA (Afectacion de la Linea) --');
+
+// Producto: C1 libera linea; C2 no.
+const AFECT = [
+  { clave: 'C1', liberaLineaAlPagar: 'S', consumeLineaDisponible: 'S' },
+  { clave: 'C2', liberaLineaAlPagar: 'N', consumeLineaDisponible: 'N' },
+];
+const docMixto = () => cxc('MX', '2026-09-10', 3000, [det('d1', 1, 2000), det('d2', 2, 1000)]);
+
+const rSinCfg = run(3000, [docMixto()]);
+eq('sin configuracion, todo libera (comportamiento previo)', rSinCfg.montoTotalLiberaLinea, 3000);
+eq('y el abono lo refleja', rSinCfg.abonosPorContrato[0].montoLibera, 3000);
+
+const rConCfg = run(3000, [docMixto()], { afectacionLinea: AFECT });
+eq('se aplican los 3,000 completos', rConCfg.montoTotalAplicado, 3000);
+eq('pero solo C1 libera linea', rConCfg.montoTotalLiberaLinea, 2000);
+eq('el abono separa la parte liberadora', rConCfg.abonosPorContrato[0].montoLibera, 2000);
+eq('el abono total no cambia', rConCfg.abonosPorContrato[0].monto, 3000);
+eq('C1 marcado como liberador', rConCfg.aplicacionesDetalle.find(a => a.claveConcepto === 'C1').liberaLinea, true);
+eq('C2 marcado como NO liberador', rConCfg.aplicacionesDetalle.find(a => a.claveConcepto === 'C2').liberaLinea, false);
+eq('sin descuadres', rConCfg.descuadres, []);
+
+console.log('');
+console.log('-- 40 Pago parcial: libera solo lo aplicado del concepto liberador --');
+const rParcial = run(1200, [docMixto()], { afectacionLinea: AFECT });
+eq('se aplican 1,200 a C1 (prelacion)', rParcial.montoTotalAplicado, 1200);
+eq('los 1,200 liberan, porque C1 libera', rParcial.montoTotalLiberaLinea, 1200);
+
+console.log('');
+console.log('-- 40 Si solo alcanza para el concepto que NO libera --');
+const rNoLibera = run(500, [cxc('NL', '2026-09-10', 500, [det('d9', 1, 500)])], {
+  afectacionLinea: [{ clave: 'C1', liberaLineaAlPagar: 'N' }],
+});
+eq('se aplica todo', rNoLibera.montoTotalAplicado, 500);
+eq('pero no libera nada', rNoLibera.montoTotalLiberaLinea, 0);
+eq('el abono liberador es cero', rNoLibera.abonosPorContrato[0].montoLibera, 0);
+
+console.log('');
+console.log('-- 40 Concepto ausente de la configuracion: no libera y se reporta --');
+const rAusente = run(3000, [docMixto()], {
+  afectacionLinea: [{ clave: 'C1', liberaLineaAlPagar: 'S' }],
+});
+eq('C1 si libera', rAusente.montoTotalLiberaLinea, 2000);
+eq('C2 se reporta como no configurado', rAusente.conceptosSinAfectacion, ['C2']);
+
+console.log('');
+console.log('-- 40 La clave se compara sin distinguir mayusculas ni espacios --');
+const rCase = run(3000, [docMixto()], {
+  afectacionLinea: [{ clave: ' c1 ', liberaLineaAlPagar: 'S' }, { clave: 'C2', liberaLineaAlPagar: 'N' }],
+});
+eq('reconoce " c1 " como C1', rCase.montoTotalLiberaLinea, 2000);
+eq('y no reporta faltantes', rCase.conceptosSinAfectacion, []);
+
+console.log('');
+console.log('-- 40 Lo que libera nunca excede lo aplicado --');
+for (const [n, r] of [['mixto', rConCfg], ['parcial', rParcial], ['sin config', rSinCfg]]) {
+  ok_(n + ': libera <= aplicado', r.montoTotalLiberaLinea <= r.montoTotalAplicado);
+}
 
 console.log(`\n${pass} aserciones OK, ${fail} fallas`);
 process.exit(fail > 0 ? 1 : 0);

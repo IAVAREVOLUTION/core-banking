@@ -6407,6 +6407,132 @@ const deleteComponenteContableHandler = async (c: any) => {
   }
 };
 
+// ═══════════════════════════════════════════════════════════════════
+// Catálogo de Tipos de Plantilla — J_CATALOGO_TIPOS_PLANTILLA
+//
+// `es_sistema` marca los tipos cuya clave consume el código (contrato,
+// pagare, carta-oferta, contrato-gpo, estado-cuenta). Sobre ésos el PUT no
+// deja cambiar la clave y el DELETE los rechaza: borrarlos rompería el flujo
+// que los genera.
+// ═══════════════════════════════════════════════════════════════════
+const getTiposPlantillaHandler = async (c: any) => {
+  try {
+    const rows = await sql`
+      SELECT id, clave, nombre, descripcion, icono, color, activo, es_sistema, orden
+      FROM "EFINANCIANET_DB"."J_CATALOGO_TIPOS_PLANTILLA"
+      ORDER BY orden ASC, nombre ASC
+    `;
+    return c.json({ success: true, data: rows });
+  } catch (err: any) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return c.json({ error: `Error de base de datos: ${msg}` }, 500);
+  }
+};
+
+const postTipoPlantillaHandler = async (c: any) => {
+  try {
+    const body = await c.req.json();
+    const { clave, nombre, descripcion, icono, color, activo, orden } = body;
+    if (!clave || !nombre) {
+      return c.json({ error: "Campos obligatorios: clave, nombre" }, 400);
+    }
+    if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(clave)) {
+      return c.json({
+        error: "La clave sólo admite minúsculas, números y guiones (ej. estado-cuenta)",
+      }, 400);
+    }
+    const inserted = await sql`
+      INSERT INTO "EFINANCIANET_DB"."J_CATALOGO_TIPOS_PLANTILLA"
+        (clave, nombre, descripcion, icono, color, activo, es_sistema, orden)
+      VALUES
+        (${clave}, ${nombre}, ${descripcion ?? null}, ${icono ?? null},
+         ${color ?? null}, ${activo ?? true}, false, ${orden ?? 100})
+      RETURNING id, clave, nombre, descripcion, icono, color, activo, es_sistema, orden
+    `;
+    return c.json({ success: true, data: inserted[0] }, 201);
+  } catch (err: any) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (/duplicate key|unique/i.test(msg)) {
+      return c.json({ error: "Ya existe un tipo de plantilla con esa clave" }, 409);
+    }
+    return c.json({ error: `Error de base de datos: ${msg}` }, 500);
+  }
+};
+
+const putTipoPlantillaHandler = async (c: any) => {
+  try {
+    const id = c.req.param("id");
+    const body = await c.req.json();
+    const { clave, nombre, descripcion, icono, color, activo, orden } = body;
+    if (!id || !nombre) {
+      return c.json({ error: "Campos obligatorios: id, nombre" }, 400);
+    }
+
+    const actual = await sql`
+      SELECT clave, es_sistema
+      FROM "EFINANCIANET_DB"."J_CATALOGO_TIPOS_PLANTILLA"
+      WHERE id = ${id}
+    `;
+    if (actual.length === 0) {
+      return c.json({ error: `No se encontró registro con id=${id}` }, 404);
+    }
+
+    // La clave de un tipo de sistema es un contrato con el código: se ignora
+    // cualquier intento de cambiarla y se conserva la que ya tenía.
+    const claveFinal = actual[0].es_sistema ? actual[0].clave : (clave || actual[0].clave);
+    if (!actual[0].es_sistema && !/^[a-z0-9]+(-[a-z0-9]+)*$/.test(claveFinal)) {
+      return c.json({
+        error: "La clave sólo admite minúsculas, números y guiones (ej. estado-cuenta)",
+      }, 400);
+    }
+
+    const updated = await sql`
+      UPDATE "EFINANCIANET_DB"."J_CATALOGO_TIPOS_PLANTILLA"
+      SET clave = ${claveFinal}, nombre = ${nombre},
+          descripcion = ${descripcion ?? null}, icono = ${icono ?? null},
+          color = ${color ?? null}, activo = ${activo ?? true},
+          orden = ${orden ?? 100}, actualizado_en = now()
+      WHERE id = ${id}
+      RETURNING id, clave, nombre, descripcion, icono, color, activo, es_sistema, orden
+    `;
+    return c.json({ success: true, data: updated[0] });
+  } catch (err: any) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (/duplicate key|unique/i.test(msg)) {
+      return c.json({ error: "Ya existe un tipo de plantilla con esa clave" }, 409);
+    }
+    return c.json({ error: `Error de base de datos: ${msg}` }, 500);
+  }
+};
+
+const deleteTipoPlantillaHandler = async (c: any) => {
+  try {
+    const id = c.req.param("id");
+    if (!id) return c.json({ error: "Se requiere el parámetro id" }, 400);
+
+    const actual = await sql`
+      SELECT clave, es_sistema
+      FROM "EFINANCIANET_DB"."J_CATALOGO_TIPOS_PLANTILLA"
+      WHERE id = ${id}
+    `;
+    if (actual.length === 0) {
+      return c.json({ error: `No se encontró registro con id=${id}` }, 404);
+    }
+    if (actual[0].es_sistema) {
+      return c.json({
+        error: `"${actual[0].clave}" es un tipo del sistema: hay un proceso que lo genera. ` +
+               `Puede desactivarlo para que no aparezca al capturar, pero no eliminarlo.`,
+      }, 409);
+    }
+
+    await sql`DELETE FROM "EFINANCIANET_DB"."J_CATALOGO_TIPOS_PLANTILLA" WHERE id = ${id}`;
+    return c.json({ success: true, message: `Tipo de plantilla ${id} eliminado` });
+  } catch (err: any) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return c.json({ error: `Error de base de datos: ${msg}` }, 500);
+  }
+};
+
 const getReportesEjecucionesHandler = async (c: any) => {
   try {
     console.log("[ReportesEjec] GET /reportes-ejecuciones");
@@ -7120,6 +7246,10 @@ app.get(`${PREFIX}/componentes-contables`, getComponentesContablesHandler);
 app.post(`${PREFIX}/componentes-contables`, postComponenteContableHandler);
 app.put(`${PREFIX}/componentes-contables/:id`, putComponenteContableHandler);
 app.delete(`${PREFIX}/componentes-contables/:id`, deleteComponenteContableHandler);
+app.get(`${PREFIX}/tipos-plantilla`, getTiposPlantillaHandler);
+app.post(`${PREFIX}/tipos-plantilla`, postTipoPlantillaHandler);
+app.put(`${PREFIX}/tipos-plantilla/:id`, putTipoPlantillaHandler);
+app.delete(`${PREFIX}/tipos-plantilla/:id`, deleteTipoPlantillaHandler);
 app.get(`${PREFIX}/reportes-ejecuciones`, getReportesEjecucionesHandler);
 app.post(`${PREFIX}/reportes-ejecuciones`, postReporteEjecucionHandler);
 app.put(`${PREFIX}/reportes-ejecuciones/:id`, putReporteEjecucionHandler);
@@ -7152,6 +7282,10 @@ app.get("/componentes-contables", getComponentesContablesHandler);
 app.post("/componentes-contables", postComponenteContableHandler);
 app.put("/componentes-contables/:id", putComponenteContableHandler);
 app.delete("/componentes-contables/:id", deleteComponenteContableHandler);
+app.get("/tipos-plantilla", getTiposPlantillaHandler);
+app.post("/tipos-plantilla", postTipoPlantillaHandler);
+app.put("/tipos-plantilla/:id", putTipoPlantillaHandler);
+app.delete("/tipos-plantilla/:id", deleteTipoPlantillaHandler);
 app.get("/reportes-ejecuciones", getReportesEjecucionesHandler);
 app.post("/reportes-ejecuciones", postReporteEjecucionHandler);
 app.put("/reportes-ejecuciones/:id", putReporteEjecucionHandler);

@@ -126,14 +126,45 @@ function diaCorteDelMes(anio: number, mes: number, dia: number): Date {
 }
 
 /**
- * Periodo de corte (RN-01): del día siguiente al corte anterior, al corte del
- * mes de referencia. Con diaCorte=20 y referencia en septiembre 2026 devuelve
+ * Periodo de corte (RN-01).
+ *
+ * ── Sin cortes anteriores ────────────────────────────────────────────────
+ * Del día siguiente al corte del mes previo, al corte del mes de referencia.
+ * Con diaCorte=20 y referencia en septiembre 2026 devuelve
  * 21/08/2026 – 20/09/2026.
+ *
+ * ── Con un corte anterior ────────────────────────────────────────────────
+ * `fechaInicio` es el día siguiente al FIN del corte anterior, no un día de
+ * corte recalculado: así los periodos quedan encadenados sin huecos ni
+ * traslapes aunque un cierre se haya hecho en fecha irregular.
+ *
+ * `fechaFin` se sigue determinando por el día de corte configurado, tomando
+ * la PRIMERA ocurrencia posterior al inicio. Sin esa condición, un corte
+ * anterior del mismo mes produciría un fin previo al inicio: con corte previo
+ * al 15/09 el periodo nuevo arranca el 16/09, y el día de corte de septiembre
+ * ya pasó, así que el fin correcto es el 15/10.
+ *
+ * @param fechaFinCorteAnterior fin del último corte de la línea, si lo hay.
  */
 export function calcularPeriodoCorte(
   diaCorte: number,
   referencia: Date = new Date(),
+  fechaFinCorteAnterior?: string,
 ): { fechaInicio: string; fechaFin: string } {
+  const anterior = fechaFinCorteAnterior ? aFecha(fechaFinCorteAnterior) : null;
+
+  if (anterior && !isNaN(anterior.getTime())) {
+    const inicio = new Date(anterior);
+    inicio.setDate(inicio.getDate() + 1);
+
+    // Primera ocurrencia del día de corte que no sea anterior al inicio.
+    let fin = diaCorteDelMes(inicio.getFullYear(), inicio.getMonth(), diaCorte);
+    if (fin < inicio) {
+      fin = diaCorteDelMes(inicio.getFullYear(), inicio.getMonth() + 1, diaCorte);
+    }
+    return { fechaInicio: aISO(inicio), fechaFin: aISO(fin) };
+  }
+
   const fin = diaCorteDelMes(referencia.getFullYear(), referencia.getMonth(), diaCorte);
   const corteAnterior = diaCorteDelMes(referencia.getFullYear(), referencia.getMonth() - 1, diaCorte);
   const inicio = new Date(corteAnterior);

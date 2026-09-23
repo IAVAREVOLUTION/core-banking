@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Settings, Building2, MapPin, Briefcase, UserCheck, Landmark, Store, Wrench, BookOpen, ChevronRight, ClipboardList, Calculator } from 'lucide-react';
+import { Settings, Building2, MapPin, Briefcase, UserCheck, Landmark, Store, Wrench, BookOpen, ChevronRight, ClipboardList, Calculator, FileType } from 'lucide-react';
 import { SucursalesSection } from './SucursalesSection';
 import { InstitucionesFinancierasSection } from './InstitucionesFinancierasSection';
 import { PuestosTrabajoSection } from './PuestosTrabajoSection';
@@ -11,6 +11,7 @@ import { MantenimientoSection } from './MantenimientoSection';
 import { CatalogoDocumentosSection } from './CatalogoDocumentosSection';
 import { ReportesRegulariosSection } from './ReportesRegulariosSection';
 import { CatalogosContablesSection } from './CatalogosContablesSection';
+import { TiposPlantillaSection } from './TiposPlantillaSection';
 
 // ═══════════════════════════════════════════════════════════════════
 // TIPOS
@@ -26,7 +27,8 @@ type ConfigTab =
   | 'mantenimiento'
   | 'catalogo-documentos'
   | 'reportes-regulatorios'
-  | 'catalogos-contables';
+  | 'catalogos-contables'
+  | 'tipos-plantilla';
 
 interface TabDef {
   id: ConfigTab;
@@ -67,6 +69,7 @@ const CONFIG_TAB_GROUPS: TabGroup[] = [
       { id: 'catalogo-documentos', label: 'Catálogos', icon: <BookOpen size={14} /> },
       { id: 'reportes-regulatorios', label: 'Reportes Regulatorios', icon: <ClipboardList size={14} /> },
       { id: 'catalogos-contables', label: 'Catálogos Contables', icon: <Calculator size={14} /> },
+      { id: 'tipos-plantilla', label: 'Tipos de Plantilla', icon: <FileType size={14} /> },
     ],
   },
 ];
@@ -126,6 +129,7 @@ export function ConfiguracionModule() {
       {activeTab === 'catalogo-documentos' && <CatalogoDocumentosSection />}
       {activeTab === 'reportes-regulatorios' && <ReportesRegulariosSection />}
       <div style={{ display: activeTab === 'catalogos-contables' ? 'block' : 'none' }}><CatalogosContablesSection /></div>
+      {activeTab === 'tipos-plantilla' && <TiposPlantillaSection />}
     </>
   );
 }

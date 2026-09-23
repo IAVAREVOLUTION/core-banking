@@ -467,7 +467,7 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
   const cierreLocked = isView || isTerminal;
 
   /**
-   * Candado de evidencia — el Cierre Comercial exige la Carta Oferta firmada.
+   * Candado de evidencia — el Cierre Comercial exige la Cotización firmada.
    * Ya NO deshabilita el botón (quedaba muerto y sin explicación); se usa para
    * avisar en pantalla qué falta, y handleCerrarGanada lo vuelve a validar.
    */
@@ -484,7 +484,7 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
     // En TDC estos campos ni siquiera se muestran en el formulario, así que
     // exigirlos dejaría el cierre bloqueado para siempre.
     if (!esTDC) {
-      if (!documentoAceptacion) f.push('Carta Oferta firmada por el cliente');
+      if (!documentoAceptacion) f.push('Cotización firmada por el cliente');
       if (!rfcEmisor) f.push('RFC del Emisor (no encontrado en el expediente del cliente)');
       if (!data.sectorInfraestructura) f.push('Sector de Infraestructura');
       if (pctCobertura <= 0) f.push('% Cobertura GPO');
@@ -498,7 +498,7 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
 
   const handleCargarDocumentoAceptacion = async (file: File) => {
     if (!esPDFValido(file)) {
-      toast.error('Archivo inválido', { description: 'Solo se acepta un archivo PDF para la Carta Oferta firmada.' });
+      toast.error('Archivo inválido', { description: 'Solo se acepta un archivo PDF para la Cotización firmada.' });
       return;
     }
     setSubiendoAceptacion(true);
@@ -539,7 +539,7 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
       setForm(actualizado);
       onSave(actualizado);
       if (subida.enStorage) {
-        toast.success('Carta Oferta firmada cargada y guardada', { description: 'Ya puede cerrar la Oportunidad como Ganada.' });
+        toast.success('Cotización firmada cargada y guardada', { description: 'Ya puede cerrar la Oportunidad como Ganada.' });
       } else {
         toast.warning('Documento cargado, pero no se subió a Storage', {
           description: 'Queda disponible en esta sesión. Revise permisos del bucket.',
@@ -1938,7 +1938,7 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
               {seccion('Evidencia Comercial')}
               <div className="p-4">
                 <label className="text-[10px] text-gray-600 mb-1 block uppercase">
-                  Carta Oferta firmada por el cliente {!esTDC && <span className="text-red-600">*</span>}
+                  Cotización firmada por el cliente {!esTDC && <span className="text-red-600">*</span>}
                 </label>
                 {!documentoAceptacion ? (
                   <input
@@ -1993,7 +1993,7 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
                 )}
                 {subiendoAceptacion && <span className="text-[10px] text-gray-500 mt-1 block">Cargando…</span>}
                 <span className="text-[9px] text-gray-400 mt-1 block">
-                  Solo PDF. Es la Carta Oferta que el cliente devuelve firmada — no la que genera el botón [Generar Carta Oferta].
+                  Solo PDF. Es la Cotización que el cliente devuelve firmada — no la que genera el botón [Generar Carta Oferta] de Archivos Adjuntos.
                 </span>
                 {faltaEvidenciaCierre && !cierreLocked && (
                   <div className="mt-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded text-[11px] text-amber-800">

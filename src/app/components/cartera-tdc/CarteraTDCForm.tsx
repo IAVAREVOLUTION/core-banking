@@ -36,6 +36,7 @@ import { AvisosVencimientoTab } from '../cartera/AvisosVencimientoTab';
 import { AvisosTDCVista } from './AvisosTDCVista';
 import { TarjetaCreditoTab } from './TarjetaCreditoTab';
 import { MovimientosCuentaEjeTab } from './MovimientosCuentaEjeTab';
+import { EstadoCuentaTDCTab } from './EstadoCuentaTDCTab';
 import { MovimientosLineaTab } from '../creditos/MovimientosLineaTab';
 import { CierreCorteTab } from '../creditos/CierreCorteTab';
 import { AplicacionPagosTab } from '../creditos/AplicacionPagosTab';
@@ -113,6 +114,7 @@ const TABS = [
   { id: 'movimientos-linea', label: 'Movimientos de la Línea' },
   { id: 'cierre-corte', label: 'Cierre de Corte' },
   { id: 'aplicacion-pagos', label: 'Aplicación de Pagos' },
+  { id: 'estado-cuenta', label: 'Estado de Cuenta' },
 ];
 
 const ESTATUS_COLOR: Record<string, string> = {
@@ -195,6 +197,7 @@ export function CarteraTDCForm({ cuenta, mode, onBack }: Props) {
   // ahí se refleja el estatus real, y un cargo cortado tiene que verse
   // 'Aplicado' aunque la sesión lo recuerde 'Pendiente'.
   const [cargosBD, setCargosBD] = useState<any[] | null>(null);
+  const [eliminandoCargo, setEliminandoCargo] = useState(false);
 
   useEffect(() => {
     if (activeTab !== 'cargos' || !cuenta.id) return;
@@ -245,19 +248,56 @@ export function CarteraTDCForm({ cuenta, mode, onBack }: Props) {
   }, [activeTab, cuenta.id, revisionCargos, cargosBD]);
 
   /**
-   * Elimina un cargo de `cargosLinea`, la fuente de la que el subtab los deriva.
-   * Queda en sesión hasta que se presione "Guardar Línea": así el usuario puede
-   * depurar varios y confirmarlos de una vez, y un clic accidental no borra
-   * nada de la base.
+   * Elimina un cargo de la Línea — en la BASE, de inmediato.
+   *
+   * Antes sólo quitaba el renglón del espejo de sesión y esperaba a "Guardar
+   * Línea". No funcionaba: el grid se pinta de `cargosBD`, así que la fila
+   * seguía ahí y parecía que el botón no hacía nada.
+   *
+   * Se reutiliza `sincronizar_cargos_linea` en vez de un DELETE nuevo porque
+   * ese RPC ya trae las protecciones: no toca un cargo 'Procesado' ni uno
+   * ligado a una CxC, y devuelve cuántos protegió para poder decirlo.
    */
-  const eliminarCargoDeLinea = (origenId: string) => {
-    if (!cuenta.id || !origenId) return;
-    const actuales =
+  const eliminarCargoDeLinea = async (origenId: string) => {
+    if (!cuenta.id || !origenId || eliminandoCargo) return;
+
+    const enSesion = () =>
       loadCredito<any[]>(cuenta.id, 'cargosLinea') ??
       loadCreditoGuardado<any[]>(cuenta.id, 'cargosLinea') ??
       [];
-    saveCredito(cuenta.id, 'cargosLinea', actuales.filter(c => String(c.id) !== String(origenId)));
+
+    // Sin lectura de la base NO se sincroniza: mandar la lista de sesión
+    // borraría de J_CARGOS_LINEA todo lo que esa lista no contenga.
+    if (cargosBD === null) {
+      saveCredito(cuenta.id, 'cargosLinea', enSesion().filter(c => String(c.id) !== String(origenId)));
+      setRevisionCargos(n => n + 1);
+      toast.warning('Eliminado sólo en pantalla', {
+        description: 'No se pudo leer la base. Presione "Guardar Línea" cuando haya conexión.',
+        duration: 10000,
+      });
+      return;
+    }
+
+    const restantes = cargosBD.filter(c => String(c.id) !== String(origenId));
+    saveCredito(cuenta.id, 'cargosLinea', restantes);
+
+    setEliminandoCargo(true);
+    const res = await sincronizarCargosLinea({
+      idLineaCredito: String(cuenta.id),
+      cargos: restantes as any[],
+    });
+    setEliminandoCargo(false);
     setRevisionCargos(n => n + 1);
+
+    if (!res.ok) {
+      toast.error('No se eliminó el cargo', { description: res.error, duration: 12000 });
+      return;
+    }
+    if (res.protegidos) {
+      toast.warning(res.mensaje || 'El cargo no se pudo eliminar', { duration: 12000 });
+      return;
+    }
+    toast.success('Cargo eliminado de la base');
   };
 
   /** Botón "Guardar Línea" — lleva los cargos de la sesión a J_CARGOS_LINEA. */
@@ -554,6 +594,23 @@ export function CarteraTDCForm({ cuenta, mode, onBack }: Props) {
               producto={cuenta.productoNombre}
               sublinea={cuenta.tipoProducto}
               clienteId={cuenta.clienteId}
+            />
+          </div>
+        )}
+
+        {/* §6 — la pantalla toma Línea, Cliente y Producto del contexto abierto. */}
+        {activeTab === 'estado-cuenta' && (
+          <div className="bg-white border border-gray-300 p-4">
+            <EstadoCuentaTDCTab
+              sid={cuenta.id}
+              isRO={isRO}
+              producto={cuenta.productoNombre}
+              clienteId={cuenta.clienteId}
+              cliente={cuenta.cliente}
+              numeroLinea={cuenta.noCuenta || cuenta.noSol}
+              limiteAutorizado={cuenta.montoAut}
+              moneda={cuenta.moneda || 'MXN'}
+              estatusLinea={cuenta.estatus}
             />
           </div>
         )}

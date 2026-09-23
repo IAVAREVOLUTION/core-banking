@@ -17,7 +17,7 @@
  * `supabase/migrations/create_rpc_movimiento_tdc.sql`; esta pantalla es el
  * disparador por interfaz gráfica del mismo contrato (CA-03).
  */
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import { toast } from 'sonner';
 import {
   ejecutarMovimientoTDC,
@@ -26,7 +26,7 @@ import {
   type MovimientoEntrada,
   type ResultadoMotor,
 } from '../../lib/motorMovimientosTDC';
-import { aplicarMovimientoTDC } from '../../lib/aplicarMovimientoTDC';
+import { aplicarMovimientoTDC, leerSaldoLinea } from '../../lib/aplicarMovimientoTDC';
 import { useProductosLineaCreditoDB } from '../../hooks/useProductosLineaCreditoDB';
 import { useComponentesContablesCatalogo } from '../../hooks/useComponentesContablesCatalogo';
 import { esTarjetaCredito } from '../solicitudes/solicitudCreditoStore';
@@ -114,9 +114,31 @@ export function MovimientosLineaTab({
     [catalogo, cfg.cargosPermitidos]
   );
 
-  const autorizado = parseFloat(String(montoAutorizado).replace(/[,$\s]/g, '')) || 0;
-  const consumido = money(items.reduce((a, m) => a + (m.consumido || 0), 0));
-  const saldoDisponible = money(autorizado - consumido);
+  /**
+   * Saldo real de la Línea, leído de J_SALDOS_LINEA.
+   *
+   * Es la AUTORIDAD: lo bajan los cargos y lo suben los pagos cuyos conceptos
+   * liberan línea (§40). El cálculo local de abajo no puede verlo, porque una
+   * liberación ocurre en la base y no agrega un renglón a esta lista. Se
+   * refresca al montar y después de cada movimiento aplicado.
+   */
+  const [saldoBD, setSaldoBD] = useState<{ montoAutorizado: number; saldoDisponible: number } | null>(null);
+
+  const refrescarSaldo = useCallback(async () => {
+    if (!sid) return;
+    setSaldoBD(await leerSaldoLinea(String(sid)));
+  }, [sid]);
+
+  useEffect(() => { void refrescarSaldo(); }, [refrescarSaldo]);
+
+  const autorizadoProp = parseFloat(String(montoAutorizado).replace(/[,$\s]/g, '')) || 0;
+  const consumidoLocal = money(items.reduce((a, m) => a + (m.consumido || 0), 0));
+
+  // Con saldo en base manda la base; sin él —función no desplegada o línea sin
+  // fila todavía— se conserva el cálculo local en vez de mostrar cero.
+  const autorizado = saldoBD ? saldoBD.montoAutorizado : autorizadoProp;
+  const saldoDisponible = saldoBD ? money(saldoBD.saldoDisponible) : money(autorizadoProp - consumidoLocal);
+  const consumido = saldoBD ? money(autorizado - saldoDisponible) : consumidoLocal;
 
   // ── Alta ──
   const [showModal, setShowModal] = useState(false);
@@ -182,6 +204,7 @@ export function MovimientosLineaTab({
     const concepto = catalogo.find(c => c.codigo === draft.clave)?.nombre || draft.clave;
     const propio = r.efectosLinea.find(e => e.origen === 'movimiento');
 
+    void refrescarSaldo();
     setItems(prev => [
       ...prev,
       {

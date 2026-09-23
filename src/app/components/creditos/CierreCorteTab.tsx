@@ -32,6 +32,7 @@ import { useProductosLineaCreditoDB } from '../../hooks/useProductosLineaCredito
 import { esTarjetaCredito } from '../solicitudes/solicitudCreditoStore';
 import { saveToSession, loadFromSession, loadFromSavedStore, generateId } from './creditoStore';
 import { cargarCargosLinea, aplicarCierreCorteTDC } from '../../lib/aplicarCierreCorteTDC';
+import { cargarAvisosTDC } from '../../lib/avisosTDC';
 import { contabilizarCorte } from '../../lib/contabilizarEventoTDC';
 
 interface Props {
@@ -181,10 +182,36 @@ export function CierreCorteTab({ sid, mode, isRO, producto = '', sublinea = '', 
   const cargos: CargoLinea[] = cargosBD ?? cargosSesion;
   const puedePersistir = cargosBD !== null;
 
+  /**
+   * Fin del último corte YA emitido de esta línea.
+   *
+   * Sale de las CxC (J_CXC_LINEA), que es donde el cierre deja constancia, y
+   * no de la bitácora de sesión: un cierre hecho desde otro navegador también
+   * debe encadenar el periodo siguiente.
+   */
+  const [finCorteAnterior, setFinCorteAnterior] = useState<string>('');
+
+  useEffect(() => {
+    if (!sid || !esTDC) return;
+    let vivo = true;
+    cargarAvisosTDC({ lineaId: String(sid) }).then(res => {
+      if (!vivo || !res.ok) return;
+      const fines = res.avisos
+        .filter(a => String(a.estatus || '').toLowerCase() !== 'cancelada')
+        .map(a => a.fechaFin)
+        .filter(Boolean)
+        .sort();
+      setFinCorteAnterior(fines.length ? fines[fines.length - 1] : '');
+    });
+    return () => { vivo = false; };
+  }, [sid, esTDC]);
+
   // ── Periodo propuesto (CA-08/CA-09) ──
   const propuesto = useMemo(
-    () => (config.diaCorte > 0 ? calcularPeriodoCorte(config.diaCorte) : { fechaInicio: '', fechaFin: '' }),
-    [config.diaCorte],
+    () => (config.diaCorte > 0
+      ? calcularPeriodoCorte(config.diaCorte, new Date(), finCorteAnterior || undefined)
+      : { fechaInicio: '', fechaFin: '' }),
+    [config.diaCorte, finCorteAnterior],
   );
   const [fechaInicio, setFechaInicio] = useState(propuesto.fechaInicio);
   const [fechaFin, setFechaFin] = useState(propuesto.fechaFin);
@@ -383,7 +410,14 @@ export function CierreCorteTab({ sid, mode, isRO, producto = '', sublinea = '', 
             </div>
           </div>
           <div>
-            <label className="block text-[10px] uppercase tracking-wide text-gray-500 mb-1">Fecha Inicio</label>
+            <label className="block text-[10px] uppercase tracking-wide text-gray-500 mb-1">
+              Fecha Inicio
+              {finCorteAnterior && (
+                <span className="ml-1 normal-case tracking-normal text-gray-400">
+                  (corte anterior {finCorteAnterior} + 1 día)
+                </span>
+              )}
+            </label>
             <input type="date" value={fechaInicio} onChange={e => setFechaInicio(e.target.value)} disabled={isRO} className={`${inp} w-full`} />
           </div>
           <div>

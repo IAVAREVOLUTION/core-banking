@@ -2,7 +2,8 @@ import { useState, useRef, forwardRef, useImperativeHandle, useEffect } from 're
 import { toast } from 'sonner';
 import { useTabPersistence } from '@/app/hooks/useProductoPersistence';
 import type { PlantillaInstitucional, TipoPlantilla } from '@/app/types/product';
-import { TIPO_PLANTILLA_OPTIONS, TIPO_PLANTILLA_CATALOGO, getTipoPlantillaMeta } from '@/app/types/product';
+import { useTiposPlantillaDB, tiposActivos, metaTipoPlantilla } from '@/app/hooks/useTiposPlantillaDB';
+import { IconoTipoPlantilla } from '@/app/lib/iconosPlantilla';
 
 interface PlantillasTabProps {
   mode: 'create' | 'edit' | 'view';
@@ -17,6 +18,10 @@ const ARCHIVO_FORMATOS = ['PDF', 'DOCX', 'HTML'];
 
 export const PlantillasTab = forwardRef<{ getData: () => PlantillaInstitucional[] }, PlantillasTabProps>(
   ({ mode, productId, initialData, persistToStorage, storagePrefix }, ref) => {
+    // El catalogo de tipos vive en Configuracion -> Tipos de Plantilla. El hook
+    // cae a la constante de respaldo si la tabla no responde, para que el
+    // picklist nunca quede vacio.
+    const { data: tiposCatalogo } = useTiposPlantillaDB();
     const prefix = storagePrefix || 'credito';
     const storageKey = persistToStorage && productId ? `${prefix}_plantillas_${productId}` : '';
 
@@ -206,13 +211,17 @@ export const PlantillasTab = forwardRef<{ getData: () => PlantillaInstitucional[
                       <td className="px-3 py-2 text-xs text-gray-700 border-r border-gray-300">{item.nombre}</td>
                       <td className="px-3 py-2 text-xs border-r border-gray-300">
                         <span
-                          className="px-2 py-0.5 rounded text-[10px] font-medium"
+                          className="px-2 py-0.5 rounded text-[10px] font-medium inline-flex items-center gap-1"
                           style={{
-                            backgroundColor: `${getTipoPlantillaMeta(item.tipoPlantilla)?.color || '#666'}18`,
-                            color: getTipoPlantillaMeta(item.tipoPlantilla)?.color || '#666',
+                            backgroundColor: `${metaTipoPlantilla(tiposCatalogo, item.tipoPlantilla)?.color || '#666'}18`,
+                            color: metaTipoPlantilla(tiposCatalogo, item.tipoPlantilla)?.color || '#666',
                           }}
                         >
-                          {getTipoPlantillaMeta(item.tipoPlantilla)?.icon} {getTipoPlantillaMeta(item.tipoPlantilla)?.label || item.tipoPlantilla}
+                          <IconoTipoPlantilla
+                            nombre={metaTipoPlantilla(tiposCatalogo, item.tipoPlantilla)?.icono}
+                            size={11}
+                          />
+                          {metaTipoPlantilla(tiposCatalogo, item.tipoPlantilla)?.nombre || item.tipoPlantilla}
                         </span>
                       </td>
                       <td className="px-3 py-2 text-xs text-gray-700 border-r border-gray-300">{item.archivoBase}</td>
@@ -266,6 +275,22 @@ interface FormModalProps {
 }
 
 function FormModal({ mode, item, onSave, onClose }: FormModalProps) {
+  const { data: tiposCatalogo } = useTiposPlantillaDB();
+
+  /**
+   * Se ofrecen los activos más —si se está editando— el tipo que la plantilla
+   * ya tenía, aunque esté desactivado. Sin esto, abrir una plantilla vieja
+   * dejaría el picklist en blanco y guardarla le cambiaría el tipo en silencio.
+   */
+  const opcionesTipo = (() => {
+    const activos = tiposActivos(tiposCatalogo);
+    const actual = item?.tipoPlantilla;
+    if (actual && !activos.some(t => t.clave === actual)) {
+      const inactivo = tiposCatalogo.find(t => t.clave === actual);
+      if (inactivo) return [inactivo, ...activos];
+    }
+    return activos;
+  })();
   const isViewMode = mode === 'view';
   const [formData, setFormData] = useState({
     nombre: item?.nombre || '',
@@ -305,9 +330,11 @@ function FormModal({ mode, item, onSave, onClose }: FormModalProps) {
       return;
     }
 
-    if (!TIPO_PLANTILLA_OPTIONS.includes(formData.tipoPlantilla as TipoPlantilla)) {
+    // El catalogo es la fuente: un tipo que ya no existe se rechaza aqui, no
+    // al momento de generar el documento.
+    if (!tiposCatalogo.some(t => t.clave === formData.tipoPlantilla)) {
       toast.error('Tipo de plantilla inválido', {
-        description: `Debe ser uno de: ${TIPO_PLANTILLA_OPTIONS.join(', ')}`,
+        description: 'Ese tipo ya no existe en Configuración → Tipos de Plantilla.',
       });
       return;
     }
@@ -393,15 +420,15 @@ function FormModal({ mode, item, onSave, onClose }: FormModalProps) {
                     className={inputClassName()}
                   >
                     <option value="">Seleccione el tipo de plantilla...</option>
-                    {TIPO_PLANTILLA_CATALOGO.map((tipo) => (
-                      <option key={tipo.value} value={tipo.value}>
-                        {tipo.icon} {tipo.label}
+                    {opcionesTipo.map((tipo) => (
+                      <option key={tipo.clave} value={tipo.clave}>
+                        {tipo.nombre}{tipo.activo ? '' : ' (inactivo)'}
                       </option>
                     ))}
                   </select>
                   {formData.tipoPlantilla && (
                     <span className="text-[10px] text-gray-500 mt-0.5 block">
-                      {getTipoPlantillaMeta(formData.tipoPlantilla)?.descripcion}
+                      {metaTipoPlantilla(tiposCatalogo, formData.tipoPlantilla)?.descripcion}
                     </span>
                   )}
                 </div>

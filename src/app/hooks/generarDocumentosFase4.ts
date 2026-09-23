@@ -176,7 +176,11 @@ export function validarPlantillasRequeridas(
   const plantillasActivas = plantillas.filter(p => p.estatus === 'Activo');
 
   // Validar tipos de plantilla en el picklist
-  const tiposValidos = ['solicitud', 'contrato', 'pagare', 'minuta', 'carta-oferta', 'contrato-gpo'];
+  // Lista de tipos VÁLIDOS del catálogo, no de los que Fase 4 genera: una
+  // plantilla de tipo desconocido bloquea la generación. REQ-31 agregó
+  // 'estado-cuenta' al catálogo, y sin incluirlo aquí un producto con esa
+  // plantilla no podría generar su kit legal.
+  const tiposValidos = ['solicitud', 'contrato', 'pagare', 'minuta', 'carta-oferta', 'contrato-gpo', 'estado-cuenta'];
   const plantillasInvalidas = plantillas.filter(p => !tiposValidos.includes(p.tipoPlantilla));
   if (plantillasInvalidas.length > 0) {
     motivos.push(
@@ -1890,7 +1894,24 @@ export function decodificarArchivoData(raw: string): string {
  * en blanco. Los estilos se inyectan dentro del contenedor para que se eliminen
  * junto con él sin afectar de forma persistente el CSS de la aplicación.
  */
-export async function htmlToPdfBlobUrl(html: string, salida: 'blob' | 'datauri' = 'blob'): Promise<string> {
+export interface OpcionesPdf {
+  /**
+   * Corta las páginas en fronteras seguras (fin de renglón, de tabla o de
+   * sección) en vez de cada 297 mm exactos.
+   *
+   * Es opcional a propósito: el corte a ciegas lleva años produciendo los
+   * documentos de Fase 4 y la Carta Oferta, que caben en una página y nunca
+   * lo notaron. Activarlo para todos sería cambiar el resultado de documentos
+   * que no puedo probar aquí.
+   */
+  paginadoInteligente?: boolean;
+}
+
+export async function htmlToPdfBlobUrl(
+  html: string,
+  salida: 'blob' | 'datauri' = 'blob',
+  opciones: OpcionesPdf = {},
+): Promise<string> {
   // ── 1. Extraer <style> y contenido del <body> ─────────────────────────────
   const styleBlocks: string[] = [];
   const styleRegex = /<style[^>]*>([\s\S]*?)<\/style>/gi;
@@ -1936,6 +1957,21 @@ export async function htmlToPdfBlobUrl(html: string, salida: 'blob' | 'datauri' 
     const elW = CAPTURE_W;
     const elH = Math.max(pageEl.scrollHeight, pageEl.offsetHeight, minHPx, 100);
 
+    // ── Fronteras donde SÍ se puede cortar una página ──────────────────────
+    // Se miden sobre el DOM vivo, antes de rasterizar: después sólo hay una
+    // imagen y ya no se sabe dónde terminaba cada renglón.
+    const cortesCss: number[] = [];
+    if (opciones.paginadoInteligente) {
+      const origen = pageEl.getBoundingClientRect().top;
+      const selector = 'tr, .seccion-titulo, .destacado, .columnas, table, ul li, .pie, h1';
+      pageEl.querySelectorAll(selector).forEach(el => {
+        const r = (el as HTMLElement).getBoundingClientRect();
+        const fin = r.bottom - origen;
+        if (fin > 0) cortesCss.push(fin);
+      });
+      cortesCss.sort((a, b) => a - b);
+    }
+
     // Escala 1.5 (antes 2): a 850px de captura da ~1275px de ancho, suficiente
     // para texto nítido en A4, y reduce ~44% los píxeles a codificar.
     const canvas = await html2canvas(pageEl, {
@@ -1960,22 +1996,87 @@ export async function htmlToPdfBlobUrl(html: string, salida: 'blob' | 'datauri' 
 
     const imgW = PAGE_W;
     const imgH = (canvas.height / canvas.width) * PAGE_W;
-    let yLeft = imgH;
-    let yOffset = 0;
+    const pxPorMm = canvas.width / PAGE_W;
 
-    // Alias fijo ('doc') en todas las páginas: sin él, jsPDF incrusta una copia
-    // completa de la MISMA imagen por cada página, multiplicando el tamaño del
-    // archivo en documentos de varias páginas. Con alias se almacena una vez y
-    // las demás páginas la referencian.
-    const ALIAS = 'doc';
-    pdf.addImage(imgData, 'JPEG', 0, yOffset, imgW, imgH, ALIAS, 'FAST');
-    yLeft -= PAGE_H;
+    if (opciones.paginadoInteligente && cortesCss.length > 0) {
+      // ── Paginado por fronteras ──────────────────────────────────────────
+      // Cada página se recorta del lienzo hasta el último punto seguro que
+      // quepa. Así ningún renglón queda partido a la mitad, que es lo que
+      // produce el corte a ciegas cada 297 mm.
+      const aCanvas = canvas.width / elW;                 // CSS px → px del lienzo
+      const cortes = cortesCss
+        .map(v => Math.round(v * aCanvas))
+        .filter(v => v > 0 && v < canvas.height);
 
-    while (yLeft > 0) {
-      yOffset -= PAGE_H;
-      pdf.addPage();
+      // Margen para que el contenido no toque el borde en los cortes internos.
+      // La primera página ya trae el padding superior del propio HTML.
+      const MARGEN_MM = 8;
+
+      let inicio = 0;
+      let primera = true;
+
+      while (inicio < canvas.height - 1) {
+        const topMm = primera ? 0 : MARGEN_MM;
+        const dispPx = (PAGE_H - topMm - MARGEN_MM) * pxPorMm;
+
+        let fin = Math.min(inicio + dispPx, canvas.height);
+
+        if (fin < canvas.height) {
+          // El candidato debe avanzar al menos un tercio de la página: si no,
+          // un bloque más alto que una hoja produciría páginas casi vacías.
+          const minimo = inicio + dispPx * 0.34;
+          let elegido = 0;
+          for (const c of cortes) {
+            if (c > minimo && c <= fin) elegido = c;
+            else if (c > fin) break;
+          }
+          if (elegido > 0) fin = elegido;
+        }
+
+        const alto = Math.max(1, Math.round(fin - inicio));
+
+        const trozo = document.createElement('canvas');
+        trozo.width = canvas.width;
+        trozo.height = alto;
+        const ctx = trozo.getContext('2d');
+        if (ctx) {
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, trozo.width, trozo.height);
+          ctx.drawImage(canvas, 0, inicio, canvas.width, alto, 0, 0, canvas.width, alto);
+        }
+
+        if (!primera) pdf.addPage();
+        pdf.addImage(
+          trozo.toDataURL('image/jpeg', 0.8), 'JPEG',
+          0, topMm, imgW, alto / pxPorMm, undefined, 'FAST',
+        );
+
+        trozo.width = 0;
+        trozo.height = 0;
+
+        // Salvaguarda: si no se avanzó, cortar a lo bruto antes que ciclar.
+        if (fin <= inicio) break;
+        inicio = fin;
+        primera = false;
+      }
+    } else {
+      let yLeft = imgH;
+      let yOffset = 0;
+
+      // Alias fijo ('doc') en todas las páginas: sin él, jsPDF incrusta una copia
+      // completa de la MISMA imagen por cada página, multiplicando el tamaño del
+      // archivo en documentos de varias páginas. Con alias se almacena una vez y
+      // las demás páginas la referencian.
+      const ALIAS = 'doc';
       pdf.addImage(imgData, 'JPEG', 0, yOffset, imgW, imgH, ALIAS, 'FAST');
       yLeft -= PAGE_H;
+
+      while (yLeft > 0) {
+        yOffset -= PAGE_H;
+        pdf.addPage();
+        pdf.addImage(imgData, 'JPEG', 0, yOffset, imgW, imgH, ALIAS, 'FAST');
+        yLeft -= PAGE_H;
+      }
     }
 
     // Liberar el canvas: en documentos largos ocupa decenas de MB en memoria.

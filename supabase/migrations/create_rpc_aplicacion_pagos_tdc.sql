@@ -215,7 +215,9 @@ CREATE OR REPLACE FUNCTION public.aplicar_pago_referenciado(
   --                      pagoTotalNuevo, estatusPagoNuevo }
   --   p_aplic_cxc:     { idCxC, idContrato, montoAplicado, saldoAnterior,
   --                      saldoPosterior, pagoTotalNuevo, estatusNuevo }
-  --   p_abonos:        { idContrato, monto }
+  --   p_abonos:        { idContrato, monto, montoLibera }
+  --                    `montoLibera` es la parte que restituye linea disponible
+  --                    segun "LIBERA LINEA CUANDO SE PAGA" del producto.
   p_aplic_detalle        jsonb,
   p_aplic_cxc            jsonb,
   p_abonos               jsonb,
@@ -248,6 +250,7 @@ DECLARE
   v_mov_id      uuid;
   v_estatus_ref text;
   v_existente   uuid;
+  v_libera      numeric;
 BEGIN
   -- ── §47 — validaciones de entrada ──
   IF p_monto_pago IS NULL OR p_monto_pago <= 0 THEN
@@ -439,12 +442,25 @@ BEGIN
           COALESCE(p_correlation_id, '') || '|abono|' || (v_ren->>'idContrato')
         ) RETURNING id INTO v_mov_id;
 
-        -- §40 — el abono libera línea disponible.
-        UPDATE "EFINANCIANET_DB"."J_SALDOS_LINEA" sl
-           SET saldo_disponible = LEAST(sl.monto_autorizado,
-                                        sl.saldo_disponible + (v_ren->>'monto')::numeric),
-               actualizado_en = now()
-         WHERE sl.linea_id = v_ren->>'idContrato';
+        -- §40 — el abono libera línea disponible, pero SÓLO la parte cuyos
+        -- conceptos tienen "LIBERA LÍNEA CUANDO SE PAGA" = Sí en el subtab
+        -- "Afectación de la Línea" del producto. El motor ya resolvió esa
+        -- pregunta concepto por concepto y manda el resultado en `montoLibera`.
+        --
+        -- COALESCE a `monto` a propósito: si llega un plan viejo sin ese campo
+        -- —un bundle en caché contra esta versión del RPC— se conserva el
+        -- comportamiento anterior en vez de dejar de liberar en silencio.
+        v_libera := COALESCE(
+          NULLIF(v_ren->>'montoLibera', '')::numeric,
+          (v_ren->>'monto')::numeric);
+
+        IF v_libera > 0 THEN
+          UPDATE "EFINANCIANET_DB"."J_SALDOS_LINEA" sl
+             SET saldo_disponible = LEAST(sl.monto_autorizado,
+                                          sl.saldo_disponible + v_libera),
+                 actualizado_en = now()
+           WHERE sl.linea_id = v_ren->>'idContrato';
+        END IF;
       END IF;
 
       INSERT INTO "EFINANCIANET_DB"."J_ABONOS_CONTRATO" (

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { toast } from 'sonner';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 
@@ -34,9 +34,39 @@ function parseMoney(val: string): number {
   return parseFloat(String(val || '0').replace(/[^0-9.-]/g, '')) || 0;
 }
 
-function fmtDate(s: string) {
+/**
+ * Muchos movimientos guardan sólo la FECHA valor; al convertirla a instante
+ * queda en medianoche UTC y el navegador la pintaba como "6:00:00 p.m.", una
+ * hora que nadie capturó. Se detecta ese caso para no inventar una hora.
+ */
+function esSoloFecha(iso: string): boolean {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(String(iso).trim())) return true;
+  const d = new Date(iso);
+  return !isNaN(d.getTime()) && d.getUTCHours() === 0 && d.getUTCMinutes() === 0 && d.getUTCSeconds() === 0;
+}
+
+function fmtFecha(s: string) {
   if (!s) return '—';
-  try { return new Date(s).toLocaleString('es-MX'); } catch { return s; }
+  const d = new Date(s);
+  if (isNaN(d.getTime())) return s;
+  return d.toLocaleDateString('es-MX');
+}
+
+function fmtHora(s?: string) {
+  if (!s) return '';
+  const d = new Date(s);
+  if (isNaN(d.getTime())) return '';
+  return d.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
+/**
+ * El instante con el que se ordena y se muestra la hora: la fecha de registro
+ * cuando existe —es la única que trae la hora real— y si no, la fecha valor.
+ */
+function instanteDe(m: { fechaHora: string; fechaRegistro?: string }): number {
+  const cand = m.fechaRegistro && !esSoloFecha(m.fechaRegistro) ? m.fechaRegistro : m.fechaHora;
+  const t = new Date(cand).getTime();
+  return isNaN(t) ? 0 : t;
 }
 
 export function Movimientos({ mode, clienteId, saldoCuentaEje, onSaldoChange }: MovimientosProps) {
@@ -47,6 +77,20 @@ export function Movimientos({ mode, clienteId, saldoCuentaEje, onSaldoChange }: 
   const [movimientos,  setMovimientos]  = useState<Movimiento[]>([]);
   const [saldoActual,  setSaldoActual]  = useState<number>(parseMoney(saldoCuentaEje || '0'));
   const [loading,      setLoading]      = useState(false);
+
+  /**
+   * Orden de la tabla. Arranca por fecha descendente —lo más reciente
+   * arriba— porque es lo que se busca al abrir la pestaña.
+   */
+  type CampoOrden = 'fecha' | 'tipo' | 'concepto' | 'referencia' | 'monto' | 'saldoFinal';
+  const [orden, setOrden] = useState<{ campo: CampoOrden; desc: boolean }>({ campo: 'fecha', desc: true });
+
+  const ordenarPor = (campo: CampoOrden) =>
+    setOrden(prev => (prev.campo === campo
+      ? { campo, desc: !prev.desc }
+      // Las columnas numéricas y la fecha entran en descendente: es la
+      // lectura útil por omisión. El texto, en ascendente.
+      : { campo, desc: campo === 'fecha' || campo === 'monto' || campo === 'saldoFinal' }));
   const [showModal,    setShowModal]    = useState(false);
   const [enviando,     setEnviando]     = useState(false);
 
@@ -78,6 +122,8 @@ export function Movimientos({ mode, clienteId, saldoCuentaEje, onSaldoChange }: 
       const movs: Movimiento[] = (json.data || []).map((m: any) => ({
         id:          m.id || crypto.randomUUID(),
         fechaHora:   m.fechaHora || m.fechaRegistro || m.created_at || '',
+        // La hora real vive aquí: `fechaHora` suele traer sólo la fecha valor.
+        fechaRegistro: m.fechaRegistro || m.created_at || '',
         tipo:        m.tipo || m.tipoMovimiento || '—',
         concepto:    m.concepto || m.origenCreacion || '—',
         referencia:  m.referencia || '',
@@ -92,6 +138,25 @@ export function Movimientos({ mode, clienteId, saldoCuentaEje, onSaldoChange }: 
       setLoading(false);
     }
   }, []);
+
+  const movimientosOrdenados = useMemo(() => {
+    const copia = [...movimientos];
+    const dir = orden.desc ? -1 : 1;
+    copia.sort((a, b) => {
+      let r = 0;
+      switch (orden.campo) {
+        case 'fecha':      r = instanteDe(a) - instanteDe(b); break;
+        case 'monto':      r = (a.monto || 0) - (b.monto || 0); break;
+        case 'saldoFinal': r = (a.saldoFinal || 0) - (b.saldoFinal || 0); break;
+        default:
+          r = String(a[orden.campo] ?? '').localeCompare(String(b[orden.campo] ?? ''), 'es');
+      }
+      // Empate: el instante decide, para que el orden sea estable y no baile
+      // entre renders con dos filas del mismo concepto o monto.
+      return r !== 0 ? r * dir : instanteDe(b) - instanteDe(a);
+    });
+    return copia;
+  }, [movimientos, orden]);
 
   useEffect(() => { cargarCuentaEje(); }, [cargarCuentaEje]);
   useEffect(() => { if (cuentaEjeId) cargar(cuentaEjeId); }, [cuentaEjeId, cargar]);
@@ -175,13 +240,36 @@ export function Movimientos({ mode, clienteId, saldoCuentaEje, onSaldoChange }: 
         <table className="w-full text-xs border-collapse">
           <thead>
             <tr className="border-b border-gray-400 bg-[#D9E2F3]">
-              <th className="px-3 py-2 text-left font-medium text-gray-800 border-r border-gray-300">Fecha y Hora</th>
-              <th className="px-3 py-2 text-left font-medium text-gray-800 border-r border-gray-300">Tipo</th>
-              <th className="px-3 py-2 text-left font-medium text-gray-800 border-r border-gray-300">Concepto</th>
-              <th className="px-3 py-2 text-left font-medium text-gray-800 border-r border-gray-300">Referencia</th>
-              <th className="px-3 py-2 text-right font-medium text-gray-800 border-r border-gray-300">Monto</th>
+              {([
+                ['fecha',      'Fecha y Hora',  'left'],
+                ['tipo',       'Tipo',          'left'],
+                ['concepto',   'Concepto',      'left'],
+                ['referencia', 'Referencia',    'left'],
+                ['monto',      'Monto',         'right'],
+              ] as [CampoOrden, string, string][]).map(([campo, etiqueta, alineacion]) => (
+                <th
+                  key={campo}
+                  onClick={() => ordenarPor(campo)}
+                  title="Ordenar por esta columna"
+                  className={`px-3 py-2 text-${alineacion} font-medium text-gray-800 border-r border-gray-300 cursor-pointer select-none hover:bg-[#C7D5EC]`}
+                >
+                  {etiqueta}
+                  <span className={`ml-1 text-[9px] ${orden.campo === campo ? 'text-[#2E5C91]' : 'text-gray-400'}`}>
+                    {orden.campo === campo ? (orden.desc ? '▼' : '▲') : '↕'}
+                  </span>
+                </th>
+              ))}
               <th className="px-3 py-2 text-right font-medium text-gray-800 border-r border-gray-300">Saldo Inicial</th>
-              <th className="px-3 py-2 text-right font-medium text-gray-800">Saldo Final</th>
+              <th
+                onClick={() => ordenarPor('saldoFinal')}
+                title="Ordenar por esta columna"
+                className="px-3 py-2 text-right font-medium text-gray-800 cursor-pointer select-none hover:bg-[#C7D5EC]"
+              >
+                Saldo Final
+                <span className={`ml-1 text-[9px] ${orden.campo === 'saldoFinal' ? 'text-[#2E5C91]' : 'text-gray-400'}`}>
+                  {orden.campo === 'saldoFinal' ? (orden.desc ? '▼' : '▲') : '↕'}
+                </span>
+              </th>
             </tr>
           </thead>
           <tbody className="bg-white">
@@ -202,9 +290,16 @@ export function Movimientos({ mode, clienteId, saldoCuentaEje, onSaldoChange }: 
                     : 'No se encontró cuenta eje para este cliente.'}
                 </td>
               </tr>
-            ) : movimientos.map((m, idx) => (
+            ) : movimientosOrdenados.map((m, idx) => (
               <tr key={m.id} className={`border-b border-gray-200 ${idx % 2 === 1 ? 'bg-gray-50' : ''}`}>
-                <td className="px-3 py-2 border-r border-gray-200 whitespace-nowrap">{fmtDate(m.fechaHora)}</td>
+                <td className="px-3 py-2 border-r border-gray-200 whitespace-nowrap">
+                  <div>{fmtFecha(m.fechaHora)}</div>
+                  {/* La hora sale del registro; si el movimiento sólo guardó
+                      fecha valor, no se inventa una. */}
+                  {fmtHora(m.fechaRegistro) && (
+                    <div className="text-[10px] text-gray-400">{fmtHora(m.fechaRegistro)}</div>
+                  )}
+                </td>
                 <td className="px-3 py-2 border-r border-gray-200">
                   <span className={`inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium ${
                     m.tipo === 'Abono' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'

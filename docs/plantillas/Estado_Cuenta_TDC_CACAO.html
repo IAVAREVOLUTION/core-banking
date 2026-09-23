@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<title>Estado de Cuenta — Tarjeta de Crédito</title>
+
+<!--
+  Plantilla institucional — tipo "Estado de Cuenta" (REQ-31, ESPECIFICACIÓN 6).
+
+  La consume Cartera TDC → Estado de Cuenta → [Generar Edo Cuenta].
+
+  ── Diseño ──────────────────────────────────────────────────────────────
+  Mismo sistema visual que `Carta_Oferta_TDC.html`, que es el estándar de las
+  plantillas de Línea de Crédito: azul institucional #2E5C91, encabezado con
+  filete, secciones con barra lateral, tablas clave/valor con separadores
+  tenues. Nada de colores ajenos a la marca.
+
+  ── El logo ─────────────────────────────────────────────────────────────
+  Va como texto, igual que la Carta Oferta. Una etiqueta <img src="/src/…">
+  NO carga: el PDF se renderiza en un contenedor aislado, sin servidor. Para
+  poner el isotipo real hay dos caminos:
+
+    a) Correr `node docs/plantillas/incrustar-logo.mjs`, que genera una copia
+       de este archivo con el logo incrustado como data URI.
+    b) Sustituir a mano el marcador LOGO del encabezado (el comentario HTML
+       que aparece dentro de div.marca) por una etiqueta img cuyo src sea el
+       data URI del isotipo.
+
+  Pesa ~352 KB en base64 y ese peso viaja dentro del producto, así que la
+  versión de texto es la predeterminada a propósito.
+
+  ── Placeholders ────────────────────────────────────────────────────────
+  Sustitución PLANA de {{CLAVE}} y {CLAVE}. No hay Mustache: un bloque
+  {{#lista}} se imprimiría literal.
+
+    Identificación: NUMERO_LINEA · ID_LINEA · CLIENTE · CLIENTE_ID ·
+                    PRODUCTO · MONEDA · ESTATUS_LINEA · FOLIO_AVISO
+    Fechas:         PERIODO · FECHA_INICIO_PERIODO · FECHA_FIN_PERIODO ·
+                    FECHA_CORTE · FECHA_LIMITE_PAGO · FECHA_ESTADO ·
+                    FECHA_GENERACION
+    Importes:       LIMITE_AUTORIZADO · SALDO_ANTERIOR · CARGOS_PERIODO ·
+                    PAGOS_PERIODO · SALDO_AL_CORTE · SALDO_CONSUME_LINEA ·
+                    CREDITO_DISPONIBLE · PAGO_MINIMO ·
+                    PAGO_NO_GENERA_INTERESES
+    Tablas:         TABLA_MOVIMIENTOS · TABLA_PAGOS · TABLA_CONCEPTOS ·
+                    TABLA_DESGLOSE
+    Otros:          USUARIO · TOTAL_MOVIMIENTOS · TOTAL_PAGOS
+-->
+
+<style>
+  body {
+    font-family: "Helvetica Neue", Arial, sans-serif;
+    margin: 0;
+    color: #1a1a1a;
+    font-size: 12px;
+  }
+
+  .page {
+    width: 210mm;
+    min-height: 297mm;
+    padding: 28mm 25mm 20mm 25mm;
+    box-sizing: border-box;
+  }
+
+  /* ── Encabezado ── */
+  .header {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: flex-start;
+    border-bottom: 2px solid #2E5C91;
+    padding-bottom: 10px;
+    margin-bottom: 22px;
+  }
+
+  .marca { display: flex; align-items: center; gap: 12px; }
+  .marca img { height: 40px; }
+
+  .brand-name {
+    font-size: 17px;
+    font-weight: 700;
+    color: #2E5C91;
+    letter-spacing: .5px;
+  }
+
+  .brand-sub {
+    font-size: 10px;
+    color: #6b7280;
+    margin-top: 2px;
+  }
+
+  .folio {
+    text-align: right;
+    font-size: 10px;
+    color: #444;
+    line-height: 1.6;
+  }
+
+  .folio b { color: #2E5C91; }
+
+  h1 {
+    font-size: 15px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: #1a1a1a;
+    margin: 0 0 4px;
+  }
+
+  .subtitulo {
+    font-size: 11px;
+    color: #6b7280;
+    margin-bottom: 20px;
+  }
+
+  /* ── Secciones ── */
+  .seccion-titulo {
+    background: #EDF1F6;
+    border-left: 4px solid #2E5C91;
+    padding: 6px 10px;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .6px;
+    color: #2E5C91;
+    margin: 20px 0 10px;
+    page-break-after: avoid;
+  }
+
+  table.datos {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 11px;
+  }
+
+  table.datos td {
+    padding: 7px 10px;
+    border-bottom: 1px solid #E3E8EF;
+    vertical-align: top;
+  }
+
+  table.datos td.k { width: 42%; color: #4b5563; }
+  table.datos td.v { font-weight: 600; color: #111827; }
+  table.datos tr:last-child td { border-bottom: 0; }
+
+  .columnas {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 22px;
+  }
+
+  /* ── La cifra que se busca primero ── */
+  .destacado {
+    background: #F5F8FC;
+    border: 1px solid #D9E2F3;
+    padding: 14px 16px;
+    margin: 16px 0;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    page-break-inside: avoid;
+  }
+
+  .destacado .celda { text-align: center; }
+
+  .destacado .etiqueta {
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: .5px;
+    color: #4b5563;
+  }
+
+  .destacado .monto {
+    font-size: 20px;
+    font-weight: 700;
+    color: #2E5C91;
+    letter-spacing: -.5px;
+    margin-top: 3px;
+  }
+
+  .destacado .fecha {
+    font-size: 15px;
+    font-weight: 700;
+    color: #111827;
+    margin-top: 5px;
+  }
+
+  /* ── Tablas que inyecta el motor ── */
+  .tabla-motor table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 10px;
+  }
+
+  .tabla-motor thead { display: table-header-group; }
+
+  .tabla-motor th {
+    background: #EDF1F6 !important;
+    color: #2E5C91 !important;
+    text-align: left !important;
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: .4px;
+    padding: 6px 8px !important;
+    border-bottom: 1px solid #D9E2F3 !important;
+  }
+
+  .tabla-motor td {
+    padding: 5px 8px !important;
+    border-bottom: 1px solid #E3E8EF !important;
+    color: #111827;
+  }
+
+  .tabla-motor tr { page-break-inside: avoid; }
+
+  /* Las columnas de importe van a la derecha: en todas las tablas del motor
+     los importes ocupan de la cuarta columna en adelante. */
+  .tabla-motor td:nth-child(n+4),
+  .tabla-motor th:nth-child(n+4) { text-align: right !important; white-space: nowrap; }
+
+  .tabla-motor p {
+    font-size: 10.5px;
+    color: #6b7280;
+    font-style: italic;
+    margin: 6px 0;
+  }
+
+  /* El desglose tiene Clave | Concepto | Cantidad | Importe. */
+  .tabla-desglose td:nth-child(3),
+  .tabla-desglose th:nth-child(3) { text-align: center !important; }
+
+  /* ── Totales ── */
+  .totales {
+    margin-left: auto;
+    width: 52%;
+    border-collapse: collapse;
+    font-size: 11px;
+    margin-top: 12px;
+    page-break-inside: avoid;
+  }
+
+  .totales td {
+    padding: 7px 10px;
+    border-bottom: 1px solid #E3E8EF;
+  }
+
+  .totales td:last-child { text-align: right; font-weight: 600; color: #111827; }
+
+  .totales .final td {
+    background: #2E5C91;
+    color: #fff;
+    font-weight: 700;
+    border-bottom: 0;
+  }
+
+  .totales .final td:last-child { color: #fff; }
+
+  /* ── Notas y pie ── */
+  ul.notas {
+    font-size: 10.5px;
+    color: #4b5563;
+    line-height: 1.6;
+    padding-left: 18px;
+    margin: 0;
+  }
+
+  ul.notas li { margin-bottom: 5px; }
+
+  .pie {
+    border-top: 1px solid #E3E8EF;
+    margin-top: 26px;
+    padding-top: 8px;
+    font-size: 8.5px;
+    color: #9ca3af;
+    line-height: 1.5;
+    display: flex;
+    justify-content: space-between;
+  }
+
+  @media print {
+    body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .page { width: auto; }
+  }
+</style>
+</head>
+
+<body>
+<div class="page">
+
+  <!-- ══ Encabezado ══ -->
+  <div class="header">
+    <div class="marca">
+      <!--LOGO-->
+      <div>
+        <div class="brand-name">CACAO Banking</div>
+        <div class="brand-sub">eFinanciaN@t</div>
+      </div>
+    </div>
+
+    <div class="folio">
+      <div><b>Documento:</b> {{FOLIO_AVISO}}</div>
+      <div><b>Fecha Estado:</b> {{FECHA_ESTADO}}</div>
+      <div><b>Generado:</b> {{FECHA_GENERACION}}</div>
+    </div>
+  </div>
+
+  <h1>Estado de Cuenta</h1>
+  <div class="subtitulo">
+    {{PRODUCTO}} · Línea {{NUMERO_LINEA}} · Periodo {{PERIODO}}
+  </div>
+
+  <!-- ══ Cliente y Línea ══ -->
+  <div class="seccion-titulo">Datos de la Cuenta</div>
+
+  <div class="columnas">
+    <table class="datos">
+      <tr><td class="k">Cliente</td><td class="v">{{CLIENTE}}</td></tr>
+      <tr><td class="k">No. Cliente</td><td class="v">{{CLIENTE_ID}}</td></tr>
+      <tr><td class="k">No. Línea</td><td class="v">{{NUMERO_LINEA}}</td></tr>
+      <tr><td class="k">Estatus</td><td class="v">{{ESTATUS_LINEA}}</td></tr>
+    </table>
+
+    <table class="datos">
+      <tr><td class="k">Producto</td><td class="v">{{PRODUCTO}}</td></tr>
+      <tr><td class="k">Moneda</td><td class="v">{{MONEDA}}</td></tr>
+      <tr><td class="k">Fecha de Corte</td><td class="v">{{FECHA_CORTE}}</td></tr>
+      <tr><td class="k">Fecha Límite de Pago</td><td class="v">{{FECHA_LIMITE_PAGO}}</td></tr>
+    </table>
+  </div>
+
+  <!-- ══ Lo que el cliente busca primero ══ -->
+  <div class="destacado">
+    <div class="celda">
+      <div class="etiqueta">Saldo al Corte</div>
+      <div class="monto">{{SALDO_AL_CORTE}}</div>
+    </div>
+    <div class="celda">
+      <div class="etiqueta">Pago Mínimo</div>
+      <div class="monto">{{PAGO_MINIMO}}</div>
+    </div>
+    <div class="celda">
+      <div class="etiqueta">Pagar antes del</div>
+      <div class="fecha">{{FECHA_LIMITE_PAGO}}</div>
+    </div>
+  </div>
+
+  <!-- ══ Resumen financiero ══ -->
+  <div class="seccion-titulo">Resumen del Periodo</div>
+
+  <div class="columnas">
+    <table class="datos">
+      <tr><td class="k">Límite autorizado</td><td class="v">{{LIMITE_AUTORIZADO}}</td></tr>
+      <tr><td class="k">Saldo anterior</td><td class="v">{{SALDO_ANTERIOR}}</td></tr>
+      <tr><td class="k">Cargos del periodo</td><td class="v">{{CARGOS_PERIODO}}</td></tr>
+      <tr><td class="k">Pagos aplicados</td><td class="v">{{PAGOS_PERIODO}}</td></tr>
+    </table>
+
+    <table class="datos">
+      <tr><td class="k">Saldo al corte</td><td class="v">{{SALDO_AL_CORTE}}</td></tr>
+      <tr><td class="k">Saldo que consume línea</td><td class="v">{{SALDO_CONSUME_LINEA}}</td></tr>
+      <tr><td class="k">Crédito disponible</td><td class="v">{{CREDITO_DISPONIBLE}}</td></tr>
+      <tr><td class="k">Pago que no genera intereses</td><td class="v">{{PAGO_NO_GENERA_INTERESES}}</td></tr>
+    </table>
+  </div>
+
+  <!-- ══ Desglose de cargos ══ -->
+  <div class="seccion-titulo">Desglose de Cargos del Periodo</div>
+  <div class="tabla-motor tabla-desglose">
+    {{TABLA_DESGLOSE}}
+  </div>
+
+  <!-- ══ Conceptos del corte ══ -->
+  <div class="seccion-titulo">Conceptos del Corte</div>
+  <div class="tabla-motor">
+    {{TABLA_CONCEPTOS}}
+  </div>
+
+  <!-- ══ Movimientos ══ -->
+  <div class="seccion-titulo">Movimientos del Periodo ({{TOTAL_MOVIMIENTOS}})</div>
+  <div class="tabla-motor">
+    {{TABLA_MOVIMIENTOS}}
+  </div>
+
+  <!-- ══ Pagos ══ -->
+  <div class="seccion-titulo">Pagos Aplicados al {{FECHA_ESTADO}} ({{TOTAL_PAGOS}})</div>
+  <div class="tabla-motor">
+    {{TABLA_PAGOS}}
+  </div>
+
+  <table class="totales">
+    <tr><td>Saldo anterior</td><td>{{SALDO_ANTERIOR}}</td></tr>
+    <tr><td>Cargos del periodo</td><td>{{CARGOS_PERIODO}}</td></tr>
+    <tr><td>Pagos aplicados</td><td>{{PAGOS_PERIODO}}</td></tr>
+    <tr class="final"><td>Saldo al corte</td><td>{{SALDO_AL_CORTE}}</td></tr>
+  </table>
+
+  <!-- ══ Notas ══ -->
+  <div class="seccion-titulo">Notas</div>
+  <ul class="notas">
+    <li>
+      Este documento refleja la posición conocida al <b>{{FECHA_ESTADO}}</b>. Los pagos
+      registrados después de esa fecha se reflejarán en el siguiente estado de cuenta.
+    </li>
+    <li>
+      El <b>Saldo al Corte</b> proviene del Aviso de Vencimiento {{FOLIO_AVISO}} emitido en el
+      cierre del periodo y no se recalcula al emitir este documento.
+    </li>
+    <li>
+      El <b>saldo que consume línea</b> puede diferir del saldo deudor: algunos conceptos
+      —intereses, comisiones e impuestos— pueden estar configurados para no consumir línea
+      disponible.
+    </li>
+    <li>
+      Para conservar su crédito disponible, cubra al menos el <b>Pago Mínimo</b> a más tardar
+      el <b>{{FECHA_LIMITE_PAGO}}</b>.
+    </li>
+  </ul>
+
+  <div class="pie">
+    <span>CACAO Banking · Línea {{NUMERO_LINEA}} · {{MONEDA}} · Documento {{FOLIO_AVISO}}</span>
+    <span>Generado por {{USUARIO}} el {{FECHA_GENERACION}}</span>
+  </div>
+
+</div>
+</body>
+</html>

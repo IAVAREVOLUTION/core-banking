@@ -40,7 +40,8 @@ interface Props {
    * Eliminar un cargo generado por un Movimiento. Lo resuelve el padre porque
    * la fuente (`cargosLinea`) vive fuera de este subtab.
    */
-  onEliminarCargoLinea?: (origenId: string) => void;
+  /** Elimina el cargo en la base. Es asíncrono y reporta él mismo el resultado. */
+  onEliminarCargoLinea?: (origenId: string) => void | Promise<void>;
 }
 
 export function SolicitudCargosTab({ mode, solicitudId, lineaProducto, tipoProducto, cargosLineaTDC, onEliminarCargoLinea }: Props) {
@@ -221,12 +222,10 @@ export function SolicitudCargosTab({ mode, solicitudId, lineaProducto, tipoProdu
         });
         return;
       }
+      // El padre lo elimina de la base y avisa del resultado: aquí no se
+      // canta victoria, porque el cargo puede estar protegido por una CxC.
       onEliminarCargoLinea(cargo.origenId || '');
       setSelectedId(null);
-      toast.success('Cargo eliminado', {
-        description: 'Presione "Guardar Línea" para que el cambio quede permanente.',
-        duration: 7000,
-      });
       return;
     }
 

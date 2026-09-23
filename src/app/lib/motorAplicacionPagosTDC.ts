@@ -68,6 +68,11 @@ export interface AplicacionDetalle {
   saldoPosterior: number;
   pagoTotalNuevo: number;
   estatusPagoNuevo: EstatusPago;
+  /**
+   * "LIBERA LÍNEA CUANDO SE PAGA" del subtab Afectación de la Línea del
+   * producto. Sólo lo que la consumió puede restituirla al pagarse.
+   */
+  liberaLinea: boolean;
 }
 
 /** Lo que se aplicará a un documento completo (§22). */
@@ -87,6 +92,12 @@ export interface AplicacionCxC {
 export interface AbonoContrato {
   idContrato: string;
   monto: number;
+  /**
+   * La parte del abono que restituye línea disponible: la suma de los
+   * conceptos con "LIBERA LÍNEA CUANDO SE PAGA" = Sí. Puede ser menor que
+   * `monto` —intereses o comisiones que no consumieron línea— y hasta cero.
+   */
+  montoLibera: number;
 }
 
 export interface ResultadoAplicacionPago {
@@ -120,6 +131,14 @@ export interface ResultadoAplicacionPago {
 
   /** §48/§49 — las igualdades que deben cuadrar; vacío significa que cuadran. */
   descuadres: string[];
+
+  /** Total que restituirá línea disponible en esta aplicación. */
+  montoTotalLiberaLinea: number;
+  /**
+   * Conceptos que se pagaron pero no están en "Afectación de la Línea" del
+   * producto. No liberan línea, y aquí se dicen para que no sea un silencio.
+   */
+  conceptosSinAfectacion: string[];
 }
 
 const estatusPorMontos = (pagoTotal: number, monto: number): EstatusPago => {
@@ -157,6 +176,35 @@ export function ordenarDetalle(detalle: DetalleCxC[]): DetalleCxC[] {
     });
 }
 
+/** Normaliza una clave para comparar: igual criterio que motorMovimientosTDC. */
+const normClave = (v: unknown): string =>
+  String(v ?? '').trim().toLowerCase();
+
+/**
+ * "LIBERA LÍNEA CUANDO SE PAGA" del subtab Afectación de la Línea.
+ *
+ * ── Los tres casos, y por qué se distinguen ─────────────────────────────
+ * 1. Sin configuración cargada (`undefined` o arreglo vacío): NO es lo mismo
+ *    que estar configurado en "No". Se conserva el comportamiento histórico
+ *    —liberar— para que un producto cuya configuración no llegó no deje de
+ *    restituir línea de golpe y en silencio.
+ * 2. Configurado y el concepto aparece: manda lo capturado.
+ * 3. Configurado pero el concepto NO aparece: no se libera, y el concepto se
+ *    reporta en `conceptosSinAfectacion`. Liberar de más inflaría el crédito
+ *    disponible del cliente; no liberar es el error reversible.
+ */
+export function liberaLineaAlPagar(
+  clave: string,
+  afectacionLinea: any[] | undefined | null,
+): { libera: boolean; configurado: boolean } {
+  if (!Array.isArray(afectacionLinea) || afectacionLinea.length === 0) {
+    return { libera: true, configurado: true };   // caso 1
+  }
+  const fila = afectacionLinea.find(a => normClave(a?.clave) === normClave(clave));
+  if (!fila) return { libera: false, configurado: false };   // caso 3
+  return { libera: String(fila.liberaLineaAlPagar ?? 'S').toUpperCase() !== 'N', configurado: true };
+}
+
 /**
  * Distribuye un pago siguiendo la prelación de dos niveles.
  *
@@ -169,6 +217,11 @@ export function aplicarPago(params: {
   idCuentaEje?: string | null;
   idCliente?: string;
   idPagoReferenciado?: string;
+  /**
+   * Subtab "Afectación de la Línea" del producto — `data.afectacionLinea`.
+   * Decide, concepto por concepto, si el pago restituye línea disponible.
+   */
+  afectacionLinea?: any[];
 }): ResultadoAplicacionPago {
   const { documentos } = params;
   const montoPago = money(params.montoPago);
@@ -190,6 +243,8 @@ export function aplicarPago(params: {
     contratosAfectados: 0,
     estatusPagoReferenciado: 'Pendiente de Aplicación',
     descuadres: [],
+    montoTotalLiberaLinea: 0,
+    conceptosSinAfectacion: [],
   };
 
   // ── §47 — validaciones previas ──
@@ -214,6 +269,7 @@ export function aplicarPago(params: {
 
   const aplicacionesDetalle: AplicacionDetalle[] = [];
   const aplicacionesCxC: AplicacionCxC[] = [];
+  const sinAfectacion: string[] = [];
 
   // ── §24 — recorrido de dos niveles ──
   for (const doc of ordenarDocumentos(documentos)) {
@@ -241,6 +297,12 @@ export function aplicarPago(params: {
 
       const pagoTotalNuevo = money(pagoTotalAntes + montoAplicado);
 
+      // El concepto decide si este importe restituye línea disponible.
+      const afect = liberaLineaAlPagar(det.claveConcepto, params.afectacionLinea);
+      if (!afect.configurado && !sinAfectacion.includes(det.claveConcepto)) {
+        sinAfectacion.push(det.claveConcepto);
+      }
+
       aplicacionesDetalle.push({
         idCxC: doc.id,
         idContrato: doc.idContrato,
@@ -253,6 +315,7 @@ export function aplicarPago(params: {
         saldoPosterior: money(saldoLinea - montoAplicado),
         pagoTotalNuevo,
         estatusPagoNuevo: estatusPorMontos(pagoTotalNuevo, det.monto),
+        liberaLinea: afect.libera,
       });
 
       disponible = money(disponible - montoAplicado);
@@ -278,14 +341,32 @@ export function aplicarPago(params: {
   }
 
   const montoTotalAplicado = money(aplicacionesDetalle.reduce((a, x) => a + x.montoAplicado, 0));
+  const montoTotalLiberaLinea = money(
+    aplicacionesDetalle.filter(x => x.liberaLinea).reduce((a, x) => a + x.montoAplicado, 0),
+  );
 
   // ── §36 — agrupar por contrato, conservando la distribución real (§39) ──
   const porContrato = new Map<string, number>();
   for (const a of aplicacionesCxC) {
     porContrato.set(a.idContrato, money((porContrato.get(a.idContrato) || 0) + a.montoAplicado));
   }
+  // La parte liberadora se suma desde el DETALLE, no desde la CxC: la decisión
+  // es por concepto, y una misma CxC mezcla conceptos que liberan con otros
+  // que no.
+  const liberaPorContrato = new Map<string, number>();
+  for (const d of aplicacionesDetalle) {
+    if (!d.liberaLinea) continue;
+    liberaPorContrato.set(
+      d.idContrato,
+      money((liberaPorContrato.get(d.idContrato) || 0) + d.montoAplicado),
+    );
+  }
   const abonosPorContrato: AbonoContrato[] = [...porContrato.entries()]
-    .map(([idContrato, monto]) => ({ idContrato, monto }))
+    .map(([idContrato, monto]) => ({
+      idContrato,
+      monto,
+      montoLibera: money(liberaPorContrato.get(idContrato) || 0),
+    }))
     .sort((a, b) => a.idContrato.localeCompare(b.idContrato));
 
   // ── §30/§32 — el cargo a la EJE es el aplicado, no el pago recibido (§33) ──
@@ -303,6 +384,19 @@ export function aplicarPago(params: {
   }
   if (montoTotalAplicado > montoDisponibleInicial) {
     descuadres.push(`§29: se aplicó más (${montoTotalAplicado}) que el disponible (${montoDisponibleInicial}).`);
+  }
+  // Lo que restituye línea es un subconjunto de lo aplicado: si lo rebasa,
+  // algo se contó dos veces y no debe escribirse.
+  if (montoTotalLiberaLinea > montoTotalAplicado) {
+    descuadres.push(
+      `Lo que libera línea (${montoTotalLiberaLinea}) no puede exceder lo aplicado (${montoTotalAplicado}).`,
+    );
+  }
+  const sumaLibera = money(abonosPorContrato.reduce((a, x) => a + x.montoLibera, 0));
+  if (sumaLibera !== montoTotalLiberaLinea) {
+    descuadres.push(
+      `La liberación por contrato (${sumaLibera}) no coincide con el total que libera (${montoTotalLiberaLinea}).`,
+    );
   }
   // §48 — header contra detalle, documento por documento
   for (const a of aplicacionesCxC) {
@@ -334,6 +428,8 @@ export function aplicarPago(params: {
     aplicacionesDetalle,
     aplicacionesCxC,
     abonosPorContrato,
+    montoTotalLiberaLinea,
+    conceptosSinAfectacion: sinAfectacion,
     cxcAfectadas: aplicacionesCxC.length,
     lineasAfectadas: aplicacionesDetalle.length,
     contratosAfectados: abonosPorContrato.length,

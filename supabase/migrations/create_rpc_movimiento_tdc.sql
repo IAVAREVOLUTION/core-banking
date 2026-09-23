@@ -428,6 +428,41 @@ GRANT EXECUTE ON FUNCTION public.aplicar_movimiento_tdc(
 NOTIFY pgrst, 'reload schema';
 
 -- =============================================================================
+-- =============================================================================
+-- LECTOR DEL SALDO DE LA LINEA
+--
+-- J_SALDOS_LINEA es la AUTORIDAD sobre el disponible: la mantienen tanto
+-- aplicar_movimiento_tdc (al consumir) como aplicar_pago_referenciado (al
+-- liberar con "LIBERA LINEA CUANDO SE PAGA"). Sin este lector la pantalla
+-- tenia que derivar el disponible sumando los movimientos que traia en
+-- sesion, y asi un pago que libero linea era invisible: la liberacion ocurre
+-- en la base, no en la lista local.
+--
+-- Definicion IDENTICA a la de create_rpc_estado_cuenta_tdc.sql, con CREATE OR
+-- REPLACE, para que correr las migraciones en cualquier orden de el mismo
+-- resultado. Mismo criterio que usa create_rpc_avisos_tdc.sql con las
+-- columnas contables.
+-- =============================================================================
+CREATE OR REPLACE FUNCTION public.obtener_saldo_linea(p_linea_id text)
+RETURNS TABLE (
+  linea_id text, monto_autorizado numeric, saldo_disponible numeric,
+  actualizado_en timestamptz
+)
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = "EFINANCIANET_DB", public
+AS $fn$
+  SELECT s.linea_id, s.monto_autorizado, s.saldo_disponible, s.actualizado_en
+    FROM "EFINANCIANET_DB"."J_SALDOS_LINEA" s
+   WHERE s.linea_id = p_linea_id;
+$fn$;
+
+GRANT EXECUTE ON FUNCTION public.obtener_saldo_linea(text) TO anon, authenticated, service_role;
+
+NOTIFY pgrst, 'reload schema';
+
+-- =============================================================================
 -- NOTAS DE DESPLIEGUE
 --
 -- 1. La Cuenta EJE es J_CUENTAS_CORP_CLIENTES (saldo en `saldo_actual`,

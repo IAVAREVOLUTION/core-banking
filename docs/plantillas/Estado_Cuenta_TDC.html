@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<title>Estado de Cuenta — Tarjeta de Crédito</title>
+
+<!--
+  Plantilla institucional — tipo "Estado de Cuenta" (REQ-31, ESPECIFICACIÓN 6).
+
+  La consume Cartera TDC → Estado de Cuenta → [Generar Edo Cuenta].
+  El motor sustituye {{CLAVE}} y {CLAVE}; lo que no reconoce lo deja intacto,
+  así que un placeholder mal escrito se ve tal cual en el PDF y se detecta en
+  la primera prueba.
+
+  Placeholders disponibles (construirDatosEstadoCuenta en motorEstadoCuentaTDC.ts):
+    Identificación:  NUMERO_LINEA · ID_LINEA · CLIENTE · PRODUCTO · MONEDA · FOLIO_AVISO
+    Fechas:          PERIODO · FECHA_INICIO_PERIODO · FECHA_FIN_PERIODO
+                     FECHA_CORTE · FECHA_LIMITE_PAGO · FECHA_ESTADO · FECHA_GENERACION
+    Importes:        LIMITE_AUTORIZADO · SALDO_ANTERIOR · CARGOS_PERIODO · PAGOS_PERIODO
+                     SALDO_AL_CORTE · SALDO_CONSUME_LINEA · CREDITO_DISPONIBLE
+                     PAGO_MINIMO · PAGO_NO_GENERA_INTERESES
+    Tablas (HTML):   TABLA_MOVIMIENTOS · TABLA_PAGOS · TABLA_CONCEPTOS
+    Otros:           USUARIO · TOTAL_MOVIMIENTOS · TOTAL_PAGOS
+
+  Todos los importes llegan ya formateados y calculados: la plantilla NO
+  calcula nada (CA-27). PAGO_NO_GENERA_INTERESES es CARGOS_PERIODO +
+  SALDO_ANTERIOR: lo que hay que cubrir para no generar intereses.
+
+  El generador extrae <style> y el contenido de <body>, así que la estructura
+  de este archivo es la que el pipeline espera.
+-->
+
+<style>
+  body {
+    font-family: "Helvetica Neue", Arial, sans-serif;
+    margin: 0;
+    color: #1a1a1a;
+    font-size: 12px;
+  }
+
+  .page {
+    width: 210mm;
+    min-height: 297mm;
+    padding: 20mm 18mm;
+    box-sizing: border-box;
+  }
+
+  /* ── Encabezado ── */
+  .encabezado {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    border-bottom: 3px solid #0B5C8C;
+    padding-bottom: 10px;
+    margin-bottom: 16px;
+  }
+  .titulo {
+    font-size: 20px;
+    font-weight: bold;
+    color: #0B5C8C;
+    margin: 0;
+    letter-spacing: 0.5px;
+  }
+  .subtitulo {
+    font-size: 11px;
+    color: #666;
+    margin-top: 3px;
+  }
+  .folio {
+    text-align: right;
+    font-size: 10px;
+    color: #666;
+    line-height: 1.6;
+  }
+  .folio strong { color: #1a1a1a; }
+
+  /* ── Bloques de datos ── */
+  .bloque { margin-bottom: 16px; }
+  .bloque-titulo {
+    background: #0B5C8C;
+    color: #fff;
+    font-size: 11px;
+    font-weight: bold;
+    letter-spacing: 0.5px;
+    padding: 5px 10px;
+    margin-bottom: 0;
+  }
+  .bloque-cuerpo {
+    border: 1px solid #ccc;
+    border-top: none;
+    padding: 10px;
+  }
+
+  .rejilla {
+    display: flex;
+    flex-wrap: wrap;
+  }
+  .campo {
+    width: 25%;
+    box-sizing: border-box;
+    padding: 4px 8px 4px 0;
+  }
+  .campo.ancho { width: 50%; }
+  .campo .etiqueta {
+    font-size: 9px;
+    text-transform: uppercase;
+    color: #888;
+    letter-spacing: 0.4px;
+  }
+  .campo .valor {
+    font-size: 12px;
+    color: #1a1a1a;
+    font-weight: 600;
+  }
+
+  /* ── Resumen financiero ── */
+  .resumen {
+    display: flex;
+    flex-wrap: wrap;
+    border: 1px solid #ccc;
+  }
+  .resumen .celda {
+    width: 25%;
+    box-sizing: border-box;
+    padding: 8px 10px;
+    border-right: 1px solid #e5e5e5;
+    border-bottom: 1px solid #e5e5e5;
+  }
+  .resumen .celda .etiqueta {
+    font-size: 9px;
+    text-transform: uppercase;
+    color: #888;
+    letter-spacing: 0.4px;
+  }
+  .resumen .celda .valor {
+    font-size: 13px;
+    font-weight: bold;
+    color: #1a1a1a;
+    margin-top: 2px;
+  }
+
+  /* Los dos datos que el cliente busca primero. */
+  .destacado {
+    background: #FFF4E5;
+    border: 2px solid #E8A33D;
+    padding: 10px 14px;
+    margin: 14px 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .destacado .par { text-align: center; }
+  .destacado .etiqueta {
+    font-size: 9px;
+    text-transform: uppercase;
+    color: #8a6420;
+    letter-spacing: 0.5px;
+  }
+  .destacado .valor {
+    font-size: 17px;
+    font-weight: bold;
+    color: #8a4b0b;
+  }
+
+  /* ── Tablas inyectadas ── */
+  .bloque-cuerpo table { width: 100%; border-collapse: collapse; font-size: 11px; }
+  .bloque-cuerpo th {
+    background: #F0F2F5;
+    text-align: left;
+    padding: 5px 8px;
+    border-bottom: 2px solid #999;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+  }
+  .bloque-cuerpo td { padding: 4px 8px; border-bottom: 1px solid #e5e5e5; }
+
+  .aviso {
+    background: #F7F7F7;
+    border-left: 4px solid #0B5C8C;
+    padding: 8px 12px;
+    font-size: 10px;
+    color: #555;
+    margin-top: 14px;
+    line-height: 1.6;
+  }
+
+  .pie {
+    margin-top: 18px;
+    padding-top: 8px;
+    border-top: 1px solid #ccc;
+    font-size: 9px;
+    color: #888;
+    display: flex;
+    justify-content: space-between;
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- ══ Encabezado ══ -->
+  <div class="encabezado">
+    <div>
+      <p class="titulo">ESTADO DE CUENTA</p>
+      <p class="subtitulo">{{PRODUCTO}}</p>
+    </div>
+    <div class="folio">
+      Documento <strong>{{FOLIO_AVISO}}</strong><br />
+      Fecha Estado <strong>{{FECHA_ESTADO}}</strong><br />
+      Generado el {{FECHA_GENERACION}}
+    </div>
+  </div>
+
+  <!-- ══ Datos de la cuenta ══ -->
+  <div class="bloque">
+    <div class="bloque-titulo">DATOS DE LA CUENTA</div>
+    <div class="bloque-cuerpo">
+      <div class="rejilla">
+        <div class="campo ancho">
+          <div class="etiqueta">Cliente</div>
+          <div class="valor">{{CLIENTE}}</div>
+        </div>
+        <div class="campo">
+          <div class="etiqueta">Número de Línea</div>
+          <div class="valor">{{NUMERO_LINEA}}</div>
+        </div>
+        <div class="campo">
+          <div class="etiqueta">Moneda</div>
+          <div class="valor">{{MONEDA}}</div>
+        </div>
+        <div class="campo ancho">
+          <div class="etiqueta">Periodo</div>
+          <div class="valor">{{PERIODO}}</div>
+        </div>
+        <div class="campo">
+          <div class="etiqueta">Fecha de Corte</div>
+          <div class="valor">{{FECHA_CORTE}}</div>
+        </div>
+        <div class="campo">
+          <div class="etiqueta">Fecha Límite de Pago</div>
+          <div class="valor">{{FECHA_LIMITE_PAGO}}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ Lo que el cliente busca primero ══ -->
+  <div class="destacado">
+    <div class="par">
+      <div class="etiqueta">Saldo al Corte</div>
+      <div class="valor">{{SALDO_AL_CORTE}}</div>
+    </div>
+    <div class="par">
+      <div class="etiqueta">Pago Mínimo</div>
+      <div class="valor">{{PAGO_MINIMO}}</div>
+    </div>
+    <div class="par">
+      <div class="etiqueta">Pago que No Genera Intereses</div>
+      <div class="valor">{{PAGO_NO_GENERA_INTERESES}}</div>
+    </div>
+    <div class="par">
+      <div class="etiqueta">Pagar antes del</div>
+      <div class="valor">{{FECHA_LIMITE_PAGO}}</div>
+    </div>
+  </div>
+
+  <!-- ══ Resumen del periodo ══ -->
+  <div class="bloque">
+    <div class="bloque-titulo">RESUMEN DEL PERIODO</div>
+    <div class="resumen">
+      <div class="celda">
+        <div class="etiqueta">Límite Autorizado</div>
+        <div class="valor">{{LIMITE_AUTORIZADO}}</div>
+      </div>
+      <div class="celda">
+        <div class="etiqueta">Saldo Anterior</div>
+        <div class="valor">{{SALDO_ANTERIOR}}</div>
+      </div>
+      <div class="celda">
+        <div class="etiqueta">Cargos del Periodo</div>
+        <div class="valor">{{CARGOS_PERIODO}}</div>
+      </div>
+      <div class="celda">
+        <div class="etiqueta">Pagos Aplicados</div>
+        <div class="valor">{{PAGOS_PERIODO}}</div>
+      </div>
+      <div class="celda">
+        <div class="etiqueta">Saldo al Corte</div>
+        <div class="valor">{{SALDO_AL_CORTE}}</div>
+      </div>
+      <div class="celda">
+        <div class="etiqueta">Saldo que Consume Línea</div>
+        <div class="valor">{{SALDO_CONSUME_LINEA}}</div>
+      </div>
+      <div class="celda">
+        <div class="etiqueta">Crédito Disponible</div>
+        <div class="valor">{{CREDITO_DISPONIBLE}}</div>
+      </div>
+      <div class="celda">
+        <div class="etiqueta">Conceptos del Aviso</div>
+        <div class="valor">{{FOLIO_AVISO}}</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ Detalle del Aviso de Vencimiento ══ -->
+  <div class="bloque">
+    <div class="bloque-titulo">CONCEPTOS DEL CORTE</div>
+    <div class="bloque-cuerpo">
+      {{TABLA_CONCEPTOS}}
+    </div>
+  </div>
+
+  <!-- ══ Movimientos del periodo ══ -->
+  <div class="bloque">
+    <div class="bloque-titulo">MOVIMIENTOS DEL PERIODO ({{TOTAL_MOVIMIENTOS}})</div>
+    <div class="bloque-cuerpo">
+      {{TABLA_MOVIMIENTOS}}
+    </div>
+  </div>
+
+  <!-- ══ Pagos considerados ══ -->
+  <div class="bloque">
+    <div class="bloque-titulo">PAGOS APLICADOS AL {{FECHA_ESTADO}} ({{TOTAL_PAGOS}})</div>
+    <div class="bloque-cuerpo">
+      {{TABLA_PAGOS}}
+    </div>
+  </div>
+
+  <div class="aviso">
+    Este Estado de Cuenta refleja la posición conocida al <strong>{{FECHA_ESTADO}}</strong>.
+    Los pagos realizados con posterioridad a esa fecha no aparecen en este documento y
+    se reflejarán en el siguiente estado. El Pago Mínimo debe cubrirse a más tardar el
+    <strong>{{FECHA_LIMITE_PAGO}}</strong>.
+  </div>
+
+  <div class="pie">
+    <span>Línea {{NUMERO_LINEA}} · Documento {{FOLIO_AVISO}} · {{MONEDA}}</span>
+    <span>Generado por {{USUARIO}} el {{FECHA_GENERACION}}</span>
+  </div>
+
+</div>
+</body>
+</html>
