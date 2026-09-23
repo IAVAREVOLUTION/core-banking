@@ -14,6 +14,7 @@ import {
   cargarContextoEstadoCuenta,
   cargarHistorialEstadosCuenta,
   generarYGuardarEstadoCuenta,
+  eliminarEstadoCuenta,
   urlDocumento,
   type ContextoEstadoCuenta,
   type FilaHistorial,
@@ -24,6 +25,10 @@ import {
   type ResultadoEstadoCuenta,
 } from '../../lib/motorEstadoCuentaTDC';
 import { useProductosLineaCreditoDB } from '../../hooks/useProductosLineaCreditoDB';
+import { useComponentesContablesCatalogo } from '../../hooks/useComponentesContablesCatalogo';
+import { aplicarReclasificacion } from '../../lib/aplicarReclasificacionTDC';
+import { resolverTasaIvaInteres, planReclasificacion } from '../../lib/motorReclasificacionTDC';
+import { leerSaldoLinea } from '../../lib/aplicarMovimientoTDC';
 import { currentUser } from '../../data/mockData';
 
 interface Props {
@@ -37,6 +42,8 @@ interface Props {
   limiteAutorizado?: number;
   moneda?: string;
   estatusLinea?: string;
+  /** Tasa anual de Términos y Condiciones — insumo del interés de ESPEC 9. */
+  tasaAnual?: number;
 }
 
 const fmt = (n: number, moneda = 'MXN') =>
@@ -62,13 +69,25 @@ const inp = 'px-2 py-1.5 text-xs border border-gray-300 rounded focus:outline-no
 export function EstadoCuentaTDCTab({
   sid, isRO, producto = '', clienteId = '', cliente = '',
   numeroLinea = '', limiteAutorizado = 0, moneda = 'MXN', estatusLinea = '',
+  tasaAnual = 0,
 }: Props) {
   const { productos } = useProductosLineaCreditoDB(true);
+  const { componentes } = useComponentesContablesCatalogo();
 
   const productoSel = useMemo(
     () => (productos || []).find((p: any) =>
       [p?.nombre, p?.clave, p?.id].filter(Boolean).some(v => String(v) === String(producto))),
     [productos, producto],
+  );
+
+  /** Insumos de ESPEC 9: se calculan una vez y los usan la vista previa y la ejecución. */
+  const tasaIva = useMemo(
+    () => resolverTasaIvaInteres((productoSel as any) || {}),
+    [productoSel],
+  );
+  const baseCalculo = useMemo(
+    () => Number((productoSel as any)?.baseCalculo) || 360,
+    [productoSel],
   );
 
   const [fechaEstado, setFechaEstado] = useState(hoy());
@@ -166,6 +185,122 @@ export function EstadoCuentaTDCTab({
       description: `Periodo ${fmtFecha(res.calculo?.fechaInicioPeriodo || '')} – ${fmtFecha(res.calculo?.fechaFinPeriodo || '')}`,
       duration: 8000,
     });
+
+    // ── ESPECIFICACIÓN 9 — reclasificación del saldo al corte ──
+    await correrReclasificacion(res);
+
+    await recargar();
+  };
+
+  /**
+   * ESPECIFICACIÓN 9 — al terminar el Estado de Cuenta, el saldo al corte se
+   * reinyecta a la Línea (Saldo Anterior, Interés Ordinario e IVA) y los
+   * Avisos parciales se cierran como 'Pagado x Reclasificación'.
+   *
+   * Corre DESPUÉS de que el documento quedó guardado: el Estado de Cuenta es
+   * la evidencia del saldo que se está reclasificando, y reclasificar sin él
+   * dejaría cargos sin respaldo documental.
+   *
+   * Un fallo aquí NO invalida el Estado de Cuenta ya emitido; se reporta
+   * aparte para que se pueda corregir la configuración y reintentarlo.
+   */
+  const correrReclasificacion = async (res: Awaited<ReturnType<typeof generarYGuardarEstadoCuenta>>) => {
+    const snapshot = res.calculo?.snapshot;
+    if (!snapshot || !res.calculo) return;
+
+    // El disponible que ve el motor de movimientos debe ser el de la base:
+    // el de la pantalla se calculó antes de generar el documento.
+    const saldoLinea = await leerSaldoLinea(String(sid));
+
+    const salida = await aplicarReclasificacion(
+      {
+        saldoAlCorte: snapshot.saldoAlCorte,
+        fechaMovimiento: hoy(),
+        fechaCorte: res.calculo.fechaCorte,
+        fechaInicioPeriodo: res.calculo.fechaInicioPeriodo,
+        fechaLimitePago: res.calculo.fechaLimitePago,
+        tasaAnual,
+        tasaIva,
+        baseCalculo,
+      },
+      {
+        idLineaCredito: String(sid),
+        idCliente: clienteId,
+        montoAutorizado: saldoLinea?.montoAutorizado ?? limiteAutorizado,
+        saldoDisponible: saldoLinea?.saldoDisponible ?? 0,
+        producto: {
+          claveProducto: (productoSel as any)?.clave || '',
+          nombreProducto: productoSel?.nombre || producto,
+          cargosPermitidos: Array.isArray((productoSel as any)?.cargos) ? (productoSel as any).cargos : [],
+          promComisImpuestos: Array.isArray((productoSel as any)?.promComisImpuestos) ? (productoSel as any).promComisImpuestos : [],
+          afectacionLinea: Array.isArray((productoSel as any)?.afectacionLinea) ? (productoSel as any).afectacionLinea : [],
+        },
+        catalogo: (componentes || []).map(c => ({ codigo: c.codigo, nombre: c.nombre })),
+        usuario: currentUser.name,
+        idEstadoCuenta: res.estadoId,
+      },
+    );
+
+    // Saldo no positivo: no hay nada que reclasificar y no es un error.
+    if (!salida.plan.ok) return;
+
+    if (!salida.ok) {
+      toast.error('El Estado de Cuenta se generó, pero la reclasificación falló', {
+        description: salida.error,
+        duration: 15000,
+      });
+      // El motivo real viene en las advertencias — el mensaje de arriba sólo
+      // dice la consecuencia. Mostrarlas también aquí, y no sólo en el camino
+      // feliz, es lo que permite corregir la causa en vez de adivinarla.
+      for (const aviso of salida.advertencias) {
+        toast.error('Motivo', { description: aviso, duration: 20000 });
+      }
+      console.error('[ESPEC 9] Reclasificación fallida', {
+        error: salida.error,
+        advertencias: salida.advertencias,
+        movimientos: salida.movimientos,
+      });
+      return;
+    }
+
+    const partes = salida.movimientos.filter(m => m.ok).map(m => m.descripcion);
+    toast.success('Saldo reclasificado', {
+      description:
+        `${partes.join(' · ')}${partes.length ? ' · ' : ''}` +
+        `${salida.avisosReclasificados} aviso(s) cerrados por reclasificación.`,
+      duration: 10000,
+    });
+
+    for (const aviso of salida.advertencias) {
+      toast.warning('Reclasificación incompleta', { description: aviso, duration: 15000 });
+    }
+  };
+
+  const [eliminando, setEliminando] = useState('');
+
+  /**
+   * §16 — la regeneración es una acción explícita y separada: primero se
+   * elimina el documento equivocado y después se vuelve a generar. El RPC se
+   * niega si ese Estado ya reclasificó avisos.
+   */
+  const eliminar = async (fila: FilaHistorial) => {
+    if (isRO || eliminando) return;
+    if (!confirm(
+      `¿Eliminar el Estado de Cuenta del ${fmtFecha(fila.fechaEstado)}?
+
+` +
+      'Se borrará el documento y su PDF. Podrá volver a generarlo para esa fecha.',
+    )) return;
+
+    setEliminando(fila.id);
+    const res = await eliminarEstadoCuenta(fila.id, currentUser.name);
+    setEliminando('');
+
+    if (!res.ok) {
+      toast.error('No se eliminó', { description: res.error, duration: 15000 });
+      return;
+    }
+    toast.success(res.mensaje || 'Estado de Cuenta eliminado');
     await recargar();
   };
 
@@ -174,6 +309,25 @@ export function EstadoCuentaTDCTab({
     if (!url) { toast.error('Este Estado de Cuenta no tiene PDF asociado.'); return; }
     window.open(url, '_blank', 'noopener');
   };
+
+  /**
+   * Qué hará ESPEC 9 al cerrar, con los mismos insumos que usará de verdad.
+   * Existe para que el usuario vea ANTES de generar por qué un concepto no se
+   * va a calcular: antes esa razón sólo aparecía en un aviso al final.
+   */
+  const previaReclas = useMemo(() => {
+    if (!previa?.ok || !previa.snapshot) return null;
+    return planReclasificacion({
+      saldoAlCorte: previa.snapshot.saldoAlCorte,
+      fechaMovimiento: hoy(),
+      fechaCorte: previa.fechaCorte,
+      fechaInicioPeriodo: previa.fechaInicioPeriodo,
+      fechaLimitePago: previa.fechaLimitePago,
+      tasaAnual,
+      tasaIva,
+      baseCalculo,
+    });
+  }, [previa, tasaAnual, tasaIva, baseCalculo]);
 
   const puedeGenerar =
     !isRO && !generando && !cargando && !!fechaEstado && !!contexto?.ok && !!previa?.ok;
@@ -287,6 +441,50 @@ export function EstadoCuentaTDCTab({
         </div>
       )}
 
+      {/* ── ESPEC 9 — qué se reclasificará al cerrar ── */}
+      {previaReclas && (
+        <div className="border border-gray-300">
+          <div className="section-header-theme px-3 py-2">
+            <span className="text-xs text-gray-800">AL CERRAR — RECLASIFICACIÓN DEL SALDO</span>
+          </div>
+
+          {!previaReclas.ok ? (
+            <div className="p-3 text-xs text-gray-600 bg-white">{previaReclas.motivo}</div>
+          ) : (
+            <>
+              <div className="p-3 grid grid-cols-2 md:grid-cols-6 gap-3 bg-white">
+                {([
+                  ['Saldo a reclasificar', fmt(previa!.snapshot!.saldoAlCorte, moneda)],
+                  ['Días del periodo', String(previaReclas.dias)],
+                  ['Tasa anual', tasaAnual > 0 ? `${tasaAnual}%` : 'Sin capturar'],
+                  ['Base de cálculo', String(baseCalculo)],
+                  ['Interés ordinario', previaReclas.interesOrdinario > 0 ? fmt(previaReclas.interesOrdinario, moneda) : '—'],
+                  ['IVA del interés', previaReclas.ivaInteres > 0 ? fmt(previaReclas.ivaInteres, moneda) : (tasaIva > 0 ? '—' : 'Sin tasa IVA')],
+                ] as [string, string][]).map(([k, v]) => (
+                  <div key={k}>
+                    <div className="text-[11px] text-gray-500">{k}</div>
+                    <div className="text-sm font-mono text-gray-800">{v}</div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="px-3 pb-3 text-[11px] text-gray-500">
+                Movimientos que se registrarán en la Línea:{' '}
+                {previaReclas.movimientos.map(m => `${m.clave} ${m.descripcion}`).join(' · ')}
+              </div>
+
+              {previaReclas.advertencias.length > 0 && (
+                <div className="px-3 pb-3 space-y-1">
+                  {previaReclas.advertencias.map((a, i) => (
+                    <div key={i} className="text-xs text-amber-700">{a}</div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
       {/* ── §13 Historial ── */}
       <div className="border border-gray-300 overflow-x-auto">
         <div className="section-header-theme px-3 py-2">
@@ -335,13 +533,25 @@ export function EstadoCuentaTDCTab({
                 </td>
                 <td className={td}>{f.usuario || '—'}</td>
                 <td className={td}>
-                  <button
-                    onClick={() => abrirPDF(f)}
-                    disabled={!f.documentoPdf && !f.urlDocumento}
-                    className="text-primary-theme hover:underline disabled:text-gray-400 disabled:no-underline disabled:cursor-not-allowed"
-                  >
-                    Ver PDF
-                  </button>
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={() => abrirPDF(f)}
+                      disabled={!f.documentoPdf && !f.urlDocumento}
+                      className="text-primary-theme hover:underline disabled:text-gray-400 disabled:no-underline disabled:cursor-not-allowed"
+                    >
+                      Ver PDF
+                    </button>
+                    {!isRO && (
+                      <button
+                        onClick={() => void eliminar(f)}
+                        disabled={eliminando === f.id}
+                        title="Eliminar para poder regenerarlo"
+                        className="text-red-600 hover:underline disabled:text-gray-400 disabled:no-underline"
+                      >
+                        {eliminando === f.id ? 'Eliminando…' : 'Eliminar'}
+                      </button>
+                    )}
+                  </div>
                 </td>
               </tr>
             ))}

@@ -19,6 +19,7 @@ const suites = [
   ['ESPECIFICACIÓN 4 — Aplicación de pagos',       'espec4-aplicacion-pagos.mjs'],
   ['ESPECIFICACIÓN 5 — Eventos contables y pólizas','espec5-contabilidad.mjs'],
   ['ESPECIFICACIÓN 6 — Estado de Cuenta',           'espec6-estado-cuenta.mjs'],
+  ['ESPECIFICACIÓN 9 — Reclasificación de saldo',   'espec9-reclasificacion.mjs'],
 ];
 
 let totalOk = 0, totalFail = 0, suitesRotas = 0;

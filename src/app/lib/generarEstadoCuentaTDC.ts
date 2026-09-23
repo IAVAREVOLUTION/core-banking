@@ -271,6 +271,49 @@ async function subirPDF(dataUri: string, nombre: string, idLinea: string): Promi
   return { path: data.path, url };
 }
 
+/**
+ * Elimina un Estado de Cuenta para poder regenerarlo — la acción explícita
+ * que §16 deja abierta.
+ *
+ * El RPC se niega si el documento ya disparó la reclasificación de ESPEC 9:
+ * borrarlo dejaría avisos cerrados y cargos de Saldo Anterior sin el documento
+ * que los respalda.
+ *
+ * El PDF se borra DESPUÉS de que la fila desapareció. Al revés, un fallo al
+ * eliminar la fila dejaría un 'GENERADO' apuntando a un archivo inexistente,
+ * que es justo lo que §22 prohíbe.
+ */
+export async function eliminarEstadoCuenta(
+  idEstado: string,
+  usuario?: string,
+): Promise<{ ok: boolean; mensaje?: string; error?: string }> {
+  if (!idEstado) return { ok: false, error: 'No se recibió el Estado de Cuenta.' };
+  try {
+    const { data, error } = await supabase.rpc('eliminar_estado_cuenta', {
+      p_estado_id: idEstado,
+      p_usuario: usuario || 'Sistema',
+    });
+    if (error) return { ok: false, error: traducirError(error.message || String(error)) };
+
+    const fila = Array.isArray(data) ? data[0] : data;
+    if (!fila?.ok) return { ok: false, error: fila?.mensaje || 'No se eliminó el Estado de Cuenta.' };
+
+    // Huérfano en el bucket es inofensivo; fila sin PDF, no. Por eso el
+    // archivo se borra al final y su fallo no invalida la eliminación.
+    if (fila.documento_pdf) {
+      try {
+        await supabase.storage.from(BUCKET).remove([String(fila.documento_pdf)]);
+      } catch {
+        console.warn('[estadoCuenta] La fila se eliminó pero el PDF quedó en Storage:', fila.documento_pdf);
+      }
+    }
+
+    return { ok: true, mensaje: fila.mensaje };
+  } catch (e: any) {
+    return { ok: false, error: traducirError(e?.message || 'Error al eliminar el Estado de Cuenta.') };
+  }
+}
+
 /** Una URL fresca para abrir un PDF ya guardado (§13 columna Acción). */
 export async function urlDocumento(path: string): Promise<string | null> {
   if (!path) return null;
@@ -497,6 +540,10 @@ export function traducirError(msg: string): string {
   if (/PGRST202|Could not find the function/i.test(m)) {
     return 'Las funciones del Estado de Cuenta no existen en la base. Ejecute ' +
            'supabase/migrations/create_rpc_estado_cuenta_tdc.sql (ESPECIFICACIÓN 6).';
+  }
+  if (/eliminar_estado_cuenta/i.test(m)) {
+    return 'La función de eliminación no existe en la base. Ejecute ' +
+           'supabase/migrations/create_rpc_eliminar_estado_cuenta.sql.';
   }
   if (/ux_edocta_linea_fecha|duplicate key/i.test(m)) {
     return 'Ya existe un Estado de Cuenta generado para esa Fecha Estado.';

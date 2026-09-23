@@ -209,6 +209,14 @@ const estaCancelada = (a: AvisoPeriodo): boolean =>
   String(a.estatus || '').toLowerCase() === 'cancelada';
 
 /**
+ * Un Aviso reclasificado (ESPEC 9 §2) ya entregó su saldo a la Línea como el
+ * cargo "Saldo Anterior". Sumarlo otra vez al Saldo Anterior del documento lo
+ * cobraría dos veces: una por el cargo y otra por el arrastre.
+ */
+const estaReclasificado = (a: AvisoPeriodo): boolean =>
+  String(a.estatus || '').toLowerCase().includes('reclasificaci');
+
+/**
  * §7 — `PeriodoSeleccionado = MAX(FechaCorte) WHERE FechaCorte <= FechaEstado`.
  * Empate de fecha de corte: gana el de vencimiento posterior y, si también
  * empata, el id mayor — para que la elección sea determinista.
@@ -284,11 +292,24 @@ export function filtrarMovimientos(
 /** §9 — estatus que cuentan como pago confirmado. */
 const PAGO_CUENTA = new Set(['ok', 'aplicado', 'confirmado', 'aplicado parcialmente']);
 
-/** §9 — pagos con `FechaPago <= FechaEstado` y estatus aplicado/confirmado. */
-export function filtrarPagos(pagos: PagoAplicado[], fechaEstado: string): PagoAplicado[] {
+/**
+ * §9 — pagos con `FechaPago <= FechaEstado` y estatus aplicado/confirmado.
+ *
+ * `cxcExcluidas` saca los pagos aplicados a Avisos ya RECLASIFICADOS. Ese
+ * descuento ya está hecho: al reclasificar, lo que se reinyectó a la Línea fue
+ * el saldo PENDIENTE del Aviso —es decir, su importe menos lo pagado—, así que
+ * volver a restar esos pagos aquí los descontaría dos veces y hundiría el
+ * Saldo al Corte.
+ */
+export function filtrarPagos(
+  pagos: PagoAplicado[],
+  fechaEstado: string,
+  cxcExcluidas?: Set<string>,
+): PagoAplicado[] {
   const fe = aISO(fechaEstado);
   return (pagos || [])
     .filter(p => {
+      if (cxcExcluidas?.size && p.idCxC && cxcExcluidas.has(String(p.idCxC))) return false;
       const f = aISO(p.fechaPago);
       if (f === '' || f > fe) return false;
       // Sin estatus explícito se asume aplicado: el lector ya filtra resultado='OK'.
@@ -318,12 +339,17 @@ export function estadoCuentaAnterior(
  * D3 — `SaldoAnterior` es lo que quedaba pendiente de los cortes previos.
  * El corte no lo arrastra (H-3), así que se arma sumando el saldo de las CxC
  * anteriores a este corte. No se recalcula desde movimientos.
+ *
+ * Se excluyen las canceladas y las RECLASIFICADAS: éstas últimas ya pusieron
+ * su saldo en la Línea como cargo, y contarlas aquí lo duplicaría.
  */
 export function saldoAnteriorDeAvisos(avisos: AvisoPeriodo[], fechaCorte: string): number {
   const fc = aISO(fechaCorte);
   return money(
     (avisos || [])
-      .filter(a => !estaCancelada(a) && aISO(a.fechaDocumento || a.fechaFin) < fc)
+      .filter(a => !estaCancelada(a)
+                && !estaReclasificado(a)
+                && aISO(a.fechaDocumento || a.fechaFin) < fc)
       .reduce((acc, a) => {
         const saldo = a.saldoPendiente != null
           ? Number(a.saldoPendiente)
@@ -419,7 +445,13 @@ export function generarEstadoCuenta(params: ParamsEstadoCuenta): ResultadoEstado
   const fechaLimitePago = aISO(periodo.fechaVencimiento);
 
   const movimientosPeriodo = filtrarMovimientos(params.movimientos, fechaInicioPeriodo, fechaFinPeriodo);
-  const pagosConsiderados = filtrarPagos(params.pagos, fechaEstado);
+
+  // Los Avisos reclasificados ya entregaron su saldo NETO a la Línea: sus
+  // pagos no vuelven a restarse (ver `filtrarPagos`).
+  const cxcReclasificadas = new Set(
+    (params.avisos || []).filter(estaReclasificado).map(a => String(a.id)),
+  );
+  const pagosConsiderados = filtrarPagos(params.pagos, fechaEstado, cxcReclasificadas);
   const estadoAnterior = estadoCuentaAnterior(params.estadosPrevios, fechaCorte);
 
   const cargosPeriodo = money(

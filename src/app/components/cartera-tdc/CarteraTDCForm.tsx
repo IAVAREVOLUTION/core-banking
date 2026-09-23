@@ -133,6 +133,27 @@ export function CarteraTDCForm({ cuenta, mode, onBack }: Props) {
   const isRO = mode === 'ver';
   const modoSubtab = isRO ? 'ver' : 'editar';
 
+  /**
+   * Tasa anual de la Línea — insumo del interés de ESPEC 9.
+   *
+   * El encabezado la muestra desde `cuenta.tasa`, pero esa propiedad puede
+   * venir vacía según por dónde se haya abierto la cuenta. Términos y
+   * Condiciones es donde el usuario la captura, así que es el respaldo.
+   */
+  const tasaAnualLinea = useMemo(() => {
+    const num = (v: unknown) => {
+      const n = parseFloat(String(v ?? '').replace(/[%,\s$]/g, ''));
+      return isNaN(n) ? 0 : n;
+    };
+    const t: any = cuenta.terminos || {};
+    return num(cuenta.tasa)
+      || num(t.tasa)
+      || num(t.tasaInicial)
+      || num(t.tasaOrdinaria)
+      || num(t.tasaAplicable)
+      || 0;
+  }, [cuenta.tasa, cuenta.terminos]);
+
   const { productos } = useProductosCatalogoDB(true);
   const productoSel = productos.find(
     p => p.id === cuenta.productoId || p.nombreProducto === cuenta.productoNombre
@@ -611,6 +632,7 @@ export function CarteraTDCForm({ cuenta, mode, onBack }: Props) {
               limiteAutorizado={cuenta.montoAut}
               moneda={cuenta.moneda || 'MXN'}
               estatusLinea={cuenta.estatus}
+              tasaAnual={tasaAnualLinea}
             />
           </div>
         )}

@@ -460,5 +460,56 @@ for (const hoyISO of ['2026-09-20', '2026-10-06', '2026-10-18']) {
   const sug = M.fechaEstadoSugerida([AVISO_AGO, AVISO_SEP], hoyISO);
   ok_('sugerida <= hoy (' + hoyISO + ')', sug <= hoyISO);
 }
+
+console.log('');
+console.log('-- Un aviso RECLASIFICADO no vuelve a contar como Saldo Anterior --');
+const avisoReclas = aviso('R1', '2026-07-16', '2026-08-15', '2026-09-05', 12000,
+  [concepto('r', 1, 12000, 2000)], { pagoTotal: 2000, saldoPendiente: 10000, estatus: 'Pagado x Reclasificación' });
+
+const rSinDoble = run({ avisos: [avisoReclas, AVISO_SEP] });
+eq('no arrastra el saldo ya reinyectado', rSinDoble.snapshot.saldoAnterior, 0);
+
+// El mismo aviso, todavia Parcial, si arrastra.
+const avisoParcial = aviso('R2', '2026-07-16', '2026-08-15', '2026-09-05', 12000,
+  [concepto('r', 1, 12000, 2000)], { pagoTotal: 2000, saldoPendiente: 10000, estatus: 'Parcial' });
+eq('parcial si arrastra', run({ avisos: [avisoParcial, AVISO_SEP] }).snapshot.saldoAnterior, 10000);
+
+// Y el saldo al corte cambia en consecuencia.
+eq('saldo al corte sin el doble conteo', rSinDoble.snapshot.saldoAlCorte, 0);
+
+console.log('');
+console.log('-- Los pagos de un Aviso RECLASIFICADO no se vuelven a restar --');
+// Aviso de 12,000 con 2,000 pagados -> se reclasifico por 10,000 (ya neto).
+const avReclas = aviso('X1', '2026-07-16', '2026-08-15', '2026-09-05', 12000,
+  [concepto('x', 1, 12000, 2000)], { pagoTotal: 2000, saldoPendiente: 10000, estatus: 'Pagado x Reclasificación' });
+
+const rDoble = run({
+  avisos: [avReclas, AVISO_SEP],
+  movimientos: [mov('c1', '2026-09-01', 10000)],   // el cargo 023 reinyectado
+  pagos: [
+    pago('viejo', '2026-08-20', 2000, { idCxC: 'X1' }),   // ya descontado al reclasificar
+    pago('nuevo', '2026-10-01', 500,  { idCxC: 'A2' }),   // del periodo vigente
+  ],
+});
+eq('solo cuenta el pago del periodo vigente', rDoble.pagosConsiderados.map(p => p.id), ['nuevo']);
+eq('pagos del periodo = 500', rDoble.snapshot.pagosPeriodo, 500);
+// 0 (anterior, ya no arrastra) + 10,000 (cargo) - 500 = 9,500
+eq('saldo al corte sin doble descuento', rDoble.snapshot.saldoAlCorte, 9500);
+
+// Con el Aviso todavia Parcial, el pago SI cuenta: nada se ha reinyectado.
+const avParcial = aviso('X1', '2026-07-16', '2026-08-15', '2026-09-05', 12000,
+  [concepto('x', 1, 12000, 2000)], { pagoTotal: 2000, saldoPendiente: 10000, estatus: 'Parcial' });
+const rNormal = run({
+  avisos: [avParcial, AVISO_SEP],
+  pagos: [pago('viejo', '2026-08-20', 2000, { idCxC: 'X1' })],
+});
+eq('parcial: el pago si cuenta', rNormal.snapshot.pagosPeriodo, 2000);
+
+// Un pago sin idCxC no se puede atribuir: se conserva por prudencia.
+const rSinCxC = run({
+  avisos: [avReclas, AVISO_SEP],
+  pagos: [pago('suelto', '2026-10-01', 300)],
+});
+eq('pago sin CxC se conserva', rSinCxC.pagosConsiderados.length, 1);
 console.log(`\n${pass} aserciones OK, ${fail} fallas`);
 process.exit(fail > 0 ? 1 : 0);
