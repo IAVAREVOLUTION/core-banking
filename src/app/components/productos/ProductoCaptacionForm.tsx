@@ -1842,6 +1842,7 @@ export function ProductoCaptacionForm({ mode, productoId, producto, onCancel, on
             persistToStorage
             storagePrefix="captacion"
             initialData={producto?.cargoRegistros}
+            fasesProducto={(producto as any)?.fasesRegistros ?? (producto as any)?.fases}
           />
         </div>
 

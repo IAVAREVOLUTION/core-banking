@@ -743,6 +743,57 @@ function OriginacionList({ items, onEditar, onVer }: {
 // ═══════════════════════════════════════════════════════════════════
 // FORM COMPONENT — Solo editar | ver (sin nuevo)
 // ═══════════════════════════════════════════════════════════════════
+/**
+ * Cargos heredados de la Solicitud.
+ *
+ * Los cargos NACEN en la Solicitud: al autorizar una fase, ésta los genera
+ * desde el subtab Cargos del producto (los que tienen Momento = esa fase) y
+ * les pone el importe del campo declarado en "Campo a Mapear". Originación los
+ * hereda; no vuelve a generarlos.
+ *
+ * No sirve el patrón simple de arriba ("si la Solicitud tiene algo, gana ella"
+ * — garantías, comités, notas): aquí la sección Cargos SÍ es editable (monto,
+ * estatus, notas) y la Solicitud sigue generando más en cada fase. Con aquel
+ * patrón, cada vez que se reabriera Originación la copia de la Solicitud
+ * pisaría las ediciones locales.
+ *
+ * Por eso se unen por IDENTIDAD (tipo de cargo + descripción), que es la misma
+ * llave con la que la Solicitud evita duplicarlos: lo que ya existe en
+ * Originación se respeta tal cual —ediciones incluidas— y sólo se agregan los
+ * que la Solicitud generó después.
+ */
+function heredarCargosDeSolicitud(id: number | string): OriginacionCargo[] {
+  const claveCargo = (c: any) =>
+    `${String(c?.tipoCargo ?? '').trim().toLowerCase()}|${String(c?.descripcion ?? '').trim().toLowerCase()}`;
+
+  const propios: OriginacionCargo[] =
+    loadFromSession<OriginacionCargo[]>(id as any, 'cargos')
+    || loadFromSavedStore<OriginacionCargo[]>(id as any, 'cargos')
+    || [];
+  const deSolicitud: any[] =
+    loadSolSession<any[]>(id as any, 'cargos')
+    || loadSolSaved<any[]>(id as any, 'cargos')
+    || [];
+  if (deSolicitud.length === 0) return propios;
+
+  const yaEstan = new Set(propios.map(claveCargo));
+  const heredados = deSolicitud
+    .filter(c => !yaEstan.has(claveCargo(c)))
+    .map(c => ({
+      // Se conserva el id de la Solicitud para que el mismo cargo tenga la
+      // misma identidad en los dos modulos.
+      id: Number(c?.id) || generateId(),
+      tipoCargo: c?.tipoCargo || '',
+      descripcion: c?.descripcion || '',
+      monto: Number(c?.monto) || 0,
+      fechaCargo: c?.fechaCargo || '',
+      estatus: c?.estatus || 'Pendiente',
+      // La nota que dejo la Solicitud ya dice de que fase y de que campo salio.
+      notas: c?.notas || '',
+    }));
+  return [...propios, ...heredados];
+}
+
 function OriginacionForm({ mode, originacionId, onCancel, onSave, onActivarCuentaDB }: {
   mode: 'editar' | 'ver'; originacionId: number | string;
   onCancel: () => void; onSave: (d: OriginacionFormData) => void;
@@ -813,9 +864,9 @@ function OriginacionForm({ mode, originacionId, onCancel, onSave, onActivarCuent
     loadFromSession(originacionId, 'beneficiarios') || loadFromSavedStore(originacionId, 'beneficiarios') || []);
   const [solicitudActivacion, setSolicitudActivacion] = useState<{ estatusPago: string; monto: number } | undefined>(() =>
     loadFromSession(originacionId, 'solicitudActivacion') || loadFromSavedStore(originacionId, 'solicitudActivacion') || undefined);
-  // Cargos: leídos para pasar al contexto de FASE 6 (CxP/CxC)
+  // Cargos: heredados de la Solicitud y leídos para el contexto de FASE 6 (CxP/CxC)
   const [cargosCtx, setCargosCtx] = useState<OriginacionCargo[]>(() =>
-    loadFromSession(originacionId, 'cargos') || loadFromSavedStore(originacionId, 'cargos') || []);
+    heredarCargosDeSolicitud(originacionId));
 
   useEffect(() => {
     if (!isRO) {
@@ -829,10 +880,11 @@ function OriginacionForm({ mode, originacionId, onCancel, onSave, onActivarCuent
     }
   }, [expedientes, notas, garantias, autorizaciones, comites, beneficiarios, solicitudActivacion, originacionId, isRO]);
 
-  // Sincronizar cargosCtx cuando CargosSection los actualiza en session
+  // Sincronizar cargosCtx cuando CargosSection los actualiza en session.
+  // Se re-hereda en vez de leer sólo el namespace propio: si la Solicitud
+  // generó cargos de una fase posterior, deben entrar al contexto de FASE 6.
   useEffect(() => {
-    const fresh = loadFromSession<OriginacionCargo[]>(originacionId, 'cargos');
-    if (fresh) setCargosCtx(fresh);
+    setCargosCtx(heredarCargosDeSolicitud(originacionId));
   }, [originacionId]);
 
   const handleActualizarFase = useCallback(async (nuevaFaseOrFaseId: FaseOriginacion | string, descripcion?: string, area?: string, _promptIA?: string) => {
@@ -1914,7 +1966,7 @@ function GarantiasSection({ sid, mode, isRO }: { sid: number; mode: string; isRO
 }
 
 function CargosSection({ sid, mode, isRO }: { sid: number; mode: string; isRO: boolean }) {
-  const [items, setItems] = useState<OriginacionCargo[]>(() => loadFromSession<OriginacionCargo[]>(sid, 'cargos') || loadFromSavedStore<OriginacionCargo[]>(sid, 'cargos') || []);
+  const [items, setItems] = useState<OriginacionCargo[]>(() => heredarCargosDeSolicitud(sid));
   useEffect(() => { if (!isRO) saveToSession(sid, 'cargos', items); }, [items, sid, isRO]);
   const add = () => setItems(p => [...p, { id: generateId(), tipoCargo: '', descripcion: '', monto: 0, fechaCargo: '', estatus: 'Pendiente', notas: '' }]);
   return (<>

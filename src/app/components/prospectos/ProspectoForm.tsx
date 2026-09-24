@@ -13,6 +13,40 @@ import { useCatalogoClasificaciones } from '../../hooks/useCatalogoClasificacion
 import { currentUser } from '../../data/mockData';
 
 // ═══════════════════════════════════════════════════════════════════
+// PERSONERÍA JURÍDICA — qué juego de campos aplica
+//
+// Sólo las personerías de PERSONA (Persona Física y la PFAE, que
+// legalmente también es una persona física: tiene nombre, apellidos,
+// CURP y RFC de 13) capturan los campos de persona física.
+//
+// TODAS las demás personerías —Persona Moral, Dependencia Pública
+// (GEM), Fideicomiso, Consorcio y cualquiera que se agregue después al
+// picklist— son entes colectivos: no tienen nombre/apellidos, CURP,
+// fecha de nacimiento ni sexo. Capturan exactamente los mismos campos
+// que Persona Moral (Razón Social, Fecha de Constitución, Giro y los
+// datos del contacto).
+//
+// Por eso la regla es "lista blanca de personas físicas + todo lo
+// demás es moral", y no una comparación contra 'Persona Moral': así
+// una personería nueva en el picklist hereda el formulario correcto
+// sin tocar este archivo.
+// ═══════════════════════════════════════════════════════════════════
+const PERSONERIAS_PERSONA_FISICA = [
+  'Persona Fisica',
+  'Persona Fisica con Actividad Empresarial',
+];
+
+/** true cuando la personería jurídica usa los campos de Persona Moral
+ *  (Razón Social, Fecha Constitución, Giro, Nombre Contacto).
+ *  Sin personería seleccionada se asume persona física, que es el
+ *  estado inicial del formulario de Alta. */
+function esPersoneriaMoral(tipo?: string | null): boolean {
+  const t = (tipo || '').trim();
+  if (!t) return false;
+  return !PERSONERIAS_PERSONA_FISICA.includes(t);
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // Utilidad FRONTEND: Limpiar dataJson ANTES de enviarlo al servidor
 // ── REGLA INSTITUCIONAL ──
 // Solo enviar campos con valor REAL. Campos vacíos ("", null, undefined)
@@ -278,7 +312,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
     // y el próximo ciclo de editar→guardar vuelve a sumarles otra palabra —
     // el nombre visible crece sin fin (bug real observado: "PRUEBA 2 2 2"
     // tras 3 guardados). Para Moral, nunca usar este fallback.
-    const esMoral = tipoProspecto === 'Persona Moral';
+    const esMoral = esPersoneriaMoral(tipoProspecto);
     const fallbackNombres = esMoral ? [] : (prospecto?.nombre?.split(' ') || []);
     return {
       idProspecto: prospecto?.idProspecto || `PROS-${String(prospecto?.id || 0).padStart(3, '0')}`,
@@ -325,7 +359,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
       // si fuera nombre+apellidos de una persona física. Ver comentario
       // extenso en la hidratación inicial (más arriba en este archivo).
       const tipoSync = prospecto?.subtipo || prospecto?.tipo || '';
-      const esMoralSync = tipoSync === 'Persona Moral';
+      const esMoralSync = esPersoneriaMoral(tipoSync);
       const fallbackNombres = esMoralSync ? [] : (prospecto.nombre?.split(' ') || []);
       setFormData(prev => {
         // Solo actualizar si el ID es diferente (evita sobrescribir ediciones del usuario)
@@ -563,7 +597,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
   const handleSubmit = async () => {
     if (saving) return; // Prevenir doble clic
     if (!isView) {
-      const isMoralVal = formData.tipo === 'Persona Moral';
+      const isMoralVal = esPersoneriaMoral(formData.tipo);
       const isFisicaVal = !isMoralVal;
       if (isFisicaVal) {
         if (!formData.nombre.trim()) { toast.error('Nombre es obligatorio'); return; }
@@ -645,7 +679,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
           // cliente Persona Moral. Guardando la Razón Social también en
           // `nombre`, el mismo campo sirve para los dos tipos y ningún
           // consumidor necesita lógica especial por tipo de persona.
-          nombre: formData.tipo === 'Persona Moral' ? (formData.denominacionRazonSocial || '') : formData.nombre,
+          nombre: esPersoneriaMoral(formData.tipo) ? (formData.denominacionRazonSocial || '') : formData.nombre,
           apellidoPaterno: formData.apellidoPaterno,
           apellidoMaterno: formData.apellidoMaterno,
           denominacionRazonSocial: formData.denominacionRazonSocial,
@@ -940,7 +974,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
 
     const f = formData as any;
     const nombreContacto = f.representanteLegalNombre || '';
-    const nombreCompleto = formData.tipo === 'Persona Moral'
+    const nombreCompleto = esPersoneriaMoral(formData.tipo)
       ? (formData.denominacionRazonSocial || nombreContacto)
       : `${formData.nombre} ${formData.apellidoPaterno} ${formData.apellidoMaterno}`.trim();
 
@@ -1571,7 +1605,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
               Información Principal
             </div>
             {(() => {
-              const isMoral = formData.tipo === 'Persona Moral';
+              const isMoral = esPersoneriaMoral(formData.tipo);
               const isFisica = !isMoral;
               return (
             <div className="grid grid-cols-3 gap-x-4">
@@ -1867,7 +1901,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
                   DATOS BÁSICOS
                 </div>
                 {(() => {
-                  const isMoral = formData.tipo === 'Persona Moral';
+                  const isMoral = esPersoneriaMoral(formData.tipo);
                   const isFisica = !isMoral;
                   return (
                 <div className="grid grid-cols-3 gap-x-4">

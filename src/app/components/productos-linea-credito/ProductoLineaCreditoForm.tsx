@@ -1055,6 +1055,7 @@ export function ProductoLineaCreditoForm({
                 lineaProducto={formData.lineaProducto}
                 sublinea={formData.sublineaProducto}
                 initialData={product?.cargos}
+                fasesProducto={product?.fases}
                 persistToStorage
                 storagePrefix="linea_credito"
               />

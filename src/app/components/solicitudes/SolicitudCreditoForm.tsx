@@ -54,7 +54,7 @@ import { formalizarGarantiaGPO } from '../../hooks/formalizacionCarteraGPO';
 // el significado de `saldo_actual` en una línea GPO tenga un solo dueño.
 import { sembrarSaldoGarantia } from '../banca-2o-piso/banca2oPisoStore';
 // REQ-21 HU-21.2 — no todos los cargos del producto son de Fase 4.
-import { cargosDeFase4 } from '../../lib/cargosProductoGPO';
+import { construirCargosDeFase } from '../../lib/cargosProductoGPO';
 import { ExpedienteElectronicoTab } from './ExpedienteElectronicoTab';
 import { GarantiasTab } from './GarantiasTab';
 import { ComisionesTab } from './ComisionesTab';
@@ -96,6 +96,30 @@ import { FlujoTrabajo } from '../originacion/FlujoTrabajo';
 import { SolicitudCargosTab } from './SolicitudCargosTab';
 import { FacturasArrendamientoTab } from './FacturasArrendamientoTab';
 import { ComitesTab } from '../shared/ComitesTab';
+
+// ═══════════════════════════════════════════════════════════════════
+// COMPUERTAS DEL BPM GPO — ancladas a la POSICIÓN de la fase
+//
+// El BPM de Garantía Financiera 2o Piso tiene 5 fases, pero sus NOMBRES los
+// captura el analista como texto libre en el subtab Fases del producto. Hasta
+// aquí cada compuerta buscaba un substring del nombre ('clausulas fiduciarias',
+// 'grado de riesgo', 'comite' + 'prepago'…). Cuando se renombraron las fases
+// del producto —"Validación de Cláusulas Fiduciarias" pasó a "INSTRUMENTACION",
+// "Dictamen del Comité de Prepago" a "APROBACION"— TODAS esas compuertas
+// quedaron mudas: dejaron de validarse el Grado de Riesgo, la Resolución del
+// CIC y las Cláusulas Fiduciarias, y —lo más caro— dejaron de generarse los
+// Cargos de la Solicitud, que nacen DENTRO de la compuerta de la fase 4. Como
+// la liberación (fase 5) contabiliza esos cargos, liberar la línea ya no
+// generaba nada: el síntoma reportado.
+//
+// La posición sí sobrevive a un renombre. El nombre se conserva como respaldo
+// para productos GPO que aún usen los nombres institucionales o que declaren
+// sus fases en otro orden — la compuerta abre con cualquiera de los dos.
+// ═══════════════════════════════════════════════════════════════════
+const FASE_GPO_RIESGO     = 2; // Análisis de Grado de Riesgo
+const FASE_GPO_COMITE     = 3; // Dictamen del Comité de Prepago y Crédito
+const FASE_GPO_CLAUSULAS  = 4; // Validación de Cláusulas Fiduciarias
+const FASE_GPO_ACTIVACION = 5; // Activación de Línea 2o Piso
 
 // ── Helper: inferir AreaActual según el nombre de la fase ──
 function inferirAreaFase(descripcionFase: string): string {
@@ -1187,7 +1211,9 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
       // Rojo bloquea de forma dura (decisión de negocio 27/08/2026).
       if (esGPOForm) {
         const nf = (faseNombre || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-        const saliendoDeRiesgo = nf.includes('grado de riesgo') || nf.includes('analisis de grado');
+        const saliendoDeRiesgo =
+          seqActual === FASE_GPO_RIESGO ||
+          nf.includes('grado de riesgo') || nf.includes('analisis de grado');
         if (saliendoDeRiesgo) {
           const mv = modeloViabilidadRef.current || leerModeloViabilidad(storageId);
           const faltanMv = faltantesModeloViabilidad(mv);
@@ -1208,7 +1234,9 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
       // en otros proyectos" del BPM.
       if (esGPOForm) {
         const nf3 = (faseNombre || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
-        const saliendoDeComitePrepago = nf3.includes('comite') && nf3.includes('prepago');
+        const saliendoDeComitePrepago =
+          seqActual === FASE_GPO_COMITE ||
+          (nf3.includes('comite') && nf3.includes('prepago'));
         if (saliendoDeComitePrepago) {
           // Actividad 6.1 — sin votos del CPC no hay nada que el CIC pueda resolver.
           const votacion = leerVotacionCPC(storageId);
@@ -1234,7 +1262,9 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
       // ── Actividad 7.1: Validación de Cláusulas Fiduciarias completa antes de salir de Fase 4 ──
       if (esGPOForm) {
         const nf4 = (faseNombre || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
-        const saliendoDeClausulasFiduciarias = nf4.includes('clausulas fiduciarias') || nf4.includes('clausulas fiduciari');
+        const saliendoDeClausulasFiduciarias =
+          seqActual === FASE_GPO_CLAUSULAS ||
+          nf4.includes('clausulas fiduciarias') || nf4.includes('clausulas fiduciari');
         if (saliendoDeClausulasFiduciarias) {
           const vc = validacionClausulasRef.current || leerValidacionClausulas(storageId);
           const faltanVc = faltantesValidacionClausulas(vc);
@@ -1324,120 +1354,103 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
             });
           }
 
-          // ── REQ-15: Cargos de la Solicitud desde el subtab Cargos del producto ──
-          // Del producto se toma sólo el CONCEPTO (tipo de cargo + descripción);
-          // el monto de cada cargo es el Monto Garantizado GPO de Términos.
-          // No bloquea el avance de fase: si falta configuración, se avisa.
-          try {
-            const rawProd4 = productoSeleccionado?.rawData as Record<string, any> | undefined;
-            const cargosCatalogo: any[] =
-              (Array.isArray((productoSeleccionado as any)?.cargos)
-                ? (productoSeleccionado as any).cargos
-                : null) ??
-              (Array.isArray(rawProd4?.cargo) ? rawProd4!.cargo : []);
+        }
+      }
 
-            // REQ-21 HU-21.2 — el catálogo de Cargos del producto sirve a varios
-            // momentos del ciclo. Aquí sólo corresponden los de Fase 4: copiarlos
-            // todos ponía la Comisión GPO y su IVA con el Monto Garantizado, que
-            // es ~400 veces la comisión real de un periodo (§Defecto activo).
-            const motorContable4: any[] =
-              (Array.isArray((productoSeleccionado as any)?.motorContable)
-                ? (productoSeleccionado as any).motorContable
-                : null) ??
-              (Array.isArray(rawProd4?.motorContable) ? rawProd4!.motorContable : []);
-            const seleccion4 = cargosDeFase4(cargosCatalogo, motorContable4);
-            const cargosProducto = seleccion4.cargos;
+      // ── Cargos configurados para ESTA fase (subtab Cargos del producto) ──
+      // Corre en TODA fase de TODO producto, no sólo en la fase 4 del GPO donde
+      // nació. Que una fase no tenga cargos configurados NO es un error: es el
+      // caso normal y no se avisa nada. El importe de cada cargo sale del campo
+      // de la Solicitud que el producto declaró en "Campo a Mapear"; antes
+      // estaba fijo en código al Monto Garantizado GPO, que sólo servía a un
+      // producto. Nunca bloquea el avance de fase.
+      try {
+        const rawProdC = productoSeleccionado?.rawData as Record<string, any> | undefined;
+        const cargosCatalogo: any[] =
+          (Array.isArray((productoSeleccionado as any)?.cargos)
+            ? (productoSeleccionado as any).cargos
+            : null) ??
+          (Array.isArray(rawProdC?.cargo) ? rawProdC!.cargo : []);
+        const motorContableC: any[] =
+          (Array.isArray((productoSeleccionado as any)?.motorContable)
+            ? (productoSeleccionado as any).motorContable
+            : null) ??
+          (Array.isArray(rawProdC?.motorContable) ? rawProdC!.motorContable : []);
 
-            if (cargosCatalogo.length > 0 && seleccion4.criterio === 'sin-criterio' && cargosCatalogo.length > 1) {
-              // CA-13 — se copia todo (comportamiento histórico), pero se dice:
-              // callarlo es lo que dejó pasar el defecto la primera vez.
-              toast.warning('No se pudo distinguir qué cargos son de esta fase', {
-                description:
-                  'El producto no marca el momento de sus cargos ni tiene guía de formalización en el ' +
-                  'Motor Contable, así que se copiaron todos. Revise los montos antes de continuar.',
+        const terminosC: any =
+          loadFromSession<any>(storageId, 'terminos') ||
+          loadFromSavedStore<any>(storageId, 'terminos') || {};
+        const modeloViabilidadC: any =
+          modeloViabilidadRef.current || leerModeloViabilidad(storageId) || {};
+        const cargosPrevios: any[] =
+          loadFromSession<any[]>(storageId, 'cargos') ||
+          loadFromSavedStore<any[]>(storageId, 'cargos') || [];
+
+        // El respaldo histórico (deducir por Motor Contable, o copiar todos)
+        // se conserva SÓLO donde ya existía: la fase de provisión del GPO.
+        // Encenderlo en todas las fases volcaría el catálogo entero —18
+        // conceptos en una tarjeta de crédito— en cada avance.
+        const esProvisionGPO = esGPOForm && seqActual === FASE_GPO_CLAUSULAS;
+        const res = construirCargosDeFase({
+          cargosProducto: cargosCatalogo,
+          seqFase: seqActual,
+          nombreFase: faseNombre,
+          cargosExistentes: cargosPrevios,
+          fuentes: { solicitud: formData, terminos: terminosC, modeloViabilidad: modeloViabilidadC },
+          motorContable: motorContableC,
+          permitirRespaldo: esProvisionGPO,
+          // Compatibilidad: el camino GPO siempre usó el Monto Garantizado y
+          // sus cargos aún no declaran Campo a Mapear.
+          montoPorDefecto: esProvisionGPO
+            ? (parseFloat(parseCurrency(String(terminosC.montoGarantizadoGpo || '0'))) || 0)
+            : null,
+        });
+
+        if (!res.sinConfiguracion) {
+          if (res.nuevos.length > 0) {
+            const todosLosCargos = [...cargosPrevios, ...res.nuevos];
+            saveToSession(storageId, 'cargos', todosLosCargos);
+            saveToSavedStore(storageId, 'cargos', todosLosCargos);
+            // Cargos sólo viaja a BD cuando se incluye explícitamente en
+            // _allSubtabs — mismo camino que usa el envío a originación.
+            try {
+              await onSave?.({ ...formData, _allSubtabs: { cargos: todosLosCargos } });
+            } catch (saveErr: any) {
+              toast.warning('Cargos generados, pero no se persistieron en BD', {
+                description: saveErr?.message || String(saveErr),
                 duration: 12000,
               });
             }
-            const terminosGPO: any =
-              loadFromSession<any>(storageId, 'terminos') ||
-              loadFromSavedStore<any>(storageId, 'terminos') ||
-              {};
-            const montoGarantizado =
-              parseFloat(parseCurrency(String(terminosGPO.montoGarantizadoGpo || '0'))) || 0;
-
-            if (cargosProducto.length === 0) {
-              // CA-15 — se distingue "no hay catálogo" de "hay, pero ninguno es
-              // de esta fase": la acción del usuario es distinta en cada caso.
-              toast.warning('No se generaron cargos', {
-                description: cargosCatalogo.length === 0
-                  ? 'El producto no tiene cargos configurados en su subtab Cargos.'
-                  : 'Ninguno de los cargos del producto corresponde a la Fase 4 (Provisión de garantía).',
-                duration: 10000,
-              });
-            } else if (montoGarantizado <= 0) {
-              toast.warning('No se generaron cargos', {
-                description: 'La Solicitud no tiene Monto Garantizado GPO en Términos y Condiciones.',
-                duration: 10000,
-              });
-            } else {
-              const cargosPrevios: any[] =
-                loadFromSession<any[]>(storageId, 'cargos') ||
-                loadFromSavedStore<any[]>(storageId, 'cargos') ||
-                [];
-              const claveCargo = (t: string, d: string) =>
-                `${(t || '').trim().toLowerCase()}|${(d || '').trim().toLowerCase()}`;
-              const yaEstan = new Set(
-                cargosPrevios.map((c: any) => claveCargo(c.tipoCargo, c.descripcion)),
-              );
-              const hoyISO = new Date().toISOString().slice(0, 10);
-              const nuevosCargos = cargosProducto
-                .filter((c: any) => !yaEstan.has(claveCargo(c.tipoCargo, c.descripcion)))
-                .map((c: any, i: number) => ({
-                  id: Date.now() + i,
-                  tipoCargo: c.tipoCargo || '',
-                  descripcion: c.descripcion || '',
-                  monto: montoGarantizado,
-                  fechaCargo: hoyISO,
-                  estatus: 'Pendiente',
-                  notas:
-                    'Generado automáticamente desde el subtab Cargos del producto al ejecutar ' +
-                    'la Formalización Legal. Monto = Monto Garantizado GPO.',
-                }));
-
-              if (nuevosCargos.length === 0) {
-                toast.info('Los cargos ya estaban generados', {
-                  description: 'No se duplicaron.',
-                  duration: 6000,
-                });
-              } else {
-                const todosLosCargos = [...cargosPrevios, ...nuevosCargos];
-                saveToSession(storageId, 'cargos', todosLosCargos);
-                saveToSavedStore(storageId, 'cargos', todosLosCargos);
-                // Cargos sólo viaja a BD cuando se incluye explícitamente en
-                // _allSubtabs — mismo camino que usa el envío a originación.
-                try {
-                  await onSave?.({ ...formData, _allSubtabs: { cargos: todosLosCargos } });
-                } catch (saveErr: any) {
-                  toast.warning('Cargos generados, pero no se persistieron en BD', {
-                    description: saveErr?.message || String(saveErr),
-                    duration: 12000,
-                  });
-                }
-                toast.success(`${nuevosCargos.length} cargo(s) generados en la Solicitud`, {
-                  description:
-                    `${nuevosCargos.map((c: any) => c.tipoCargo).filter(Boolean).join(', ')} — ` +
-                    `${formatCurrency(montoGarantizado)} cada uno.`,
-                  duration: 9000,
-                });
-              }
-            }
-          } catch (err: any) {
-            toast.warning('No se generaron los cargos de la Solicitud', {
-              description: err?.message || String(err),
-              duration: 10000,
+            toast.success(`${res.nuevos.length} cargo(s) generados en la Solicitud`, {
+              description: res.nuevos
+                .map((c: any) => `${c.tipoCargo || c.descripcion}: ${formatCurrency(c.monto)}`)
+                .join(' · '),
+              duration: 9000,
+            });
+          }
+          if (res.omitidos.length > 0) {
+            // Sí se avisa: el producto SÍ configuró estos cargos para esta fase,
+            // así que no salir es un resultado inesperado para el usuario.
+            toast.warning(`${res.omitidos.length} cargo(s) de esta fase no se generaron`, {
+              description: res.omitidos.map(o => `${o.tipoCargo} — ${o.motivo}`).join(' · '),
+              duration: 12000,
+            });
+          }
+          if (res.criterio === 'sin-criterio' && cargosCatalogo.length > 1) {
+            toast.warning('No se pudo distinguir qué cargos son de esta fase', {
+              description:
+                'El producto no marca el Momento de sus cargos ni tiene guía de formalización en el ' +
+                'Motor Contable, así que se copiaron todos. Abra el subtab Cargos del producto y ' +
+                'asigne a cada uno su fase en Momento y su importe en Campo a Mapear.',
+              duration: 12000,
             });
           }
         }
+      } catch (err: any) {
+        toast.warning('No se generaron los cargos de la Solicitud', {
+          description: err?.message || String(err),
+          duration: 10000,
+        });
       }
 
       // ── 3. Validar documentos obligatorios de la fase actual (Sección B) ──
@@ -2155,12 +2168,17 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
       // esa fase concreta, no a un ordinal.
       const nombreSigFase = (sigFase.fase || '')
         .toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-      const esFaseComitePrepago = nombreSigFase.includes('comite') && nombreSigFase.includes('prepago');
+      const esFaseComitePrepago =
+        (nombreSigFase.includes('comite') && nombreSigFase.includes('prepago')) ||
+        (esGPOForm && sigFase.seq === FASE_GPO_COMITE);
       // Actividad 7.2 — "ejecutada automáticamente por el Core... al presionar el
       // botón de la Actividad 7.1": el disparador real es ENTRAR a Fase 5, sin
       // importar cuál botón concreto hizo avanzar la fase (mismo criterio que
       // esFaseComitePrepago arriba, que dispara al ENTRAR a Fase 3).
-      const entrandoAActivacion2oPiso = esGPOForm && nombreSigFase.includes('activacion') && nombreSigFase.includes('piso');
+      const entrandoAActivacion2oPiso = esGPOForm && (
+        sigFase.seq === FASE_GPO_ACTIVACION ||
+        (nombreSigFase.includes('activacion') && nombreSigFase.includes('piso'))
+      );
       if (esFaseComitePrepago) {
         try {
           const terminosComite: any = loadFromSession<any>(storageId, 'terminos') || loadFromSavedStore<any>(storageId, 'terminos') || {};
@@ -3716,14 +3734,17 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
   }, [productoSeleccionado, formData.nombreProducto, formData.tipoProducto, storageId, expedienteKey]);
   /**
    * REQ-13 — ¿la Solicitud está en la fase final del BPM GPO ("Activación de
-   * Línea 2o Piso") o ya la cerró? Se detecta por NOMBRE de fase, igual que el
-   * resto de las compuertas GPO; 'Completada' cubre el estado posterior al
-   * cierre, donde el nombre de la fase ya se reemplazó.
+   * Línea 2o Piso") o ya la cerró? Se resuelve por POSICIÓN de la fase (igual
+   * que el resto de las compuertas GPO, que dejaron de abrir cuando el producto
+   * renombró sus fases), con el nombre como respaldo; 'Completada' cubre el
+   * estado posterior al cierre, donde el nombre de la fase ya se reemplazó.
    */
   const enFaseActivacion2oPiso = useMemo(() => {
+    const seq = fasesDelProducto.find(f => String(f.faseId) === String(formData.faseId))?.seq;
+    if (esGPOForm && seq === FASE_GPO_ACTIVACION) return true;
     const nf = (formData.descripcionFase || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
     return (nf.includes('activacion') && nf.includes('piso')) || nf.includes('completada');
-  }, [formData.descripcionFase]);
+  }, [formData.descripcionFase, formData.faseId, fasesDelProducto, esGPOForm]);
   const isCreditoForm      = !isCaptacionForm && !isLineaCreditoForm;
 
   // ── Subtabs dinámicos según tipo de producto ────────────────────────────────

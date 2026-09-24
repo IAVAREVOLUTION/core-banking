@@ -1013,6 +1013,7 @@ export function ProductoForm({
                 sublinea={formData.sublineaProducto}
                 persistToStorage
                 initialData={Array.isArray(product?.cargos) ? product.cargos : undefined}
+                fasesProducto={Array.isArray(product?.fases) ? product.fases : undefined}
               />
             </div>
 
