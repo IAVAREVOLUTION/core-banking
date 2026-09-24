@@ -401,9 +401,13 @@ interface CampoInstitucionGobiernoProps {
   disabled?: boolean;
   /** Estilo visual: 'prospectos' usa layout inline, 'clientes' usa layout apilado */
   variant?: 'prospectos' | 'clientes';
+  /** Texto del label (solo layout inline). Por defecto "INST. GOBIERNO" */
+  label?: string;
+  /** Clase Tailwind de ancho del label (solo layout inline). Por defecto "w-28" */
+  labelWidthClass?: string;
 }
 
-export function CampoInstitucionGobierno({ value, onChange, disabled = false, variant = 'prospectos' }: CampoInstitucionGobiernoProps) {
+export function CampoInstitucionGobierno({ value, onChange, disabled = false, variant = 'prospectos', label = 'INST. GOBIERNO', labelWidthClass = 'w-28' }: CampoInstitucionGobiernoProps) {
   const [showCatalogo, setShowCatalogo] = useState(false);
 
   const handleSelect = (inst: InstitucionGobiernoSeleccion) => {
@@ -468,8 +472,8 @@ export function CampoInstitucionGobierno({ value, onChange, disabled = false, va
   return (
     <>
       <div className="flex items-center gap-2">
-        <label className="text-xs w-28 flex-shrink-0 text-gray-700">
-          INST. GOBIERNO
+        <label className={`text-xs ${labelWidthClass} flex-shrink-0 text-gray-700 leading-tight`}>
+          {label}
           <span className="ml-0.5 text-[9px] text-gray-400">(opc.)</span>
         </label>
         {disabled ? (

@@ -1020,12 +1020,12 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
   };
 
   const tabs = [
-    { id: 'general', label: 'Default' },
-    { id: 'perfil', label: 'Perfil' },
-    { id: 'direcciones', label: 'Direcciones' },
-    { id: 'expedientes', label: 'Expedientes Electrónicos' },
-    { id: 'sic', label: 'SIC' },
-    { id: 'listas-negras', label: 'Listas Negras' },
+    { id: 'general', label: 'Datos Básicos' },
+    { id: 'perfil', label: 'Datos Complementarios' },
+    { id: 'direcciones', label: 'Domicilio Fiscal (SEPOMEX)' },
+    { id: 'expedientes', label: 'Expediente Digital (KM)' },
+    { id: 'sic', label: 'Consulta Buró de Crédito' },
+    { id: 'listas-negras', label: 'Verificación PLD / Listas de Negocio' },
   ];
 
   const handleTabClick = (tabId: string) => {
@@ -1228,7 +1228,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
     if (!formData.curp || formData.curp.trim() === '') errores.push('CURP');
     if (!formData.fechaNacimiento || formData.fechaNacimiento.trim() === '') errores.push('Fecha de nacimiento');
     const idProspecto = formData.idProspecto || prospecto?.idProspecto || '';
-    if (!idProspecto) errores.push('Número de solicitud (ID Prospecto)');
+    if (!idProspecto) errores.push('Número de solicitud (ID Interlocutor Comercial)');
 
     if (errores.length > 0) {
       toast.error('Datos incompletos para generar el reporte', {
@@ -1336,7 +1336,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
     );
     setListasNegras(updatedListas);
     setFormData(prev => ({ ...prev, estatusListaNegra: 'NEGATIVO' }));
-    toast.success(`Lista Negra #${id} consultada — Resultado: NEGATIVO`);
+    toast.success(`Verificación PLD #${id} consultada — Resultado: NEGATIVO`);
   };
 
   // Función para calcular tabla de amortización
@@ -1498,7 +1498,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
               <path d="M4 20c0-4 3.5-7 8-7s8 3 8 7"/>
             </svg>
             <h2 className="text-lg font-normal text-gray-800">
-              {isCreate ? 'Alta Prospecto' : isView ? 'Ver Prospecto' : 'Editar Prospecto'}
+              {isCreate ? 'Alta de Cliente Potencial' : isView ? 'Ver Cliente Potencial' : 'Editar Cliente Potencial'}
             </h2>
             <button className="p-1 ml-2">
               <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#999" strokeWidth="2">
@@ -1548,7 +1548,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
               ) : (
                 <>
                   <Zap className="w-4 h-4" />
-                  Activar Prospecto
+                  Activar Cliente Potencial
                 </>
               )}
             </button>
@@ -1578,7 +1578,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
               {/* Columna 1 */}
               <div className="space-y-1">
                 <div className="flex items-center gap-2">
-                  <label className="text-xs w-28 flex-shrink-0 text-gray-700">ID PROSPECTO <span className="text-red-600">*</span></label>
+                  <label className="text-xs w-44 flex-shrink-0 text-gray-700 leading-tight">ID INTERLOCUTOR COMERCIAL <span className="text-red-600">*</span></label>
                   <input
                     type="text"
                     value={formData.idProspecto}
@@ -1587,7 +1587,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
                   />
                 </div>
                 <div className="flex items-center gap-2">
-                  <label className="text-xs w-28 flex-shrink-0 text-gray-700">TIPO <span className="text-red-600">*</span></label>
+                  <label className="text-xs w-44 flex-shrink-0 text-gray-700 leading-tight">PERSONERÍA JURÍDICA <span className="text-red-600">*</span></label>
                   {isView ? (
                     <div className="flex-1 px-2 py-1 text-xs text-gray-700">{formData.tipo || '—'}</div>
                   ) : (
@@ -1598,9 +1598,12 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
                         className="w-full px-2 py-1 text-xs border border-gray-300 rounded bg-white appearance-none pr-7"
                       >
                         <option value="">-- Seleccione --</option>
-                        <option value="Persona Fisica">Persona Fisica</option>
+                        <option value="Persona Fisica">Persona Física</option>
                         <option value="Persona Moral">Persona Moral</option>
-                        <option value="Persona Fisica con Actividad Empresarial">Persona Fisica con Actividad Empresarial</option>
+                        <option value="Dependencia Publica">Dependencia Pública (GEM)</option>
+                        <option value="Fideicomiso">Fideicomiso</option>
+                        <option value="Consorcio">Consorcio</option>
+                        <option value="Persona Fisica con Actividad Empresarial">Persona Física con Actividad Empresarial</option>
                       </select>
                       <svg className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" width="10" height="10" viewBox="0 0 10 10" fill="#666"><path d="M5 7l-3-3h6z"/></svg>
                     </div>
@@ -1609,19 +1612,19 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
                 {/* Física: nombre y apellidos */}
                 {isFisica && (<>
                   <div className="flex items-center gap-2">
-                    <label className="text-xs w-28 flex-shrink-0 text-gray-700">NOMBRE <span className="text-red-600">*</span></label>
+                    <label className="text-xs w-44 flex-shrink-0 text-gray-700 leading-tight">NOMBRE <span className="text-red-600">*</span></label>
                     {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700">{formData.nombre}</div> : (
                       <input type="text" value={formData.nombre} onChange={(e) => handleChange('nombre', e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" />
                     )}
                   </div>
                   <div className="flex items-center gap-2">
-                    <label className="text-xs w-28 flex-shrink-0 text-gray-700">APELLIDO PATERNO <span className="text-red-600">*</span></label>
+                    <label className="text-xs w-44 flex-shrink-0 text-gray-700 leading-tight">APELLIDO PATERNO <span className="text-red-600">*</span></label>
                     {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700">{formData.apellidoPaterno}</div> : (
                       <input type="text" value={formData.apellidoPaterno} onChange={(e) => handleChange('apellidoPaterno', e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" />
                     )}
                   </div>
                   <div className="flex items-center gap-2">
-                    <label className="text-xs w-28 flex-shrink-0 text-gray-700">APELLIDO MATERNO</label>
+                    <label className="text-xs w-44 flex-shrink-0 text-gray-700 leading-tight">APELLIDO MATERNO</label>
                     {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700">{formData.apellidoMaterno}</div> : (
                       <input type="text" value={formData.apellidoMaterno} onChange={(e) => handleChange('apellidoMaterno', e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" />
                     )}
@@ -1630,19 +1633,19 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
                 {/* Moral: razón social, fecha constitución, giro */}
                 {isMoral && (<>
                   <div className="flex items-center gap-2">
-                    <label className="text-xs w-28 flex-shrink-0 text-gray-700">RAZÓN SOCIAL <span className="text-red-600">*</span></label>
+                    <label className="text-xs w-44 flex-shrink-0 text-gray-700 leading-tight">RAZÓN SOCIAL <span className="text-red-600">*</span></label>
                     {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700">{formData.denominacionRazonSocial}</div> : (
                       <input type="text" value={formData.denominacionRazonSocial} onChange={(e) => handleChange('denominacionRazonSocial', e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" />
                     )}
                   </div>
                   <div className="flex items-center gap-2">
-                    <label className="text-xs w-28 flex-shrink-0 text-gray-700">FECHA CONSTITUCIÓN</label>
+                    <label className="text-xs w-44 flex-shrink-0 text-gray-700 leading-tight">FECHA CONSTITUCIÓN</label>
                     {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700">{(formData as any).fechaConstitucion}</div> : (
                       <DatePicker value={(formData as any).fechaConstitucion} onChange={(date) => handleChange('fechaConstitucion' as any, date)} />
                     )}
                   </div>
                   <div className="flex items-center gap-2">
-                    <label className="text-xs w-28 flex-shrink-0 text-gray-700">GIRO EMPRESA</label>
+                    <label className="text-xs w-44 flex-shrink-0 text-gray-700 leading-tight">GIRO EMPRESA</label>
                     {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700">{(formData as any).giroEmpresa}</div> : (
                       <input type="text" value={(formData as any).giroEmpresa} onChange={(e) => handleChange('giroEmpresa' as any, e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" />
                     )}
@@ -1650,7 +1653,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
                 </>)}
                 {isFisica && (
                   <div className="flex items-center gap-2">
-                    <label className="text-xs w-28 flex-shrink-0 text-gray-700">TELÉFONO <span className="text-red-600">*</span></label>
+                    <label className="text-xs w-44 flex-shrink-0 text-gray-700 leading-tight">TELÉFONO <span className="text-red-600">*</span></label>
                     {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700">{formData.telefono}</div> : (
                       <input type="text" value={formData.telefono} onChange={(e) => handleChange('telefono', e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" />
                     )}
@@ -1664,6 +1667,8 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
                   }}
                   disabled={isView}
                   variant="prospectos"
+                  label="DEPENDENCIA / SECTOR"
+                  labelWidthClass="w-44"
                 />
               </div>
 
@@ -1672,13 +1677,13 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
                 {/* Física: fecha nacimiento, entidad, sexo, curp */}
                 {isFisica && (<>
                   <div className="flex items-center gap-2">
-                    <label className="text-xs w-28 flex-shrink-0 text-gray-700">FECHA NACIMIENTO <span className="text-red-600">*</span></label>
+                    <label className="text-xs w-44 flex-shrink-0 text-gray-700 leading-tight">FECHA NACIMIENTO <span className="text-red-600">*</span></label>
                     {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700">{formData.fechaNacimiento}</div> : (
                       <DatePicker value={formData.fechaNacimiento} onChange={(date) => handleChange('fechaNacimiento', date)} />
                     )}
                   </div>
                   <div className="flex items-center gap-2">
-                    <label className="text-xs w-28 flex-shrink-0 text-gray-700">ENTIDAD FEDERATIVA <span className="text-red-600">*</span></label>
+                    <label className="text-xs w-44 flex-shrink-0 text-gray-700 leading-tight">ENTIDAD FEDERATIVA <span className="text-red-600">*</span></label>
                     {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700">{formData.entidadFederativa}</div> : (
                       <select value={formData.entidadFederativa} onChange={(e) => handleChange('entidadFederativa', e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded">
                         <option>CDMX</option><option>Querétaro</option><option>Puebla</option><option>México</option><option>Toluca</option>
@@ -1686,7 +1691,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
                     )}
                   </div>
                   <div className="flex items-center gap-2">
-                    <label className="text-xs w-28 flex-shrink-0 text-gray-700">SEXO <span className="text-red-600">*</span></label>
+                    <label className="text-xs w-44 flex-shrink-0 text-gray-700 leading-tight">SEXO <span className="text-red-600">*</span></label>
                     {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700">{formData.sexo}</div> : (
                       <select value={formData.sexo} onChange={(e) => handleChange('sexo', e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded">
                         <option>Masculino</option><option>Femenino</option>
@@ -1694,7 +1699,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
                     )}
                   </div>
                   <div className="flex items-center gap-2">
-                    <label className="text-xs w-28 flex-shrink-0 text-gray-700">CURP <span className="text-red-600">*</span></label>
+                    <label className="text-xs w-44 flex-shrink-0 text-gray-700 leading-tight">CURP <span className="text-red-600">*</span></label>
                     {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700">{formData.curp}</div> : (
                       <input type="text" value={formData.curp} onChange={(e) => handleChange('curp', e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" />
                     )}
@@ -1703,19 +1708,19 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
                 {/* Moral: datos de contacto (HU-CRM-01) */}
                 {isMoral && (<>
                   <div className="flex items-center gap-2">
-                    <label className="text-xs w-28 flex-shrink-0 text-gray-700">NOMBRE CONTACTO <span className="text-red-600">*</span></label>
+                    <label className="text-xs w-44 flex-shrink-0 text-gray-700 leading-tight">NOMBRE CONTACTO <span className="text-red-600">*</span></label>
                     {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700">{(formData as any).representanteLegalNombre}</div> : (
                       <input type="text" value={(formData as any).representanteLegalNombre} onChange={(e) => handleChange('representanteLegalNombre' as any, e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" placeholder="Nombre completo" />
                     )}
                   </div>
                   <div className="flex items-center gap-2">
-                    <label className="text-xs w-28 flex-shrink-0 text-gray-700">TELÉFONO <span className="text-red-600">*</span></label>
+                    <label className="text-xs w-44 flex-shrink-0 text-gray-700 leading-tight">TELÉFONO <span className="text-red-600">*</span></label>
                     {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700">{formData.telefono}</div> : (
                       <input type="text" value={formData.telefono} onChange={(e) => handleChange('telefono', e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" />
                     )}
                   </div>
                   <div className="flex items-center gap-2">
-                    <label className="text-xs w-28 flex-shrink-0 text-gray-700">CORREO ELECTRÓNICO <span className="text-red-600">*</span></label>
+                    <label className="text-xs w-44 flex-shrink-0 text-gray-700 leading-tight">CORREO ELECTRÓNICO <span className="text-red-600">*</span></label>
                     {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700">{formData.correoElectronico}</div> : (
                       <input type="email" value={formData.correoElectronico} onChange={(e) => handleChange('correoElectronico', e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" />
                     )}
@@ -1723,14 +1728,14 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
                 </>)}
                 {/* Ambos tipos: RFC. El correo va en el grupo de contacto (Moral) o abajo (Física). */}
                 <div className="flex items-center gap-2">
-                  <label className="text-xs w-28 flex-shrink-0 text-gray-700">RFC <span className="text-red-600">*</span></label>
+                  <label className="text-xs w-44 flex-shrink-0 text-gray-700 leading-tight">IDENT. FISCAL (RFC MX1) <span className="text-red-600">*</span></label>
                   {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700">{formData.rfc}</div> : (
                     <input type="text" value={formData.rfc} onChange={(e) => handleChange('rfc', e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" />
                   )}
                 </div>
                 {isFisica && (
                   <div className="flex items-center gap-2">
-                    <label className="text-xs w-28 flex-shrink-0 text-gray-700">CORREO ELECTRÓNICO <span className="text-red-600">*</span></label>
+                    <label className="text-xs w-44 flex-shrink-0 text-gray-700 leading-tight">CORREO ELECTRÓNICO <span className="text-red-600">*</span></label>
                     {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700">{formData.correoElectronico}</div> : (
                       <input type="email" value={formData.correoElectronico} onChange={(e) => handleChange('correoElectronico', e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" />
                     )}
@@ -1742,7 +1747,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
               <div className="space-y-1">
 
                 <div className="flex items-center gap-2">
-                  <label className="text-xs w-32 flex-shrink-0 text-gray-700">ESTATUS SIC</label>
+                  <label className="text-xs w-44 flex-shrink-0 text-gray-700 leading-tight">ESTATUS BURÓ DE CRÉDITO (SIC)</label>
                   <input 
                     type="text" 
                     value={formData.estatusSIC} 
@@ -1751,7 +1756,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
                   />
                 </div>
                 <div className="flex items-center gap-2">
-                  <label className="text-xs w-32 flex-shrink-0 text-gray-700">ESTATUS LISTA NEGRA</label>
+                  <label className="text-xs w-44 flex-shrink-0 text-gray-700 leading-tight">ESTATUS LISTAS DE NEGOCIO (PLD / CNBV)</label>
                   <input 
                     type="text" 
                     value={formData.estatusListaNegra} 
@@ -1760,7 +1765,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
                   />
                 </div>
                 <div className="flex items-center gap-2">
-                  <label className="text-xs w-32 flex-shrink-0 text-gray-700">ESTATUS PROSPECTO</label>
+                  <label className="text-xs w-44 flex-shrink-0 text-gray-700 leading-tight">ESTATUS DE CONVERSIÓN (ZSCP)</label>
                   {isView ? (
                     <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100">{formData.estatusProspecto}</div>
                   ) : (
@@ -1770,10 +1775,10 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
                         onChange={(e) => handleChange('estatusProspecto', e.target.value)}
                         className="w-full px-2 py-1 text-xs border border-gray-300 rounded bg-white appearance-none pr-7"
                       >
-                        <option value="Contacto">Contacto</option>
-                        <option value="Prospecto">Prospecto</option>
-                        <option value="Calificado">Calificado</option>
-                        <option value="Cliente">Cliente</option>
+                        <option value="Contacto">Contacto Inicial</option>
+                        <option value="Prospecto">Cliente Potencial</option>
+                        <option value="Calificado">En Conversión (ZSCP)</option>
+                        <option value="Cliente">Cliente Banobras</option>
                       </select>
                       <svg className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" width="10" height="10" viewBox="0 0 10 10" fill="#666">
                         <path d="M5 7l-3-3h6z"/>
@@ -1782,7 +1787,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
                   )}
                 </div>
                 <div className="flex items-center gap-2">
-                  <label className="text-xs w-32 flex-shrink-0 text-gray-700">ESTATUS</label>
+                  <label className="text-xs w-44 flex-shrink-0 text-gray-700 leading-tight">ESTATUS DE REGISTRO (MESA DE CONTROL)</label>
                   {isView ? (
                     <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100">{formData.estatus}</div>
                   ) : (
@@ -1792,9 +1797,9 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
                         onChange={(e) => handleChange('estatus', e.target.value)}
                         className="w-full px-2 py-1 text-xs border border-gray-300 rounded bg-white appearance-none pr-7"
                       >
-                        <option value="Pendiente">Pendiente</option>
-                        <option value="En proceso">En proceso</option>
-                        <option value="Activo">Activo</option>
+                        <option value="Pendiente">Pendiente Mesa de Control</option>
+                        <option value="En proceso">En revisión por Mesa C. Ctes.</option>
+                        <option value="Activo">Resuelta/Activo</option>
                         <option value="Inactivo">Inactivo</option>
                       </select>
                       <svg className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" width="10" height="10" viewBox="0 0 10 10" fill="#666">
@@ -1804,7 +1809,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
                   )}
                 </div>
                 <div className="flex items-start gap-2">
-                  <label className="text-xs w-32 flex-shrink-0 text-gray-700 pt-1">DIRECCIÓN</label>
+                  <label className="text-xs w-44 flex-shrink-0 text-gray-700 leading-tight pt-1">DIRECCIÓN</label>
                   {isView ? (
                     <div className="flex-1 px-2 py-1 text-xs text-gray-700 h-20">{formData.direccion}</div>
                   ) : (
@@ -1859,7 +1864,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
               {/* DEFAULT Section - Replica de Información Principal */}
               <div className="mb-4">
                 <div className="bg-primary-light-theme px-3 py-2 mb-3 text-sm font-medium text-gray-800 border-l-4 border-primary-theme">
-                  DEFAULT
+                  DATOS BÁSICOS
                 </div>
                 {(() => {
                   const isMoral = formData.tipo === 'Persona Moral';
@@ -1869,24 +1874,24 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
                   {/* Columna 1 */}
                   <div className="space-y-1">
                     <div className="flex items-center gap-2">
-                      <label className="text-xs w-28 flex-shrink-0 text-gray-700">ID PROSPECTO <span className="text-red-600">*</span></label>
+                      <label className="text-xs w-44 flex-shrink-0 text-gray-700 leading-tight">ID INTERLOCUTOR COMERCIAL <span className="text-red-600">*</span></label>
                       <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100">{formData.idProspecto}</div>
                     </div>
                     {isFisica && (<>
                       <div className="flex items-center gap-2">
-                        <label className="text-xs w-28 flex-shrink-0 text-gray-700">NOMBRE <span className="text-red-600">*</span></label>
+                        <label className="text-xs w-44 flex-shrink-0 text-gray-700 leading-tight">NOMBRE <span className="text-red-600">*</span></label>
                         {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100">{formData.nombre}</div> : (
                           <input type="text" value={formData.nombre} onChange={(e) => handleChange('nombre', e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" />
                         )}
                       </div>
                       <div className="flex items-center gap-2">
-                        <label className="text-xs w-28 flex-shrink-0 text-gray-700">APELLIDO PATERNO <span className="text-red-600">*</span></label>
+                        <label className="text-xs w-44 flex-shrink-0 text-gray-700 leading-tight">APELLIDO PATERNO <span className="text-red-600">*</span></label>
                         {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100">{formData.apellidoPaterno}</div> : (
                           <input type="text" value={formData.apellidoPaterno} onChange={(e) => handleChange('apellidoPaterno', e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" />
                         )}
                       </div>
                       <div className="flex items-center gap-2">
-                        <label className="text-xs w-28 flex-shrink-0 text-gray-700">APELLIDO MATERNO</label>
+                        <label className="text-xs w-44 flex-shrink-0 text-gray-700 leading-tight">APELLIDO MATERNO</label>
                         {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100">{formData.apellidoMaterno}</div> : (
                           <input type="text" value={formData.apellidoMaterno} onChange={(e) => handleChange('apellidoMaterno', e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" />
                         )}
@@ -1894,19 +1899,19 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
                     </>)}
                     {isMoral && (<>
                       <div className="flex items-center gap-2">
-                        <label className="text-xs w-28 flex-shrink-0 text-gray-700">RAZÓN SOCIAL <span className="text-red-600">*</span></label>
+                        <label className="text-xs w-44 flex-shrink-0 text-gray-700 leading-tight">RAZÓN SOCIAL <span className="text-red-600">*</span></label>
                         {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100">{formData.denominacionRazonSocial}</div> : (
                           <input type="text" value={formData.denominacionRazonSocial} onChange={(e) => handleChange('denominacionRazonSocial', e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" />
                         )}
                       </div>
                       <div className="flex items-center gap-2">
-                        <label className="text-xs w-28 flex-shrink-0 text-gray-700">FECHA CONSTITUCIÓN</label>
+                        <label className="text-xs w-44 flex-shrink-0 text-gray-700 leading-tight">FECHA CONSTITUCIÓN</label>
                         {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100">{(formData as any).fechaConstitucion}</div> : (
                           <DatePicker value={(formData as any).fechaConstitucion} onChange={(date) => handleChange('fechaConstitucion' as any, date)} />
                         )}
                       </div>
                       <div className="flex items-center gap-2">
-                        <label className="text-xs w-28 flex-shrink-0 text-gray-700">GIRO EMPRESA</label>
+                        <label className="text-xs w-44 flex-shrink-0 text-gray-700 leading-tight">GIRO EMPRESA</label>
                         {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100">{(formData as any).giroEmpresa}</div> : (
                           <input type="text" value={(formData as any).giroEmpresa} onChange={(e) => handleChange('giroEmpresa' as any, e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" />
                         )}
@@ -1914,7 +1919,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
                     </>)}
                     {isFisica && (
                       <div className="flex items-center gap-2">
-                        <label className="text-xs w-28 flex-shrink-0 text-gray-700">TELÉFONO <span className="text-red-600">*</span></label>
+                        <label className="text-xs w-44 flex-shrink-0 text-gray-700 leading-tight">TELÉFONO <span className="text-red-600">*</span></label>
                         {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100">{formData.telefono}</div> : (
                           <input type="text" value={formData.telefono} onChange={(e) => handleChange('telefono', e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" />
                         )}
@@ -1928,6 +1933,8 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
                       }}
                       disabled={isView}
                       variant="prospectos"
+                      label="DEPENDENCIA / SECTOR"
+                      labelWidthClass="w-44"
                     />
                   </div>
 
@@ -1935,13 +1942,13 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
                   <div className="space-y-1">
                     {isFisica && (<>
                       <div className="flex items-center gap-2">
-                        <label className="text-xs w-28 flex-shrink-0 text-gray-700">FECHA NACIMIENTO <span className="text-red-600">*</span></label>
+                        <label className="text-xs w-44 flex-shrink-0 text-gray-700 leading-tight">FECHA NACIMIENTO <span className="text-red-600">*</span></label>
                         {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100">{formData.fechaNacimiento}</div> : (
                           <DatePicker value={formData.fechaNacimiento} onChange={(date) => handleChange('fechaNacimiento', date)} />
                         )}
                       </div>
                       <div className="flex items-center gap-2">
-                        <label className="text-xs w-28 flex-shrink-0 text-gray-700">ENTIDAD FEDERATIVA <span className="text-red-600">*</span></label>
+                        <label className="text-xs w-44 flex-shrink-0 text-gray-700 leading-tight">ENTIDAD FEDERATIVA <span className="text-red-600">*</span></label>
                         {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100">{formData.entidadFederativa}</div> : (
                           <select value={formData.entidadFederativa} onChange={(e) => handleChange('entidadFederativa', e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded">
                             <option value="CDMX">CDMX</option><option value="Estado de México">Estado de México</option>
@@ -1952,7 +1959,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
                         )}
                       </div>
                       <div className="flex items-center gap-2">
-                        <label className="text-xs w-28 flex-shrink-0 text-gray-700">SEXO <span className="text-red-600">*</span></label>
+                        <label className="text-xs w-44 flex-shrink-0 text-gray-700 leading-tight">SEXO <span className="text-red-600">*</span></label>
                         {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100">{formData.sexo}</div> : (
                           <select value={formData.sexo} onChange={(e) => handleChange('sexo', e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded">
                             <option value="Masculino">Masculino</option><option value="Femenino">Femenino</option>
@@ -1960,7 +1967,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
                         )}
                       </div>
                       <div className="flex items-center gap-2">
-                        <label className="text-xs w-28 flex-shrink-0 text-gray-700">CURP <span className="text-red-600">*</span></label>
+                        <label className="text-xs w-44 flex-shrink-0 text-gray-700 leading-tight">CURP <span className="text-red-600">*</span></label>
                         {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100">{formData.curp}</div> : (
                           <input type="text" value={formData.curp} onChange={(e) => handleChange('curp', e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" maxLength={18} />
                         )}
@@ -1968,33 +1975,33 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
                     </>)}
                     {isMoral && (<>
                       <div className="flex items-center gap-2">
-                        <label className="text-xs w-28 flex-shrink-0 text-gray-700">NOMBRE CONTACTO <span className="text-red-600">*</span></label>
+                        <label className="text-xs w-44 flex-shrink-0 text-gray-700 leading-tight">NOMBRE CONTACTO <span className="text-red-600">*</span></label>
                         {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100">{(formData as any).representanteLegalNombre}</div> : (
                           <input type="text" value={(formData as any).representanteLegalNombre} onChange={(e) => handleChange('representanteLegalNombre' as any, e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" placeholder="Nombre completo" />
                         )}
                       </div>
                       <div className="flex items-center gap-2">
-                        <label className="text-xs w-28 flex-shrink-0 text-gray-700">TELÉFONO <span className="text-red-600">*</span></label>
+                        <label className="text-xs w-44 flex-shrink-0 text-gray-700 leading-tight">TELÉFONO <span className="text-red-600">*</span></label>
                         {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100">{formData.telefono}</div> : (
                           <input type="text" value={formData.telefono} onChange={(e) => handleChange('telefono', e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" />
                         )}
                       </div>
                       <div className="flex items-center gap-2">
-                        <label className="text-xs w-28 flex-shrink-0 text-gray-700">CORREO ELECTRÓNICO <span className="text-red-600">*</span></label>
+                        <label className="text-xs w-44 flex-shrink-0 text-gray-700 leading-tight">CORREO ELECTRÓNICO <span className="text-red-600">*</span></label>
                         {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100">{formData.correoElectronico}</div> : (
                           <input type="email" value={formData.correoElectronico} onChange={(e) => handleChange('correoElectronico', e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" />
                         )}
                       </div>
                     </>)}
                     <div className="flex items-center gap-2">
-                      <label className="text-xs w-28 flex-shrink-0 text-gray-700">RFC <span className="text-red-600">*</span></label>
+                      <label className="text-xs w-44 flex-shrink-0 text-gray-700 leading-tight">IDENT. FISCAL (RFC MX1) <span className="text-red-600">*</span></label>
                       {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100">{formData.rfc}</div> : (
                         <input type="text" value={formData.rfc} onChange={(e) => handleChange('rfc', e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" maxLength={13} />
                       )}
                     </div>
                     {isFisica && (
                       <div className="flex items-center gap-2">
-                        <label className="text-xs w-28 flex-shrink-0 text-gray-700">CORREO ELECTRÓNICO <span className="text-red-600">*</span></label>
+                        <label className="text-xs w-44 flex-shrink-0 text-gray-700 leading-tight">CORREO ELECTRÓNICO <span className="text-red-600">*</span></label>
                         {isView ? <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100">{formData.correoElectronico}</div> : (
                           <input type="email" value={formData.correoElectronico} onChange={(e) => handleChange('correoElectronico', e.target.value)} className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded" />
                         )}
@@ -2005,15 +2012,15 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
                   {/* Columna 3 */}
                   <div className="space-y-1">
                     <div className="flex items-center gap-2">
-                      <label className="text-xs w-32 flex-shrink-0 text-gray-700">ESTATUS SIC</label>
+                      <label className="text-xs w-44 flex-shrink-0 text-gray-700 leading-tight">ESTATUS BURÓ DE CRÉDITO (SIC)</label>
                       <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100">{formData.estatusSIC}</div>
                     </div>
                     <div className="flex items-center gap-2">
-                      <label className="text-xs w-32 flex-shrink-0 text-gray-700">ESTATUS LISTA NEGRA</label>
+                      <label className="text-xs w-44 flex-shrink-0 text-gray-700 leading-tight">ESTATUS LISTAS DE NEGOCIO (PLD / CNBV)</label>
                       <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100">{formData.estatusListaNegra}</div>
                     </div>
                     <div className="flex items-center gap-2">
-                      <label className="text-xs w-32 flex-shrink-0 text-gray-700">ESTATUS PROSPECTO</label>
+                      <label className="text-xs w-44 flex-shrink-0 text-gray-700 leading-tight">ESTATUS DE CONVERSIÓN (ZSCP)</label>
                       {isView ? (
                         <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100">{formData.estatusProspecto}</div>
                       ) : (
@@ -2023,10 +2030,10 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
                             onChange={(e) => handleChange('estatusProspecto', e.target.value)}
                             className="w-full px-2 py-1 text-xs border border-gray-300 rounded bg-white appearance-none pr-7"
                           >
-                            <option value="Contacto">Contacto</option>
-                            <option value="Prospecto">Prospecto</option>
-                            <option value="Calificado">Calificado</option>
-                            <option value="Cliente">Cliente</option>
+                            <option value="Contacto">Contacto Inicial</option>
+                            <option value="Prospecto">Cliente Potencial</option>
+                            <option value="Calificado">En Conversión (ZSCP)</option>
+                            <option value="Cliente">Cliente Banobras</option>
                           </select>
                           <svg className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" width="10" height="10" viewBox="0 0 10 10" fill="#666">
                             <path d="M5 7l-3-3h6z"/>
@@ -2035,7 +2042,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
                       )}
                     </div>
                     <div className="flex items-center gap-2">
-                      <label className="text-xs w-32 flex-shrink-0 text-gray-700">ESTATUS</label>
+                      <label className="text-xs w-44 flex-shrink-0 text-gray-700 leading-tight">ESTATUS DE REGISTRO (MESA DE CONTROL)</label>
                       {isView ? (
                         <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100">{formData.estatus}</div>
                       ) : (
@@ -2045,9 +2052,9 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
                             onChange={(e) => handleChange('estatus', e.target.value)}
                             className="w-full px-2 py-1 text-xs border border-gray-300 rounded bg-white appearance-none pr-7"
                           >
-                            <option value="Pendiente">Pendiente</option>
-                            <option value="En proceso">En proceso</option>
-                            <option value="Activo">Activo</option>
+                            <option value="Pendiente">Pendiente Mesa de Control</option>
+                            <option value="En proceso">En revisión por Mesa C. Ctes.</option>
+                            <option value="Activo">Resuelta/Activo</option>
                             <option value="Inactivo">Inactivo</option>
                           </select>
                           <svg className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" width="10" height="10" viewBox="0 0 10 10" fill="#666">
@@ -2212,7 +2219,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
             <div>
               {/* Título y botones en la misma línea */}
               <div className="bg-blue-50 border-l-4 border-primary-theme px-3 py-2 mb-3 flex items-center justify-between">
-                <span className="text-sm font-medium text-gray-800">DIRECCIONES</span>
+                <span className="text-sm font-medium text-gray-800">DOMICILIO FISCAL (SEPOMEX)</span>
                 {!isView && (
                   <div className="flex items-center gap-2">
                     <button
@@ -2449,7 +2456,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
             <div>
               {/* Título con estilo institucional y botones */}
               <div className="bg-blue-50 border-l-4 border-primary-theme px-3 py-2 mb-3 flex items-center justify-between">
-                <span className="text-sm font-medium text-gray-800">CONSULTA SIC</span>
+                <span className="text-sm font-medium text-gray-800">CONSULTA BURÓ DE CRÉDITO (SIC)</span>
                 {!isView && (
                   <div className="flex items-center gap-2">
                     <button 
@@ -2549,7 +2556,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
             <div>
               {/* Título con estilo institucional y botones */}
               <div className="bg-blue-50 border-l-4 border-primary-theme px-3 py-2 mb-3 flex items-center justify-between">
-                <span className="text-sm font-medium text-gray-800">LISTAS NEGRAS</span>
+                <span className="text-sm font-medium text-gray-800">VERIFICACIÓN PLD / LISTAS DE NEGOCIO</span>
                 {!isView && (
                   <div className="flex items-center gap-2">
                     <button 
@@ -2582,7 +2589,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
                     {listasNegras.length === 0 && (
                       <tr>
                         <td colSpan={6} className="px-3 py-8 text-center text-gray-400 text-xs">
-                          No hay registros de Listas Negras para este prospecto
+                          No hay registros de Listas de Negocio para este Cliente Potencial
                         </td>
                       </tr>
                     )}
@@ -2674,7 +2681,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
             <div className="flex-1 overflow-y-auto p-6">
               {/* Título de sección con estilo institucional */}
               <div className="bg-gray-100 border-l-4 border-primary-theme px-4 py-2 mb-4">
-                <h4 className="text-sm font-semibold text-gray-800">INFORMACIÓN DE CONSULTA SIC</h4>
+                <h4 className="text-sm font-semibold text-gray-800">INFORMACIÓN DE CONSULTA BURÓ DE CRÉDITO (SIC)</h4>
               </div>
 
               {/* Formulario */}
@@ -2829,7 +2836,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
             {/* Header institucional */}
             <div className="bg-primary-theme px-6 py-4 flex items-center justify-between">
               <h3 className="text-base font-medium text-white">
-                Nueva Lista Negra
+                Nueva Verificación PLD
               </h3>
               <button
                 onClick={() => setShowListaNegraModal(false)}
@@ -2845,7 +2852,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
             <div className="flex-1 overflow-y-auto p-6">
               {/* Título de sección con estilo institucional */}
               <div className="bg-gray-100 border-l-4 border-primary-theme px-4 py-2 mb-4">
-                <h4 className="text-sm font-semibold text-gray-800">INFORMACIÓN DE LISTA NEGRA</h4>
+                <h4 className="text-sm font-semibold text-gray-800">INFORMACIÓN DE VERIFICACIÓN PLD</h4>
               </div>
 
               {/* Formulario */}
@@ -3425,11 +3432,11 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
                 const errOtros = resultadoActivacion.errores.filter(e => !usedErrors.includes(e));
 
                 const categorias = [
-                  { titulo: 'Campos Generales vacios', items: errDatosGen, icon: '\u{1F4CB}', bgColor: 'bg-orange-50', borderColor: 'border-orange-200', titleColor: 'text-orange-800', dotColor: 'bg-orange-400', textColor: 'text-orange-700', hint: 'Complete estos campos en la pestana Default del formulario y presione Guardar.' },
-                  { titulo: 'Campos Default vacios', items: errDefault, icon: '\u{1F4DD}', bgColor: 'bg-orange-50', borderColor: 'border-orange-200', titleColor: 'text-orange-800', dotColor: 'bg-orange-400', textColor: 'text-orange-700', hint: 'Verifique la pestana Default \u2014 campo TIPO es obligatorio.' },
-                  { titulo: 'SubTabs incompletas', items: errSubTabs, icon: '\u{1F4D1}', bgColor: 'bg-amber-50', borderColor: 'border-amber-200', titleColor: 'text-amber-800', dotColor: 'bg-amber-400', textColor: 'text-amber-700', hint: 'Agregue al menos un registro en cada SubTab requerida (Direcciones, Expedientes, SIC, Listas Negras).' },
-                  { titulo: 'Validacion SIC', items: errSIC, icon: '\u{1F512}', bgColor: 'bg-red-50', borderColor: 'border-red-200', titleColor: 'text-red-800', dotColor: 'bg-red-400', textColor: 'text-red-700', hint: 'Cambie el estatus SIC a "NEGATIVO" en la pestana SIC y Guarde antes de activar.' },
-                  { titulo: 'Validacion Listas Negras', items: errLN, icon: '\u{1F6AB}', bgColor: 'bg-red-50', borderColor: 'border-red-200', titleColor: 'text-red-800', dotColor: 'bg-red-400', textColor: 'text-red-700', hint: 'Cambie el estatus Listas Negras a "NEGATIVO" en la pestana Listas Negras y Guarde antes de activar.' },
+                  { titulo: 'Campos Generales vacios', items: errDatosGen, icon: '\u{1F4CB}', bgColor: 'bg-orange-50', borderColor: 'border-orange-200', titleColor: 'text-orange-800', dotColor: 'bg-orange-400', textColor: 'text-orange-700', hint: 'Complete estos campos en la pestana Datos Basicos del formulario y presione Guardar.' },
+                  { titulo: 'Campos de Datos Basicos vacios', items: errDefault, icon: '\u{1F4DD}', bgColor: 'bg-orange-50', borderColor: 'border-orange-200', titleColor: 'text-orange-800', dotColor: 'bg-orange-400', textColor: 'text-orange-700', hint: 'Verifique la pestana Datos Basicos \u2014 el campo Personeria Juridica es obligatorio.' },
+                  { titulo: 'SubTabs incompletas', items: errSubTabs, icon: '\u{1F4D1}', bgColor: 'bg-amber-50', borderColor: 'border-amber-200', titleColor: 'text-amber-800', dotColor: 'bg-amber-400', textColor: 'text-amber-700', hint: 'Agregue al menos un registro en cada SubTab requerida (Domicilio Fiscal, Expediente Digital, Buro de Credito, Listas de Negocio).' },
+                  { titulo: 'Validacion Buro de Credito (SIC)', items: errSIC, icon: '\u{1F512}', bgColor: 'bg-red-50', borderColor: 'border-red-200', titleColor: 'text-red-800', dotColor: 'bg-red-400', textColor: 'text-red-700', hint: 'Cambie el estatus de Buro de Credito a "NEGATIVO" en la pestana Consulta Buro de Credito y Guarde antes de activar.' },
+                  { titulo: 'Validacion PLD / Listas de Negocio', items: errLN, icon: '\u{1F6AB}', bgColor: 'bg-red-50', borderColor: 'border-red-200', titleColor: 'text-red-800', dotColor: 'bg-red-400', textColor: 'text-red-700', hint: 'Cambie el estatus de Listas de Negocio a "NEGATIVO" en la pestana Verificacion PLD / Listas de Negocio y Guarde antes de activar.' },
                   { titulo: 'Otros errores', items: errOtros, icon: '\u{26A0}\u{FE0F}', bgColor: 'bg-gray-50', borderColor: 'border-gray-200', titleColor: 'text-gray-800', dotColor: 'bg-gray-400', textColor: 'text-red-700', hint: '' },
                 ].filter(c => c.items.length > 0);
 
