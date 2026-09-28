@@ -101,7 +101,7 @@ export function ValidacionClausulasFiduciariasTab({ mode, solicitudId, onChange 
 
       {/* ═══ Bloque A ═══ */}
       <div className="bg-primary-light-theme px-3 py-2 mb-3 text-sm font-medium text-gray-800 border-l-4 border-primary-theme">
-        CAPTURA Y MAPEO OPERATIVO
+        Datos de Instrumentación
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-3 mb-5">
         <div>
@@ -138,7 +138,7 @@ export function ValidacionClausulasFiduciariasTab({ mode, solicitudId, onChange 
 
       {/* ═══ Bloque B — checklist ═══ */}
       <div className="bg-primary-light-theme px-3 py-2 mb-3 text-sm font-medium text-gray-800 border-l-4 border-primary-theme">
-        CHECKLIST HOMOLOGADO DE CLÁUSULAS BLINDADAS
+        Revisión de Condiciones Contractuales
       </div>
       <div className="space-y-2 mb-5">
         <label className="flex items-start gap-2 text-xs text-gray-700 cursor-pointer">

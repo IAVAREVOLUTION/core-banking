@@ -8,7 +8,7 @@ import { useTheme, Theme } from '@/app/contexts/ThemeContext';
  */
 export const MODULOS_DEMO = [
   'prospectos', 'cotizaciones', 'oportunidades', 'solicitudes-creditos',
-  'solicitudes-activacion', 'banca-2o-piso', 'cartera-credito',
+  'solicitudes-activacion', 'originacion', 'banca-2o-piso', 'cartera-credito',
   'cobranza', 'polizas-contables',
 ];
 

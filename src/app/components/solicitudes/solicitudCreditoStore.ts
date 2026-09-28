@@ -968,7 +968,7 @@ export const CAT_TIPO_PRODUCTO = [
 
 export const CAT_TIPO_PERSONA = [
   { value: 'Física', label: 'Física' },
-  { value: 'Moral', label: 'Moral' },
+  { value: 'Moral', label: 'Persona Moral' },
 ];
 
 export const CAT_PRODUCTOS = [

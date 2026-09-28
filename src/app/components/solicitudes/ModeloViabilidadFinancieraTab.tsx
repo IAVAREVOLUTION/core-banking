@@ -416,7 +416,7 @@ export function ModeloViabilidadFinancieraTab({
       <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-3 mb-5">
         <div>
           <label className="block text-xs text-gray-700 mb-1">
-            Fuente Primaria de Ingreso <span className="text-red-500">*</span>
+            Fuente Principal de Ingresos <span className="text-red-500">*</span>
           </label>
           <select
             value={datos.fuentePrimariaIngreso}

@@ -1023,8 +1023,8 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
   );
 
   const tabs: { id: TabId; label: string }[] = [
-    { id: 'default', label: 'Default' },
-    { id: 'adjuntos', label: `Archivos Adjuntos${archivosAdjuntos.length ? ` (${archivosAdjuntos.length})` : ''}` },
+    { id: 'default', label: 'Datos Generales' },
+    { id: 'adjuntos', label: `Documentos de la Oportunidad${archivosAdjuntos.length ? ` (${archivosAdjuntos.length})` : ''}` },
     { id: 'cierre', label: 'Cierre Comercial' },
     { id: 'solicitudes', label: 'Solicitudes' },
   ];
@@ -1098,7 +1098,7 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-x-4 gap-y-2 p-3">
             <div className="flex flex-col">
-              <label className="text-[10px] text-gray-600 mb-0.5">ID OPORTUNIDAD</label>
+              <label className="text-[10px] text-gray-600 mb-0.5">Folio de Oportunidad</label>
               <input value={form.no_cotiza || '—'} disabled className={readonlyClass} />
             </div>
             <div className="flex flex-col">
@@ -1121,7 +1121,7 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
               )}
             </div>
             <div className="flex flex-col">
-              <label className="text-[10px] text-gray-600 mb-0.5">SECTOR</label>
+              <label className="text-[10px] text-gray-600 mb-0.5">Sector de Atención</label>
               {esDirecta && !isView ? (
                 <select
                   value={data.sectorInfraestructura || ''}
@@ -1452,7 +1452,7 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
               </div>
 
               {/* ── Estatus ── */}
-              {seccion('Estatus')}
+              {seccion('Situación de la Oportunidad')}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-x-4 gap-y-2 p-3">
                 <div className="flex flex-col">
                   <label className="text-[10px] text-gray-600 mb-0.5">ESTATUS DE LA OPORTUNIDAD</label>
@@ -1592,7 +1592,7 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
                   <input value={rfcEmisor || '— No encontrado en el expediente —'} disabled className={readonlyClass} />
                 </div>
                 <div className="flex flex-col">
-                  <label className="text-[10px] text-gray-600 mb-0.5">SECTOR DE INFRAESTRUCTURA</label>
+                  <label className="text-[10px] text-gray-600 mb-0.5">Sector de Atención</label>
                   <input value={data.sectorInfraestructura || '—'} disabled className={readonlyClass} />
                 </div>
               </div>
@@ -1701,7 +1701,7 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
 
               {/* Bitácora del gatillo Cierre Comercial — folio, usuario, timestamp, id_solicitud generada */}
               <div className="px-4 pb-4">
-                <div className="text-[10px] text-gray-600 mb-0.5 uppercase tracking-wide">Bitácora de Cierre Comercial</div>
+                <div className="text-[10px] text-gray-600 mb-0.5 uppercase tracking-wide">Historial del Cierre Comercial</div>
                 <div className="border border-gray-300 rounded overflow-hidden">
                   <table className="w-full text-[11px]">
                     <thead>
@@ -1747,7 +1747,7 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
           {/* ═══════════ TAB ARCHIVOS ADJUNTOS — HU-CRM-10 CA-04 ═══════════ */}
           {activeTab === 'adjuntos' && (
             <div>
-              {seccion('Archivos Adjuntos')}
+              {seccion('Documentos de la Oportunidad')}
               <div className="p-4">
                 <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
                   <span className="text-[11px] text-gray-500">
@@ -1811,7 +1811,7 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
                       <tr className="bg-gray-100 border-b border-gray-300">
                         <th className="px-3 py-2 text-left font-normal text-gray-700 w-20">Ver</th>
                         <th className="px-3 py-2 text-left font-normal text-gray-700">ARCHIVO</th>
-                        <th className="px-3 py-2 text-left font-normal text-gray-700 w-32">TIPO</th>
+                        <th className="px-3 py-2 text-left font-normal text-gray-700 w-32">Tipo de Documento</th>
                         <th className="px-3 py-2 text-left font-normal text-gray-700 w-44">PLANTILLA</th>
                         <th className="px-3 py-2 text-right font-normal text-gray-700 w-20">TAMAÑO</th>
                         <th className="px-3 py-2 text-left font-normal text-gray-700 w-40">FECHA</th>
@@ -1867,7 +1867,7 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
               <div className="p-4">
                 <div className={`rounded-lg border p-4 ${solicitudLOSRef ? 'border-green-200 bg-green-50' : 'border-[#0099CC]/40 bg-[#F0F9FC]'}`}>
                   <div className="flex items-center justify-between gap-3">
-                    <span className="text-xs font-semibold text-gray-800 uppercase tracking-wide">Solicitud en Originación (LOS)</span>
+                    <span className="text-xs font-semibold text-gray-800 uppercase tracking-wide">Solicitud de Originación</span>
                     {!isView && !solicitudLOSRef && (
                       <button
                         onClick={handleNuevaSolicitud}
@@ -1887,7 +1887,7 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
                   ) : (
                     <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mt-3">
                       <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-xs text-gray-700">
-                        <div><span className="text-gray-500">Folio LOS:</span> <span className="font-mono font-medium">{solicitudLOSRef.noSol}</span></div>
+                        <div><span className="text-gray-500">Folio de Solicitud:</span> <span className="font-mono font-medium">{solicitudLOSRef.noSol}</span></div>
                         <div><span className="text-gray-500">Fecha:</span> {new Date(solicitudLOSRef.fecha).toLocaleString('es-MX')}</div>
                       </div>
                       {onNavigateToSolicitud && (
@@ -1908,12 +1908,11 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
 
               {/* ── Solicitudes reales del LOS — se consulta J_CUENTAS_CORP_CLIENTES ── */}
               <div className="border-t border-gray-200 mt-1">
-                {seccion('Solicitudes (J_CUENTAS_CORP_CLIENTES)')}
+                {seccion('Solicitudes Relacionadas')}
                 <div className="p-4">
                   <p className="text-[10px] text-gray-400 mb-2">
-                    Solicitudes cuyo <span className="font-mono">no_referenc1</span> es el folio de esta Oportunidad
-                    (<span className="font-mono text-gray-600">{form.no_cotiza}</span>). Se dan de alta y se editan
-                    desde el módulo de Solicitudes; aquí son de solo lectura.
+                    Solicitudes vinculadas a esta Oportunidad. Se crean y editan en el
+                    módulo de Solicitudes; aquí se muestran para consulta.
                   </p>
 
                   {errorSolicitudesLOS && (
@@ -1931,7 +1930,7 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
                           <th className="px-3 py-2 text-left font-normal text-gray-700">PRODUCTO</th>
                           <th className="px-3 py-2 text-right font-normal text-gray-700">MONTO SOLICITADO</th>
                           <th className="px-3 py-2 text-right font-normal text-gray-700">MONTO AUTORIZADO</th>
-                          <th className="px-3 py-2 text-left font-normal text-gray-700">FASE</th>
+                          <th className="px-3 py-2 text-left font-normal text-gray-700">Etapa</th>
                           <th className="px-3 py-2 text-center font-normal text-gray-700">ESTATUS</th>
                           <th className="px-3 py-2 text-left font-normal text-gray-700">FECHA</th>
                         </tr>

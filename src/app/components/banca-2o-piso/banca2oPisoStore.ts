@@ -10,6 +10,7 @@ import { projectId, publicAnonKey } from '/utils/supabase/info';
 import { fechasCobroComision } from '../../lib/fechasComisionGPO';
 import type { CarteraCredito } from '../cartera/CarteraForm';
 import { loadFromSession, loadFromSavedStore } from '../solicitudes/solicitudCreditoStore';
+import type { DocumentoCargado } from '../solicitudes/solicitudCreditoStore';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-7e2d13d9`;
 const HDR = { Authorization: `Bearer ${publicAnonKey}` };
@@ -41,6 +42,48 @@ export function esLineaCredito2oPisoRow(lineaProducto: string, estatus: string):
   const linea = norm(lineaProducto);
   const esLineaCredito = linea.includes('linea') && linea.includes('credito');
   return esLineaCredito && ESTATUS_ACTIVOS_2O_PISO.includes(norm(estatus));
+}
+
+/**
+ * `data.solicitud.expediente_electronico.documentos` → `DocumentoCargado[]`.
+ *
+ * El Core persiste el expediente en snake_case (`tipo_documento`,
+ * `archivo_adjunto`, `fase_id`…) mientras que ExpedienteElectronicoTab consume
+ * camelCase. Sin esta traduccion los documentos llegaban pero se veian en
+ * blanco: cada fila existia con todos sus campos en undefined.
+ */
+function mapDocumentosExpediente(rawSolicitud: any, dataObj: any): DocumentoCargado[] {
+  const raw =
+    (Array.isArray(rawSolicitud?.expediente_electronico?.documentos)
+      ? rawSolicitud.expediente_electronico.documentos : null) ??
+    (Array.isArray(dataObj?.expediente_electronico?.documentos)
+      ? dataObj.expediente_electronico.documentos : null) ??
+    // Formas alternas por si algun flujo guardo el arreglo plano.
+    (Array.isArray(rawSolicitud?.documentos) ? rawSolicitud.documentos : null) ??
+    (Array.isArray(dataObj?.documentos) ? dataObj.documentos : null) ??
+    [];
+
+  return raw.map((d: any, idx: number) => ({
+    id: Number(d?.id) || idx + 1,
+    fecha:         String(d?.fecha_creacion   ?? d?.fecha         ?? ''),
+    usuario:       String(d?.usuario          ?? ''),
+    tipoDocumento: String(d?.tipo_documento   ?? d?.tipoDocumento ?? ''),
+    archivo:       String(d?.archivo_adjunto  ?? d?.archivo       ?? ''),
+    tipoArchivo:   String(d?.tipo_archivo     ?? d?.tipoArchivo   ?? ''),
+    nota:          String(d?.nota             ?? ''),
+    area:          String(d?.area             ?? ''),
+    fase:          String(d?.fase             ?? ''),
+    faseId:        Number(d?.fase_id          ?? d?.faseId        ?? 0) || 0,
+    estatus:      (d?.estatus ?? 'Pendiente') as DocumentoCargado['estatus'],
+    validadoIA:    Boolean(d?.validado_ia     ?? d?.validadoIA    ?? false),
+    url:           d?.url           ?? undefined,
+    storagePath:   d?.storage_path  ?? d?.storagePath   ?? undefined,
+    storageBucket: d?.storage_bucket?? d?.storageBucket ?? undefined,
+    mime:          d?.mime          ?? undefined,
+    tamanoKB:      d?.tamano_kb     ?? d?.tamanoKB      ?? undefined,
+    iaMotivos:     d?.ia_motivos    ?? d?.iaMotivos     ?? undefined,
+    iaExtraido:    d?.ia_extraido   ?? d?.iaExtraido    ?? undefined,
+  }));
 }
 
 /** Cargo tal como viaja en `data.solicitud.cargos` (snake_case del Core). */
@@ -147,6 +190,17 @@ export interface LineaCreditoRow extends CarteraCredito {
   sucursal?: string;
   idGarantiaCartera?: string;
   polizaContableApertura?: string;
+  /**
+   * Documentos del Expediente Electrónico, leídos de
+   * `data.solicitud.expediente_electronico.documentos`.
+   *
+   * Mismo motivo que `cargos`: ExpedienteElectronicoTab sólo mira
+   * sessionStorage/savedStore del namespace `sol_credito_`, que este módulo
+   * nunca llena porque se puede abrir sin haber pasado por el formulario de la
+   * Solicitud. Sin esto, la pestaña salía siempre vacía aunque la Solicitud y
+   * Originación sí tuvieran archivos cargados.
+   */
+  documentos: DocumentoCargado[];
   /** REQ-18 — `data.solicitud.banca2oPiso`, ya normalizado. */
   banca2oPiso: Banca2oPisoData;
   /**
@@ -890,6 +944,7 @@ export function useLineasCreditoActivas() {
             gobierno: r.institucion_gobierno || undefined,
             fechaSol: r.fecha_sol || r.fecha_autori || '',
             terminosRaw: t,
+            documentos: mapDocumentosExpediente(rawSolicitud, dataObj),
             cargos: cargosRaw.map((c: any) => ({
               tipoCargo: String(c?.tipo_cargo ?? c?.tipoCargo ?? c?.tipo_comision ?? c?.tipoComision ?? ''),
               descripcion: String(c?.descripcion ?? c?.tipo_comision ?? c?.tipoComision ?? ''),

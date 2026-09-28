@@ -2760,7 +2760,8 @@ const putCuentasAhorroHandler = async (c: any) => {
         producto_id  = ${producto_id}::uuid,
         producto_eje = ${producto_eje},
         cliente_id   = ${cliente_id}::uuid,
-        saldo_actual = COALESCE(${saldo_actual}::numeric, saldo_actual),
+        -- money, no numeric: ver nota en activarCuentaSolicitudHandler.
+        saldo_actual = COALESCE(${saldo_actual}::numeric::money, saldo_actual),
         monto_sol    = ${monto_sol}::numeric,
         monto_aut    = ${monto_aut}::numeric,
         monto_disp   = ${monto_disp}::numeric,
@@ -3659,7 +3660,14 @@ const activarCuentaSolicitudHandler = async (c: any) => {
         estatus_disp = ${estatus_disp},
         cta_eje_chec = COALESCE(${cta_eje_chec}, cta_eje_chec),
         no_cuenta    = COALESCE(${no_cuenta}, no_cuenta),
-        saldo_actual = COALESCE(${esLineaCredito ? null : saldoFinal}::numeric, saldo_actual),
+        -- saldo_actual es de tipo money. COALESCE no resuelve un tipo comun
+        -- entre numeric y money (no hay cast implicito money->numeric), asi que
+        -- COALESCE(<numeric>, <money>) revienta con "could not convert type
+        -- money to numeric". El SET a secas si funciona porque ahi aplica el
+        -- cast de asignacion numeric->money; dentro de COALESCE no. Hay que
+        -- llevar el parametro a money, como ya se hace en el UPDATE de
+        -- actualizar-solicitud (monto_sol/monto_aut/saldo_actual).
+        saldo_actual = COALESCE(${esLineaCredito ? null : saldoFinal}::numeric::money, saldo_actual),
         data         = ${newDataJson}::jsonb
       WHERE id = ${id}::uuid
     `;

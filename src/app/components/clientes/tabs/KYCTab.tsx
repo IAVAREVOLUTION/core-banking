@@ -304,14 +304,14 @@ export function KYCTab({ formData, updateFormData, isView, mode, clienteId }: KY
     <div className="flex-1">
       {/* Encabezado institucional con título y botones */}
       <div className="bg-primary-tint-theme border-l-4 border-primary-theme px-3 py-2 mb-3 flex items-center justify-between">
-        <span className="text-sm font-medium text-gray-800">KYC – CONOZCA A SU CLIENTE</span>
+        <span className="text-sm font-medium text-gray-800">Cédulas de Conocimiento del Cliente</span>
         {!isView && (
           <div className="flex items-center gap-2">
             <button
               onClick={handleNuevo}
               className="px-4 py-1.5 bg-[#00B0F0] text-white text-xs font-medium rounded hover:bg-[#0095D9]"
             >
-              Nuevo
+              Nueva Cédula
             </button>
             <button
               onClick={handleEliminar}
@@ -349,7 +349,7 @@ export function KYCTab({ formData, updateFormData, isView, mode, clienteId }: KY
             {registros.length === 0 ? (
               <tr>
                 <td colSpan={8} className="border-b border-gray-200 px-2 py-8 text-center text-xs text-gray-500">
-                  No hay registros KYC. Haga clic en "Nuevo" para agregar uno.
+                  No hay cédulas de conocimiento registradas. Haga clic en "Nueva Cédula" para agregar una.
                 </td>
               </tr>
             ) : (
@@ -407,7 +407,7 @@ export function KYCTab({ formData, updateFormData, isView, mode, clienteId }: KY
             {/* Header azul institucional */}
             <div className="bg-primary-theme px-6 py-4 flex items-center justify-between">
               <h3 className="text-base font-medium text-white">
-                {editingId !== null ? 'Editar Registro KYC' : 'Nuevo Registro KYC'}
+                {editingId !== null ? 'Editar Registro KYC' : 'Nueva Cédula de Conocimiento del Cliente'}
               </h3>
               <button
                 onClick={() => setShowModal(false)}
@@ -424,7 +424,7 @@ export function KYCTab({ formData, updateFormData, isView, mode, clienteId }: KY
               {/* Sección: Información KYC */}
               <div className="mb-6">
                 <div className="bg-[#E8E8E8] px-3 py-2 mb-4">
-                  <h3 className="text-xs font-semibold text-gray-700">Información KYC</h3>
+                  <h3 className="text-xs font-semibold text-gray-700">Datos de Conocimiento del Cliente</h3>
                 </div>
 
                 <div className="space-y-3">
@@ -606,7 +606,7 @@ export function KYCTab({ formData, updateFormData, isView, mode, clienteId }: KY
                   onClick={handleGuardarModal}
                   className="px-5 py-2 text-sm btn-accent-theme rounded text-xs hover:bg-accent-hover-theme font-medium"
                 >
-                  Guardar
+                  Guardar Cédula
                 </button>
               )}
             </div>

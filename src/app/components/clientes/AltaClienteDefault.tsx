@@ -1706,7 +1706,7 @@ export function AltaClienteDefault({ onBack, onSave, mode, cliente, onNavigateTo
               <circle cx="10" cy="6" r="3"/>
               <path d="M3 18c0-3.5 3-6 7-6s7 2.5 7 6"/>
             </svg>
-            <span className="text-sm text-gray-700 font-normal">Alta Persona</span>
+            <span className="text-sm text-gray-700 font-normal">Alta de Interlocutor Comercial</span>
             <button className="ml-2 p-1">
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#999" strokeWidth="2">
                 <circle cx="7" cy="7" r="5"/>
@@ -3474,6 +3474,12 @@ export function AltaClienteDefault({ onBack, onSave, mode, cliente, onNavigateTo
                 <CuentasBancariasTab
                   mode={mode}
                   clienteId={clienteId}
+                  // Sin esta prop el combo Beneficiario se quedaba SIEMPRE
+                  // deshabilitado, avisando "el cliente no tiene Personas
+                  // Relacionadas" aunque sí las tuviera: CuentasBancariasTab
+                  // las recibe por prop (no las vuelve a leer) y el valor por
+                  // defecto es [].
+                  personasRelacionadas={personasRelacionadas}
                 />
               )}
 

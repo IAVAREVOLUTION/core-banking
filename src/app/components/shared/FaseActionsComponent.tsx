@@ -252,7 +252,7 @@ export function FaseActionsComponent({
         <div className={`rounded px-4 py-3 mb-4 border ${flujoCerrado ? 'bg-[#F0FDF4] border-[#16A34A]' : 'bg-[#EBF3FB] border-[#4A6FA5]'}`}>
           <div className="flex items-center justify-between">
             <span className="text-xs text-gray-700">
-              <strong>Fase actual:</strong>{' '}
+              <strong>Etapa actual:</strong>{' '}
               {faseActualReal?.fase || formData.descripcionFase || '—'}
               {seqActual > 0 && (
                 <span className="ml-1 text-gray-400">(#{seqActual})</span>

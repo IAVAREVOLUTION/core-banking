@@ -167,6 +167,12 @@ export function Banca2oPisoDetalle({
               tipoPersona={row.tipoPersona}
               lineaProducto={row.lineaProducto}
               descripcionFase={row.descripcionFase}
+              // Los documentos llegan de la BD (data.solicitud.expediente_
+              // electronico.documentos). El tab solo lee sessionStorage del
+              // namespace sol_credito_, que este modulo nunca llena: se puede
+              // abrir sin haber pasado por el formulario de la Solicitud, y por
+              // eso la pestaña salia vacia aunque si hubiera archivos.
+              documentosIniciales={row.documentos}
               soloArchivos
             />
           </div>

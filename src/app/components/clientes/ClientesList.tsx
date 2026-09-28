@@ -205,7 +205,7 @@ export function ClientesList({
               <circle cx="12" cy="8" r="4"/>
               <path d="M4 20c0-4 3.5-7 8-7s8 3 8 7"/>
             </svg>
-            <h2 className="text-lg font-normal text-gray-800">Lista de Personas</h2>
+            <h2 className="text-lg font-normal text-gray-800">Lista de Interlocutores Comerciales</h2>
             <button className="p-1 ml-2">
               <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#999" strokeWidth="2">
                 <circle cx="8" cy="8" r="6"/>

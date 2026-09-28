@@ -130,6 +130,14 @@ interface ConsultaSIC {
   xmlResultado: string;
 }
 
+/**
+ * Homologación BANOBRAS (MD 02) — sólo presentación: el código almacenado
+ * sigue siendo "BURO"; en la columna Tipo de Consulta se muestra su nombre
+ * documentado. Cualquier otro valor se rinde tal cual.
+ */
+const etiquetaTipoConsultaSIC = (codigo: string): string =>
+  (codigo || '').trim().toUpperCase() === 'BURO' ? 'Buró de Crédito' : codigo;
+
 export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, nextId, onCalificarLead }: ProspectoFormProps) {
   const isView = mode === 'view';
   const isCreate = mode === 'create';
@@ -2116,7 +2124,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
               <div className="grid grid-cols-2 gap-x-6 gap-y-3 mb-4">
                 {/* Sector Infraestructura */}
                 <div className="flex items-center gap-2">
-                  <label className="text-xs w-40 flex-shrink-0 text-gray-700">SECTOR INFRAESTRUCTURA <span className="text-red-600">*</span></label>
+                  <label className="text-xs w-40 flex-shrink-0 text-gray-700">Sector de Atención <span className="text-red-600">*</span></label>
                   {isView ? (
                     <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100">{(formData as any).sectorInfraestructura || '—'}</div>
                   ) : (
@@ -2241,7 +2249,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
                         : 'bg-gray-300 text-gray-500 cursor-not-allowed'
                     }`}
                   >
-                    {calificando ? 'Calificando…' : 'Calificar Lead'}
+                    {calificando ? 'Calificando…' : 'Calificar Cliente Potencial'}
                   </button>
                 </div>
               )}
@@ -2535,7 +2543,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
                         <td className="px-3 py-2 border-r border-gray-300">
                           <input 
                             type="text" 
-                            value={consulta.tipoConsulta}
+                            value={etiquetaTipoConsultaSIC(consulta.tipoConsulta)}
                             readOnly
                             className="w-full px-1 py-0.5 text-xs border-0 bg-transparent"
                           />

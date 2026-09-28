@@ -3763,7 +3763,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
     // REQ-11 — Actividad 6.1 del BPM: Votación del Comité de Prepago y Crédito.
     ...(esGPOForm ? [{ id: 'votacionCPC', label: 'Votación CPC' }] : []),
     // REQ-12 — Actividad 6.2 del BPM: Autorización del Comité Interno de Crédito.
-    ...(esGPOForm ? [{ id: 'resolucionCIC', label: 'Resolución Final CIC' }] : []),
+    ...(esGPOForm ? [{ id: 'resolucionCIC', label: 'Resolución Final del Comité Interno de Crédito (CIC)' }] : []),
     // Actividad 7.1 del BPM: Confección y Validación de Cláusulas Fiduciarias.
     ...(esGPOForm ? [{ id: 'validacionClausulas', label: 'Validación de Cláusulas Fiduciarias' }] : []),
     {
@@ -4149,7 +4149,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
         )}
 
         <div className="bg-[#D9E2F3] border-l-4 border-[#4A6FA5] px-4 py-2 mb-5">
-          <h3 className="text-sm text-gray-800 uppercase">Información de la Solicitud</h3>
+          <h3 className="text-sm text-gray-800 uppercase">Datos Generales de la Solicitud</h3>
         </div>
 
         {/* Formulario general reorganizado por grupos.
@@ -4167,7 +4167,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
             <input type="text" value={formData.id || 'Automático'} disabled className={ic(false, true)} />
           </div>
           <div>
-            <Lbl>N° Solicitud</Lbl>
+            <Lbl>Folio de Solicitud</Lbl>
             <input type="text" value={formData.noSol || 'Automático'} disabled className={ic(false, true)} />
           </div>
           <div>
@@ -4197,7 +4197,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
           {/* El selector de cliente es un control rico (nombre + tipo + folio):
               a una sola columna se truncaba, por eso ocupa dos. */}
           <div className="col-span-2">
-            <Lbl req error={errors.nombrePersona}>Cliente</Lbl>
+            <Lbl req error={errors.nombrePersona}>Solicitante (Emisor)</Lbl>
             <div
               onClick={() => !isRO && setShowClienteModal(true)}
               className={`flex items-center gap-2 px-3 py-2 text-xs border rounded-lg transition-colors ${
@@ -4222,7 +4222,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
                 <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-semibold shrink-0 ${
                   formData.tipoPersona === 'Moral' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'
                 }`}>
-                  {formData.tipoPersona}
+                  {CAT_TIPO_PERSONA.find(c => c.value === formData.tipoPersona)?.label || formData.tipoPersona}
                 </span>
               )}
               {formData.noCliente && (

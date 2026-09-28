@@ -280,7 +280,7 @@ export function CuentasBancariasTab({ mode, clienteId, personasRelacionadas = []
                       beneficiario: sel?.nombre || '',
                     }));
                   }}
-                  disabled={opcionesBeneficiario.length === 0}
+                  disabled={opcionesBeneficiario.length === 0 && !form.beneficiarioId}
                   className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded disabled:bg-gray-100"
                 >
                   <option value="">Seleccione...</option>
@@ -289,8 +289,18 @@ export function CuentasBancariasTab({ mode, clienteId, personasRelacionadas = []
                       {o.clave ? `${o.clave} — ${o.nombre}` : o.nombre}
                     </option>
                   ))}
+                  {/* Cuenta guardada cuyo beneficiario ya no figura en Personas
+                      Relacionadas (lo quitaron despues). Sin esta opcion el
+                      combo se veia vacio y parecia que la cuenta no tenia
+                      beneficiario, cuando si lo tiene guardado. */}
+                  {form.beneficiarioId
+                    && !opcionesBeneficiario.some(o => o.id === form.beneficiarioId) && (
+                    <option value={form.beneficiarioId}>
+                      {form.beneficiario || form.beneficiarioId} — ya no está en Personas Relacionadas
+                    </option>
+                  )}
                 </select>
-                {opcionesBeneficiario.length === 0 && (
+                {opcionesBeneficiario.length === 0 && !form.beneficiarioId && (
                   <span className="block text-[10px] text-amber-700 mt-1">
                     El cliente no tiene Personas Relacionadas. Agréguelas en esa subpestaña
                     para poder elegir un beneficiario (el titular también puede agregarse).

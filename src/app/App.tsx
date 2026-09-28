@@ -1157,7 +1157,7 @@ function App() {
                     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
                       <path d="M3 3h10M3 8h10M3 13h10"/>
                     </svg>
-                    <span>Lista de Personas</span>
+                    <span>Lista de Interlocutores Comerciales</span>
                   </button>
                   
                   {/* Tab dinámico que muestra el modo actual */}
@@ -1176,7 +1176,7 @@ function App() {
                       </svg>
                       <span>
                         {clienteFormMode === 'create' ? 'Nueva Persona' :
-                         clienteFormMode === 'edit' ? 'Editar Persona' :
+                         clienteFormMode === 'edit' ? 'Editar Interlocutor Comercial' :
                          'Ver Persona'}
                       </span>
                     </button>

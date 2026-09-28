@@ -246,15 +246,15 @@ export function EstructuraOperativa2oPisoTab({
 
       {/* ═══ Bloque A — heredados del CRM (solo lectura) ═══ */}
       <div className="bg-primary-light-theme px-3 py-2 mb-3 text-sm font-medium text-gray-800 border-l-4 border-primary-theme">
-        DATOS HEREDADOS DEL CRM
+        Datos de la Oportunidad de Origen
       </div>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-x-4 gap-y-3 mb-5">
         <div>
-          <label className="block text-xs text-gray-700 mb-1">Folio Solicitud LOS</label>
+          <label className="block text-xs text-gray-700 mb-1">Folio de Solicitud</label>
           <input type="text" value={folioSolicitudLOS || '—'} disabled className={roClass} />
         </div>
         <div>
-          <label className="block text-xs text-gray-700 mb-1">Folio de Origen CRM</label>
+          <label className="block text-xs text-gray-700 mb-1">Folio de Oportunidad de Origen</label>
           <input type="text" value={folioOrigenCRM || '—'} disabled className={roClass} />
         </div>
         <div>

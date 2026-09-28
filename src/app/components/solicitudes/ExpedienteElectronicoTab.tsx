@@ -1846,8 +1846,8 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-3">
             <h4 className="text-sm font-medium text-gray-800">
-              Requisitos del Producto
-              <span className="text-gray-500 font-normal ml-1">(Fase Actual: {faseIdActual})</span>
+              Requisitos Documentales
+              <span className="text-gray-500 font-normal ml-1">(Etapa Actual: {faseIdActual})</span>
             </h4>
             {fasePromptIA && (
               <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-purple-100 text-purple-700 text-[10px] font-medium rounded-full">
@@ -2171,7 +2171,7 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
                 </svg>
               </div>
               <div>
-                <h4 className="text-sm font-semibold text-gray-800">Documentos Cargados</h4>
+                <h4 className="text-sm font-semibold text-gray-800">Documentos del Expediente</h4>
                 <p className="text-[10px] text-gray-400 leading-tight">
                   {CURRENT_USER} &middot; {solicitudId === 'new' ? 'Nueva Solicitud' : `Sol. ${solicitudId}`}
                 </p>
@@ -2354,7 +2354,7 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
                     <th className="px-3 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Archivo</th>
                     <th className="px-3 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Formato</th>
                     <th className="px-3 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Nota</th>
-                    <th className="px-3 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Fase</th>
+                    <th className="px-3 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Etapa</th>
                     <th className="px-3 py-2.5 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Estatus</th>
                     <th className="px-3 py-2.5 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Acciones</th>
                   </tr>
