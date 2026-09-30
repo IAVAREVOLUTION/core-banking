@@ -104,6 +104,25 @@ export interface TerminosCondiciones {
   montoGarantizadoGpo?: string;
   tasaComisionAnualPactada?: string;
   periodicidadCobroGpo?: string;
+
+  // Línea Global de Carta de Crédito NAFIN (MD 02 §Regla) — heredados de la
+  // Oportunidad al Cierre Comercial. Sólo viajan cuando el producto es la Línea
+  // Global; una Solicitud BANOBRAS no los trae.
+  //
+  // Los montos NO se repiten aquí: `montoEmisionProyectado` y
+  // `porcentajeCoberturaGpo` son las mismas claves con otra etiqueta en
+  // pantalla (Monto de Línea Global y % Cobertura Máxima).
+  programa?: string;
+  /** `Automática` | `Selectiva` | `Ambas`. */
+  modalidadLinea?: string;
+  tipoLineaGlobal?: string;
+  permiteCartaComercial?: boolean;
+  permiteCartaStandby?: boolean;
+  montoMaximoSublinea?: string;
+  numeroIntermediarioNafin?: string;
+  tipoIntermediario?: string;
+  estatusIntermediarioNafin?: string;
+  fechaIncorporacionNafin?: string;
 }
 
 export interface RendimientoRow {

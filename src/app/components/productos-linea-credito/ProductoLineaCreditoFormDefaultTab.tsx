@@ -218,6 +218,9 @@ export function ProductoLineaCreditoFormDefaultTab({
                     <option value="">Seleccione...</option>
                     <option value="Capital de trabajo">Capital de trabajo</option>
                     <option value="Libre">Libre</option>
+                    {/* MD 01 — Tipo de Operación de las SubLíneas NAFIN reutiliza
+                        este campo en vez de crear uno nuevo (§Prioridad 1). */}
+                    <option value="Carta de Crédito">Carta de Crédito</option>
                   </select>
                 )}
               </div>

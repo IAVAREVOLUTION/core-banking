@@ -2417,7 +2417,7 @@ export function generarActaComitePDF(datos: DatosSolicitud): string {
       ['Tasa comisión anual pactada', t.tasaComisionAnualPactada ? `${t.tasaComisionAnualPactada}%` : '—'],
       ['Periodicidad cobro comisión', t.periodicidadCobroGpo || '—'],
       ['Plazo', t.plazo ? `${t.plazo}` : '—'],
-      ['Sector de infraestructura', t.sectorInfraestructura || '—'],
+      ['Sector', t.sectorInfraestructura || '—'],
     ],
     theme: 'grid',
     headStyles: { fillColor: COMITE_PRIMARY, fontSize: 8.5 },

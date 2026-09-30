@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Carta Oferta — Línea Global de Garantías NAFIN</title>
+<style>
+  /* El generador captura UN solo elemento .page de 850px y lo rebana en A4,
+     así que aquí no se pagina a mano: basta con que el contenido fluya.
+     No usar imágenes ni fuentes externas — html2canvas las pierde o mancha
+     el canvas. */
+  * { box-sizing: border-box; }
+  .page {
+    width: 850px;
+    padding: 48px 60px 56px;
+    background: #fff;
+    color: #1f2937;
+    font-family: Georgia, 'Times New Roman', serif;
+    font-size: 13px;
+    line-height: 1.65;
+  }
+
+  .membrete { border-bottom: 3px solid #1e3a5f; padding-bottom: 14px; margin-bottom: 26px;
+              display: flex; justify-content: space-between; align-items: flex-end; }
+  .membrete .inst { font-size: 19px; font-weight: bold; color: #1e3a5f; letter-spacing: .3px; }
+  .membrete .prog { font-size: 11px; color: #6b7280; margin-top: 3px; }
+  .membrete .meta { text-align: right; font-size: 11px; color: #4b5563; line-height: 1.5; }
+  .membrete .meta strong { color: #1e3a5f; }
+
+  h1 { font-size: 15px; text-align: center; color: #1e3a5f; margin: 0 0 22px;
+       text-transform: uppercase; letter-spacing: 1px; }
+  h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .8px; color: #1e3a5f;
+       border-bottom: 1px solid #d1d5db; padding-bottom: 5px; margin: 26px 0 12px; }
+
+  .dest { margin-bottom: 20px; }
+  .dest .nom { font-size: 14px; font-weight: bold; color: #111827; }
+  .dest .sub { font-size: 11px; color: #6b7280; }
+
+  p { margin: 0 0 12px; text-align: justify; }
+
+  table { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
+  td { padding: 7px 10px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
+  td.k { width: 42%; color: #4b5563; font-size: 12px; }
+  td.v { font-weight: bold; color: #111827; }
+  tr.destacado td { background: #f1f5f9; border-bottom: 1px solid #cbd5e1; }
+  tr.destacado td.v { color: #1e3a5f; font-size: 14px; }
+
+  ol { margin: 0 0 12px; padding-left: 20px; }
+  li { margin-bottom: 7px; text-align: justify; }
+
+  .nota { background: #fffbeb; border-left: 3px solid #d97706; padding: 10px 14px;
+          font-size: 11px; color: #78350f; margin: 16px 0; }
+
+  .firmas { margin-top: 48px; display: flex; gap: 60px; }
+  .firma { flex: 1; text-align: center; }
+  .firma .linea { border-top: 1px solid #374151; margin-bottom: 6px; }
+  .firma .nom { font-weight: bold; font-size: 12px; }
+  .firma .rol { font-size: 10px; color: #6b7280; }
+
+  .pie { margin-top: 34px; padding-top: 12px; border-top: 1px solid #e5e7eb;
+         font-size: 9px; color: #9ca3af; text-align: center; line-height: 1.5; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <div class="membrete">
+    <div>
+      <div class="inst">Nacional Financiera, S.N.C.</div>
+      <div class="prog">{{PROGRAMA}}</div>
+    </div>
+    <div class="meta">
+      Folio <strong>{{ID_OPORTUNIDAD}}</strong><br>
+      Fecha de emisión: {{FECHA}}<br>
+      Estatus: {{ESTATUS}}
+    </div>
+  </div>
+
+  <h1>Carta Oferta — Línea Global de Garantías</h1>
+
+  <div class="dest">
+    <div class="nom">{{CLIENTE_EMISOR}}</div>
+    <div class="sub">
+      Intermediario Financiero · {{TIPO_INTERMEDIARIO}} ·
+      No. de Intermediario NAFIN {{NUMERO_INTERMEDIARIO_NAFIN}}<br>
+      Clave de cliente: {{CLAVE_CLIENTE}} · Sector de atención: {{SECTOR}}
+    </div>
+  </div>
+
+  <p>
+    Por medio del presente documento, Nacional Financiera, S.N.C. (en adelante
+    <strong>NAFIN</strong>) manifiesta su interés en otorgar a
+    <strong>{{CLIENTE_EMISOR}}</strong>, en su carácter de Intermediario Financiero,
+    una <strong>Línea Global de Garantías</strong> destinada a respaldar operaciones
+    de Carta de Crédito, conforme a los términos y condiciones que se detallan a
+    continuación.
+  </p>
+
+  <p>
+    Esta Carta Oferta no constituye una obligación de otorgamiento. Su formalización
+    queda sujeta al proceso de originación, a la aprobación de las instancias
+    facultadas de NAFIN y a la suscripción de los instrumentos jurídicos
+    correspondientes.
+  </p>
+
+  <h2>Condiciones de la Línea Global</h2>
+  <table>
+    <tr><td class="k">Producto</td><td class="v">{{PRODUCTO}}</td></tr>
+    <tr><td class="k">Programa</td><td class="v">{{PROGRAMA}}</td></tr>
+    <tr class="destacado">
+      <td class="k">Monto de la Línea Global</td>
+      <td class="v">{{MONTO_EMISION}} {{MONEDA}}</td>
+    </tr>
+    <tr><td class="k">Tipo de Línea</td><td class="v">{{TIPO_LINEA_GLOBAL}}</td></tr>
+    <tr><td class="k">Vigencia de la Línea</td><td class="v">{{PLAZO_BONOS}} años</td></tr>
+    <tr><td class="k">Moneda</td><td class="v">{{MONEDA}}</td></tr>
+    <tr><td class="k">Monto estimado de operaciones</td><td class="v">{{MONTO_INVERSION}}</td></tr>
+  </table>
+
+  <h2>Cobertura de la Garantía</h2>
+  <table>
+    <tr><td class="k">Porcentaje de cobertura máxima</td><td class="v">{{PORCENTAJE_COBERTURA_GPO}}</td></tr>
+    <tr class="destacado">
+      <td class="k">Monto máximo garantizado</td>
+      <td class="v">{{MONTO_MAXIMO_GARANTIZADO}} {{MONEDA}}</td>
+    </tr>
+    <tr><td class="k">Monto máximo por SubLínea</td><td class="v">{{MONTO_MAXIMO_SUBLINEA}}</td></tr>
+  </table>
+
+  <p>
+    El <strong>Monto Máximo Garantizado</strong> resulta de aplicar el porcentaje de
+    cobertura al monto de la Línea Global, y representa el importe máximo que NAFIN
+    compromete bajo este instrumento. La Línea Global se consume únicamente por el
+    monto garantizado de cada operación, no por el valor nominal de las Cartas de
+    Crédito emitidas.
+  </p>
+
+  <h2>Operaciones Elegibles</h2>
+  <table>
+    <tr><td class="k">Tipos de Carta de Crédito</td><td class="v">{{OPERACIONES_ELEGIBLES}}</td></tr>
+    <tr><td class="k">Modalidad de resolución</td><td class="v">{{MODALIDAD_LINEA}}</td></tr>
+  </table>
+
+  <p>
+    Cada disposición de la Línea Global se tramitará como una SubLínea
+    independiente. Bajo la modalidad <strong>Automática</strong>, la SubLínea se
+    resuelve mediante la aplicación de las reglas paramétricas configuradas; bajo
+    la modalidad <strong>Selectiva</strong>, la operación se somete al proceso de
+    evaluación y autorización individual.
+  </p>
+
+  <h2>Comisiones</h2>
+  <table>
+    <tr><td class="k">Tasa de comisión anual</td><td class="v">{{TASA_COMISION_ANUAL}}</td></tr>
+    <tr><td class="k">Periodicidad de cobro</td><td class="v">{{PERIODICIDAD_COBRO}}</td></tr>
+    <tr><td class="k">Ingreso anual estimado por comisiones</td><td class="v">{{INGRESO_ANUAL_COMISIONES}}</td></tr>
+  </table>
+
+  <p>
+    La comisión se calcula sobre el saldo garantizado vigente y se devenga durante
+    toda la vigencia de la Línea Global, con independencia del nivel de utilización.
+  </p>
+
+  <h2>Situación del Intermediario ante NAFIN</h2>
+  <table>
+    <tr><td class="k">Número de Intermediario</td><td class="v">{{NUMERO_INTERMEDIARIO_NAFIN}}</td></tr>
+    <tr><td class="k">Tipo de Intermediario</td><td class="v">{{TIPO_INTERMEDIARIO}}</td></tr>
+    <tr><td class="k">Estatus</td><td class="v">{{ESTATUS_INTERMEDIARIO_NAFIN}}</td></tr>
+    <tr><td class="k">Fecha de incorporación</td><td class="v">{{FECHA_INCORPORACION_NAFIN}}</td></tr>
+  </table>
+
+  <div class="nota">
+    La vigencia del Intermediario Financiero ante NAFIN es condición necesaria para
+    el otorgamiento y la disposición de esta Línea Global. La suspensión o baja del
+    registro suspende la facultad de disponer, sin perjuicio de las obligaciones ya
+    contraídas.
+  </div>
+
+  <h2>Objeto</h2>
+  <p>{{DESCRIPCION_OBRA}}</p>
+
+  <h2>Condiciones Generales</h2>
+  <ol>
+    <li>La presente oferta tiene una vigencia de 30 días naturales contados a partir
+        de su fecha de emisión.</li>
+    <li>El otorgamiento queda sujeto a la integración satisfactoria del expediente,
+        a la evaluación de riesgo del Intermediario Financiero y a la autorización
+        de las instancias facultadas.</li>
+    <li>Las condiciones aquí expresadas podrán ajustarse como resultado del proceso
+        de evaluación, sin que ello genere responsabilidad alguna para NAFIN.</li>
+    <li>La disposición de la Línea Global está condicionada a que ésta se encuentre
+        activa y a que exista disponible suficiente al momento de cada solicitud.</li>
+    <li>La aceptación de esta Carta Oferta deberá constar por escrito mediante la
+        firma del representante legal del Intermediario Financiero.</li>
+  </ol>
+
+  <div class="firmas">
+    <div class="firma">
+      <div class="linea"></div>
+      <div class="nom">Nacional Financiera, S.N.C.</div>
+      <div class="rol">Representante facultado</div>
+    </div>
+    <div class="firma">
+      <div class="linea"></div>
+      <div class="nom">{{CLIENTE_EMISOR}}</div>
+      <div class="rol">Representante legal — Acepta de conformidad</div>
+    </div>
+  </div>
+
+  <div class="pie">
+    Documento generado por CACAO Banking el {{FECHA_HORA}} · Folio {{ID_OPORTUNIDAD}}<br>
+    Este documento es una oferta comercial y no constituye un contrato de crédito ni
+    una obligación de otorgamiento.
+  </div>
+
+</div>
+</body>
+</html>

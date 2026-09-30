@@ -263,10 +263,10 @@ export function OportunidadesDashboard({ oportunidades, onViewList, onView }: Pr
       {/* Gráficas complementarias */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
-        {/* Por Sector de Infraestructura */}
+        {/* Por Sector */}
         <div className="bg-white border border-gray-300 rounded">
           <div className="bg-white border-b border-gray-300 px-4 py-3">
-            <h2 className="text-base font-medium text-gray-900">Por Sector de Infraestructura</h2>
+            <h2 className="text-base font-medium text-gray-900">Por Sector</h2>
             <p className="text-xs text-gray-600 mt-0.5">Cantidad de oportunidades por sector</p>
           </div>
           <div className="p-4">

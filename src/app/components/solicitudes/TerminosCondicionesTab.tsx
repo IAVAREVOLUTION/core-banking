@@ -1732,7 +1732,7 @@ export function TerminosCondicionesTab({ mode, solicitudId, lineaProducto, tipoP
           </div>
           <div className="grid grid-cols-3 gap-x-6 gap-y-3 p-3">
             <div>
-              <label className="block text-xs text-gray-700 mb-1">Sector de Infraestructura</label>
+              <label className="block text-xs text-gray-700 mb-1">Sector</label>
               <input type="text" value={gpo('sectorInfraestructura') || '—'} disabled className={ic(true)} />
             </div>
             <div>

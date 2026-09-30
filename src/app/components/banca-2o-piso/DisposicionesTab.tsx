@@ -27,6 +27,9 @@ import {
   fmtMoneyExacto, parseMon, productosDisposicionDe, vincularDisposicion, lineaPadreDe,
   type LineaCreditoRow,
 } from './banca2oPisoStore';
+import {
+  esSubLineaCartaCredito, parametrosSubLinea, ESTADO_ACTIVA,
+} from '../../lib/sublineasCartaCredito';
 
 /** CA-08 — dd/mm/aaaa de hoy, mismo formato que el modal de Personas. */
 function hoyDisplay(): string {
@@ -121,6 +124,30 @@ export function DisposicionesTab({
   const saldo = row.saldoGarantia;
   const tieneSaldo = typeof saldo === 'number';
 
+  // ── SubLíneas de Carta de Crédito NAFIN (MD 04) ────────────────────────────
+  // El renglón del catálogo (`ProductoDisposicion`) sólo trae id y nombre: la
+  // configuración vive en el producto completo, así que se resuelve por id.
+  const productoElegido = useMemo(
+    () => productos.find(p => String(p.id) === String(productoId) || String(p.dbUuid) === String(productoId)),
+    [productos, productoId],
+  );
+  const esSubLinea = esSubLineaCartaCredito(productoElegido);
+  const paramsSubLinea = useMemo(
+    () => (esSubLinea ? parametrosSubLinea(productoElegido) : null),
+    [esSubLinea, productoElegido],
+  );
+
+  /**
+   * MD 04 §Reglas — la Línea Global debe estar ACTIVA para poder disponer.
+   * Sólo aplica cuando el producto lo exige (`requiereLineaGlobalActiva`), que
+   * es el default de las SubLíneas; los productos existentes no lo declaran y
+   * por tanto conservan su comportamiento (MD 12 §9).
+   */
+  const lineaNoActiva = Boolean(
+    paramsSubLinea?.requiereLineaGlobalActiva &&
+    String(row.estatus || '').trim().toUpperCase() !== ESTADO_ACTIVA,
+  );
+
   const abrirModal = () => {
     // CA-10 — no se deja crear con un producto arbitrario: el catálogo del
     // producto es justamente el control de qué se puede disponer (RN-04).
@@ -128,9 +155,18 @@ export function DisposicionesTab({
       toast.error(impedimento.titulo, { description: impedimento.detalle, duration: 9000 });
       return;
     }
-    setProductoId(catalogo.length === 1 ? catalogo[0].id : '');
+    const unico = catalogo.length === 1 ? catalogo[0].id : '';
+    setProductoId(unico);
     // CA-11 — el monto se precarga con el saldo de la línea padre.
-    setMontoSolicitado(tieneSaldo ? String(saldo) : '');
+    //
+    // MD 04 §Monto Solicitado — salvo para una Carta de Crédito: ahí el Monto
+    // Solicitado es el monto TOTAL DE LA CARTA, que no tiene por qué parecerse
+    // al saldo de la línea (la línea se consume sólo por el Monto Garantizado).
+    // Precargarlo con el saldo invitaría a capturar la cifra equivocada.
+    const unicoEsSubLinea = unico
+      ? esSubLineaCartaCredito(productos.find(p => String(p.id) === String(unico) || String(p.dbUuid) === String(unico)))
+      : false;
+    setMontoSolicitado(tieneSaldo && !unicoEsSubLinea ? String(saldo) : '');
     setDescripcion('');
     setShowModal(true);
   };
@@ -141,9 +177,44 @@ export function DisposicionesTab({
 
     const monto = parseMon(montoSolicitado);
     if (!(monto > 0)) { toast.error('El Monto Solicitado debe ser mayor a 0'); return; }
+
+    // ── MD 04 §Reglas — validaciones de SubLínea de Carta de Crédito ──────────
+    // Bloquean de verdad, a diferencia del aviso de saldo de abajo: una Línea
+    // Global inactiva o un monto fuera del rango configurado son incumplimientos
+    // de política, no advertencias. Sólo corren cuando el producto es SubLínea,
+    // así que los productos existentes no cambian (MD 12 §9).
+    if (paramsSubLinea) {
+      if (lineaNoActiva) {
+        toast.error('No se puede crear la disposición', {
+          description: `La Línea Global está en estatus "${row.estatus || '—'}" y el producto exige que esté ACTIVA.`,
+          duration: 10000,
+        });
+        return;
+      }
+      const { montoMinimo, montoMaximo } = paramsSubLinea;
+      if (montoMinimo > 0 && monto < montoMinimo) {
+        toast.error('Monto fuera del rango del producto', {
+          description: `El Monto de la Carta (${fmtMoneyExacto(monto)}) es menor al mínimo configurado (${fmtMoneyExacto(montoMinimo)}).`,
+          duration: 10000,
+        });
+        return;
+      }
+      if (montoMaximo > 0 && monto > montoMaximo) {
+        toast.error('Monto fuera del rango del producto', {
+          description: `El Monto de la Carta (${fmtMoneyExacto(monto)}) excede el máximo configurado (${fmtMoneyExacto(montoMaximo)}).`,
+          duration: 10000,
+        });
+        return;
+      }
+    }
     // §Decisión 4 — se advierte, no se bloquea: mientras el saldo no se descuente
     // al disponer (§Decisión 3), bloquear aquí produciría rechazos falsos.
-    if (tieneSaldo && monto > (saldo as number)) {
+    //
+    // No aplica a una Carta de Crédito: ahí el monto capturado es el de la carta
+    // y la línea se consume sólo por el Monto Garantizado (MD 00), que es una
+    // fracción. Comparar la carta contra el saldo dispararía la advertencia en
+    // operaciones perfectamente válidas.
+    if (!paramsSubLinea && tieneSaldo && monto > (saldo as number)) {
       toast.warning('El monto excede el saldo de la garantía', {
         description: `Saldo disponible: ${fmtMoneyExacto(saldo as number)}.`,
         duration: 7000,
@@ -317,6 +388,28 @@ export function DisposicionesTab({
               <div className="bg-blue-50 border-l-4 border-primary-theme px-3 py-2">
                 <span className="text-xs font-medium text-gray-800">INFORMACIÓN DE LA DISPOSICIÓN</span>
               </div>
+
+              {/* MD 04 — se avisa ANTES de capturar, no al guardar: si la Línea
+                  Global no está activa no hay nada que el usuario pueda hacer
+                  en este modal, y dejarlo llenar campos para rechazarlo al
+                  final es tiempo perdido. */}
+              {lineaNoActiva && (
+                <div className="bg-red-50 border-l-4 border-red-400 px-3 py-2 text-[11px] text-red-700">
+                  La Línea Global está en estatus <strong>{row.estatus || '—'}</strong> y este
+                  producto exige que esté <strong>ACTIVA</strong>. No se podrá crear la disposición.
+                </div>
+              )}
+
+              {paramsSubLinea && !lineaNoActiva && (
+                <div className="bg-amber-50 border-l-4 border-amber-400 px-3 py-2 text-[11px] text-amber-800">
+                  El <strong>Monto Solicitado</strong> es el monto total de la Carta de Crédito.
+                  La Línea Global se consumirá sólo por el Monto Garantizado, que se calcula
+                  en Términos y Condiciones.
+                  {paramsSubLinea.montoMaximo > 0 && (
+                    <> Rango permitido: {fmtMoneyExacto(paramsSubLinea.montoMinimo)} – {fmtMoneyExacto(paramsSubLinea.montoMaximo)}.</>
+                  )}
+                </div>
+              )}
 
               <div className="grid grid-cols-2 gap-x-4 gap-y-3 text-xs">
                 {/* CA-08 — hoy, no editable */}

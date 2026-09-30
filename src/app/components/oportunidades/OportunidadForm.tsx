@@ -14,6 +14,8 @@
  */
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { toast } from 'sonner';
+import { CAT_SECTOR, LABEL_SECTOR } from '../../lib/catalogosComerciales';
+import { esLineaGlobalCartaCredito } from '../../lib/sublineasCartaCredito';
 import type { CotizacionCredito, BitacoraEstatusOportunidad, ArchivoAdjuntoOportunidad, SolicitudLOSRef, BitacoraCierreComercial } from '../cotizaciones/cotizacionCreditoTypes';
 import { generarCartaOferta, subirCartaOferta, CartaOfertaError, subirDocumentoAceptacion, esPDFValido, DocumentoAceptacionError } from './cartaOfertaPDF';
 import { CAT_ESTATUS_OPORTUNIDAD, CAT_ESTATUS_OPORTUNIDAD_CIERRE, ESTATUS_OPORTUNIDAD_GANADA, ESTATUS_OPORTUNIDAD_PERDIDA } from '../cotizaciones/cotizacionCreditoTypes';
@@ -67,14 +69,8 @@ const CAT_ESTATUS_CORP_FIN = ['Pendiente', 'En Análisis', 'Aprobada', 'Rechazad
 /** HU-CRM-07 CA-02 */
 const CAT_PERIODICIDAD_COMISION = ['Mensual', 'Trimestral', 'Semestral', 'Anual'];
 
-/** Mismo catálogo del subtab Perfil de Prospecto (ProspectoForm.tsx) — se
- *  captura aquí solo cuando la Oportunidad se crea directa (sin Lead). */
-const CAT_SECTOR_INFRAESTRUCTURA = [
-  'Transporte/Carreteras',
-  'Energía',
-  'Agua/Medio Ambiente',
-  'Social/Urbano',
-];
+// El catálogo de Sector se comparte con el subtab Perfil de Prospecto — ver
+// lib/catalogosComerciales.ts. Estaba duplicado aquí carácter por carácter.
 
 /** Cierre Comercial — periodos por año para prorratear el ingreso anual estimado. */
 const PERIODOS_POR_ANIO: Record<string, number> = { Mensual: 12, Trimestral: 4, Semestral: 2, Anual: 1 };
@@ -208,6 +204,20 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
     () => productos.find(p => String(p.dbUuid || p.id) === String(form?.producto_id)),
     [productos, form?.producto_id],
   );
+
+  /**
+   * MD 02 — ¿la Oportunidad es de una Línea Global de Carta de Crédito?
+   *
+   * Decide qué se ve en la pestaña Default. Los campos actuales modelan una
+   * EMISIÓN BURSÁTIL garantizada (Monto Emisión, Plazo/Tasa Bonos, Descripción
+   * Obra), que es el producto de BANOBRAS; una Línea Global es un cupo del que
+   * cuelgan cartas de crédito y no tiene ni emisión ni bonos ni obra.
+   *
+   * Se resuelve con el mismo criterio que usan las SubLíneas —la configuración
+   * del producto, nunca su nombre visible (MD 12 §2)— y distingue al PADRE del
+   * HIJO por la naturaleza contingente.
+   */
+  const esLineaGlobalCC = useMemo(() => esLineaGlobalCartaCredito(productoSel), [productoSel]);
 
   // ── Cierre Comercial — RFC del emisor, no vive en la Oportunidad; se
   // resuelve del expediente del cliente ligado (payload lo exige). ──
@@ -407,11 +417,30 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
     if (!form.cliente_id) f.push('Cliente Emisor');
     if (!data.cliente?.nombreCompleto) f.push('Nombre del Emisor');
     if (!rfcEmisor) f.push('RFC del Emisor (no encontrado en el expediente del cliente)');
-    if (!data.sectorInfraestructura) f.push('Sector de Infraestructura');
-    if (montoEmision <= 0) f.push('Monto Emisión');
-    if (pctCobertura <= 0) f.push('% Cobertura GPO');
-    if (pctComision <= 0) f.push('Tasa Comisión Anual Pactada');
+    if (!data.sectorInfraestructura) f.push(LABEL_SECTOR);
+    // Las claves son las mismas para ambos productos; sólo cambia cómo se
+    // llaman en pantalla, y el mensaje debe decir lo que el usuario ve.
+    if (montoEmision <= 0) f.push(esLineaGlobalCC ? 'Monto de Línea Global Solicitado' : 'Monto Emisión');
+    if (pctCobertura <= 0) f.push(esLineaGlobalCC ? '% Cobertura Máxima' : '% Cobertura GPO');
+    if (pctComision <= 0) f.push('Tasa de Comisión Anual Pactada');
     if (!data.periodicidadCobroComision) f.push('Periodicidad de Cobro');
+
+    // ── MD 01 §Regla funcional / MD 02 ── exclusivo de Línea Global NAFIN.
+    // Va aquí y no sólo en el aviso de pantalla porque éste es el punto donde
+    // la Oportunidad se convierte en Solicitud: dejar pasar un IF no vigente
+    // crearía una Línea Global que nunca debió existir.
+    if (esLineaGlobalCC) {
+      if (!data.programa) f.push('Programa');
+      if (!data.modalidadLinea) f.push('Modalidad (Automática / Selectiva / Ambas)');
+      if (!data.permiteCartaComercial && !data.permiteCartaStandby) {
+        f.push('Operaciones elegibles (al menos un tipo de Carta)');
+      }
+      if (!data.estatusIntermediarioNafin) {
+        f.push('Estatus del Intermediario NAFIN');
+      } else if (data.estatusIntermediarioNafin !== 'Vigente') {
+        f.push('El Intermediario Financiero no se encuentra vigente en NAFIN');
+      }
+    }
     return f;
   };
 
@@ -618,6 +647,22 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
         // quedaba con la de la Oportunidad". Sembrarla deja el campo
         // editable con el valor heredado y permite cambiarlo de verdad.
         frecuencia: data.periodicidadCobroComision || '',
+
+        // ── MD 02 §Regla — la Solicitud hereda los datos comerciales ──
+        // Sólo se agregan cuando aplica, para que una Solicitud BANOBRAS no
+        // nazca con claves NAFIN vacías en su JSONB.
+        ...(esLineaGlobalCC ? {
+          programa: data.programa || '',
+          modalidadLinea: data.modalidadLinea || '',
+          tipoLineaGlobal: data.tipoLineaGlobal || '',
+          permiteCartaComercial: data.permiteCartaComercial ?? false,
+          permiteCartaStandby: data.permiteCartaStandby ?? false,
+          montoMaximoSublinea: data.montoMaximoSublinea || '',
+          numeroIntermediarioNafin: data.numeroIntermediarioNafin || '',
+          tipoIntermediario: data.tipoIntermediario || '',
+          estatusIntermediarioNafin: data.estatusIntermediarioNafin || '',
+          fechaIncorporacionNafin: data.fechaIncorporacionNafin || '',
+        } : {}),
       };
 
       // Pestaña Simulación — flujo de comisiones proyectado (no es amortización de crédito).
@@ -900,11 +945,22 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
   const faltantesCartaOferta = (): string[] => {
     const f: string[] = [];
     if (!form.producto_id) f.push('Producto');
-    if (montoEmision <= 0) f.push('Monto Emisión');
-    if (!data.plazoBonosAnios) f.push('Plazo Bonos');
-    if (!data.tasaBonosAnios) f.push('Tasa Bonos');
-    if (pctCobertura <= 0) f.push('% Cobertura GPO');
-    if (pctComision <= 0) f.push('Tasa Comisión Anual GPO');
+    if (montoEmision <= 0) {
+      f.push(esLineaGlobalCC ? 'Monto de Línea Global Solicitado' : 'Monto Emisión');
+    }
+    // `Plazo Bonos` y `Tasa Bonos` describen la EMISIÓN BURSÁTIL que garantiza
+    // el producto de BANOBRAS. Una Línea Global no emite nada, y por eso sus
+    // campos están ocultos en la pantalla: exigirlos aquí dejaba la Carta
+    // Oferta imposible de generar, pidiendo datos que el usuario no puede ver.
+    if (!esLineaGlobalCC) {
+      if (!data.plazoBonosAnios) f.push('Plazo Bonos');
+      if (!data.tasaBonosAnios) f.push('Tasa Bonos');
+    } else if (!data.plazoBonosAnios) {
+      // El mismo campo, con el sentido que sí tiene aquí: cuánto dura la línea.
+      f.push('Vigencia de la Línea (años)');
+    }
+    if (pctCobertura <= 0) f.push(esLineaGlobalCC ? '% Cobertura Máxima' : '% Cobertura GPO');
+    if (pctComision <= 0) f.push('Tasa de Comisión Anual');
     // HU-CRM-07 CA-04 — aquí es donde la periodicidad se vuelve exigible.
     if (!data.periodicidadCobroComision) f.push('Periodicidad Cobro Comisión');
     return f;
@@ -1129,7 +1185,7 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
                   className={fieldClass}
                 >
                   <option value="">— Seleccionar sector —</option>
-                  {CAT_SECTOR_INFRAESTRUCTURA.map(s => <option key={s} value={s}>{s}</option>)}
+                  {CAT_SECTOR.map(s => <option key={s} value={s}>{s}</option>)}
                 </select>
               ) : (
                 <input value={data.sectorInfraestructura || '—'} disabled className={readonlyClass} />
@@ -1179,7 +1235,7 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
                 </div>
 
                 {/* CA-02 — Monto Plazos Proyectado (Matriz Tasa Fija del producto) */}
-                <div className="flex flex-col">
+                <div className={esLineaGlobalCC ? 'hidden' : 'flex flex-col'}>
                   <label className="text-[10px] text-gray-600 mb-0.5">MONTO PLAZOS PROYECTADO</label>
                   <select
                     value={data.matrizTasaFijaSeleccionId || ''}
@@ -1202,7 +1258,7 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
                 </div>
 
                 {/* Plazo(s) del Producto — pickmap desde el producto seleccionado */}
-                <div className="flex flex-col">
+                <div className={esLineaGlobalCC ? 'hidden' : 'flex flex-col'}>
                   <label className="text-[10px] text-gray-600 mb-0.5">PLAZO(S) DEL PRODUCTO</label>
                   {!productoSel ? (
                     <div className={readonlyClass}>— Elija primero un producto —</div>
@@ -1231,7 +1287,7 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
 
                 {/* Monto Emisión — base del cálculo de CA-06 */}
                 <div className="flex flex-col">
-                  <label className="text-[10px] text-gray-600 mb-0.5">MONTO EMISIÓN</label>
+                  <label className="text-[10px] text-gray-600 mb-0.5">{esLineaGlobalCC ? 'MONTO DE LÍNEA GLOBAL SOLICITADO' : 'MONTO EMISIÓN'}</label>
                   <input
                     type="text"
                     inputMode="decimal"
@@ -1247,7 +1303,7 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
 
                 {/* CA-03 — Plazo Bonos (editable, RN-02) */}
                 <div className="flex flex-col">
-                  <label className="text-[10px] text-gray-600 mb-0.5">PLAZO BONOS (AÑOS)</label>
+                  <label className="text-[10px] text-gray-600 mb-0.5">{esLineaGlobalCC ? 'VIGENCIA DE LA LÍNEA (AÑOS)' : 'PLAZO BONOS (AÑOS)'}</label>
                   <input
                     type="number"
                     min={0}
@@ -1260,7 +1316,7 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
                 </div>
 
                 {/* CA-04 — Tasa Bonos (editable, RN-02) */}
-                <div className="flex flex-col">
+                <div className={esLineaGlobalCC ? 'hidden' : 'flex flex-col'}>
                   <label className="text-[10px] text-gray-600 mb-0.5">TASA BONOS (%)</label>
                   <input
                     type="text"
@@ -1275,7 +1331,7 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
 
                 {/* CA-05 — % Cobertura GPO Estimado */}
                 <div className="flex flex-col">
-                  <label className="text-[10px] text-gray-600 mb-0.5">% COBERTURA GPO ESTIMADO</label>
+                  <label className="text-[10px] text-gray-600 mb-0.5">{esLineaGlobalCC ? '% COBERTURA MÁXIMA ESTIMADA' : '% COBERTURA GPO ESTIMADO'}</label>
                   <select
                     value={data.cobertura2oPisoSeleccionId || ''}
                     disabled={isView || !productoSel}
@@ -1315,7 +1371,7 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
 
                 {/* ── Heredado del Lead (HU-CRM-03 CA-05) ── */}
                 <div className="flex flex-col">
-                  <label className="text-[10px] text-gray-600 mb-0.5">MONTO INVERSIÓN</label>
+                  <label className="text-[10px] text-gray-600 mb-0.5">{esLineaGlobalCC ? 'MONTO ESTIMADO DE OPERACIONES' : 'MONTO INVERSIÓN'}</label>
                   <input
                     type="text"
                     inputMode="decimal"
@@ -1339,7 +1395,7 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
                     <option value="EUR">EUR - Euro</option>
                   </select>
                 </div>
-                <div className="flex flex-col">
+                <div className={esLineaGlobalCC ? 'hidden' : 'flex flex-col'}>
                   <label className="text-[10px] text-gray-600 mb-0.5">TIPO FINANCIAMIENTO</label>
                   <select
                     value={data.tipoFinanciamiento || ''}
@@ -1353,7 +1409,7 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
                   </select>
                 </div>
                 <div className="flex flex-col md:col-span-3">
-                  <label className="text-[10px] text-gray-600 mb-0.5">DESCRIPCIÓN OBRA</label>
+                  <label className="text-[10px] text-gray-600 mb-0.5">{esLineaGlobalCC ? 'OBJETO / DESCRIPCIÓN DEL PROGRAMA' : 'DESCRIPCIÓN OBRA'}</label>
                   <textarea
                     rows={3}
                     maxLength={1000}
@@ -1365,12 +1421,164 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
                 </div>
               </div>
 
+              {/* ══ Línea Global de Carta de Crédito (MD 02) ══
+                  Sólo lo que la Oportunidad necesita para registrar la intención
+                  comercial. El detalle operativo de la línea (cobertura por
+                  sublínea, fechas exactas, estructura) se captura en la Fase 1
+                  de la Solicitud — aquí duplicarlo sería adelantar Originación. */}
+              {esLineaGlobalCC && (
+                <>
+                  {seccion('Línea Global de Carta de Crédito')}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-x-4 gap-y-2 p-3">
+                    <div className="flex flex-col">
+                      <label className="text-[10px] text-gray-600 mb-0.5">PROGRAMA</label>
+                      {isView ? (
+                        <div className={readonlyClass}>{data.programa || '—'}</div>
+                      ) : (
+                        <select value={data.programa || ''} disabled={isView}
+                          onChange={e => setData({ programa: e.target.value })} className={fieldClass}>
+                          <option value="">— Seleccionar —</option>
+                          <option value="Garantía para Carta de Crédito">Garantía para Carta de Crédito</option>
+                        </select>
+                      )}
+                    </div>
+
+                    <div className="flex flex-col">
+                      <label className="text-[10px] text-gray-600 mb-0.5">MODALIDAD</label>
+                      {isView ? (
+                        <div className={readonlyClass}>{data.modalidadLinea || '—'}</div>
+                      ) : (
+                        <select value={data.modalidadLinea || ''} disabled={isView}
+                          onChange={e => setData({ modalidadLinea: e.target.value })} className={fieldClass}>
+                          <option value="">— Seleccionar —</option>
+                          <option value="Automática">Automática</option>
+                          <option value="Selectiva">Selectiva</option>
+                          {/* Una Línea Global puede admitir las dos: de hecho es
+                              el caso normal, porque relaciona un producto hijo
+                              Automático y uno Selectivo en Productos Disposición.
+                              A nivel de PRODUCTO hijo no aplica — ahí la
+                              modalidad la fijan sus fases (MD 12 §3). */}
+                          <option value="Ambas">Ambas</option>
+                        </select>
+                      )}
+                    </div>
+
+                    <div className="flex flex-col">
+                      <label className="text-[10px] text-gray-600 mb-0.5">TIPO DE LÍNEA</label>
+                      {isView ? (
+                        <div className={readonlyClass}>{data.tipoLineaGlobal || '—'}</div>
+                      ) : (
+                        <select value={data.tipoLineaGlobal || ''} disabled={isView}
+                          onChange={e => setData({ tipoLineaGlobal: e.target.value })} className={fieldClass}>
+                          <option value="">— Seleccionar —</option>
+                          <option value="Revolvente">Revolvente</option>
+                          <option value="No Revolvente">No Revolvente</option>
+                        </select>
+                      )}
+                    </div>
+
+                    {/* Operaciones elegibles — acotan qué cartas podrá amparar la línea. */}
+                    <div className="flex flex-col">
+                      <label className="text-[10px] text-gray-600 mb-0.5">OPERACIONES ELEGIBLES</label>
+                      <div className="flex items-center gap-4 px-2 py-1 border border-gray-300 rounded bg-white h-[26px]">
+                        <label className="flex items-center gap-1 text-xs text-gray-700 cursor-pointer">
+                          <input type="checkbox" disabled={isView}
+                            checked={data.permiteCartaComercial ?? false}
+                            onChange={e => setData({ permiteCartaComercial: e.target.checked })} />
+                          Comercial
+                        </label>
+                        <label className="flex items-center gap-1 text-xs text-gray-700 cursor-pointer">
+                          <input type="checkbox" disabled={isView}
+                            checked={data.permiteCartaStandby ?? false}
+                            onChange={e => setData({ permiteCartaStandby: e.target.checked })} />
+                          Standby
+                        </label>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col">
+                      <label className="text-[10px] text-gray-600 mb-0.5">MONTO MÁXIMO POR SUBLÍNEA</label>
+                      <input type="text" inputMode="decimal" disabled={isView}
+                        value={data.montoMaximoSublinea || ''}
+                        onChange={e => setData({ montoMaximoSublinea: e.target.value })}
+                        placeholder="Tope por carta"
+                        className={isView ? readonlyClass : fieldClass} />
+                    </div>
+                  </div>
+
+                  {/* ── Intermediario Financiero (MD 01 / MD 03) ──
+                      Se capturan aquí mientras el maestro de Persona/Cliente no
+                      los tenga. En cuanto existan allá, esta sección debe pasar a
+                      consulta: el MD 03 prohíbe duplicar el maestro. */}
+                  {seccion('Intermediario Financiero NAFIN')}
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-x-4 gap-y-2 p-3">
+                    <div className="flex flex-col">
+                      <label className="text-[10px] text-gray-600 mb-0.5">No. INTERMEDIARIO NAFIN</label>
+                      <input type="text" disabled={isView}
+                        value={data.numeroIntermediarioNafin || ''}
+                        onChange={e => setData({ numeroIntermediarioNafin: e.target.value })}
+                        className={isView ? readonlyClass : fieldClass} />
+                    </div>
+
+                    <div className="flex flex-col">
+                      <label className="text-[10px] text-gray-600 mb-0.5">TIPO DE INTERMEDIARIO</label>
+                      {isView ? (
+                        <div className={readonlyClass}>{data.tipoIntermediario || '—'}</div>
+                      ) : (
+                        <select value={data.tipoIntermediario || ''} disabled={isView}
+                          onChange={e => setData({ tipoIntermediario: e.target.value })} className={fieldClass}>
+                          <option value="">— Seleccionar —</option>
+                          <option value="Banco">Banco</option>
+                          <option value="SOFOM">SOFOM</option>
+                          <option value="SOFIPO">SOFIPO</option>
+                          <option value="Unión de Crédito">Unión de Crédito</option>
+                          <option value="Otro">Otro</option>
+                        </select>
+                      )}
+                    </div>
+
+                    <div className="flex flex-col">
+                      <label className="text-[10px] text-gray-600 mb-0.5">ESTATUS NAFIN</label>
+                      {isView ? (
+                        <div className={readonlyClass}>{data.estatusIntermediarioNafin || '—'}</div>
+                      ) : (
+                        <select value={data.estatusIntermediarioNafin || ''} disabled={isView}
+                          onChange={e => setData({ estatusIntermediarioNafin: e.target.value })} className={fieldClass}>
+                          <option value="">— Seleccionar —</option>
+                          <option value="Vigente">Vigente</option>
+                          <option value="Suspendido">Suspendido</option>
+                          <option value="En incorporación">En incorporación</option>
+                        </select>
+                      )}
+                    </div>
+
+                    <div className="flex flex-col">
+                      <label className="text-[10px] text-gray-600 mb-0.5">FECHA DE INCORPORACIÓN</label>
+                      <input type="date" disabled={isView}
+                        value={data.fechaIncorporacionNafin || ''}
+                        onChange={e => setData({ fechaIncorporacionNafin: e.target.value })}
+                        className={isView ? readonlyClass : fieldClass} />
+                    </div>
+                  </div>
+
+                  {/* MD 01 §Regla funcional — el bloqueo real vive en el Cierre
+                      Comercial; aquí sólo se anticipa, para no dejar al usuario
+                      capturarlo todo y enterarse al final. */}
+                  {data.estatusIntermediarioNafin && data.estatusIntermediarioNafin !== 'Vigente' && (
+                    <div className="mx-3 mb-3 bg-red-50 border-l-4 border-red-400 px-3 py-2 text-[11px] text-red-700">
+                      No es posible solicitar una Línea Global. El Intermediario Financiero
+                      no se encuentra vigente en NAFIN.
+                    </div>
+                  )}
+                </>
+              )}
+
               {/* ── Cotización de Comisiones ── */}
               {seccion('Cotización de Comisiones')}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-x-4 gap-y-2 p-3">
                 {/* CA-01 — Tasa Comisión Anual GPO */}
                 <div className="flex flex-col">
-                  <label className="text-[10px] text-gray-600 mb-0.5">TASA COMISIÓN ANUAL GPO</label>
+                  <label className="text-[10px] text-gray-600 mb-0.5">{esLineaGlobalCC ? 'TASA DE COMISIÓN ANUAL' : 'TASA COMISIÓN ANUAL GPO'}</label>
                   <div className="relative">
                     <input
                       type="text"
@@ -1422,7 +1630,7 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
                 {/* Contexto heredado del producto — solo lectura para no duplicar
                     dónde se captura cada dato. */}
                 <div className="flex flex-col">
-                  <label className="text-[10px] text-gray-600 mb-0.5">% COBERTURA GPO</label>
+                  <label className="text-[10px] text-gray-600 mb-0.5">{esLineaGlobalCC ? '% COBERTURA MÁXIMA' : '% COBERTURA GPO'}</label>
                   <input
                     value={data.coberturaGPOPorcentaje ? `${data.coberturaGPOPorcentaje}%` : '—'}
                     disabled
@@ -1563,15 +1771,15 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
               {seccion('Resumen Definitivo')}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-x-4 gap-y-2 p-3">
                 <div className="flex flex-col">
-                  <label className="text-[10px] text-gray-600 mb-0.5">MONTO EMISIÓN</label>
+                  <label className="text-[10px] text-gray-600 mb-0.5">{esLineaGlobalCC ? 'MONTO DE LÍNEA GLOBAL SOLICITADO' : 'MONTO EMISIÓN'}</label>
                   <input value={formatMoney(montoEmision)} disabled className={`${readonlyClass} text-right font-mono`} />
                 </div>
                 <div className="flex flex-col">
-                  <label className="text-[10px] text-gray-600 mb-0.5">% COBERTURA GPO</label>
+                  <label className="text-[10px] text-gray-600 mb-0.5">{esLineaGlobalCC ? '% COBERTURA MÁXIMA' : '% COBERTURA GPO'}</label>
                   <input value={pctCobertura ? `${pctCobertura}%` : '—'} disabled className={`${readonlyClass} text-right font-mono`} />
                 </div>
                 <div className="flex flex-col">
-                  <label className="text-[10px] text-gray-600 mb-0.5">TASA COMISIÓN PACTADA</label>
+                  <label className="text-[10px] text-gray-600 mb-0.5">{esLineaGlobalCC ? 'TASA DE COMISIÓN ANUAL PACTADA' : 'TASA COMISIÓN PACTADA'}</label>
                   <input value={pctComision ? `${pctComision}%` : '—'} disabled className={`${readonlyClass} text-right font-mono`} />
                 </div>
                 <div className="flex flex-col">
@@ -1592,7 +1800,7 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
                   <input value={rfcEmisor || '— No encontrado en el expediente —'} disabled className={readonlyClass} />
                 </div>
                 <div className="flex flex-col">
-                  <label className="text-[10px] text-gray-600 mb-0.5">SECTOR DE INFRAESTRUCTURA</label>
+                  <label className="text-[10px] text-gray-600 mb-0.5">{LABEL_SECTOR.toUpperCase()}</label>
                   <input value={data.sectorInfraestructura || '—'} disabled className={readonlyClass} />
                 </div>
               </div>

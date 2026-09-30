@@ -176,6 +176,20 @@ function mapRowToProduct(row: ProductoLineaCreditoRow, index: number): ProductoL
     metodoInteres: def.metodoInteres || dp.metodoInteres || '',
     periodicidadIntereses: def.periodicidadIntereses || dp.periodicidadIntereses || '',
 
+    // ── SubLíneas de Carta de Crédito NAFIN (MD 01) ──
+    // Se lee de `default` y del nodo plano, igual que el resto de los campos de
+    // Default: el guardado los escribe en ambos.
+    naturalezaFinanciera: def.naturalezaFinanciera || dp.naturalezaFinanciera || '',
+    tipoCartaPermitida: def.tipoCartaPermitida || dp.tipoCartaPermitida || '',
+    modalidadResolucion: def.modalidadResolucion || dp.modalidadResolucion || '',
+    // Los tres controles arrancan en Sí cuando nunca se capturaron (MD 01
+    // §Valores recomendados): un dato ausente no debe relajar un control.
+    productoPadreRequerido: def.productoPadreRequerido ?? dp.productoPadreRequerido ?? true,
+    requiereLineaGlobalActiva: def.requiereLineaGlobalActiva ?? dp.requiereLineaGlobalActiva ?? true,
+    consumeDisponibleAlActivar: def.consumeDisponibleAlActivar ?? dp.consumeDisponibleAlActivar ?? true,
+    monedasPermitidas: Array.isArray(def.monedasPermitidas) ? def.monedasPermitidas
+      : (Array.isArray(dp.monedasPermitidas) ? dp.monedasPermitidas : undefined),
+
     // ── Nodos hijos (subtabs) — arrays maestro-detalle ──
     // Soporta AMBAS nomenclaturas:
     //   - Institucional (nueva): jerarquiaProductos, comitesCredito, periodicidad, exentoIVA, condicionesDisposicion, parametrosCalculo

@@ -10,6 +10,7 @@ import type { ProspectoDataCompleto } from '../../hooks/useCoreActivacionProspec
 import { CampoInstitucionGobierno } from '../ui/CatalogoInstitucionGobierno';
 import type { InstitucionGobiernoSeleccion } from '../ui/CatalogoInstitucionGobierno';
 import { useCatalogoClasificaciones } from '../../hooks/useCatalogoClasificaciones';
+import { CAT_SECTOR, LABEL_SECTOR } from '../../lib/catalogosComerciales';
 import { currentUser } from '../../data/mockData';
 
 // ═══════════════════════════════════════════════════════════════════
@@ -23,12 +24,8 @@ import { currentUser } from '../../data/mockData';
 // ═══════════════════════════════════════════════════════════════════
 // HU-CRM-02 — Catálogos de la pestaña Perfil
 // ═══════════════════════════════════════════════════════════════════
-const CAT_SECTOR_INFRAESTRUCTURA = [
-  'Transporte/Carreteras',
-  'Energía',
-  'Agua/Medio Ambiente',
-  'Social/Urbano',
-];
+// Sector vive en lib/catalogosComerciales.ts (ver import arriba): estaba
+// duplicado aquí y en OportunidadForm, y agregar un valor exigía tocar los dos.
 
 const CAT_TIPO_FINANCIAMIENTO = [
   'Emisión de Deuda Bursátil',
@@ -882,7 +879,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
   const validarPerfil = (): string[] => {
     const f = formData as any;
     const faltantes: string[] = [];
-    if (!f.sectorInfraestructura?.trim()) faltantes.push('Sector Infraestructura');
+    if (!f.sectorInfraestructura?.trim()) faltantes.push(LABEL_SECTOR);
     const monto = parseFloat(String(f.montoInversion ?? '').replace(/,/g, ''));
     if (isNaN(monto) || monto <= 0) faltantes.push('Monto Inversión');
     if (!f.monedaInversion?.trim()) faltantes.push('Moneda');
@@ -907,7 +904,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
   const motivoNoCalificable = leadYaCalificado
     ? 'Este Lead ya fue calificado previamente.'
     : !sectorCapturado
-      ? 'Capture el Sector Infraestructura para poder calificar.'
+      ? `Capture el ${LABEL_SECTOR} para poder calificar.`
       : montoInversionNum <= 0
         ? 'El Monto Inversión debe ser mayor a cero.'
         : '';
@@ -2073,9 +2070,10 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
               </div>
 
               <div className="grid grid-cols-2 gap-x-6 gap-y-3 mb-4">
-                {/* Sector Infraestructura */}
+                {/* Sector — la clave del dato sigue siendo `sectorInfraestructura`
+                    por compatibilidad; sólo cambia la etiqueta. */}
                 <div className="flex items-center gap-2">
-                  <label className="text-xs w-40 flex-shrink-0 text-gray-700">SECTOR INFRAESTRUCTURA <span className="text-red-600">*</span></label>
+                  <label className="text-xs w-40 flex-shrink-0 text-gray-700">{LABEL_SECTOR.toUpperCase()} <span className="text-red-600">*</span></label>
                   {isView ? (
                     <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100">{(formData as any).sectorInfraestructura || '—'}</div>
                   ) : (
@@ -2085,7 +2083,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
                       className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded bg-white"
                     >
                       <option value="">-- Seleccione --</option>
-                      {CAT_SECTOR_INFRAESTRUCTURA.map((sec) => (
+                      {CAT_SECTOR.map((sec) => (
                         <option key={sec} value={sec}>{sec}</option>
                       ))}
                     </select>

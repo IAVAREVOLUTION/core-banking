@@ -418,7 +418,7 @@ function TerminosLineaCreditoTab({ row }: { row: LineaCreditoRow }) {
 
   // Bloque 2o Piso — sólo se pinta si la Solicitud trae esos campos (REQ-8/REQ-14).
   const gpo: Array<[string, string]> = [
-    ['Sector de infraestructura', val(t.sectorInfraestructura)],
+    ['Sector', val(t.sectorInfraestructura)],
     ['Monto de emisión proyectado', money(t.montoEmisionProyectado)],
     ['Plazo de los bonos (años)', val(t.plazoBonosAnios)],
     ['% de cobertura GPO', t.porcentajeCoberturaGpo ? `${t.porcentajeCoberturaGpo}%` : '—'],

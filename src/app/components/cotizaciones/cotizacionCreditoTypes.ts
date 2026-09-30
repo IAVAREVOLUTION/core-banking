@@ -120,6 +120,43 @@ export interface CotizacionCreditoData {
   /** HU-CRM-07 — Mensual | Trimestral | Semestral. */
   periodicidadCobroComision?: string;
 
+  // ── Línea Global de Carta de Crédito NAFIN (MD 02) ──────────────────────
+  // Sólo se capturan cuando el producto seleccionado es la Línea Global de
+  // Carta de Crédito. Los demás datos que pide el MD 02 NO se duplican aquí:
+  // reutilizan las claves que ya existían, con otra etiqueta en pantalla —
+  //   Monto de Línea Global  → montoEmision
+  //   % Cobertura Máxima     → coberturaGPOPorcentaje
+  //   Tasa de Comisión Anual → comisionGPOPorcentaje
+  //   Vigencia de la Línea   → plazoBonosAnios
+  //   Objeto / Descripción   → descripcionObra
+  // Renombrar esas claves rompería las Oportunidades ya guardadas y la
+  // aritmética del Cierre Comercial, que es correcta tal cual.
+
+  /** Programa bajo el que se otorga la línea. Hoy: "Garantía para Carta de Crédito". */
+  programa?: string;
+  /**
+   * `Automática` | `Selectiva` | `Ambas` — cómo se resolverán las SubLíneas.
+   * `Ambas` es el caso normal: la Línea Global relaciona un producto hijo
+   * Automático y uno Selectivo en Productos Disposición.
+   */
+  modalidadLinea?: string;
+  /** Tipos de carta que la línea podrá amparar. */
+  permiteCartaComercial?: boolean;
+  permiteCartaStandby?: boolean;
+  /** `Revolvente` | `No Revolvente`. */
+  tipoLineaGlobal?: string;
+  /** Tope por cada SubLínea; acota el Monto Garantizado de cada carta (MD 05). */
+  montoMaximoSublinea?: string;
+
+  // Datos del Intermediario Financiero (MD 01 / MD 03).
+  // Idealmente se heredan del maestro de Persona/Cliente; mientras ese módulo no
+  // los tenga, se capturan aquí para no bloquear la operación.
+  numeroIntermediarioNafin?: string;
+  tipoIntermediario?: string;
+  /** `Vigente` | `Suspendido` | `En incorporación`. Sólo Vigente puede continuar. */
+  estatusIntermediarioNafin?: string;
+  fechaIncorporacionNafin?: string;
+
   /** HU-CRM-09 CA-03 — Log de auditoría de cambios de estatus. */
   bitacoraEstatus?: BitacoraEstatusOportunidad[];
 

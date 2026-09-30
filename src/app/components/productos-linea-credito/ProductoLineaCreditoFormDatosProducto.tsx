@@ -12,7 +12,7 @@ interface TasaReferenciaItem {
 interface ProductoLineaCreditoFormDatosProductoProps {
   formData: ProductoLineaCredito;
   mode: FormModeLineaCredito;
-  handleChange: (field: keyof ProductoLineaCredito, value: string | number | boolean) => void;
+  handleChange: (field: keyof ProductoLineaCredito, value: string | number | boolean | string[]) => void;
   tasasReferencia?: TasaReferenciaItem[];
 }
 
@@ -42,6 +42,23 @@ export function ProductoLineaCreditoFormDatosProducto({
   const inputClass = 'w-full px-2.5 py-1.5 text-xs border border-gray-300 rounded focus:border-[#4A6FA5] focus:ring-1 focus:ring-[#4A6FA5]/20 outline-none transition-colors';
   const labelClass = 'block text-[11px] font-medium text-gray-600 mb-1';
   const requiredStar = <span className="text-red-500 ml-0.5">*</span>;
+
+  // ── SubLíneas de Carta de Crédito (MD 01) ──
+  // Se reproducen aquí las dos condiciones que `lib/sublineasCartaCredito.ts`
+  // evalúa, pero SÓLO para decidir qué pintar. La identificación real del
+  // producto la hace ese módulo (MD 12 §2): esta pantalla no debe ser una
+  // segunda fuente de verdad.
+  const esContingente = (formData.naturalezaFinanciera || '').trim() === 'Contingente';
+  const esCartaCredito = (formData.destino || '').toLowerCase().includes('carta');
+  const tieneFases = Array.isArray(formData.fases) && formData.fases.length > 0;
+  // MD 12 §3 — con fases configuradas la modalidad es Selectiva, sin importar
+  // lo que diga el campo; por eso el select se deshabilita en ese caso.
+  const modalidadEfectiva = tieneFases
+    ? 'Selectiva'
+    : (formData.modalidadResolucion || 'Automatica') === 'Selectiva'
+      ? 'Selectiva'
+      : 'Automática';
+  const monedasSel = Array.isArray(formData.monedasPermitidas) ? formData.monedasPermitidas : [];
 
   return (
     <div className="space-y-5">
@@ -122,8 +139,12 @@ export function ProductoLineaCreditoFormDatosProducto({
                 <option value="Simple">Simple</option>
                 <option value="Arrendamiento">Arrendamiento</option>
                 <option value="Global">Global</option>
-                {/* Habilita los subtabs Prelación 2o Piso y Cobertura y Comisiones 2o Piso */}
                 <option value="Garantía Financiera 2o Piso">Garantía Financiera 2o Piso</option>
+                {/* SubLíneas de Carta de Crédito NAFIN. Es sólo la clasificación
+                    del producto: quien decide si es una SubLínea son Naturaleza
+                    Financiera + Destino (ver sección "Naturaleza del Producto"),
+                    no este campo. */}
+                <option value="Carta de Crédito">Carta de Crédito</option>
               </select>
             )}
           </div>
@@ -355,6 +376,162 @@ export function ProductoLineaCreditoFormDatosProducto({
             )}
           </div>
         </div>
+      </div>
+
+      {/* ═══ Sección 4: Naturaleza y SubLínea de Carta de Crédito (MD 01) ═══ */}
+      {/* `Naturaleza Financiera` se muestra siempre —es lo que clasifica al
+          producto— y el resto sólo aparece cuando es Contingente. Así la pantalla
+          de los productos existentes (BANOBRAS incluido) no cambia más que por
+          un campo opcional: MD 12 §9, no regresión. */}
+      <div>
+        <div className="flex items-center gap-2 mb-3">
+          <div className="w-1.5 h-1.5 rounded-full bg-[#4A6FA5]" />
+          <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">
+            Naturaleza del Producto
+          </span>
+        </div>
+        <div className="grid grid-cols-4 gap-x-4 gap-y-3">
+          {/* Naturaleza Financiera */}
+          <div>
+            <label className={labelClass}>Naturaleza Financiera</label>
+            {isView ? (
+              <div className={viewFieldClass}>{formData.naturalezaFinanciera || '—'}</div>
+            ) : (
+              <select
+                value={formData.naturalezaFinanciera || ''}
+                onChange={(e) => handleChange('naturalezaFinanciera', e.target.value)}
+                className={inputClass}
+              >
+                <option value="">Seleccione...</option>
+                <option value="Crédito">Crédito</option>
+                <option value="Contingente">Contingente</option>
+              </select>
+            )}
+          </div>
+
+          {esContingente && (
+            <>
+              {/* Tipo de Carta Permitida */}
+              <div>
+                <label className={labelClass}>Tipo de Carta Permitida</label>
+                {isView ? (
+                  <div className={viewFieldClass}>{formData.tipoCartaPermitida || 'Ambas'}</div>
+                ) : (
+                  <select
+                    value={formData.tipoCartaPermitida || ''}
+                    onChange={(e) => handleChange('tipoCartaPermitida', e.target.value)}
+                    className={inputClass}
+                  >
+                    <option value="">Ambas (sin restricción)</option>
+                    <option value="Comercial">Comercial</option>
+                    <option value="Standby">Standby</option>
+                    <option value="Ambas">Ambas</option>
+                  </select>
+                )}
+              </div>
+
+              {/* Modalidad de Resolución */}
+              <div>
+                <label className={labelClass}>Modalidad de Resolución</label>
+                {isView ? (
+                  <div className={viewFieldClass}>{modalidadEfectiva}</div>
+                ) : (
+                  <>
+                    <select
+                      value={formData.modalidadResolucion || ''}
+                      onChange={(e) => handleChange('modalidadResolucion', e.target.value)}
+                      disabled={tieneFases}
+                      className={`${inputClass} disabled:bg-gray-100 disabled:text-gray-500`}
+                    >
+                      <option value="">Seleccione...</option>
+                      <option value="Automatica">Automática</option>
+                      <option value="Selectiva">Selectiva</option>
+                    </select>
+                    <span className="text-[9px] text-gray-400 mt-0.5 block">
+                      {tieneFases
+                        ? 'Selectiva: el producto tiene fases configuradas'
+                        : 'Sin fases configuradas → Automática'}
+                    </span>
+                  </>
+                )}
+              </div>
+
+              {/* Monedas Permitidas */}
+              <div>
+                <label className={labelClass}>Monedas Permitidas</label>
+                {isView ? (
+                  <div className={viewFieldClass}>
+                    {monedasSel.length > 0 ? monedasSel.join(', ') : formData.moneda || '—'}
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-3 h-[30px]">
+                    {['MXN', 'USD', 'EUR'].map(m => (
+                      <label key={m} className="flex items-center gap-1 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={monedasSel.includes(m)}
+                          onChange={(e) =>
+                            handleChange(
+                              'monedasPermitidas',
+                              e.target.checked
+                                ? [...monedasSel, m]
+                                : monedasSel.filter(x => x !== m),
+                            )
+                          }
+                          className="w-3 h-3 accent-[#4A6FA5]"
+                        />
+                        <span className="text-[11px] text-gray-600">{m}</span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* Banderas de control — sólo para productos contingentes */}
+        {esContingente && (
+          <div className="grid grid-cols-4 gap-x-4 gap-y-3 mt-3">
+            {([
+              ['productoPadreRequerido',     'Producto Padre Requerido'],
+              ['requiereLineaGlobalActiva',  'Requiere Línea Global Activa'],
+              ['consumeDisponibleAlActivar', 'Consume Disponible al Activar'],
+            ] as const).map(([campo, etiqueta]) => {
+              // Los tres arrancan en Sí: son controles, y un campo sin capturar
+              // no debe relajarlos (MD 01 §Valores recomendados).
+              const valor = formData[campo] ?? true;
+              return (
+                <div key={campo}>
+                  <label className={labelClass}>{etiqueta}</label>
+                  {isView ? (
+                    <div className={viewFieldClass}>{valor ? 'Sí' : 'No'}</div>
+                  ) : (
+                    <div className="flex items-center gap-2 h-[30px]">
+                      <label className="relative inline-flex items-center cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={valor}
+                          onChange={(e) => handleChange(campo, e.target.checked)}
+                          className="sr-only peer"
+                        />
+                        <div className="w-8 h-[18px] bg-gray-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:rounded-full after:h-[14px] after:w-[14px] after:transition-all peer-checked:bg-[#4A6FA5]"></div>
+                      </label>
+                      <span className="text-xs text-gray-600">{valor ? 'Sí' : 'No'}</span>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {esContingente && !esCartaCredito && (
+          <div className="mt-3 text-[10px] text-amber-600">
+            Para que se reconozca como SubLínea de Carta de Crédito, seleccione
+            <strong> Destino = Carta de Crédito</strong> en la pestaña Default.
+          </div>
+        )}
       </div>
     </div>
   );

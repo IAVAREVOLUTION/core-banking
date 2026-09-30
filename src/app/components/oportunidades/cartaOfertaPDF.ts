@@ -65,6 +65,23 @@ export function construirDatosCartaOferta(o: CotizacionCredito): Record<string, 
     TASA_COMISION_ANUAL: pctComision ? `${pctComision}%` : '',
     PERIODICIDAD_COBRO: d.periodicidadCobroComision || '',
     INGRESO_ANUAL_COMISIONES: fmtMoney(ingresoAnual),
+
+    // ── Línea Global de Carta de Crédito NAFIN (MD 02) ──
+    // Se exponen siempre; una plantilla BANOBRAS simplemente no los referencia.
+    // Los montos reutilizan los placeholders de arriba: MONTO_EMISION es el
+    // Monto de Línea Global y PORCENTAJE_COBERTURA_GPO la Cobertura Máxima.
+    PROGRAMA: d.programa || '',
+    MODALIDAD_LINEA: d.modalidadLinea || '',
+    TIPO_LINEA_GLOBAL: d.tipoLineaGlobal || '',
+    OPERACIONES_ELEGIBLES: [
+      d.permiteCartaComercial ? 'Carta de Crédito Comercial' : '',
+      d.permiteCartaStandby ? 'Carta de Crédito Standby' : '',
+    ].filter(Boolean).join(' · '),
+    MONTO_MAXIMO_SUBLINEA: d.montoMaximoSublinea ? fmtMoney(toNum(d.montoMaximoSublinea)) : '',
+    NUMERO_INTERMEDIARIO_NAFIN: d.numeroIntermediarioNafin || '',
+    TIPO_INTERMEDIARIO: d.tipoIntermediario || '',
+    ESTATUS_INTERMEDIARIO_NAFIN: d.estatusIntermediarioNafin || '',
+    FECHA_INCORPORACION_NAFIN: d.fechaIncorporacionNafin || '',
   };
 }
 

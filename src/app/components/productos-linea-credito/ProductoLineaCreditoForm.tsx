@@ -181,7 +181,9 @@ export function ProductoLineaCreditoForm({
 
   const handleChange = (
     field: keyof ProductoLineaCredito,
-    value: string | number | boolean
+    // `string[]` lo requiere `monedasPermitidas` (MD 01). El cuerpo ya era
+    // agnóstico al tipo; sólo la firma lo restringía.
+    value: string | number | boolean | string[]
   ) => {
     setFormData((prev) => ({
       ...prev,
@@ -320,6 +322,15 @@ export function ProductoLineaCreditoForm({
           permiteSobregiros: formData.permiteSobregiros || false,
           tipoSobregiro: formData.tipoSobregiro || '',
           montoOPorcentaje: formData.montoOPorcentaje || '',
+          // SubLíneas de Carta de Crédito NAFIN (MD 01). Los demás parámetros
+          // que pide ese MD viajan en los campos que ya existían.
+          naturalezaFinanciera: formData.naturalezaFinanciera || '',
+          tipoCartaPermitida: formData.tipoCartaPermitida || '',
+          modalidadResolucion: formData.modalidadResolucion || '',
+          productoPadreRequerido: formData.productoPadreRequerido ?? true,
+          requiereLineaGlobalActiva: formData.requiereLineaGlobalActiva ?? true,
+          consumeDisponibleAlActivar: formData.consumeDisponibleAlActivar ?? true,
+          monedasPermitidas: Array.isArray(formData.monedasPermitidas) ? formData.monedasPermitidas : [],
           numDisposicionesAbiertas: formData.numDisposicionesAbiertas || '',
           intervaloCleanUp: formData.intervaloCleanUp || '',
           verificacionCleanUp: formData.verificacionCleanUp || false,

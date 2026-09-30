@@ -224,4 +224,35 @@ export interface ProductoLineaCredito {
   formaDevengo?: string;
   metodoInteres?: string;
   periodicidadIntereses?: string;
+
+  // ══════════════════════════════════════════════════════════════════
+  // SubLíneas de Carta de Crédito NAFIN (MD 01)
+  // ══════════════════════════════════════════════════════════════════
+  // Sólo estos campos son nuevos. El resto de los parámetros que pide el MD 01
+  // ya existían y se reutilizan (MD 01 §Prioridad 1), así que NO se duplican:
+  //   Monto mín/máx de SubLínea → montoMinimo / montoMaximo
+  //   Plazo mín/máx             → plazoMinimoDisposicion / plazoMaximoDisposicion
+  //   Cobertura y Comisión      → cobertura2oPiso[] (subtab existente)
+  //   Permite Sobregiro         → permiteSobregiros
+  //   Tipo de Operación         → destino ('Carta de Crédito')
+  // La lógica que los consume vive en `lib/sublineasCartaCredito.ts`.
+
+  /** `Contingente` marca el producto como SubLínea; junto con `destino` lo identifica. */
+  naturalezaFinanciera?: string;
+  /** `Comercial` | `Standby` | `Ambas`. Vacío se trata como `Ambas`. */
+  tipoCartaPermitida?: string;
+  /**
+   * `Automatica` | `Selectiva`. Informativo: la modalidad real se DERIVA de las
+   * fases configuradas (MD 12 §3 prohíbe el switch manual). Sólo desempata
+   * cuando el producto no tiene fases.
+   */
+  modalidadResolucion?: string;
+  /** Exige que la Solicitud cuelgue de una Línea Global. Default Sí. */
+  productoPadreRequerido?: boolean;
+  /** Exige que esa Línea Global esté ACTIVA. Default Sí. */
+  requiereLineaGlobalActiva?: boolean;
+  /** El disponible de la Línea Global se consume al activar. Default Sí. */
+  consumeDisponibleAlActivar?: boolean;
+  /** Monedas admitidas. Vacío = sin restricción más allá de `moneda`. */
+  monedasPermitidas?: string[];
 }
