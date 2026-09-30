@@ -4194,7 +4194,7 @@ const carteraMarcarPagadoHandler = async (c: any) => {
 
     // 1. Leer factura + datos de la cuenta
     const [factura] = await sql`
-      SELECT f.id, f.solicitud_id, f.amortizacion_id, f.estatus,
+      SELECT f.id, f.solicitud_id, f.amortizacion_id, f.estatus, f.sub_tipo,
         TRIM(REPLACE(REPLACE(f.monto_transaccion::text,'$',''),',',' '))::numeric AS monto,
         cc.no_cuenta, cc.no_sol
       FROM "EFINANCIANET_DB"."J_FACTURAS" f
@@ -4209,6 +4209,27 @@ const carteraMarcarPagadoHandler = async (c: any) => {
     const noCuenta = factura.no_cuenta || '';
     const noSol    = factura.no_sol    || '';
     const solicitudId = factura.solicitud_id;
+
+    /**
+     * Aviso de COMISIÓN GPO (Garantía Financiera 2o Piso).
+     *
+     * Cobrar la comisión periódica de una garantía NO consume la garantía: el
+     * "Saldo Monto Garantía" de la línea es la cobertura comprometida, no un
+     * capital que se amortice. Lo que sí lo reduce es una disposición
+     * (`aplicarDisposicionALinea`) o una reclamación pagada.
+     *
+     * Hasta aquí el pago trataba todo aviso como abono a capital y restaba el
+     * monto de `saldo_actual` —la columna que alimenta ese campo—, así que cada
+     * comisión trimestral cobrada le comía cobertura real al cliente.
+     *
+     * ALCANCE: sólo `saldo_actual`. `monto_aut` sigue disminuyendo como siempre
+     * (Req 13), también para las comisiones; ése no es el campo en disputa.
+     *
+     * Se discrimina por `sub_tipo` y no por tipo de producto a propósito: la
+     * misma línea puede tener avisos de comisión y, en el escenario de pánico,
+     * avisos de un Crédito de Recuperación que SÍ amortizan.
+     */
+    const esComisionGPO = String(factura.sub_tipo || '').trim() === 'ComisionGPO';
 
     // 2. Actualizar J_FACTURAS → Pagado
     await sql`UPDATE "EFINANCIANET_DB"."J_FACTURAS" SET estatus = 'Pagado' WHERE id = ${facturaId}::bigint`;
@@ -4236,6 +4257,9 @@ const carteraMarcarPagadoHandler = async (c: any) => {
     // 5. Disminuir monto_aut + registrar movimiento en data.movimientos (Req 13 + Req 16)
     if (solicitudId) {
       try {
+        // `monto_aut` conserva su comportamiento de siempre (Req 13), también
+        // para las comisiones GPO: el único campo que la comisión no debe tocar
+        // es el saldo de la garantía.
         if (monto > 0) {
           await sql`
             UPDATE "EFINANCIANET_DB"."J_CUENTAS_CORP_CLIENTES"
@@ -4258,10 +4282,14 @@ const carteraMarcarPagadoHandler = async (c: any) => {
           const montoAutStr = String(cuentaRow.monto_aut || '0').replace(/[^0-9.-]/g, '');
           const saldoActual = parseFloat(String(cuentaRow.saldo_actual || '0').replace(/[^0-9.-]/g, '')) || 0;
           const saldoAntes  = saldoActual;
-          const nuevoSaldo  = Math.max(0, saldoActual - monto);
+          // `null` deja el saldo intacto: `escribirMovimientoEnCuenta` conserva
+          // el actual cuando no se le pasa uno nuevo. El movimiento SÍ se
+          // registra — el cobro ocurrió y debe verse en Movimientos; lo que no
+          // ocurre es el descuento a la garantía.
+          const nuevoSaldo  = esComisionGPO ? null : Math.max(0, saldoActual - monto);
           const movPago = {
             tipo:          'Abono',
-            concepto:      'Pago de Crédito',
+            concepto:      esComisionGPO ? 'Pago de Comisión GPO' : 'Pago de Crédito',
             referencia,
             monto,
             saldoInicial:  saldoAntes,
@@ -4271,7 +4299,7 @@ const carteraMarcarPagadoHandler = async (c: any) => {
           await escribirMovimientoEnCuenta(String(solicitudId), movPago, nuevoSaldo);
           // Replicar en cuenta eje del cliente para que aparezca en tab Movimientos
           await replicarEnCuentaEje(cuentaRow.cliente_id ? String(cuentaRow.cliente_id) : null, String(solicitudId), movPago);
-          console.log(`${LOG} Movimiento registrado — saldo: ${saldoAntes} → ${nuevoSaldo}`);
+          console.log(`${LOG} Movimiento registrado — saldo: ${saldoAntes} → ${nuevoSaldo ?? saldoAntes}${esComisionGPO ? ' (sin cambio: comisión GPO)' : ''}`);
         }
       } catch (movErr: any) {
         console.warn(`${LOG} data.movimientos update fallido (no bloquea): ${movErr?.message}`);

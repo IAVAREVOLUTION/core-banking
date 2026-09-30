@@ -7,7 +7,8 @@ import { useTheme, Theme } from '@/app/contexts/ThemeContext';
  * llamadas a Supabase usan la misma llave para todos (ver §Alcance de la HU).
  */
 export const MODULOS_DEMO = [
-  'prospectos', 'cotizaciones', 'oportunidades', 'solicitudes-creditos',
+  // `clientes` es el modulo que el menu muestra como "Personas".
+  'prospectos', 'clientes', 'cotizaciones', 'oportunidades', 'solicitudes-creditos',
   'solicitudes-activacion', 'originacion', 'banca-2o-piso', 'cartera-credito',
   'cobranza', 'polizas-contables',
 ];
