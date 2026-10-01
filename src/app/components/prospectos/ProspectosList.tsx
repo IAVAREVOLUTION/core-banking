@@ -65,6 +65,11 @@ export interface Prospecto {
   monedaInversion?: string;
   tipoFinanciamiento?: string;
   descripcionObra?: string;
+  // ── MD NAFIN 01 — Intermediario Financiero ──
+  tipoIntermediario?: string;
+  numeroIntermediarioNafin?: string;
+  estatusIntermediarioNafin?: string;
+  fechaIncorporacionNafin?: string;
   /** Datos crudos del JSONB de J_CLIENTES — para detectar archivos (constanciaResidencia, etc.) */
   _rawData?: Record<string, any>;
 }

@@ -7,7 +7,8 @@ import {
   EMPTY_FORM, EMPTY_TERMINOS, consumeNoSol, getFechaSolicitudNow,
 } from './solicitudCreditoStore';
 import { createCreditoFromSolicitud } from '../creditos/creditoStore';
-import { useSolicitudesDB } from '../../hooks/useSolicitudesDB';
+import { useSolicitudesDB, CAMPOS_TEXTO_LINEA_GLOBAL_NAFIN } from '../../hooks/useSolicitudesDB';
+import { SUBTAB_LINEA_GLOBAL_NAFIN, normalizarLineaGlobalNafin } from './LineaGlobalNafinTabs';
 import { useProductosCatalogoDB } from '../../hooks/useProductosCatalogoDB';
 
 type ViewState = { type: 'list' } | { type: 'form'; mode: 'nuevo' | 'editar' | 'ver'; solicitudId?: number | string; dbId?: string };
@@ -222,6 +223,10 @@ export function preloadSubtabsFromDBData(
       plazosProducto: Array.isArray(rawTerminos.plazosProducto) ? rawTerminos.plazosProducto : [],
       // REQ-10 — años de la emisión bursátil.
       plazoBonosAnios: rawTerminos.plazoBonosAnios || '',
+      // Línea Global NAFIN (MD 02) — mismo viaje de vuelta que los GPO.
+      ...Object.fromEntries(CAMPOS_TEXTO_LINEA_GLOBAL_NAFIN.map(k => [k, rawTerminos[k] || ''])),
+      ...(typeof rawTerminos.permiteCartaComercial === 'boolean' ? { permiteCartaComercial: rawTerminos.permiteCartaComercial } : {}),
+      ...(typeof rawTerminos.permiteCartaStandby === 'boolean' ? { permiteCartaStandby: rawTerminos.permiteCartaStandby } : {}),
     });
   }
   const sim = sol.simulacion || {};
@@ -442,6 +447,17 @@ export function preloadSubtabsFromDBData(
       clausula72CascadaPagosPreferencial: vc.clausula_72_cascada_pagos_preferencial ?? false,
       contratoArchivo: vc.contrato_archivo || null,
     });
+  }
+  // MD SubLíneas — Carta de Crédito.
+  if (sol.sublinea_carta && Object.keys(sol.sublinea_carta).length > 0) {
+    saveToSession(storageId, 'sublineaCarta', sol.sublinea_carta);
+  }
+  if (sol.sublinea_originacion && Object.keys(sol.sublinea_originacion).length > 0) {
+    saveToSession(storageId, 'sublineaOriginacion', sol.sublinea_originacion);
+  }
+  // MD NAFIN — Línea Global (Estructura, Evaluación, Resolución, Formalización).
+  if (sol.linea_global_nafin && Object.keys(sol.linea_global_nafin).length > 0) {
+    saveToSession(storageId, SUBTAB_LINEA_GLOBAL_NAFIN, normalizarLineaGlobalNafin(sol.linea_global_nafin));
   }
   if (sol.partes_relacionadas?.length > 0) {
     saveToSession(storageId, 'partesRelacionadas', sol.partes_relacionadas.map((p: any, i: number) => ({
@@ -665,6 +681,14 @@ export function SolicitudCreditoList({
         ...(tc.tasaComisionAnualPactada !== undefined ? { tasaComisionAnualPactada: tc.tasaComisionAnualPactada } : {}),
         ...(tc.periodicidadCobroGpo !== undefined ? { periodicidadCobroGpo: tc.periodicidadCobroGpo } : {}),
         ...(tc.plazosProducto !== undefined ? { plazosProducto: tc.plazosProducto } : {}),
+        // Faltaba: sin esto "+ Nueva Solicitud" perdía la vigencia (años) de la Oportunidad.
+        ...(tc.plazoBonosAnios !== undefined ? { plazoBonosAnios: tc.plazoBonosAnios } : {}),
+        // Línea Global NAFIN (MD 02) — sólo viajan cuando la Oportunidad es Línea Global.
+        ...Object.fromEntries(
+          [...CAMPOS_TEXTO_LINEA_GLOBAL_NAFIN, 'permiteCartaComercial', 'permiteCartaStandby']
+            .filter(k => tc[k] !== undefined)
+            .map(k => [k, tc[k]]),
+        ),
       };
       saveToSession('new', 'terminos', terminos);
 

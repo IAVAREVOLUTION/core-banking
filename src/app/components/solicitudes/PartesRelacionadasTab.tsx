@@ -11,6 +11,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { toast } from 'sonner';
 import { loadFromSession, saveToSession } from './solicitudCreditoStore';
+import { ROL_ORDENANTE, ROL_BENEFICIARIO_CARTA } from '../../lib/sublineasCartaCredito';
 
 // Tipos
 interface PersonaRelacionada {
@@ -59,6 +60,13 @@ const CAT_TIPOS_RELACION = [
   { value: 'Representante legal', label: 'Representante legal' },
   { value: 'Fideicomiso', label: 'Fideicomiso' },
   { value: 'Beneficiario Legal', label: 'Beneficiario Legal' },
+  // MD NAFIN SubLíneas 05 — roles de una Carta de Crédito. Ordenante y
+  // Beneficiario Carta son obligatorios para activarla (ver validarSubLinea).
+  { value: ROL_ORDENANTE, label: ROL_ORDENANTE },
+  { value: ROL_BENEFICIARIO_CARTA, label: ROL_BENEFICIARIO_CARTA },
+  { value: 'Banco Confirmador', label: 'Banco Confirmador' },
+  { value: 'Banco Avisador', label: 'Banco Avisador' },
+  { value: 'Otro', label: 'Otro' },
 ];
 
 interface PartesRelacionadasTabProps {

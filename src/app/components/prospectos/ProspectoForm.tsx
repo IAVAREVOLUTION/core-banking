@@ -5,6 +5,10 @@ import { FileText, Zap, Download, Copy, FileCode } from 'lucide-react';
 import { ExpedientesElectronicos, uploadPendingExpedientes } from './ExpedientesElectronicos';
 import { DatePicker } from '@/app/components/ui/DatePicker';
 import { syncToJClientes } from '../../hooks/useSyncJClientes';
+import {
+  esIntermediarioFinanciero, faltantesIntermediario, fetchSiguienteNoIntermediarioNafin,
+} from '../../lib/intermediarioNafin';
+import { IntermediarioNafinSection } from '../clientes/IntermediarioNafinSection';
 import { useActivacionProspecto, formatNoCuenta } from '../../hooks/useCoreActivacionProspecto';
 import type { ProspectoDataCompleto } from '../../hooks/useCoreActivacionProspecto';
 import { CampoInstitucionGobierno } from '../ui/CatalogoInstitucionGobierno';
@@ -30,6 +34,7 @@ import { currentUser } from '../../data/mockData';
 const CAT_TIPO_FINANCIAMIENTO = [
   'Emisión de Deuda Bursátil',
   'Crédito Bancario Tradicional',
+  'Garantía Financiera',
 ];
 
 // Catálogo local: en el repo conviven tres listas de monedas distintas
@@ -260,6 +265,11 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
         monedaInversion: 'MXN',
         tipoFinanciamiento: '',
         descripcionObra: '',
+        // ── MD NAFIN 01: Intermediario Financiero ──
+        tipoIntermediario: '',
+        numeroIntermediarioNafin: '',
+        estatusIntermediarioNafin: '',
+        fechaIncorporacionNafin: '',
       };
     }
 
@@ -310,6 +320,10 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
       monedaInversion: (prospecto as any)?.monedaInversion || 'MXN',
       tipoFinanciamiento: (prospecto as any)?.tipoFinanciamiento || '',
       descripcionObra: (prospecto as any)?.descripcionObra || '',
+      tipoIntermediario: (prospecto as any)?.tipoIntermediario || '',
+      numeroIntermediarioNafin: (prospecto as any)?.numeroIntermediarioNafin || '',
+      estatusIntermediarioNafin: (prospecto as any)?.estatusIntermediarioNafin || '',
+      fechaIncorporacionNafin: (prospecto as any)?.fechaIncorporacionNafin || '',
     };
   });
 
@@ -360,6 +374,10 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
             monedaInversion: (prospecto as any)?.monedaInversion || 'MXN',
             tipoFinanciamiento: (prospecto as any)?.tipoFinanciamiento || '',
             descripcionObra: (prospecto as any)?.descripcionObra || '',
+            tipoIntermediario: (prospecto as any)?.tipoIntermediario || '',
+            numeroIntermediarioNafin: (prospecto as any)?.numeroIntermediarioNafin || '',
+            estatusIntermediarioNafin: (prospecto as any)?.estatusIntermediarioNafin || '',
+            fechaIncorporacionNafin: (prospecto as any)?.fechaIncorporacionNafin || '',
           };
         }
         return prev;
@@ -603,8 +621,17 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
       // Nombre completo para payload local (UI)
       const nombreCompleto = `${formData.nombre} ${formData.apellidoPaterno} ${formData.apellidoMaterno}`.trim();
 
+      // MD NAFIN 01 — el No. Intermediario NAFIN es un consecutivo del maestro:
+      // se asigna una sola vez, al guardar un Intermediario Financiero sin número.
+      let noIntermediarioNafin: string = (formData as any).numeroIntermediarioNafin || '';
+      if (esIntermediarioFinanciero(formData.clasificacionCliente) && !noIntermediarioNafin) {
+        noIntermediarioNafin = await fetchSiguienteNoIntermediarioNafin();
+        setFormData((prev: any) => ({ ...prev, numeroIntermediarioNafin: noIntermediarioNafin }));
+      }
+
       const prospectoPayload = {
         ...formData,
+        numeroIntermediarioNafin: noIntermediarioNafin,
         nombre: nombreCompleto,
         sucursal: formData.entidadFederativa,
         categoria: formData.estatusProspecto,
@@ -675,6 +702,11 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
           monedaInversion: (formData as any).monedaInversion,
           tipoFinanciamiento: (formData as any).tipoFinanciamiento,
           descripcionObra: (formData as any).descripcionObra,
+          // ── MD NAFIN 01 — Intermediario Financiero (maestro Persona/Cliente) ──
+          tipoIntermediario: (formData as any).tipoIntermediario,
+          numeroIntermediarioNafin: noIntermediarioNafin,
+          estatusIntermediarioNafin: (formData as any).estatusIntermediarioNafin,
+          fechaIncorporacionNafin: (formData as any).fechaIncorporacionNafin,
           fechaOriginacion: isCreate
             ? new Date().toISOString().split('T')[0]
             : (prospecto?.fechaOriginacion || new Date().toISOString().split('T')[0]),
@@ -885,6 +917,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
     if (!f.monedaInversion?.trim()) faltantes.push('Moneda');
     if (!f.tipoFinanciamiento?.trim()) faltantes.push('Tipo Financiamiento');
     if (!f.descripcionObra?.trim()) faltantes.push('Descripción Obra');
+    if (esIntermediarioFinanciero(f.clasificacionCliente)) faltantes.push(...faltantesIntermediario(f));
     return faltantes;
   };
 
@@ -943,6 +976,21 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
 
     setCalificando(true);
     try {
+      // MD NAFIN 01 — el Intermediario llega a la Oportunidad ya numerado.
+      const esIF = esIntermediarioFinanciero(f.clasificacionCliente);
+      let noIF: string = f.numeroIntermediarioNafin || '';
+      if (esIF && !noIF) {
+        noIF = await fetchSiguienteNoIntermediarioNafin();
+        setFormData((prev: any) => ({ ...prev, numeroIntermediarioNafin: noIF }));
+      }
+      const intermediario = esIF ? {
+        clasificacionCliente: f.clasificacionCliente,
+        tipoIntermediario: f.tipoIntermediario || '',
+        numeroIntermediarioNafin: noIF,
+        estatusIntermediarioNafin: f.estatusIntermediarioNafin || '',
+        fechaIncorporacionNafin: f.fechaIncorporacionNafin || '',
+      } : {};
+
       // ── Lead calificado — YA NO convierte a Cliente aquí ──
       // Cambio de diseño (2026-08-25): antes, Calificar Lead pasaba
       // type='Prospecto' → 'Clientes' de inmediato (así lo pedía HU-CRM-03
@@ -966,6 +1014,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
           monedaInversion: f.monedaInversion,
           tipoFinanciamiento: f.tipoFinanciamiento,
           descripcionObra: f.descripcionObra,
+          ...intermediario,
         },
         label: 'Lead calificado',
         existingId: dbUuid,
@@ -992,6 +1041,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
         monedaInversion: f.monedaInversion || 'MXN',
         tipoFinanciamiento: f.tipoFinanciamiento || '',
         descripcionObra: f.descripcionObra || '',
+        ...intermediario,
       };
 
       toast.success('Lead calificado', {
@@ -2070,6 +2120,27 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
               </div>
 
               <div className="grid grid-cols-2 gap-x-6 gap-y-3 mb-4">
+                {/* MD NAFIN 01 — Tipo de Cliente. Reutiliza `clasificacionCliente`
+                    (el mismo campo que Personas); "Intermediario Financiero"
+                    habilita los datos NAFIN de abajo. */}
+                <div className="flex items-center gap-2">
+                  <label className="text-xs w-40 flex-shrink-0 text-gray-700">TIPO DE CLIENTE</label>
+                  {isView ? (
+                    <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100">{formData.clasificacionCliente || '—'}</div>
+                  ) : (
+                    <select
+                      value={formData.clasificacionCliente || ''}
+                      onChange={(e) => handleChange('clasificacionCliente' as any, e.target.value)}
+                      className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded bg-white"
+                    >
+                      {catalogoClasificaciones.map((c) => (
+                        <option key={c} value={c}>{c}</option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+                <div />
+
                 {/* Sector — la clave del dato sigue siendo `sectorInfraestructura`
                     por compatibilidad; sólo cambia la etiqueta. */}
                 <div className="flex items-center gap-2">
@@ -2181,6 +2252,14 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
                   />
                 )}
               </div>
+
+              {esIntermediarioFinanciero(formData.clasificacionCliente) && (
+                <IntermediarioNafinSection
+                  datos={formData as any}
+                  onChange={(campo, valor) => handleChange(campo as any, valor)}
+                  isView={isView}
+                />
+              )}
 
               {/* Calificar Lead — HU-CRM-03 CA-01/CA-02/CA-07 */}
               {!isView && (

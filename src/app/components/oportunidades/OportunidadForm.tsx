@@ -16,6 +16,9 @@ import { useState, useMemo, useEffect, useRef } from 'react';
 import { toast } from 'sonner';
 import { CAT_SECTOR, LABEL_SECTOR } from '../../lib/catalogosComerciales';
 import { esLineaGlobalCartaCredito } from '../../lib/sublineasCartaCredito';
+import {
+  intermediarioDeCliente, CAMPOS_INTERMEDIARIO_NAFIN, CAT_TIPO_INTERMEDIARIO, CAT_ESTATUS_NAFIN, ESTATUS_NAFIN_VIGENTE, MSG_IF_NO_VIGENTE,
+} from '../../lib/intermediarioNafin';
 import type { CotizacionCredito, BitacoraEstatusOportunidad, ArchivoAdjuntoOportunidad, SolicitudLOSRef, BitacoraCierreComercial } from '../cotizaciones/cotizacionCreditoTypes';
 import { generarCartaOferta, subirCartaOferta, CartaOfertaError, subirDocumentoAceptacion, esPDFValido, DocumentoAceptacionError } from './cartaOfertaPDF';
 import { CAT_ESTATUS_OPORTUNIDAD, CAT_ESTATUS_OPORTUNIDAD_CIERRE, ESTATUS_OPORTUNIDAD_GANADA, ESTATUS_OPORTUNIDAD_PERDIDA } from '../cotizaciones/cotizacionCreditoTypes';
@@ -226,6 +229,28 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
     [clientes, form?.cliente_id],
   );
 
+  /**
+   * MD NAFIN 03 — Intermediario Financiero leído del maestro Persona/Cliente.
+   * `null` si el cliente no está clasificado como Intermediario Financiero.
+   */
+  const intermediarioMaestro = useMemo(
+    () => intermediarioDeCliente(clienteMatch?._rawData),
+    [clienteMatch],
+  );
+
+  // La Carta Oferta y el Cierre Comercial leen el Intermediario de `data`: se
+  // alinea con el maestro para que el documento y la Solicitud no salgan con
+  // un dato viejo. No toca una Oportunidad congelada (ya Ganada).
+  useEffect(() => {
+    if (!intermediarioMaestro || isView) return;
+    setForm(prev => {
+      if (!prev) return prev;
+      const d = prev.data as any;
+      const difiere = CAMPOS_INTERMEDIARIO_NAFIN.some(k => (d?.[k] || '') !== intermediarioMaestro[k]);
+      return difiere ? { ...prev, data: { ...d, ...intermediarioMaestro } } : prev;
+    });
+  }, [intermediarioMaestro, isView]);
+
   // ── Pestaña Solicitudes (j_corp_fin) — HU-CRM-05 CA-02 ──
   // Solo consulta cuando la Oportunidad ya existe en BD: sin id no hay
   // a qué colgar las solicitudes.
@@ -267,6 +292,15 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
   }
 
   const data = form.data as any;
+
+  /** Intermediario vigente para esta Oportunidad: el maestro manda; si no hay, la captura local. */
+  const ifNafin = intermediarioMaestro ?? {
+    tipoIntermediario: data.tipoIntermediario || '',
+    numeroIntermediarioNafin: data.numeroIntermediarioNafin || '',
+    estatusIntermediarioNafin: data.estatusIntermediarioNafin || '',
+    fechaIncorporacionNafin: data.fechaIncorporacionNafin || '',
+  };
+  const ifSoloLectura = isView || !!intermediarioMaestro;
 
   /**
    * RN-01 exige Cliente Emisor/Sector heredados y de solo lectura cuando la
@@ -435,9 +469,9 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
       if (!data.permiteCartaComercial && !data.permiteCartaStandby) {
         f.push('Operaciones elegibles (al menos un tipo de Carta)');
       }
-      if (!data.estatusIntermediarioNafin) {
+      if (!ifNafin.estatusIntermediarioNafin) {
         f.push('Estatus del Intermediario NAFIN');
-      } else if (data.estatusIntermediarioNafin !== 'Vigente') {
+      } else if (ifNafin.estatusIntermediarioNafin !== ESTATUS_NAFIN_VIGENTE) {
         f.push('El Intermediario Financiero no se encuentra vigente en NAFIN');
       }
     }
@@ -542,6 +576,29 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
     onSave(actualizado);
     toast.success('Oportunidad marcada como Perdida');
   };
+
+  /**
+   * MD 02 §Regla — datos comerciales de la Línea Global NAFIN que hereda la
+   * Solicitud (pestaña Términos y Condiciones). Un solo mapeo para los dos
+   * caminos Oportunidad → Solicitud (Cerrada-Ganada y "+ Nueva Solicitud"):
+   * antes sólo el primero los mandaba. Vacío si no es Línea Global, para que
+   * una Solicitud BANOBRAS no nazca con claves NAFIN en su JSONB.
+   */
+  const terminosLineaGlobalNafin = (): Partial<TerminosCondicionesLOS> => (esLineaGlobalCC ? {
+    programa: data.programa || '',
+    modalidadLinea: data.modalidadLinea || '',
+    tipoLineaGlobal: data.tipoLineaGlobal || '',
+    permiteCartaComercial: data.permiteCartaComercial ?? false,
+    permiteCartaStandby: data.permiteCartaStandby ?? false,
+    montoMaximoSublinea: data.montoMaximoSublinea || '',
+    montoEstimadoOperaciones: data.montoInversion || '',
+    descripcionPrograma: data.descripcionObra || '',
+    // MD 03 — del maestro Persona/Cliente cuando existe.
+    numeroIntermediarioNafin: ifNafin.numeroIntermediarioNafin || '',
+    tipoIntermediario: ifNafin.tipoIntermediario || '',
+    estatusIntermediarioNafin: ifNafin.estatusIntermediarioNafin || '',
+    fechaIncorporacionNafin: ifNafin.fechaIncorporacionNafin || '',
+  } : {});
 
   /**
    * [Cerrada-Ganada] — solo si hay evidencia cargada. Cambia estatus, congela
@@ -649,20 +706,7 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
         frecuencia: data.periodicidadCobroComision || '',
 
         // ── MD 02 §Regla — la Solicitud hereda los datos comerciales ──
-        // Sólo se agregan cuando aplica, para que una Solicitud BANOBRAS no
-        // nazca con claves NAFIN vacías en su JSONB.
-        ...(esLineaGlobalCC ? {
-          programa: data.programa || '',
-          modalidadLinea: data.modalidadLinea || '',
-          tipoLineaGlobal: data.tipoLineaGlobal || '',
-          permiteCartaComercial: data.permiteCartaComercial ?? false,
-          permiteCartaStandby: data.permiteCartaStandby ?? false,
-          montoMaximoSublinea: data.montoMaximoSublinea || '',
-          numeroIntermediarioNafin: data.numeroIntermediarioNafin || '',
-          tipoIntermediario: data.tipoIntermediario || '',
-          estatusIntermediarioNafin: data.estatusIntermediarioNafin || '',
-          fechaIncorporacionNafin: data.fechaIncorporacionNafin || '',
-        } : {}),
+        ...terminosLineaGlobalNafin(),
       };
 
       // Pestaña Simulación — flujo de comisiones proyectado (no es amortización de crédito).
@@ -897,6 +941,7 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
         plazoBonosAnios: data.plazoBonosAnios || '',
         // Misma semilla que el Cierre Comercial — ver comentario allá.
         frecuencia: data.periodicidadCobroComision || '',
+        ...terminosLineaGlobalNafin(),
         _simulacion: simulacionGPO,
       },
     });
@@ -1507,67 +1552,73 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
                   </div>
 
                   {/* ── Intermediario Financiero (MD 01 / MD 03) ──
-                      Se capturan aquí mientras el maestro de Persona/Cliente no
-                      los tenga. En cuanto existan allá, esta sección debe pasar a
-                      consulta: el MD 03 prohíbe duplicar el maestro. */}
+                      Fuente: el maestro Persona/Cliente. Si el cliente está
+                      clasificado como Intermediario Financiero, aquí sólo se
+                      consulta (MD 03 prohíbe duplicar el maestro). Si no — un
+                      cliente anterior a la clasificación —, se conserva la
+                      captura local como respaldo. */}
                   {seccion('Intermediario Financiero NAFIN')}
+                  {intermediarioMaestro ? (
+                    <div className="mx-3 mt-2 px-3 py-1.5 bg-blue-50 border border-blue-200 rounded text-[11px] text-blue-800">
+                      Datos del maestro Persona/Cliente. Para corregirlos, edítelos en Prospectos o Personas.
+                    </div>
+                  ) : !isView && (
+                    <div className="mx-3 mt-2 px-3 py-1.5 bg-amber-50 border border-amber-200 rounded text-[11px] text-amber-800">
+                      El cliente no está clasificado como Intermediario Financiero en Personas: los datos se capturan
+                      aquí de forma provisional. Clasifíquelo en Personas para que sean la fuente única.
+                    </div>
+                  )}
                   <div className="grid grid-cols-1 md:grid-cols-4 gap-x-4 gap-y-2 p-3">
                     <div className="flex flex-col">
                       <label className="text-[10px] text-gray-600 mb-0.5">No. INTERMEDIARIO NAFIN</label>
-                      <input type="text" disabled={isView}
-                        value={data.numeroIntermediarioNafin || ''}
-                        onChange={e => setData({ numeroIntermediarioNafin: e.target.value })}
-                        className={isView ? readonlyClass : fieldClass} />
+                      <div className={readonlyClass}>{ifNafin.numeroIntermediarioNafin || 'Se asigna al guardar'}</div>
                     </div>
 
                     <div className="flex flex-col">
                       <label className="text-[10px] text-gray-600 mb-0.5">TIPO DE INTERMEDIARIO</label>
-                      {isView ? (
-                        <div className={readonlyClass}>{data.tipoIntermediario || '—'}</div>
+                      {ifSoloLectura ? (
+                        <div className={readonlyClass}>{ifNafin.tipoIntermediario || '—'}</div>
                       ) : (
-                        <select value={data.tipoIntermediario || ''} disabled={isView}
+                        <select value={ifNafin.tipoIntermediario || ''}
                           onChange={e => setData({ tipoIntermediario: e.target.value })} className={fieldClass}>
                           <option value="">— Seleccionar —</option>
-                          <option value="Banco">Banco</option>
-                          <option value="SOFOM">SOFOM</option>
-                          <option value="SOFIPO">SOFIPO</option>
-                          <option value="Unión de Crédito">Unión de Crédito</option>
-                          <option value="Otro">Otro</option>
+                          {CAT_TIPO_INTERMEDIARIO.map(o => <option key={o} value={o}>{o}</option>)}
                         </select>
                       )}
                     </div>
 
                     <div className="flex flex-col">
                       <label className="text-[10px] text-gray-600 mb-0.5">ESTATUS NAFIN</label>
-                      {isView ? (
-                        <div className={readonlyClass}>{data.estatusIntermediarioNafin || '—'}</div>
+                      {ifSoloLectura ? (
+                        <div className={readonlyClass}>{ifNafin.estatusIntermediarioNafin || '—'}</div>
                       ) : (
-                        <select value={data.estatusIntermediarioNafin || ''} disabled={isView}
+                        <select value={ifNafin.estatusIntermediarioNafin || ''}
                           onChange={e => setData({ estatusIntermediarioNafin: e.target.value })} className={fieldClass}>
                           <option value="">— Seleccionar —</option>
-                          <option value="Vigente">Vigente</option>
-                          <option value="Suspendido">Suspendido</option>
-                          <option value="En incorporación">En incorporación</option>
+                          {CAT_ESTATUS_NAFIN.map(o => <option key={o} value={o}>{o}</option>)}
                         </select>
                       )}
                     </div>
 
                     <div className="flex flex-col">
                       <label className="text-[10px] text-gray-600 mb-0.5">FECHA DE INCORPORACIÓN</label>
-                      <input type="date" disabled={isView}
-                        value={data.fechaIncorporacionNafin || ''}
-                        onChange={e => setData({ fechaIncorporacionNafin: e.target.value })}
-                        className={isView ? readonlyClass : fieldClass} />
+                      {ifSoloLectura ? (
+                        <div className={readonlyClass}>{ifNafin.fechaIncorporacionNafin || '—'}</div>
+                      ) : (
+                        <input type="date"
+                          value={ifNafin.fechaIncorporacionNafin || ''}
+                          onChange={e => setData({ fechaIncorporacionNafin: e.target.value })}
+                          className={fieldClass} />
+                      )}
                     </div>
                   </div>
 
                   {/* MD 01 §Regla funcional — el bloqueo real vive en el Cierre
                       Comercial; aquí sólo se anticipa, para no dejar al usuario
                       capturarlo todo y enterarse al final. */}
-                  {data.estatusIntermediarioNafin && data.estatusIntermediarioNafin !== 'Vigente' && (
+                  {ifNafin.estatusIntermediarioNafin && ifNafin.estatusIntermediarioNafin !== ESTATUS_NAFIN_VIGENTE && (
                     <div className="mx-3 mb-3 bg-red-50 border-l-4 border-red-400 px-3 py-2 text-[11px] text-red-700">
-                      No es posible solicitar una Línea Global. El Intermediario Financiero
-                      no se encuentra vigente en NAFIN.
+                      {MSG_IF_NO_VIGENTE}
                     </div>
                   )}
                 </>

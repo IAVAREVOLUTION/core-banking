@@ -10,6 +10,7 @@ import { projectId, publicAnonKey } from '/utils/supabase/info';
 import { fechasCobroComision } from '../../lib/fechasComisionGPO';
 import type { CarteraCredito } from '../cartera/CarteraForm';
 import { loadFromSession, loadFromSavedStore } from '../solicitudes/solicitudCreditoStore';
+import type { LineaGlobalOperativa } from '../solicitudes/LineaGlobalNafinTabs';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-7e2d13d9`;
 const HDR = { Authorization: `Bearer ${publicAnonKey}` };
@@ -65,7 +66,7 @@ export const SUB_ESTATUS_DEFAULT: SubEstatus2oPiso = 'Operación Normal';
 
 /** Periodos de cobro por año — misma tabla que usa el Cierre Comercial (RN-02). */
 export const PERIODOS_POR_ANIO_2O_PISO: Record<string, number> = {
-  Mensual: 12, Trimestral: 4, Semestral: 2, Anual: 1,
+  Semanal: 52, Catorcenal: 26, Quincenal: 24, Mensual: 12, Bimestral: 6, Trimestral: 4, Semestral: 2, Anual: 1,
 };
 
 /** Un renglón del Calendario de Comisiones (HU-18.1). */
@@ -127,6 +128,11 @@ export interface Banca2oPisoData {
   /** REQ-24 §Decisión 2 — por qué esta línea está en pánico. */
   panicoDesde?: string;
   panicoPorDisposicion?: string;
+  /**
+   * MD NAFIN 09 — Línea Global operativa, escrita al liberarla. Sólo existe en
+   * las líneas NAFIN; su `estatus` es el que validan las SubLíneas (MD 04).
+   */
+  lineaGlobal?: LineaGlobalOperativa;
 }
 
 export interface LineaCreditoRow extends CarteraCredito {
@@ -286,6 +292,8 @@ function normalizarBanca2oPiso(
     disposicionesAplicadas: Array.isArray(n.disposicionesAplicadas) ? n.disposicionesAplicadas : [],
     panicoDesde: n.panicoDesde || undefined,
     panicoPorDisposicion: n.panicoPorDisposicion || undefined,
+    // Sin esto el nodo se reescribiría sin la Línea Global al guardar otra parte.
+    lineaGlobal: n.lineaGlobal && typeof n.lineaGlobal === 'object' ? n.lineaGlobal : undefined,
   };
 }
 

@@ -22,6 +22,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase, SUPABASE_URL } from '../lib/supabaseClient';
 import { publicAnonKey } from '/utils/supabase/info';
 import type { SolicitudFormData, SolicitudListItem } from '../components/solicitudes/solicitudCreditoStore';
+import { hayDatosLineaGlobalNafin } from '../components/solicitudes/LineaGlobalNafinTabs';
 
 // ═══════════════════════════════════════════════════════════════════
 const DB_AVAILABLE = true;
@@ -174,7 +175,7 @@ function saveToSession(items: SolicitudListItem[]) {
 // ═══════════════════════════════════════════════════════════════════
 // MAPEO: DB Row → SolicitudListItem (para la lista)
 // ═══════════════════════════════════════════════════════════════════
-function mapRowToListItem(row: SolicitudDBRow): SolicitudListItem {
+export function mapRowToListItem(row: SolicitudDBRow): SolicitudListItem {
   // ── Protección: row.data puede venir como string si el driver no parsea JSONB ──
   let d: Record<string, any>;
   if (typeof row.data === 'string') {
@@ -312,7 +313,24 @@ function deepMerge(base: Record<string, any>, patch: Record<string, any>): Recor
   return result;
 }
 
-function formToDBPayload(form: SolicitudFormData, allSubtabs?: Record<string, any>) {
+/** Claves de texto de la Línea Global NAFIN en terminos_condiciones._raw. */
+export const CAMPOS_TEXTO_LINEA_GLOBAL_NAFIN = [
+  'programa',
+  'modalidadLinea',
+  'tipoLineaGlobal',
+  'montoMaximoSublinea',
+  'montoEstimadoOperaciones',
+  'descripcionPrograma',
+  'numeroIntermediarioNafin',
+  'tipoIntermediario',
+  'estatusIntermediarioNafin',
+  'fechaIncorporacionNafin',
+  // MD 04/05 — vigencia de la Línea Global, capturada en Términos (Fase 1).
+  'fechaInicioLinea',
+  'fechaVencimientoLinea',
+] as const;
+
+export function formToDBPayload(form: SolicitudFormData, allSubtabs?: Record<string, any>) {
   const montoSolNum = parseFloat((form.montoSolicitado || '0').replace(/[^0-9.-]/g, ''));
   const montoAutNum = parseFloat((form.montoAutorizado || '0').replace(/[^0-9.-]/g, ''));
 
@@ -364,6 +382,17 @@ function formToDBPayload(form: SolicitudFormData, allSubtabs?: Record<string, an
     allSubtabs?.validacionClausulas !== undefined
       ? (allSubtabs.validacionClausulas as Record<string, any>)
       : (origSol.validacion_clausulas || {});
+  // MD NAFIN 05-08 — Estructura, Evaluación, Resolución y Formalización de la
+  // Línea Global. Nodo propio, no se mezcla con los BANOBRAS de arriba.
+  const lineaGlobalNafin: Record<string, any> =
+    allSubtabs?.lineaGlobalNafin !== undefined
+      ? (allSubtabs.lineaGlobalNafin as Record<string, any>)
+      : (origSol.linea_global_nafin || {});
+  // MD SubLíneas 05/08 — Carta de Crédito (Bloques B y C) y su estatus.
+  // `activarSublinea()` también escribe este nodo directo; aquí sólo se manda
+  // cuando la sesión lo trae, para no pisar con vacío lo que escribió el servicio.
+  const sublineaCarta: Record<string, any> | undefined =
+    allSubtabs?.sublineaCarta && typeof allSubtabs.sublineaCarta === 'object' ? allSubtabs.sublineaCarta : undefined;
   // cargos: solo viaja cuando SolicitudCreditoForm lo incluye explícitamente en allSubtabs
   // (al enviar a originación) — el resto del tiempo permanece como vista previa en sessionStorage.
   const cargos: any[] = subtabArr('cargos', 'cargos');
@@ -472,6 +501,15 @@ function formToDBPayload(form: SolicitudFormData, allSubtabs?: Record<string, an
   }
   // REQ-10 — plazo de la emisión bursátil (años de la matriz de proyecciones).
   if ((terminos as any).plazoBonosAnios) coreTerminosRaw.plazoBonosAnios = (terminos as any).plazoBonosAnios;
+  // Línea Global NAFIN (MD 02) — heredados de la Oportunidad y de solo lectura
+  // en la Solicitud: misma guarda por valor que el bloque GPO. Sin esto se
+  // mandaban en el Cierre Comercial pero nunca llegaban a la BD.
+  for (const k of CAMPOS_TEXTO_LINEA_GLOBAL_NAFIN) {
+    if ((terminos as any)[k]) coreTerminosRaw[k] = (terminos as any)[k];
+  }
+  // Booleanos: `false` es un valor real (operación no elegible), no un vacío.
+  if (typeof terminos.permiteCartaComercial === 'boolean') coreTerminosRaw.permiteCartaComercial = terminos.permiteCartaComercial;
+  if (typeof terminos.permiteCartaStandby === 'boolean') coreTerminosRaw.permiteCartaStandby = terminos.permiteCartaStandby;
 
   const origRaw = origSol.terminos_condiciones?._raw || {};
   const mergedRaw = Object.keys(coreTerminosRaw).length > 0
@@ -681,6 +719,16 @@ function formToDBPayload(form: SolicitudFormData, allSubtabs?: Record<string, an
           },
         }
       : {}),
+    // MD NAFIN — sólo viaja si tiene algo capturado; se guarda con la misma
+    // forma que usa la pantalla (camelCase), es un nodo nuevo sin legado.
+    ...(sublineaCarta ? { sublinea_carta: sublineaCarta } : {}),
+    // MD SubLíneas 07 — Evaluación / Resolución / Instrumentación de la Selectiva.
+    ...(allSubtabs?.sublineaOriginacion && typeof allSubtabs.sublineaOriginacion === 'object'
+      ? { sublinea_originacion: allSubtabs.sublineaOriginacion }
+      : {}),
+    ...(hayDatosLineaGlobalNafin(lineaGlobalNafin as any)
+      ? { linea_global_nafin: lineaGlobalNafin }
+      : {}),
     partes_relacionadas: partesRelacionadas.map((p: any) => ({
       relacionLegal: p.tipoRelacion || null,
       participacion: p.participacion || null,
@@ -717,6 +765,27 @@ function formToDBPayload(form: SolicitudFormData, allSubtabs?: Record<string, an
   const mergedData = originalData && Object.keys(originalData).length > 0
     ? deepMerge(originalData, { solicitud: mergedSolicitud })
     : { solicitud: mergedSolicitud };
+
+  // Se aplica al objeto FINAL: `originalData` también trae una copia de estos
+  // nodos y el deepMerge de arriba la reincorporaría.
+  const solFinal: any = (mergedData as any).solicitud || {};
+  // ── Nodos con dueño propio (MD NAFIN 09 / SubLíneas 08-10 / auditoría) ──
+  // Los escriben servicios con PUT directo (saldos de la Línea Global,
+  // bitácora de fases, estatus y operación de la SubLínea). `origSol` puede ser
+  // la copia de sesión de cuando se abrió la Solicitud: reenviarla devolvería
+  // el Disponible o la bitácora a un valor viejo (el servidor reemplaza
+  // arreglos). Como el servidor mezcla el JSONB, no enviarlos los conserva.
+  delete (solFinal as any).banca2oPiso;
+  delete (solFinal as any).bitacoraFases;
+  if ((solFinal as any).sublinea_carta) {
+    const CAPTURA = ['tipoCarta', 'noCarta', 'moneda', 'fechaInicio', 'fechaVencimiento', 'objeto',
+      'montoElegible', 'porcentajeCobertura', 'porcentajeComision'];
+    const fuente = sublineaCarta || {};
+    const soloCaptura = Object.fromEntries(CAPTURA.filter(k => fuente[k] !== undefined).map(k => [k, fuente[k]]));
+    if (Object.keys(soloCaptura).length > 0) (solFinal as any).sublinea_carta = soloCaptura;
+    else delete (solFinal as any).sublinea_carta;
+  }
+
 
   // no_referenc1 is VARCHAR(30) in DB — UUID (36 chars) doesn't fit, so omit it on updates
   // (it was set correctly on INSERT and should not change)
@@ -823,7 +892,7 @@ async function tryRPC(): Promise<{ ok: boolean; rows: SolicitudDBRow[]; method: 
 // ═══════════════════════════════════════════════════════════════════
 // INSERT
 // ═══════════════════════════════════════════════════════════════════
-async function insertSolicitud(payload: ReturnType<typeof formToDBPayload>): Promise<{ ok: boolean; id?: string; error?: string }> {
+export async function insertSolicitud(payload: ReturnType<typeof formToDBPayload>): Promise<{ ok: boolean; id?: string; error?: string }> {
   if (!DB_AVAILABLE) return { ok: false, error: 'DB no disponible' };
 
   // Se conserva el error del Intento 1 para reportarlo junto con el del

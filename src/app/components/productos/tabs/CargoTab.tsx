@@ -3,7 +3,11 @@ import { toast } from 'sonner';
 import { useTabPersistence } from '@/app/hooks/useProductoPersistence';
 import { useComponentesContablesCatalogo } from '@/app/hooks/useComponentesContablesCatalogo';
 // REQ-21 — momento del ciclo en el que aplica cada cargo.
-import { MOMENTOS_CARGO } from '@/app/lib/cargosProductoGPO';
+import {
+  MOMENTO_AUTORIZAR_FASE, MOMENTO_FASE4,
+  construirMomentosCargo, etiquetaMomento, opcionesCampoMonto, etiquetaCampoMonto, leerFasesProducto, seqDeFase, momentoDeFase,
+  type FaseProducto, type OpcionMomento,
+} from '@/app/lib/cargosProductoGPO';
 
 interface Cargo {
   id: number;
@@ -13,8 +17,13 @@ interface Cargo {
   tipoCargo: string;
   descripcion: string;
   moneda: string;
-  /** REQ-21 — 'FASE_4_PROVISION' | 'AVISO_COMISION' | '' (catálogos anteriores). */
+  /** 'FASE_<seq>' | 'AVISO_COMISION' | 'ACTIVACION_SUBLINEA' | '' — y los legados
+   *  'FASE_4_PROVISION' / 'AUTORIZAR_FASE' (+ `fase`). */
   momento?: string;
+  /** MD NAFIN — fase del producto cuya autorización genera el cargo. */
+  fase?: string;
+  /** Campo monetario de la Solicitud del que sale el importe. */
+  campoMapeado?: string;
 }
 
 interface CargoTabProps {
@@ -25,15 +34,32 @@ interface CargoTabProps {
   initialData?: Cargo[];
   persistToStorage?: boolean;
   storagePrefix?: string;
+  /** Fases guardadas del producto. El picklist Momento prefiere las fases vivas
+   *  de sessionStorage (las recién editadas en el subtab Fases) y cae a éstas. */
+  fasesProducto?: FaseProducto[];
 }
 
 // Catálogos — Tipo de Cargo sale del catálogo de Componentes Contables (REQ-15)
 const MONEDA_OPTIONS = ['MXN', 'USD', 'EUR', 'CAD', 'GBP'];
 
 export const CargoTab = forwardRef<{ getData: () => Cargo[] }, CargoTabProps>(
-  ({ mode, productId, lineaProducto = '', sublinea = '', initialData, persistToStorage, storagePrefix }, ref) => {
+  ({ mode, productId, lineaProducto = '', sublinea = '', initialData, persistToStorage, storagePrefix, fasesProducto }, ref) => {
     const prefix = storagePrefix || 'credito';
     const storageKey = persistToStorage && productId ? `${prefix}_cargo_${productId}` : '';
+    // Fases vivas del producto: FasesTab las persiste bajo esta misma convención.
+    const fasesStorageKey = persistToStorage && productId ? `${prefix}_fases_${productId}` : '';
+    const leerFases = (): FaseProducto[] => {
+      if (fasesStorageKey) {
+        try {
+          const raw = sessionStorage.getItem(fasesStorageKey);
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+          }
+        } catch (_) { /* ignore */ }
+      }
+      return Array.isArray(fasesProducto) ? fasesProducto : [];
+    };
 
     // ══════════════════════════════════════════════════════════════
     // FIX: Cargos es 100% manual. Sin defaults hardcodeados.
@@ -172,13 +198,14 @@ export const CargoTab = forwardRef<{ getData: () => Cargo[] }, CargoTabProps>(
                   <th className="px-3 py-2 text-left font-medium text-xs border-r border-white/20 whitespace-nowrap">Tipo de Cargo</th>
                   <th className="px-3 py-2 text-left font-medium text-xs border-r border-white/20 whitespace-nowrap">Descripción</th>
                   <th className="px-3 py-2 text-left font-medium text-xs border-r border-white/20 whitespace-nowrap">Moneda</th>
-                  <th className="px-3 py-2 text-left font-medium text-xs whitespace-nowrap">Momento</th>
+                  <th className="px-3 py-2 text-left font-medium text-xs border-r border-white/20 whitespace-nowrap">Momento</th>
+                  <th className="px-3 py-2 text-left font-medium text-xs whitespace-nowrap">Campo a Mapear</th>
                 </tr>
               </thead>
               <tbody className="bg-white">
                 {data.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="px-3 py-6 text-center text-gray-500 text-xs">No se encontraron registros</td>
+                    <td colSpan={7} className="px-3 py-6 text-center text-gray-500 text-xs">No se encontraron registros</td>
                   </tr>
                 ) : (
                   data.map((item, index) => (
@@ -203,7 +230,8 @@ export const CargoTab = forwardRef<{ getData: () => Cargo[] }, CargoTabProps>(
                       <td className="px-3 py-2 text-xs text-gray-700 border-r border-gray-300">{item.tipoCargo}</td>
                       <td className="px-3 py-2 text-xs text-gray-700 border-r border-gray-300">{item.descripcion}</td>
                       <td className="px-3 py-2 text-xs text-gray-700 border-r border-gray-300">{item.moneda}</td>
-                      <td className="px-3 py-2 text-xs text-gray-700">{MOMENTOS_CARGO.find(m => m.value === (item.momento || ''))?.label || 'Sin especificar'}</td>
+                      <td className="px-3 py-2 text-xs text-gray-700 border-r border-gray-300">{etiquetaMomento(item.momento, leerFases(), item.fase)}</td>
+                      <td className="px-3 py-2 text-xs text-gray-700">{etiquetaCampoMonto(item.campoMapeado)}</td>
                     </tr>
                   ))
                 )}
@@ -223,6 +251,7 @@ export const CargoTab = forwardRef<{ getData: () => Cargo[] }, CargoTabProps>(
             productId={typeof productId === 'string' ? parseInt(productId) : productId} 
             lineaProducto={lineaProducto}
             sublinea={sublinea}
+            fases={leerFases()}
             onSave={handleSaveForm} 
             onClose={() => setShowFormModal(false)} 
           />
@@ -240,19 +269,33 @@ interface FormModalProps {
   productId: number;
   lineaProducto: string;
   sublinea: string;
+  fases: FaseProducto[];
   onSave: (data: any) => void;
   onClose: () => void;
 }
 
-function FormModal({ mode, item, productId, lineaProducto, sublinea, onSave, onClose }: FormModalProps) {
+function FormModal({ mode, item, productId, lineaProducto, sublinea, fases, onSave, onClose }: FormModalProps) {
   const isViewMode = mode === 'view';
   const { opcionesTipoCargo, desdeCatalogo } = useComponentesContablesCatalogo();
+  const momentos: OpcionMomento[] = construirMomentosCargo(fases);
+  // Un cargo capturado como "Al autorizar una fase" + nombre se reabre como la
+  // fase de ese nombre (FASE_<seq>), si el producto la tiene.
+  const momentoInicial = (() => {
+    if (item?.momento === MOMENTO_FASE4 && momentos.some(m => m.value === momentoDeFase(4))) return momentoDeFase(4);
+    if (item?.momento !== MOMENTO_AUTORIZAR_FASE) return item?.momento || '';
+    const lista = leerFasesProducto(fases);
+    const norm = (v: unknown) => String(v ?? '').trim().toLowerCase();
+    const idx = lista.findIndex(f => norm(f?.fase) === norm(item?.fase));
+    return idx >= 0 ? momentoDeFase(seqDeFase(lista[idx], idx)) : MOMENTO_AUTORIZAR_FASE;
+  })();
   const [formData, setFormData] = useState({
     tipoCargo: item?.tipoCargo || '',
     descripcion: item?.descripcion || '',
     moneda: item?.moneda || '',
     // REQ-21 §Decisión 1(a) — en qué momento del ciclo aplica este cargo.
-    momento: item?.momento || '',
+    momento: momentoInicial,
+    fase: item?.fase || '',
+    campoMapeado: item?.campoMapeado || '',
   });
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -284,7 +327,8 @@ function FormModal({ mode, item, productId, lineaProducto, sublinea, onSave, onC
       return;
     }
 
-    onSave(formData);
+    // El nombre de fase sólo se conserva en el legado AUTORIZAR_FASE.
+    onSave({ ...formData, fase: formData.momento === MOMENTO_AUTORIZAR_FASE ? formData.fase : '' });
   };
 
   const handleChange = (field: string, value: any) => {
@@ -388,13 +432,41 @@ function FormModal({ mode, item, productId, lineaProducto, sublinea, onSave, onC
                     disabled={isViewMode}
                     className={inputClassName()}
                   >
-                    {MOMENTOS_CARGO.map((m) => (
+                    {momentos.map((m) => (
                       <option key={m.value} value={m.value}>{m.label}</option>
                     ))}
+                    {/* Un valor guardado que ya no está entre las opciones (fase
+                        eliminada o valor legado) no debe desaparecer al reabrir. */}
+                    {formData.momento && !momentos.some(m => m.value === formData.momento) && (
+                      <option value={formData.momento}>{etiquetaMomento(formData.momento, fases, formData.fase)}</option>
+                    )}
                   </select>
                   <span className="block text-[10px] text-gray-500 mt-1">
-                    Determina si el cargo se genera al autorizar la Fase 4 o si nombra los
-                    conceptos del Aviso de Vencimiento.
+                    {momentos.length > 3
+                      ? 'Fase del producto cuya autorización genera el cargo, o evento: Aviso de Vencimiento / Activación de SubLínea.'
+                      : 'El producto no tiene fases configuradas: captúrelas en el subtab Fases para listarlas aquí.'}
+                  </span>
+                </div>
+
+                {/* De dónde sale el IMPORTE del cargo al generarse en la Solicitud. */}
+                <div>
+                  <label className="block text-xs text-gray-700 mb-1 font-medium">Campo a Mapear</label>
+                  <select
+                    value={formData.campoMapeado}
+                    onChange={(e) => handleChange('campoMapeado', e.target.value)}
+                    disabled={isViewMode}
+                    className={inputClassName()}
+                  >
+                    {opcionesCampoMonto().map((o) => (
+                      <option key={o.value} value={o.value}>{o.label}</option>
+                    ))}
+                    {formData.campoMapeado && !opcionesCampoMonto().some(o => o.value === formData.campoMapeado) && (
+                      <option value={formData.campoMapeado}>{etiquetaCampoMonto(formData.campoMapeado)}</option>
+                    )}
+                  </select>
+                  <span className="block text-[10px] text-gray-500 mt-1">
+                    Campo monetario de la Solicitud del que se toma el importe al generar el cargo.
+                    Sin mapear, el cargo de una fase no se genera.
                   </span>
                 </div>
 

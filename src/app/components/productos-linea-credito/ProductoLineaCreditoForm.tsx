@@ -1068,6 +1068,8 @@ export function ProductoLineaCreditoForm({
                 initialData={product?.cargos}
                 persistToStorage
                 storagePrefix="linea_credito"
+                // El picklist Momento lista todas las fases del producto.
+                fasesProducto={product?.fases}
               />
             </div>
 

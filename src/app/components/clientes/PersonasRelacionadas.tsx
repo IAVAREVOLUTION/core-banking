@@ -120,6 +120,12 @@ const TIPOS_RELACION = [
   // fuente de pago y el Beneficiario Legal que puede ejecutar la garantía.
   'Beneficiario Legal',
   'Fideicomiso',
+  // MD NAFIN SubLíneas 05 — partes de una Carta de Crédito; llegan a la
+  // Solicitud como Partes Relacionadas con este mismo tipo.
+  'Ordenante / Acreditado Final',
+  'Beneficiario Carta',
+  'Banco Confirmador',
+  'Banco Avisador',
   'Referencia Personal',
   'Referencia Comercial',
   'Otro',

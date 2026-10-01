@@ -23,12 +23,234 @@ import { leerGuiaContabilizadora, ALIAS_GUIA_FORMALIZACION_GPO } from '../hooks/
 /** Momento del ciclo en el que aplica un cargo del producto (§Decisión 1a). */
 export const MOMENTO_FASE4 = 'FASE_4_PROVISION';
 export const MOMENTO_AVISO = 'AVISO_COMISION';
+/** MD NAFIN SubLíneas 06/08 — cargos que genera la activación de una SubLínea. */
+export const MOMENTO_ACTIVACION_SUBLINEA = 'ACTIVACION_SUBLINEA';
 
-export const MOMENTOS_CARGO = [
-  { value: '', label: 'Sin especificar' },
-  { value: MOMENTO_FASE4, label: 'Fase 4 — Provisión de garantía' },
-  { value: MOMENTO_AVISO, label: 'Aviso de vencimiento — Comisión' },
+/**
+ * MD NAFIN Línea Global 04 / 10 §4 y SubLíneas 07 / CA-11 — cargo que se
+ * genera al AUTORIZAR una fase concreta del producto (`cargo.fase`). Es el
+ * motor genérico "Producto + Fase → cargos configurados"; no depende del nombre
+ * del producto ni de la fase, y un producto que no lo use no cambia.
+ */
+export const MOMENTO_AUTORIZAR_FASE = 'AUTORIZAR_FASE';
+
+/** Momento canónico de la fase en posición `seq` del producto (`FASE_<seq>`). */
+export function momentoDeFase(seq: number | string): string {
+  return `FASE_${parseInt(String(seq), 10)}`;
+}
+
+/**
+ * Posición (seq) que nombra un valor de Momento, o null si no nombra una fase.
+ * Entiende el valor legado `FASE_4_PROVISION` como la fase 4.
+ */
+export function seqDeMomento(momento?: string | null): number | null {
+  const m = String(momento ?? '').trim().toUpperCase();
+  if (!m) return null;
+  if (m === MOMENTO_FASE4) return 4;
+  const match = m.match(/^FASE_(\d+)$/);
+  return match ? parseInt(match[1], 10) : null;
+}
+
+/** Una fase del producto, como la captura `FasesTab` en `producto.fases`. */
+export interface FaseProducto {
+  seq?: number | string;
+  fase?: string;
+  descripcion?: string;
+  phaseName?: string;
+  numero_consecutivo?: number | string;
+  orden?: number | string;
+  numeroFase?: number | string;
+  [k: string]: any;
+}
+
+/** Normaliza la lista de fases desde cualquiera de los shapes en que se guarda. */
+export function leerFasesProducto(productData: any): FaseProducto[] {
+  const raw =
+    (Array.isArray(productData?.fases) && productData.fases.length > 0 ? productData.fases : null) ??
+    (Array.isArray(productData?.fasesRegistros) && productData.fasesRegistros.length > 0 ? productData.fasesRegistros : null) ??
+    (Array.isArray(productData?.fase) ? productData.fase : null) ??
+    (Array.isArray(productData) ? productData : null);
+  return Array.isArray(raw) ? raw : [];
+}
+
+/** Posición 1..N de una fase, tomada del propio registro o de su índice. */
+export function seqDeFase(f: FaseProducto, idx: number): number {
+  return parseInt(String(f?.seq ?? f?.numero_consecutivo ?? f?.orden ?? f?.numeroFase ?? idx + 1), 10) || idx + 1;
+}
+
+export interface OpcionMomento {
+  value: string;
+  label: string;
+}
+
+/**
+ * Opciones del picklist **Momento** del subtab Cargos: una por cada fase
+ * configurada en el producto (valor `FASE_<seq>`, la posición y no el nombre,
+ * para que renombrar una fase no invalide el cargo), más los eventos que no son
+ * fase: Aviso de vencimiento y Activación de SubLínea.
+ */
+export function construirMomentosCargo(fases?: FaseProducto[] | any): OpcionMomento[] {
+  const deFases = leerFasesProducto(fases).map((f, idx) => {
+    const seq = seqDeFase(f, idx);
+    const nombre = String(f?.fase || f?.phaseName || f?.descripcion || '').trim();
+    return { value: momentoDeFase(seq), label: nombre ? `Fase ${seq} — ${nombre}` : `Fase ${seq}` };
+  });
+  return [
+    { value: '', label: 'Sin especificar' },
+    ...deFases,
+    { value: MOMENTO_AVISO, label: 'Aviso de vencimiento — Comisión' },
+    { value: MOMENTO_ACTIVACION_SUBLINEA, label: 'Activación de SubLínea (Carta de Crédito)' },
+  ];
+}
+
+/** Etiqueta legible de un Momento ya guardado (incluye los valores legados). */
+export function etiquetaMomento(momento: string | undefined, fases?: FaseProducto[] | any, faseNombre?: string): string {
+  if (momento === MOMENTO_AUTORIZAR_FASE) return faseNombre ? `Al autorizar la fase — ${faseNombre}` : 'Al autorizar una fase';
+  const opciones = construirMomentosCargo(fases);
+  const exacta = opciones.find(o => o.value === (momento || ''));
+  if (exacta) return exacta.label;
+  // Legado FASE_4_PROVISION → la fase 4 del producto, si existe.
+  const seq = seqDeMomento(momento);
+  const porSeq = seq != null ? opciones.find(o => o.value === momentoDeFase(seq)) : undefined;
+  if (porSeq) return porSeq.label;
+  return seq != null ? `Fase ${seq} (no configurada en este producto)` : 'Sin especificar';
+}
+
+/** ¿El Momento del cargo es una fase (nueva o legada) y no un evento? */
+export function esMomentoDeFase(momento?: string | null): boolean {
+  return momento === MOMENTO_AUTORIZAR_FASE || seqDeMomento(momento) != null;
+}
+
+/** Sobre qué se calcula el importe de un cargo configurado por fase o evento. */
+export const BASES_CALCULO_CARGO = [
+  { value: 'FIJO', label: 'Monto fijo' },
+  { value: 'PCT_SOLICITADO', label: '% del Monto Solicitado' },
+  { value: 'PCT_AUTORIZADO', label: '% del Monto Autorizado' },
+  { value: 'PCT_GARANTIZADO', label: '% del Monto Garantizado' },
 ];
+
+/** Importe de un cargo según su base. `null` si el cargo no declara base (catálogos anteriores). */
+export function montoCargo(
+  cargo: CargoProducto,
+  bases: { solicitado?: number; autorizado?: number; garantizado?: number },
+): number | null {
+  const base = String(cargo?.baseCalculo || '');
+  const valor = parseFloat(String(cargo?.valor ?? '').replace(/[^0-9.-]/g, '')) || 0;
+  if (!base) return null;
+  const r = (n: number) => Math.round(n * 100) / 100;
+  if (base === 'FIJO') return r(valor);
+  const sobre = base === 'PCT_SOLICITADO' ? bases.solicitado
+    : base === 'PCT_AUTORIZADO' ? bases.autorizado
+    : bases.garantizado;
+  return r((Number(sobre) || 0) * valor / 100);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// CAMPO A MAPEAR — de qué campo monetario de la Solicitud sale el importe del
+// cargo. Catálogo cerrado: sólo campos que el generador sabe leer.
+// ═══════════════════════════════════════════════════════════════════
+
+/** Dónde vive físicamente el dato dentro de la Solicitud. */
+export type OrigenCampoMonto = 'solicitud' | 'terminos' | 'modeloViabilidad' | 'lineaGlobal' | 'sublinea';
+
+export interface CampoMontoSolicitud {
+  /** Valor guardado en el cargo del producto. */
+  value: string;
+  label: string;
+  origen: OrigenCampoMonto;
+  /** Nombre de la propiedad dentro de ese origen. */
+  campo: string;
+  /** Sólo informativo: en qué productos tiene sentido. */
+  nota?: string;
+}
+
+export const CAMPOS_MONTO_SOLICITUD: CampoMontoSolicitud[] = [
+  // ── Términos y Condiciones ──
+  { value: 'terminos.montoAutorizado',        label: 'Monto Autorizado',              origen: 'terminos', campo: 'montoAutorizado' },
+  { value: 'terminos.montoSolicitado',        label: 'Monto Solicitado',              origen: 'terminos', campo: 'montoSolicitado' },
+  { value: 'terminos.montoGarantia',          label: 'Monto de la Garantía',          origen: 'terminos', campo: 'montoGarantia' },
+  { value: 'terminos.montoCubrirGarantia',    label: 'Monto a Cubrir del Bien',       origen: 'terminos', campo: 'montoCubrirGarantia' },
+  { value: 'terminos.montoSeguro',            label: 'Monto del Seguro',              origen: 'terminos', campo: 'montoSeguro' },
+  { value: 'terminos.montoEnganche',          label: 'Monto de Enganche',             origen: 'terminos', campo: 'montoEnganche',  nota: 'Arrendamiento' },
+  { value: 'terminos.montoResidual',          label: 'Monto Residual',                origen: 'terminos', campo: 'montoResidual',  nota: 'Arrendamiento' },
+  { value: 'terminos.pagoMensual',            label: 'Pago del Período',              origen: 'terminos', campo: 'pagoMensual' },
+  { value: 'terminos.pagoTotal',              label: 'Pago Total del Período',        origen: 'terminos', campo: 'pagoTotal' },
+  // ── Garantía Financiera 2o Piso ──
+  { value: 'terminos.montoGarantizadoGpo',    label: 'Monto Garantizado GPO',         origen: 'terminos', campo: 'montoGarantizadoGpo',    nota: 'GPO' },
+  { value: 'terminos.montoEmisionProyectado', label: 'Monto de Emisión Proyectado',   origen: 'terminos', campo: 'montoEmisionProyectado', nota: 'GPO' },
+  { value: 'modeloViabilidad.montoFondoReservaFideicomiso',
+    label: 'Monto Fondo de Reserva del Fideicomiso', origen: 'modeloViabilidad', campo: 'montoFondoReservaFideicomiso', nota: 'GPO' },
+  // ── NAFIN ──
+  { value: 'lineaGlobal.montoAutorizado',     label: 'Monto Autorizado de la Línea Global', origen: 'lineaGlobal', campo: 'montoAutorizado', nota: 'NAFIN' },
+  { value: 'sublinea.montoElegible',          label: 'Monto de la Carta (Elegible)',  origen: 'sublinea', campo: 'montoElegible',   nota: 'SubLínea' },
+  { value: 'sublinea.montoGarantizado',       label: 'Monto Garantizado SubLínea',    origen: 'sublinea', campo: 'montoGarantizado', nota: 'SubLínea' },
+  { value: 'sublinea.montoComision',          label: 'Comisión SubLínea (Garantizado × % Comisión)', origen: 'sublinea', campo: 'montoComision', nota: 'SubLínea' },
+  // ── Encabezado de la Solicitud ──
+  { value: 'solicitud.montoAutorizado',       label: 'Monto Autorizado (encabezado)', origen: 'solicitud', campo: 'montoAutorizado' },
+  { value: 'solicitud.montoSolicitado',       label: 'Monto Solicitado (encabezado)', origen: 'solicitud', campo: 'montoSolicitado' },
+];
+
+/** Opciones del picklist "Campo a Mapear", con la opción vacía al frente. */
+export function opcionesCampoMonto(): OpcionMomento[] {
+  return [
+    { value: '', label: 'Sin mapear' },
+    ...CAMPOS_MONTO_SOLICITUD.map(c => ({ value: c.value, label: c.nota ? `${c.label} · ${c.nota}` : c.label })),
+  ];
+}
+
+/** Etiqueta legible de un Campo a Mapear ya guardado. */
+export function etiquetaCampoMonto(value?: string): string {
+  if (!value) return 'Sin mapear';
+  const c = CAMPOS_MONTO_SOLICITUD.find(x => x.value === value);
+  return c ? c.label : `${value} (campo desconocido)`;
+}
+
+export type FuentesMonto = Partial<Record<OrigenCampoMonto, Record<string, any> | null>>;
+
+/**
+ * Importe de un cargo a partir de su Campo a Mapear. `null` si el cargo no
+ * declara campo o el campo viene vacío/cero: el llamador decide qué hacer.
+ */
+export function resolverMontoCargo(campoMapeado: string | undefined | null, fuentes: FuentesMonto): number | null {
+  const def = CAMPOS_MONTO_SOLICITUD.find(c => c.value === campoMapeado);
+  const origen = def ? fuentes[def.origen] : null;
+  if (!def || !origen) return null;
+  const n = parseFloat(String(origen[def.campo] ?? '').replace(/[^0-9.-]/g, ''));
+  return Number.isFinite(n) && n > 0 ? Math.round(n * 100) / 100 : null;
+}
+
+/**
+ * Cargos configurados para AUTORIZAR la fase indicada: por posición
+ * (`FASE_<seq>`) o, en catálogos anteriores, `AUTORIZAR_FASE` + nombre de fase.
+ * El legado `FASE_4_PROVISION` no se toma aquí: lo atiende `cargosDeFase4`.
+ * Con `seqFase` null sólo se compara por nombre.
+ */
+export function cargosDeFase(
+  cargosProducto: CargoProducto[] | undefined | null,
+  nombreFase: string,
+  seqFase?: number | null,
+): CargoProducto[] {
+  const fase = norm(nombreFase);
+  return (Array.isArray(cargosProducto) ? cargosProducto : []).filter(c => {
+    if (norm(c?.momento) === norm(MOMENTO_AUTORIZAR_FASE)) return !!fase && norm(c?.fase) === fase;
+    if (seqFase == null || String(c?.momento ?? '').trim().toUpperCase() === MOMENTO_FASE4) return false;
+    return seqDeMomento(c?.momento) === seqFase;
+  });
+}
+
+/**
+ * Cargos del producto marcados para un momento. A diferencia de
+ * `cargosDeFase4`, aquí NO hay respaldo "copiar todos": ese respaldo existe por
+ * compatibilidad con catálogos BANOBRAS viejos, y fue justo lo que produjo el
+ * defecto de REQ-21. Un producto nuevo que no marca el momento no genera cargos.
+ */
+export function cargosDeMomento(
+  cargosProducto: CargoProducto[] | undefined | null,
+  momento: string,
+): CargoProducto[] {
+  const cargos = Array.isArray(cargosProducto) ? cargosProducto : [];
+  return cargos.filter(c => norm(c?.momento) === norm(momento));
+}
 
 /**
  * Eventos del Motor Contable que contabilizan la comisión del periodo. Están
@@ -50,6 +272,13 @@ export interface CargoProducto {
   moneda?: string;
   /** REQ-21 §Decisión 1(a) — momento del ciclo. Vacío en catálogos anteriores. */
   momento?: string;
+  /** Con momento AUTORIZAR_FASE: nombre de la fase del producto que lo genera. */
+  fase?: string;
+  /** Campo monetario de la Solicitud del que sale el importe (CAMPOS_MONTO_SOLICITUD). */
+  campoMapeado?: string;
+  /** Legado: base del importe (BASES_CALCULO_CARGO) y su valor. Ya no se captura. */
+  baseCalculo?: string;
+  valor?: string | number;
   [k: string]: any;
 }
 
@@ -95,7 +324,7 @@ export function cargosDeFase4(
 
   // 1 — configuración explícita
   if (cargos.some(c => norm(c?.momento) !== '')) {
-    return { cargos: cargos.filter(c => norm(c?.momento) === norm(MOMENTO_FASE4)), criterio: 'momento' };
+    return { cargos: cargos.filter(c => seqDeMomento(c?.momento) === 4), criterio: 'momento' };
   }
 
   // 2 — respaldo por Motor Contable

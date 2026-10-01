@@ -45,6 +45,7 @@ import { CuentasAhorroModule } from './components/cuentas-ahorro/CuentasAhorroMo
 import { Dashboard } from './components/Dashboard';
 import { SplashScreen } from './components/SplashScreen';
 import { LoginScreen, type PerfilUsuario } from './components/LoginScreen';
+import { fijarUsuarioSesion } from './lib/auditoria';
 import { OriginacionModule } from './components/originacion/OriginacionModule';
 import { SolicitudActivacionDashboard } from './components/solicitudes-activacion/SolicitudActivacionDashboard';
 import { SolicitudActivacionList } from './components/solicitudes-activacion/SolicitudActivacionList';
@@ -203,6 +204,8 @@ function App() {
 
   const handleLogin = (p: PerfilUsuario) => {
     setPerfil(p);
+    // MD NAFIN 10 §8 / SubLíneas 12 §7 — el usuario queda disponible para la auditoría.
+    fijarUsuarioSesion(p.usuario);
     setIsAuthenticated(true);
     toast.success('Bienvenido al sistema', {
       description: 'Sesión iniciada correctamente',

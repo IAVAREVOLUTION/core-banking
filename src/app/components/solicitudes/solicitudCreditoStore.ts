@@ -119,6 +119,13 @@ export interface TerminosCondiciones {
   permiteCartaComercial?: boolean;
   permiteCartaStandby?: boolean;
   montoMaximoSublinea?: string;
+  /** MD 04/05 — vigencia de la Línea Global (dd/mm/aaaa), capturada en Fase 1. */
+  fechaInicioLinea?: string;
+  fechaVencimientoLinea?: string;
+  /** "Monto Estimado de Operaciones" de la Oportunidad (clave montoInversion allá). */
+  montoEstimadoOperaciones?: string;
+  /** "Objeto / Descripción del Programa" de la Oportunidad (clave descripcionObra allá). */
+  descripcionPrograma?: string;
   numeroIntermediarioNafin?: string;
   tipoIntermediario?: string;
   estatusIntermediarioNafin?: string;
@@ -1038,10 +1045,20 @@ export const CAT_FRECUENCIA = [
   { value: 'Catorcenal', label: 'Catorcenal', dias: 14 },
   { value: 'Quincenal', label: 'Quincenal', dias: 15 },
   { value: 'Mensual', label: 'Mensual', dias: 30 },
+  { value: 'Bimestral', label: 'Bimestral', dias: 60 },
   { value: 'Trimestral', label: 'Trimestral', dias: 90 },
   { value: 'Semestral', label: 'Semestral', dias: 180 },
   { value: 'Anual', label: 'Anual', dias: 360 },
 ];
+
+/**
+ * Unidad en la que se lee el Plazo cuando se mide en periodos de la Frecuencia
+ * (SubLíneas: Plazo 3 + Mensual = 3 meses; Plazo 3 + Bimestral = 3 bimestres).
+ */
+export const UNIDAD_PLAZO_POR_FRECUENCIA: Record<string, string> = {
+  Semanal: 'semanas', Catorcenal: 'catorcenas', Quincenal: 'quincenas', Mensual: 'meses',
+  Bimestral: 'bimestres', Trimestral: 'trimestres', Semestral: 'semestres', Anual: 'años',
+};
 
 export const CAT_TIPO_TASA = ['Fija', 'Variable'];
 

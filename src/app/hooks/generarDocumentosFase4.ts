@@ -3159,3 +3159,205 @@ export async function autoCrearPropuestaContratoGPO(
     documentosActualizados: docsActualizados,
   };
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// MD NAFIN 06 — Acta de Sesión del Comité CPC (Línea Global, Fase Evaluación)
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * Nombre por defecto del requisito. El expediente empareja documento ↔
+ * requisito por NOMBRE exacto, así que quien llama pasa el nombre real del
+ * requisito del producto cuando lo encuentra; éste es sólo el respaldo (es el
+ * que tiene capturado el producto "Línea Global de Garantías NAFIN").
+ */
+export const CLAVE_ACTA_COMITE_CPC_NAFIN = 'Acta de Sesión del Comité CPC';
+
+export interface DatosActaComiteCPC {
+  intermediario: string;
+  numeroIntermediarioNafin: string;
+  tipoIntermediario: string;
+  montoSolicitado: number;
+  moneda: string;
+  modalidad: string;
+  programa: string;
+  /** Información Financiera del Intermediario, ya formateada. */
+  informacionFinanciera: [string, string][];
+  /** Desglose del cálculo: indicador, valor, umbral, puntos. */
+  indicadores: { indicador: string; valor: string; criterio: string; puntos: number | null }[];
+  puntaje: number | null;
+  calificacion: string;
+  nivelRiesgo: string;
+  dictamen: string;
+  montoRecomendado: number;
+  capacidad: number | null;
+  observaciones: string;
+  condiciones: string;
+  ajusteManual: boolean;
+}
+
+/**
+ * Las fuentes estándar de jsPDF (WinAnsi) no tienen ≤ ≥ → −: salen como
+ * basura y además desordenan el espaciado de toda la línea. Se traducen a ASCII.
+ */
+function textoPDF(t: string): string {
+  return String(t || '')
+    .replace(/≤/g, '<=').replace(/≥/g, '>=').replace(/→/g, '->').replace(/−/g, '-');
+}
+
+export function generarActaComiteCPCNafinPDF(datos: DatosSolicitud, a: DatosActaComiteCPC): string {
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true });
+  const W = doc.internal.pageSize.getWidth();
+  const folio = folioComite('ACTA-CPC', datos.noSol);
+  let y = encabezadoComite(doc, 'ACTA DE SESIÓN DEL COMITÉ CPC', folio, datos);
+  const ultimaY = () => (doc as jsPDF & { lastAutoTable: { finalY: number } }).lastAutoTable.finalY;
+  const tabla = (titulo: [string, string], filas: [string, string][]) => {
+    autoTable(doc, {
+      startY: y,
+      head: [titulo],
+      body: filas,
+      theme: 'grid',
+      headStyles: { fillColor: COMITE_PRIMARY, fontSize: 8.5 },
+      bodyStyles: { fontSize: 8 },
+      columnStyles: { 0: { cellWidth: 70, fontStyle: 'bold' } },
+      margin: { left: 14, right: 14 },
+    });
+    y = ultimaY() + 6;
+  };
+  const salto = (necesario: number) => { if (y > 297 - necesario) { doc.addPage(); y = 20; } };
+
+  tabla(['Operación sometida al Comité', ''], [
+    ['Intermediario Financiero', a.intermediario || '—'],
+    ['No. Intermediario NAFIN', a.numeroIntermediarioNafin || '—'],
+    ['Tipo de Intermediario', a.tipoIntermediario || '—'],
+    ['Producto', datos.productoNombre || '—'],
+    ['Programa', a.programa || '—'],
+    ['Modalidad', a.modalidad || '—'],
+    ['Monto Solicitado', pesos(a.montoSolicitado)],
+    ['Moneda', a.moneda || 'MXN'],
+  ]);
+
+  salto(60);
+  tabla(['Información Financiera del Intermediario', ''], a.informacionFinanciera);
+
+  if (a.indicadores.length > 0) {
+    salto(60);
+    autoTable(doc, {
+      startY: y,
+      head: [['Indicador', 'Valor', 'Umbral alcanzado', 'Puntos (0-3)']],
+      body: [
+        ...a.indicadores.map(i => [i.indicador, i.valor, textoPDF(i.criterio), String(i.puntos ?? '—')]),
+        ['Puntaje ponderado', '', '', a.puntaje === null ? '—' : a.puntaje.toFixed(2)],
+      ],
+      theme: 'striped',
+      headStyles: { fillColor: COMITE_PRIMARY, fontSize: 8 },
+      bodyStyles: { fontSize: 7.5 },
+      columnStyles: { 1: { halign: 'right' }, 3: { halign: 'center' } },
+      margin: { left: 14, right: 14 },
+    });
+    y = ultimaY() + 6;
+  }
+
+  salto(50);
+  tabla(['Dictamen de Riesgo', ''], [
+    ['Calificación', a.calificacion || '—'],
+    ['Nivel de Riesgo', a.nivelRiesgo || '—'],
+    ['Dictamen', a.dictamen || '—'],
+    ['Monto Recomendado', pesos(a.montoRecomendado)],
+    ['Capacidad del Intermediario', a.capacidad === null ? '—' : pesos(a.capacidad)],
+    ['Origen del dictamen', a.ajusteManual ? 'Ajustado por el analista' : 'Calculado con la Información Financiera'],
+  ]);
+
+  const parrafo = (titulo: string, texto: string) => {
+    if (!texto.trim()) return;
+    salto(30);
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'bold');
+    doc.text(titulo, 14, y);
+    y += 5;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    const lineas = doc.splitTextToSize(textoPDF(texto), W - 28);
+    doc.text(lineas, 14, y);
+    y += lineas.length * 4 + 6;
+  };
+  parrafo('Condiciones / Mitigantes', a.condiciones);
+  parrafo('Observaciones', a.observaciones);
+  parrafo('Acuerdo',
+    'Con base en la Evaluación Financiera y de Riesgo del Intermediario, se somete la Línea Global a la ' +
+    'consideración del Comité CPC. La votación de sus miembros y la resolución final se registran en la fase ' +
+    'de Autorización. Documento generado por el sistema y asociado al Expediente Electrónico de la solicitud.');
+
+  salto(25);
+  y += 6;
+  doc.setDrawColor(180, 180, 180);
+  doc.line(W / 2 - 40, y, W / 2 + 40, y);
+  doc.setFontSize(7);
+  doc.setTextColor(120, 120, 120);
+  doc.text('Secretario del Comité CPC', W / 2, y + 5, { align: 'center' });
+
+  return doc.output('datauristring');
+}
+
+/**
+ * Genera el Acta y la adjunta al Expediente Electrónico de la fase.
+ *
+ * A diferencia de los documentos sistémicos de BANOBRAS, NO es idempotente por
+ * diseño: el dictamen puede ajustarse, y el Acta debe reflejar la última
+ * versión. Si ya existe un documento con ese nombre, se REEMPLAZA (mismo
+ * requisito, versión nueva) en vez de acumular copias.
+ */
+export async function autoCrearActaComiteCPCNafin(
+  opts: AutoCrearOpts & { acta: DatosActaComiteCPC; clave?: string; faseNombre?: string; faseId?: number },
+): Promise<AutoCrearResult & { reemplazado: boolean }> {
+  const { storageId, datos, supabase, projectId: pid, acta } = opts;
+  const clave = opts.clave || CLAVE_ACTA_COMITE_CPC_NAFIN;
+  const docsPrevios: DocumentoCargado[] =
+    loadFromSession<DocumentoCargado[]>(storageId, 'documentos') ??
+    loadFromSavedStore<DocumentoCargado[]>(storageId, 'documentos') ??
+    [];
+  const esDeEsteRequisito = (d: DocumentoCargado) => d.tipoDocumento === clave || (d as any).claveDocumento === clave;
+  const reemplazado = docsPrevios.some(esDeEsteRequisito);
+
+  const fileData = generarActaComiteCPCNafinPDF(datos, acta);
+  const archivo = 'acta_sesion_comite_cpc.pdf';
+  let uploadInfo: UploadResult | null = null;
+  if (supabase && pid) uploadInfo = await uploadGeneratedPDF(supabase, fileData, archivo, String(storageId), pid);
+
+  const nuevo: DocumentoCargado = {
+    id: generateId(),
+    fecha: new Date().toLocaleString('es-MX'),
+    usuario: 'Sistema',
+    tipoDocumento: clave,
+    archivo,
+    tipoArchivo: 'pdf',
+    nota: `Generado desde Evaluación Financiera y de Riesgo. Dictamen ${acta.dictamen || '—'} · Riesgo ${acta.nivelRiesgo || '—'} · ${acta.calificacion || '—'}.`,
+    area: 'Riesgos',
+    fase: opts.faseNombre || 'Evaluación',
+    faseId: opts.faseId ?? 2,
+    estatus: 'Pendiente Validación IA',
+    validadoIA: false,
+    fileData,
+    url: uploadInfo?.url,
+    storagePath: uploadInfo?.storagePath,
+    mime: 'application/pdf',
+    tamanoKB: uploadInfo?.tamanoKB || Math.round((fileData.length * 3) / 4 / 1024) || 1,
+  } as unknown as DocumentoCargado & { storagePath?: string };
+
+  const docsActualizados = [...docsPrevios.filter(d => !esDeEsteRequisito(d)), nuevo];
+  saveToSession(storageId, 'documentos', documentosParaSessionStorage(docsActualizados));
+  const persist = await persistirDocumentosEnBD(storageId, docsActualizados);
+
+  return {
+    exito: true,
+    documentosCreados: [clave],
+    pdfGenerados: [archivo],
+    subidosASupabase: !!uploadInfo,
+    registradosEnExpediente: persist.ok,
+    error: persist.ok ? undefined : `Acta generada pero NO persistida en BD: ${persist.error}`,
+    validacionPlantillas: { valido: true, motivos: [], faltantes: [], plantillasDetectadas: [], puedeGenerarDocumentos: true },
+    documentoCreadoId: nuevo.id,
+    fileData,
+    documentosActualizados: docsActualizados,
+    reemplazado,
+  };
+}

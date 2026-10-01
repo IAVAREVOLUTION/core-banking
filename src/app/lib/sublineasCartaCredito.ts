@@ -171,7 +171,25 @@ function tieneProductosDisposicion(producto: any): boolean {
  * disposición, no un cupo.
  */
 export function esSubLineaCartaCredito(producto: any): boolean {
-  return esOperacionCartaCredito(producto) && !tieneProductosDisposicion(producto);
+  if (!esOperacionCartaCredito(producto)) return false;
+  // La configuración explícita de hijo manda sobre la estructura: un producto
+  // con Modalidad de Resolución o Producto Padre Requerido es una SubLínea
+  // aunque arrastre Productos Disposición capturados (caso real: la SubLínea
+  // Automática de la BD trae "Crédito Simple 2° Piso" en su subtab y, sin esto,
+  // se clasificaba como Línea Global).
+  if (declaraConfiguracionDeHijo(producto)) return true;
+  return !tieneProductosDisposicion(producto);
+}
+
+/**
+ * ¿El administrador capturó la Modalidad de Resolución, que sólo existe en un
+ * producto hijo (MD 01)? NO se usa `productoPadreRequerido`: el hook de
+ * productos lo rellena con `true` por defecto en TODOS los productos, y con él
+ * la propia Línea Global quedaría clasificada como SubLínea.
+ */
+function declaraConfiguracionDeHijo(producto: any): boolean {
+  const modalidad = norm(leer(producto, 'modalidadResolucion'));
+  return modalidad.startsWith('autom') || modalidad.startsWith('select');
 }
 
 /**
@@ -184,7 +202,7 @@ export function esSubLineaCartaCredito(producto: any): boolean {
  * Disposiciones sobre los hijos.
  */
 export function esLineaGlobalCartaCredito(producto: any): boolean {
-  return esOperacionCartaCredito(producto) && tieneProductosDisposicion(producto);
+  return esOperacionCartaCredito(producto) && tieneProductosDisposicion(producto) && !declaraConfiguracionDeHijo(producto);
 }
 
 /**

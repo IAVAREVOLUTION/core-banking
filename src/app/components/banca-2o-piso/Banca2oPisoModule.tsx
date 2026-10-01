@@ -92,7 +92,10 @@ export function Banca2oPisoModule() {
         />
       ) : (
         <Banca2oPisoDetalle
-          row={view.row}
+          // La fila guardada en `view` es una foto de cuando se abrió el detalle:
+          // tras operar (activar / liberar una SubLínea) `refetch` trae saldos
+          // nuevos y aquí se muestra esa versión, no la foto vieja.
+          row={rows.find(r => String(r.id) === String(view.row.id)) || view.row}
           onBack={() => setView({ type: 'lista' })}
           onCambio={refetch}
         />

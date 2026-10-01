@@ -4,9 +4,14 @@ import {
   TerminosCondiciones, RendimientoRow, EMPTY_TERMINOS,
   saveToSession, loadFromSession, loadFromSavedStore,
   MOCK_TERMINOS, parseCurrency, formatCurrency, CAT_FRECUENCIA, CAT_TIPO_TASA, CAT_TIPO_CALCULO, CAT_MONEDA,
+  UNIDAD_PLAZO_POR_FRECUENCIA,
 } from './solicitudCreditoStore';
 import type { ProductoCatalogo } from '../../hooks/useProductosCatalogoDB';
 import { useProductosSeguros } from '../../hooks/useProductosSeguros';
+import { esSolicitudLineaGlobalNafin, esSolicitudSublinea, sumarAnios } from './LineaGlobalNafinTabs';
+
+/** Periodicidades de cobro de comisión — las mismas que reconoce la Cotización. */
+const CAT_PERIODICIDAD_COMISION = ['Semanal', 'Catorcenal', 'Quincenal', 'Mensual', 'Bimestral', 'Trimestral', 'Semestral', 'Anual'];
 
 // ── Tipos internos ──
 interface GarantiaProducto { tipo: string; subtipo?: string; aforo?: number | string; }
@@ -856,6 +861,17 @@ export function TerminosCondicionesTab({ mode, solicitudId, lineaProducto, tipoP
     data.montoGarantizadoGpo || data.sectorInfraestructura
   );
 
+  /**
+   * SubLínea de Carta de Crédito: el Plazo NO es en años ni en meses fijos, se
+   * mide en periodos de la Frecuencia (3 + Mensual = 3 meses, 3 + Bimestral =
+   * 3 bimestres). Aquí se decide la unidad con la que se rotula y se valida.
+   */
+  const esSublineaTC = esSolicitudSublinea(productoSeleccionado?.rawData)
+    || !!(loadFromSession<any>(solicitudId, 'sublineaCarta') || loadFromSavedStore<any>(solicitudId, 'sublineaCarta'));
+  const unidadPlazoTC = esSublineaTC
+    ? (UNIDAD_PLAZO_POR_FRECUENCIA[data.frecuencia || ''] || 'periodos de la Frecuencia')
+    : esGpoPorDatos ? 'años' : 'meses';
+
   const validationErrors = useMemo(() => {
     const errs: Record<string, string> = {};
     const limits = productoSeleccionado ? extractProductLimits(productoSeleccionado) : {};
@@ -907,9 +923,9 @@ export function TerminosCondicionesTab({ mode, solicitudId, lineaProducto, tipoP
         // Arrendamiento/Crédito: ya hay una fila de Matriz seleccionada explícitamente
         // (encabezado) — validar solo contra ESE rango, no contra toda la matriz.
         if (!plazoNum || plazoNum <= 0) {
-          errs.plazo = `Plazo debe estar en: ${plazoRangoMatriz.min}-${plazoRangoMatriz.max} ${esGpoPorDatos ? 'años' : 'meses'}`;
+          errs.plazo = `Plazo debe estar en: ${plazoRangoMatriz.min}-${plazoRangoMatriz.max} ${unidadPlazoTC}`;
         } else if (plazoNum < plazoRangoMatriz.min || plazoNum > plazoRangoMatriz.max) {
-          errs.plazo = `Plazo debe estar en: ${plazoRangoMatriz.min}-${plazoRangoMatriz.max} ${esGpoPorDatos ? 'años' : 'meses'}`;
+          errs.plazo = `Plazo debe estar en: ${plazoRangoMatriz.min}-${plazoRangoMatriz.max} ${unidadPlazoTC}`;
         }
       } else if (matrizPlazoRanges.length > 0) {
         // Captación Inversión: sin fila seleccionada explícita — plazo debe caer
@@ -1003,6 +1019,29 @@ export function TerminosCondicionesTab({ mode, solicitudId, lineaProducto, tipoP
     const f = gpoFallback[campo as string];
     return f !== undefined && f !== null && f !== '' ? String(f) : '';
   };
+  /**
+   * MD 02 — ¿Solicitud de Línea Global NAFIN? Mismo criterio que la
+   * Oportunidad (configuración del producto, no su nombre); si el producto aún
+   * no carga, basta con que la Solicitud traiga datos NAFIN heredados.
+   */
+  const esLineaGlobalNafin = esSolicitudLineaGlobalNafin(productoSeleccionado?.rawData, {
+    programa: gpo('programa'),
+    modalidadLinea: gpo('modalidadLinea'),
+    numeroIntermediarioNafin: gpo('numeroIntermediarioNafin'),
+  });
+
+  /**
+   * MD NAFIN 04/05 — Fecha Inicio de la línea. Si aún no hay vencimiento, se
+   * propone Inicio + Vigencia (años) heredada de la Oportunidad; editable.
+   */
+  const setFechaInicioLinea = (v: string) => {
+    if (isRO) return;
+    setData(prev => {
+      const vigencia = parseInt(String((prev as any).plazoBonosAnios || gpo('plazoBonosAnios' as keyof TerminosCondiciones) || ''), 10) || 0;
+      const venc = prev.fechaVencimientoLinea || sumarAnios(v, vigencia);
+      return { ...prev, fechaInicioLinea: v, fechaVencimientoLinea: venc };
+    });
+  };
   const _tpRaw = (
     productoSeleccionado?.tipoProducto ||
     productoSeleccionado?.sublineaProducto ||
@@ -1036,7 +1075,7 @@ export function TerminosCondicionesTab({ mode, solicitudId, lineaProducto, tipoP
    * meses. El encabezado de la Matriz de Tasa Fija dice "PLAZO (MESES)"
    * para todos los productos, así que aquí se rotula según corresponda.
    */
-  const unidadPlazo = esGPO ? 'años' : 'meses';
+  const unidadPlazo = esSublineaTC ? unidadPlazoTC : esGPO ? 'años' : 'meses';
 
   return (
     <div className="border border-gray-200 bg-white p-5">
@@ -1123,7 +1162,7 @@ export function TerminosCondicionesTab({ mode, solicitudId, lineaProducto, tipoP
 
           <div>
             <label className="block text-xs text-gray-700 mb-1">
-              Plazo <span className="text-red-500">*</span>
+              {esSublineaTC ? 'Plazo (periodos de la Frecuencia)' : 'Plazo'} <span className="text-red-500">*</span>
               {plazoRangoMatriz && <span className="ml-1 text-gray-400 font-normal">({plazoRangoMatriz.min}–{plazoRangoMatriz.max} {unidadPlazo})</span>}
             </label>
             <input
@@ -1727,16 +1766,18 @@ export function TerminosCondicionesTab({ mode, solicitudId, lineaProducto, tipoP
         <div className="mt-4 border border-teal-200 rounded overflow-hidden">
           <div className="bg-teal-50 border-b border-teal-200 px-3 py-2">
             <span className="text-xs font-medium text-teal-800 uppercase">
-              Garantía Financiera 2o Piso — heredado de la Oportunidad (Cierre Comercial)
+              {esLineaGlobalNafin ? 'Línea Global NAFIN' : 'Garantía Financiera 2o Piso'} — heredado de la Oportunidad (Cierre Comercial)
             </span>
           </div>
+          {/* Mismas claves que BANOBRAS; en Línea Global sólo cambia la etiqueta
+              (así se llaman en la Oportunidad). */}
           <div className="grid grid-cols-3 gap-x-6 gap-y-3 p-3">
             <div>
               <label className="block text-xs text-gray-700 mb-1">Sector</label>
               <input type="text" value={gpo('sectorInfraestructura') || '—'} disabled className={ic(true)} />
             </div>
             <div>
-              <label className="block text-xs text-gray-700 mb-1">Monto Emisión Proyectado</label>
+              <label className="block text-xs text-gray-700 mb-1">{esLineaGlobalNafin ? 'Monto de Línea Global Solicitado' : 'Monto Emisión Proyectado'}</label>
               <input
                 type="text"
                 value={gpo('montoEmisionProyectado') ? formatCurrency(parseFloat(gpo('montoEmisionProyectado')) || 0) : '—'}
@@ -1745,11 +1786,11 @@ export function TerminosCondicionesTab({ mode, solicitudId, lineaProducto, tipoP
               />
             </div>
             <div>
-              <label className="block text-xs text-gray-700 mb-1">% Cobertura GPO</label>
+              <label className="block text-xs text-gray-700 mb-1">{esLineaGlobalNafin ? '% Cobertura Máxima' : '% Cobertura GPO'}</label>
               <input type="text" value={gpo('porcentajeCoberturaGpo') ? `${gpo('porcentajeCoberturaGpo')}%` : '—'} disabled className={ic(true)} />
             </div>
             <div>
-              <label className="block text-xs text-gray-700 mb-1">Monto Garantizado GPO</label>
+              <label className="block text-xs text-gray-700 mb-1">{esLineaGlobalNafin ? 'Monto Máximo Garantizado' : 'Monto Garantizado GPO'}</label>
               <input
                 type="text"
                 value={gpo('montoGarantizadoGpo') ? formatCurrency(parseFloat(gpo('montoGarantizadoGpo')) || 0) : '—'}
@@ -1763,14 +1804,130 @@ export function TerminosCondicionesTab({ mode, solicitudId, lineaProducto, tipoP
             </div>
             <div>
               <label className="block text-xs text-gray-700 mb-1">Periodicidad Cobro Comisión <span className="text-red-500">*</span></label>
-              <input type="text" value={gpo('periodicidadCobroGpo') || '—'} disabled className={ic(true)} />
+              {/* Capturable: se propone el valor heredado de la Oportunidad, pero una
+                  Solicitud sin Oportunidad (p. ej. una SubLínea creada desde
+                  Disposiciones) no tenía cómo llenarlo y la cotización no corría. */}
+              <select
+                value={(data as any).periodicidadCobroGpo || gpo('periodicidadCobroGpo') || ''}
+                onChange={e => set('periodicidadCobroGpo' as keyof TerminosCondiciones, e.target.value)}
+                disabled={isRO}
+                className={sc()}
+              >
+                <option value="">-- Seleccionar --</option>
+                {CAT_PERIODICIDAD_COMISION.map(p => <option key={p} value={p}>{p}</option>)}
+              </select>
               <p className="text-[10px] text-gray-500 mt-0.5">
-                Heredado de la Oportunidad; no se captura aquí. Determina cada cuánto se cobra la
-                comisión — es independiente del <span className="font-medium">Plazo</span> y de la
-                <span className="font-medium"> Frecuencia</span> del producto.
+                {gpo('periodicidadCobroGpo') ? 'Propuesto desde la Oportunidad; editable. ' : ''}
+                Determina cada cuánto se cobra la comisión — es independiente del
+                <span className="font-medium"> Plazo</span> y de la <span className="font-medium">Frecuencia</span> del producto.
               </p>
             </div>
+            {esLineaGlobalNafin && (
+              <div>
+                <label className="block text-xs text-gray-700 mb-1">Vigencia de la Línea (años)</label>
+                <input type="text" value={gpo('plazoBonosAnios' as keyof TerminosCondiciones) || '—'} disabled className={ic(true)} />
+              </div>
+            )}
           </div>
+
+          {/* ── MD 02 — Línea Global de Carta de Crédito + Intermediario NAFIN ── */}
+          {esLineaGlobalNafin && (
+            <>
+              <div className="bg-teal-50 border-y border-teal-200 px-3 py-1.5">
+                <span className="text-[11px] font-medium text-teal-800 uppercase">Línea Global de Carta de Crédito</span>
+              </div>
+              <div className="grid grid-cols-3 gap-x-6 gap-y-3 p-3">
+                {/* MD 04/05 — vigencia de la línea: se captura aquí (Fase 1). */}
+                <div>
+                  <label className="block text-xs text-gray-700 mb-1">Fecha Inicio <span className="text-red-500">*</span></label>
+                  <DatePicker value={data.fechaInicioLinea || ''} onChange={setFechaInicioLinea}
+                    disabled={isRO} placeholder="dd/mm/aaaa" className="px-2 py-1.5" />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-700 mb-1">Fecha Vencimiento <span className="text-red-500">*</span></label>
+                  <DatePicker value={data.fechaVencimientoLinea || ''} onChange={(v: string) => set('fechaVencimientoLinea', v)}
+                    disabled={isRO} placeholder="dd/mm/aaaa" className="px-2 py-1.5" />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-700 mb-1">Destino</label>
+                  <input type="text" value="Carta de Crédito" disabled className={ic(true)} />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-700 mb-1">Permite Sobregiro</label>
+                  {/* MD 05 — regla inicial: PermiteSobregiro = NO. */}
+                  <input type="text" value="No" disabled className={ic(true)} />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-700 mb-1">Programa</label>
+                  <input type="text" value={gpo('programa') || '—'} disabled className={ic(true)} />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-700 mb-1">Modalidad</label>
+                  <input type="text" value={gpo('modalidadLinea') || '—'} disabled className={ic(true)} />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-700 mb-1">Tipo de Línea</label>
+                  <input type="text" value={gpo('tipoLineaGlobal') || '—'} disabled className={ic(true)} />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-700 mb-1">Operaciones Elegibles</label>
+                  <input
+                    type="text"
+                    value={[
+                      gpo('permiteCartaComercial') === 'true' ? 'Comercial' : '',
+                      gpo('permiteCartaStandby') === 'true' ? 'Standby' : '',
+                    ].filter(Boolean).join(' / ') || '—'}
+                    disabled
+                    className={ic(true)}
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-700 mb-1">Monto Máximo por SubLínea</label>
+                  <input
+                    type="text"
+                    value={gpo('montoMaximoSublinea') ? formatCurrency(parseFloat(parseCurrency(gpo('montoMaximoSublinea'))) || 0) : '—'}
+                    disabled
+                    className={ic(true)}
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-700 mb-1">Monto Estimado de Operaciones</label>
+                  <input
+                    type="text"
+                    value={gpo('montoEstimadoOperaciones') ? formatCurrency(parseFloat(parseCurrency(gpo('montoEstimadoOperaciones'))) || 0) : '—'}
+                    disabled
+                    className={ic(true)}
+                  />
+                </div>
+                <div className="col-span-3">
+                  <label className="block text-xs text-gray-700 mb-1">Objeto / Descripción del Programa</label>
+                  <textarea rows={2} value={gpo('descripcionPrograma') || '—'} disabled className={`${ic(true)} resize-none`} />
+                </div>
+              </div>
+
+              <div className="bg-teal-50 border-y border-teal-200 px-3 py-1.5">
+                <span className="text-[11px] font-medium text-teal-800 uppercase">Intermediario Financiero NAFIN</span>
+              </div>
+              <div className="grid grid-cols-4 gap-x-6 gap-y-3 p-3">
+                <div>
+                  <label className="block text-xs text-gray-700 mb-1">No. Intermediario NAFIN</label>
+                  <input type="text" value={gpo('numeroIntermediarioNafin') || '—'} disabled className={ic(true)} />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-700 mb-1">Tipo de Intermediario</label>
+                  <input type="text" value={gpo('tipoIntermediario') || '—'} disabled className={ic(true)} />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-700 mb-1">Estatus NAFIN</label>
+                  <input type="text" value={gpo('estatusIntermediarioNafin') || '—'} disabled className={ic(true)} />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-700 mb-1">Fecha de Incorporación</label>
+                  <input type="text" value={gpo('fechaIncorporacionNafin') || '—'} disabled className={ic(true)} />
+                </div>
+              </div>
+            </>
+          )}
         </div>
       )}
     </div>

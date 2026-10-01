@@ -436,10 +436,33 @@ function TerminosLineaCreditoTab({ row }: { row: LineaCreditoRow }) {
   ];
   const tieneGPO = gpo.some(([, v]) => v !== '—');
 
+  // MD NAFIN 09 — Línea Global operativa (sólo existe en líneas NAFIN liberadas).
+  const lg = row.banca2oPiso?.lineaGlobal;
+  const lineaGlobal: Array<[string, string]> | null = lg ? [
+    ['No. Línea', val(lg.noLinea)],
+    ['Intermediario Financiero', val(lg.intermediario)],
+    ['No. Intermediario NAFIN', val(lg.numeroIntermediarioNafin)],
+    ['Estatus', val(lg.estatus)],
+    ['Monto Autorizado', fmtMoneyExacto(lg.montoAutorizado || 0)],
+    ['Monto Utilizado', fmtMoneyExacto(lg.montoUtilizado || 0)],
+    ['Monto Contingente', fmtMoneyExacto(lg.montoContingente || 0)],
+    ['Monto Disponible', fmtMoneyExacto(lg.montoDisponible || 0)],
+    ['Monto Reclamado', fmtMoneyExacto(lg.montoReclamado || 0)],
+    ['Monto Pagado', fmtMoneyExacto(lg.montoPagado || 0)],
+    ['Moneda', val(lg.moneda)],
+    ['Modalidad', val(lg.modalidad)],
+    ['Revolvente', lg.revolvente ? 'Sí' : 'No'],
+    ['Cobertura Máxima', lg.coberturaMaxima ? `${lg.coberturaMaxima}%` : '—'],
+    ['Monto Máximo por SubLínea', lg.montoMaximoSublinea ? fmtMoneyExacto(lg.montoMaximoSublinea) : '—'],
+    ['Fecha Inicio', val(lg.fechaInicio)],
+    ['Fecha Vencimiento', val(lg.fechaVencimiento)],
+  ] : null;
+
   return (
     <div className="space-y-4">
       <Bloque titulo="Condiciones de la línea" filas={generales} />
-      {tieneGPO && <Bloque titulo="Garantía Financiera 2o Piso" filas={gpo} />}
+      {lineaGlobal && <Bloque titulo="Línea Global NAFIN" filas={lineaGlobal} />}
+      {tieneGPO && !lineaGlobal && <Bloque titulo="Garantía Financiera 2o Piso" filas={gpo} />}
       {(row.idGarantiaCartera || row.polizaContableApertura) && (
         <Bloque
           titulo="Formalización"

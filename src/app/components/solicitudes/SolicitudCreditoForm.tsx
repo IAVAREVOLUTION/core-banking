@@ -52,9 +52,35 @@ import { fetchLineaPadre, fetchCuentasBeneficiarias } from '../banca-2o-piso/ban
 import { formalizarGarantiaGPO } from '../../hooks/formalizacionCarteraGPO';
 // REQ-20 — el saldo de la garantía lo lee y lo escribe el mismo módulo, para que
 // el significado de `saldo_actual` en una línea GPO tenga un solo dueño.
-import { sembrarSaldoGarantia } from '../banca-2o-piso/banca2oPisoStore';
+import { sembrarSaldoGarantia, guardarBanca2oPiso } from '../banca-2o-piso/banca2oPisoStore';
+// MD NAFIN 04-09 — misma Solicitud y mismo motor de fases; cambia el contenido
+// de los subtabs 2o Piso cuando el producto es la Línea Global NAFIN.
+import {
+  esSolicitudLineaGlobalNafin, esSolicitudSublinea, leerLineaGlobalNafin, faseNafinDe, esFaseLiberacionNafin,
+  faltantesFase1Nafin, faltantesFase2Nafin, faltantesFase3Nafin, faltantesFase4Nafin,
+  construirLineaGlobalOperativa, terminosConIntermediarioMaestro,
+  EstructuraLineaGlobalNafinTab, EvaluacionRiesgoNafinTab, ResumenVotacionNafin,
+  ResolucionLineaGlobalNafinTab, FormalizacionNafinTab,
+} from './LineaGlobalNafinTabs';
+// MD NAFIN SubLíneas 05-08 — Carta de Crédito sobre la Línea Global.
+import { SublineaCartaCreditoSection, leerSublinea, leerPartes } from './SublineaCartaCreditoSection';
+import {
+  EvaluacionSublineaTab, ResolucionSublineaTab, InstrumentacionSublineaTab, leerOriginacionSublinea,
+  faltantesEvaluacionSublinea, faltantesResolucionSublinea, faltantesInstrumentacionSublinea, cartaParaActivacion,
+} from './SublineaSelectivaTabs';
+import {
+  activarSublinea, guardarEstatusSublinea, faltantesCarta, productoPorId, ESTADO_EN_ORIGINACION, ESTADO_AUTORIZADA,
+  type ResultadoActivacion,
+} from '../banca-2o-piso/sublineasStore';
+import { useProductosLineaCreditoDB } from '../../hooks/useProductosLineaCreditoDB';
+import { registrarBitacoraFase } from '../../lib/auditoria';
+import { calcularFechaFin, diasDeFrecuencia } from '../../lib/fechasPlazo';
+import {
+  modalidadDe, parametrosSubLinea, MODALIDAD_SELECTIVA, ESTADO_ACTIVA as ESTADO_SUBLINEA_ACTIVA,
+  ROL_ORDENANTE, ROL_BENEFICIARIO_CARTA,
+} from '../../lib/sublineasCartaCredito';
 // REQ-21 HU-21.2 — no todos los cargos del producto son de Fase 4.
-import { cargosDeFase4 } from '../../lib/cargosProductoGPO';
+import { cargosDeFase4, cargosDeFase, montoCargo, resolverMontoCargo, type FuentesMonto } from '../../lib/cargosProductoGPO';
 import { ExpedienteElectronicoTab } from './ExpedienteElectronicoTab';
 import { GarantiasTab } from './GarantiasTab';
 import { ComisionesTab } from './ComisionesTab';
@@ -80,6 +106,7 @@ import {
   autoCrearReporteBuro,
   autoCrearDocumentosComitePrepago,
   autoCrearDictamenRiesgo,
+  autoCrearActaComiteCPCNafin, type DatosActaComiteCPC,
   autoCrearOficioCIC,
   autoCrearPropuestaContratoGPO,
   htmlToPdfBlobUrl, sustituirPlaceholders, decodificarArchivoData,
@@ -932,6 +959,53 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
   }, [storageId, formData, productoSeleccionado]);
 
   /**
+   * MD NAFIN 06 — [Generar Acta de Sesión del Comité CPC] desde Evaluación
+   * Financiera y de Riesgo. El nombre del documento es el del requisito del
+   * producto en ESTA fase (el expediente empareja por nombre exacto); si el
+   * producto no lo declara, se usa el nombre por defecto.
+   */
+  const handleGenerarActaComiteCPC = useCallback(async (acta: DatosActaComiteCPC): Promise<boolean> => {
+    try {
+      const requisitos = getRequisitosFromRawData(productoSeleccionado?.rawData as Record<string, any> | undefined);
+      const nfA = (v: unknown) => String(v ?? '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      const esActa = (r: any) => nfA(r.tipoDocumento).includes('acta') && nfA(r.tipoDocumento).includes('comite');
+      const requisito = requisitos.find(r => esActa(r) && nfA(r.fase) === nfA(formData.descripcionFase))
+        || requisitos.find(esActa);
+      const res = await autoCrearActaComiteCPCNafin({
+        storageId,
+        datos: {
+          noSol: formData.noSol || '',
+          cliente: acta.intermediario || 'Intermediario',
+          lineaProducto: formData.lineaProducto || '',
+          tipoProducto: formData.tipoProducto || '',
+          productoNombre: productoSeleccionado?.nombreProducto || formData.nombreProducto || '',
+          terminos: loadFromSession<any>(storageId, 'terminos') || loadFromSavedStore<any>(storageId, 'terminos') || {},
+        },
+        acta,
+        clave: requisito?.tipoDocumento,
+        faseNombre: formData.descripcionFase,
+        faseId: parseInt(formData.faseId) || 2,
+        supabase,
+        projectId,
+      });
+      if (res.registradosEnExpediente) {
+        toast.success(res.reemplazado ? 'Acta del Comité CPC actualizada' : 'Acta del Comité CPC generada', {
+          description: `${res.documentosCreados[0]} — adjuntada al Expediente Electrónico${res.reemplazado ? ' (reemplaza la versión anterior)' : ''}.`,
+          duration: 8000,
+        });
+      } else {
+        toast.warning('Acta generada, pero NO se guardó en base de datos', { description: res.error, duration: 12000 });
+      }
+      setExpedienteKey(k => k + 1);
+      return res.registradosEnExpediente;
+    } catch (err: any) {
+      toast.error('Error al generar el Acta del Comité CPC', { description: err?.message || String(err), duration: 8000 });
+      return false;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storageId, formData, productoSeleccionado]);
+
+  /**
    * REQ-12 — [Emitir Oficio de Autorización y Bloquear Cupo].
    * El subtab valida el Registro Legal y arma el payload; aquí se intenta la
    * reserva atómica de cupo (RPC `reservar_cupo_gpo`, necesita el cliente de
@@ -1093,6 +1167,193 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
       const esLineaCredito = lpLower.includes('nea') && lpLower.includes('cr');
       const esActivacionCuentaFinanciera = esLineaCredito && faseNombre.toLowerCase().includes('activac');
 
+      // ── MD NAFIN LG 04 / 10 §4 · SubLíneas 07 / CA-11 — cargos de la fase ──
+      // Requisitos y pantallas ya se validaron arriba: la fase se autoriza y se
+      // consultan en Taller de Producto los cargos configurados para
+      // Producto + ESTA fase (momento "Al autorizar una fase"). Es genérico: un
+      // producto que no los configura no genera nada (BANOBRAS sigue con REQ-15).
+      const generarCargosDeFase = async () => {
+        try {
+          const rawProdF = productoSeleccionado?.rawData as Record<string, any> | undefined;
+          const catalogoF: any[] =
+            (Array.isArray((productoSeleccionado as any)?.cargos) ? (productoSeleccionado as any).cargos : null) ??
+            (Array.isArray(rawProdF?.cargo) ? rawProdF!.cargo : []);
+          // En GPO la Fase 4 ya genera sus cargos por REQ-15 (cargosDeFase4):
+          // aquí sólo los de nombre, para no duplicarlos.
+          const deFase = cargosDeFase(catalogoF, faseNombre,
+            esGPOForm && !esLineaGlobalNafinForm && seqActual === 4 ? null : seqActual);
+          if (deFase.length > 0) {
+            const tF: any = loadFromSession<any>(storageId, 'terminos') || loadFromSavedStore<any>(storageId, 'terminos') || {};
+            const nafinF = esLineaGlobalNafinForm ? leerLineaGlobalNafin(storageId) : null;
+            const subF = esSublineaForm ? leerSublinea(storageId) : null;
+            const pm = (v: unknown) => parseFloat(parseCurrency(String(v ?? '0'))) || 0;
+            const bases = {
+              solicitado: pm(formData.montoSolicitado),
+              autorizado: pm(nafinF?.resolucion.montoAutorizado) || pm(formData.montoAutorizado) || pm(formData.montoSolicitado),
+              garantizado: pm(tF.montoGarantizadoGpo) || pm(subF?.montoGarantizado),
+            };
+            const fuentesF: FuentesMonto = {
+              solicitud: formData as any,
+              terminos: tF,
+              modeloViabilidad: loadFromSession<any>(storageId, 'modeloViabilidad') || loadFromSavedStore<any>(storageId, 'modeloViabilidad') || null,
+              lineaGlobal: nafinF ? { montoAutorizado: nafinF.resolucion.montoAutorizado } : null,
+              sublinea: subF ? {
+                montoElegible: subF.montoElegible, montoGarantizado: subF.montoGarantizado,
+                montoComision: pm(subF.montoGarantizado) * pm(subF.porcentajeComision) / 100,
+              } : null,
+            };
+            // Importe: Campo a Mapear; los cargos anteriores con Base/Valor siguen valiendo.
+            const importe = (c: any) => resolverMontoCargo(c.campoMapeado, fuentesF) ?? montoCargo(c, bases);
+            const sinImporte = deFase.filter((c: any) => importe(c) == null);
+            if (sinImporte.length > 0) {
+              toast.warning(`${sinImporte.length} cargo(s) de la fase sin importe`, {
+                description: sinImporte.map((c: any) => `${c.tipoCargo}: ${c.campoMapeado ? 'el campo mapeado viene vacío' : 'sin Campo a Mapear en el producto'}`).join(' · '),
+                duration: 9000,
+              });
+            }
+            const previos: any[] = loadFromSession<any[]>(storageId, 'cargos') || loadFromSavedStore<any[]>(storageId, 'cargos') || [];
+            // Idempotencia: un reintento de la misma fase no duplica cargos.
+            const clave = (c: any) => `${String(c.tipoCargo || '').toLowerCase()}|${String(c.descripcion || '').toLowerCase()}|${String(c.fase || '').toLowerCase()}`;
+            const ya = new Set(previos.map(clave));
+            const hoyF = new Date().toISOString().slice(0, 10);
+            const nuevos = deFase
+              .filter((c: any) => importe(c) != null)
+              .map((c: any, i: number) => ({
+                id: Date.now() + i,
+                tipoCargo: c.tipoCargo || '',
+                descripcion: c.descripcion || '',
+                fase: faseNombre,
+                monto: importe(c) ?? 0,
+                fechaCargo: hoyF,
+                estatus: 'Pendiente',
+                notas: `Generado al autorizar la fase "${faseNombre}" (Taller de Producto → Cargos).`,
+              }))
+              .filter((c: any) => !ya.has(clave(c)));
+            if (nuevos.length > 0) {
+              const todos = [...previos, ...nuevos];
+              saveToSession(storageId, 'cargos', todos);
+              saveToSavedStore(storageId, 'cargos', todos);
+              setCargosKey(k => k + 1);
+              toast.success(`${nuevos.length} cargo(s) de la fase generados`, {
+                description: nuevos.map((c: any) => `${c.tipoCargo} ${formatCurrency(c.monto)}`).join(' · '),
+                duration: 8000,
+              });
+            }
+          }
+        } catch (errCargosFase: any) {
+          // No bloquea la autorización: se avisa, igual que REQ-15.
+          toast.warning('No se generaron los cargos de la fase', { description: errCargosFase?.message || String(errCargosFase) });
+        }
+      };
+
+
+      // ── MD SubLíneas 07: SubLínea Selectiva — F1…F5 sobre el motor actual ──
+      // F1 exige Términos (carta) y Partes Relacionadas mínimas; Aprobación deja
+      // la SubLínea AUTORIZADA; Activación ejecuta ActivarSublinea(), que
+      // vuelve a validar con el disponible VIGENTE (CA-13) y bloquea si ya no
+      // alcanza. La Automática no pasa por aquí: no tiene fases (MD 06).
+      if (esSublineaForm && esSublineaSelectiva) {
+        const nfS = (faseNombre || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+        const cartaS = leerSublinea(storageId);
+        const montoCartaS = parseFloat(parseCurrency(String(formData.montoSolicitado || '0'))) || 0;
+        if (nfS.includes('integracion')) {
+          const partesS = leerPartes(storageId);
+          const tieneRol = (rol: string) => partesS.some((p: any) =>
+            [p?.tipoRelacion, p?.rolAsignado].some(v => String(v || '').toLowerCase() === rol.toLowerCase()));
+          const faltanS = [
+            ...faltantesCarta(cartaS, montoCartaS),
+            ...(tieneRol(ROL_ORDENANTE) ? [] : [`Parte Relacionada "${ROL_ORDENANTE}"`]),
+            ...(tieneRol(ROL_BENEFICIARIO_CARTA) ? [] : [`Parte Relacionada "${ROL_BENEFICIARIO_CARTA}"`]),
+          ];
+          if (faltanS.length > 0) {
+            toast.error('No se puede avanzar de fase', {
+              description: `Integración de Expediente incompleta: ${faltanS.join(' · ')}`,
+              duration: 12000,
+            });
+            void registrarBitacoraFase(String(storageId), { fase: faseNombre, resultado: 'BLOQUEADA', validaciones: faltanS, producto: formData.nombreProducto });
+            return;
+          }
+        }
+        // CA-10 — cada fase valida su pantalla antes de autorizarse.
+        const origS = leerOriginacionSublinea(storageId);
+        const faltanFase = nfS.includes('evaluacion') ? faltantesEvaluacionSublinea(origS)
+          : nfS.includes('aprobacion')
+            ? [
+                ...(leerVotacionCPC(storageId).votos.length === 0 ? ['No hay ningún voto registrado'] : []),
+                ...faltantesResolucionSublinea(origS, montoCartaS),
+              ]
+            : nfS.includes('instrumentacion') ? faltantesInstrumentacionSublinea(origS)
+            : [];
+        if (faltanFase.length > 0) {
+          toast.error('No se puede avanzar de fase', { description: `${faseNombre}: ${faltanFase.join(' · ')}`, duration: 12000 });
+          void registrarBitacoraFase(String(storageId), { fase: faseNombre, resultado: 'BLOQUEADA', validaciones: faltanFase, producto: formData.nombreProducto });
+          return;
+        }
+        if (nfS.includes('activacion')) {
+          // MD 07 §Fase 5 — no se reevalúa crédito: se activa con lo autorizado
+          // en F3 y lo instrumentado en F4.
+          const paraActivar = cartaParaActivacion(cartaS, origS, montoCartaS);
+          const rAct = await activarSublinea({
+            sublineaId: String(storageId),
+            noSol: formData.noSol || '',
+            productoHijo: productoSublinea,
+            productos: productosLC,
+            carta: paraActivar.carta,
+            montoCarta: paraActivar.montoCarta,
+            partes: leerPartes(storageId),
+          });
+          if (!rAct.ok || !rAct.elegible) {
+            void registrarBitacoraFase(String(storageId), {
+              fase: faseNombre, resultado: 'BLOQUEADA', producto: formData.nombreProducto,
+              validaciones: rAct.error ? [rAct.error] : (rAct.validacion?.incumplidas || []).map(x => `${x.etiqueta}${x.detalle ? ` — ${x.detalle}` : ''}`),
+            });
+            toast.error('No se puede activar la SubLínea', {
+              description: rAct.error
+                || (rAct.validacion?.incumplidas || []).map(x => `${x.etiqueta}${x.detalle ? ` — ${x.detalle}` : ''}`).join(' · '),
+              duration: 15000,
+            });
+            return;
+          }
+          if (!rAct.yaActiva) {
+            await aplicarResultadoSublinea(rAct);
+            toast.success('SubLínea ACTIVA', {
+              description: `Disponible de la Línea Global: ${formatCurrency(rAct.disponibleNuevo || 0)}.`,
+              duration: 9000,
+            });
+          }
+          // MD 07 §Fase 5 — la activación ES el cierre del flujo de la SubLínea.
+          // No sigue a "Activación Cuenta Financiera" (crearía una cuenta) ni al
+          // cierre de última fase (generaría dispersión de una disposición): una
+          // SubLínea es contingente, no hay flujo de efectivo (MD 10).
+          await generarCargosDeFase();
+          void registrarBitacoraFase(String(storageId), {
+            fase: faseNombre, estatusAnterior: cartaS.estatus, estatusNuevo: 'ACTIVA', resultado: 'ACTIVADA',
+            producto: formData.nombreProducto,
+            validaciones: (rAct.validacion?.cumplidas || []).map(x => `✓ ${x.etiqueta}`),
+            observaciones: rAct.yaActiva ? 'Ya estaba activa: no se volvió a consumir el disponible.'
+              : `Monto Garantizado ${formatCurrency(rAct.datos?.montoGarantizado || 0)}; Disponible ${formatCurrency(rAct.disponibleNuevo || 0)}.`,
+          });
+          setFormData(prev => ({ ...prev, estatusSolicitud: 'Activa' }));
+          try {
+            const cargosS = loadFromSession<any[]>(storageId, 'cargos') || loadFromSavedStore<any[]>(storageId, 'cargos');
+            await onSave?.({
+              ...formData,
+              estatusSolicitud: 'Activa',
+              _allSubtabs: { sublineaCarta: leerSublinea(storageId), ...(cargosS ? { cargos: cargosS } : {}) },
+            });
+          } catch (errS: any) {
+            toast.warning('SubLínea activada, pero no se guardó la Solicitud', { description: errS?.message || String(errS) });
+          }
+          return;
+        } else if (cartaS.estatus !== ESTADO_SUBLINEA_ACTIVA) {
+          // MD 08 §Estados Selectiva — BORRADOR → EN_ORIGINACION → AUTORIZADA.
+          const estatusS = nfS.includes('aprobacion') ? ESTADO_AUTORIZADA
+            : cartaS.estatus === ESTADO_AUTORIZADA ? ESTADO_AUTORIZADA : ESTADO_EN_ORIGINACION;
+          saveToSession(storageId, 'sublineaCarta', { ...cartaS, estatus: estatusS });
+          if (estatusS !== cartaS.estatus) void guardarEstatusSublinea(String(storageId), estatusS);
+        }
+      }
+
       // ── Activación Cuenta Financiera: manejo completo aquí, sin IA ──────
       if (esActivacionCuentaFinanciera) {
         const toastActiv = toast.loading('Autorizando solicitud...', { description: faseNombre });
@@ -1162,10 +1423,54 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
         return;
       }
 
+      // ── MD NAFIN 05-08: compuertas de la Línea Global ──
+      // Mismo punto y mismo criterio (nombre de fase) que las compuertas
+      // BANOBRAS de abajo, que no aplican a NAFIN: un IF no tiene fideicomiso
+      // ni DSCR de proyecto (MD 06 §Lógica BANOBRAS que debe permanecer intacta).
+      // Los requisitos documentales siguen validándose con el motor actual.
+      if (esLineaGlobalNafinForm) {
+        const faseNafin = faseNafinDe(faseNombre || '');
+        if (faseNafin) {
+          const terminosNafin: any = loadFromSession<any>(storageId, 'terminos') || loadFromSavedStore<any>(storageId, 'terminos') || {};
+          const nafin = leerLineaGlobalNafin(storageId);
+          let faltanNafin: string[] = [];
+          let pantalla = '';
+          if (faseNafin === 1) {
+            // MD 03 — Intermediario (y su vigencia) del maestro Persona/Cliente.
+            faltanNafin = faltantesFase1Nafin(
+              await terminosConIntermediarioMaestro(terminosNafin, (formData as any)._clienteId),
+            );
+            pantalla = 'Términos y Estructura de la Línea Global';
+          } else if (faseNafin === 2) {
+            faltanNafin = faltantesFase2Nafin(nafin);
+            pantalla = 'Evaluación Financiera y de Riesgo';
+          } else if (faseNafin === 3) {
+            // La votación se reutiliza tal cual: sin votos no hay qué resolver.
+            if (leerVotacionCPC(storageId).votos.length === 0) faltanNafin.push('No hay ningún voto registrado');
+            faltanNafin = [...faltanNafin, ...faltantesFase3Nafin(nafin, terminosNafin)];
+            pantalla = 'Votación y Resolución Final';
+          } else {
+            faltanNafin = faltantesFase4Nafin(nafin);
+            pantalla = 'Validación de Formalización';
+          }
+          if (faltanNafin.length > 0) {
+            toast.error('No se puede avanzar de fase', {
+              description: `${pantalla} incompleta: ${faltanNafin.join(' · ')}`,
+              duration: 12000,
+            });
+            void registrarBitacoraFase(String(storageId), {
+              fase: faseNombre, resultado: 'BLOQUEADA', validaciones: faltanNafin,
+              observaciones: pantalla, producto: productoSeleccionado?.nombreProducto || formData.nombreProducto,
+            });
+            return;
+          }
+        }
+      }
+
       // ── REQ-9: Estructura Operativa de 2o Piso obligatoria al salir de Admisión ──
       // Es el botón [Validar Ecosistema y Crear Expediente de Riesgo] del BPM: no se
       // crea uno nuevo, se le agrega esta condición al avance existente.
-      if (esGPOForm) {
+      if (esGPOForm && !esLineaGlobalNafinForm) {
         const nombreFaseActual = (faseNombre || '')
           .toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
         const saliendoDeAdmision = nombreFaseActual.includes('admision') || nombreFaseActual.includes('ecosistema');
@@ -1185,7 +1490,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
       // ── REQ-10: Análisis de Grado de Riesgo completo antes de ir a Comités ──
       // "Si los flujos son muy ajustados, el Core detendrá el proceso": semáforo
       // Rojo bloquea de forma dura (decisión de negocio 27/08/2026).
-      if (esGPOForm) {
+      if (esGPOForm && !esLineaGlobalNafinForm) {
         const nf = (faseNombre || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
         const saliendoDeRiesgo = nf.includes('grado de riesgo') || nf.includes('analisis de grado');
         if (saliendoDeRiesgo) {
@@ -1206,7 +1511,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
       // aprobó pero el cupo no quedó reservado, no se deja avanzar — es
       // justamente el "impedir que el banco comprometa esa misma capacidad
       // en otros proyectos" del BPM.
-      if (esGPOForm) {
+      if (esGPOForm && !esLineaGlobalNafinForm) {
         const nf3 = (faseNombre || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
         const saliendoDeComitePrepago = nf3.includes('comite') && nf3.includes('prepago');
         if (saliendoDeComitePrepago) {
@@ -1232,7 +1537,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
       }
 
       // ── Actividad 7.1: Validación de Cláusulas Fiduciarias completa antes de salir de Fase 4 ──
-      if (esGPOForm) {
+      if (esGPOForm && !esLineaGlobalNafinForm) {
         const nf4 = (faseNombre || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
         const saliendoDeClausulasFiduciarias = nf4.includes('clausulas fiduciarias') || nf4.includes('clausulas fiduciari');
         if (saliendoDeClausulasFiduciarias) {
@@ -1396,12 +1701,16 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
                   id: Date.now() + i,
                   tipoCargo: c.tipoCargo || '',
                   descripcion: c.descripcion || '',
-                  monto: montoGarantizado,
+                  // Campo a Mapear del producto; sin él, el Monto Garantizado (REQ-15).
+                  monto: resolverMontoCargo(c.campoMapeado, {
+                    solicitud: formData as any, terminos: terminosGPO,
+                    modeloViabilidad: loadFromSession<any>(storageId, 'modeloViabilidad') || loadFromSavedStore<any>(storageId, 'modeloViabilidad') || null,
+                  }) ?? montoGarantizado,
                   fechaCargo: hoyISO,
                   estatus: 'Pendiente',
                   notas:
                     'Generado automáticamente desde el subtab Cargos del producto al ejecutar ' +
-                    'la Formalización Legal. Monto = Monto Garantizado GPO.',
+                    'la Formalización Legal.',
                 }));
 
               if (nuevosCargos.length === 0) {
@@ -1863,6 +2172,8 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
         }
       }
 
+      await generarCargosDeFase();
+
       // ── 4. Buscar faseSiguiente por numero_consecutivo ──
       const sigFase = fasesDelProducto.find(f => f.seq === seqActual + 1);
       console.log('[handleEnviarFase] DEBUG llegó al punto 4 — seqActual:', seqActual, '| sigFase:', sigFase);
@@ -2160,7 +2471,11 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
       // botón de la Actividad 7.1": el disparador real es ENTRAR a Fase 5, sin
       // importar cuál botón concreto hizo avanzar la fase (mismo criterio que
       // esFaseComitePrepago arriba, que dispara al ENTRAR a Fase 3).
-      const entrandoAActivacion2oPiso = esGPOForm && nombreSigFase.includes('activacion') && nombreSigFase.includes('piso');
+      const entrandoAActivacion2oPiso = esLineaGlobalNafinForm
+        // MD NAFIN 09 — la fase final de la Línea Global se llama Liberación
+        // (o Activación de Línea), sin "piso" en el nombre.
+        ? esFaseLiberacionNafin(sigFase.fase || '')
+        : esGPOForm && nombreSigFase.includes('activacion') && nombreSigFase.includes('piso');
       if (esFaseComitePrepago) {
         try {
           const terminosComite: any = loadFromSession<any>(storageId, 'terminos') || loadFromSavedStore<any>(storageId, 'terminos') || {};
@@ -2223,6 +2538,16 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
       if (dbId && UUID_REGEX.test(dbId)) {
         const nuevoEstatus = formData.estatusSolicitud === 'Pendiente' ? 'En proceso' : undefined;
         const result = await avanzarFaseSolicitudDB(dbId, sigFase.faseId, sigFase.fase, nuevaAreaActual, nuevoEstatus);
+        // MD NAFIN 10 §8 / SubLíneas 12 §7 — auditoría de la autorización.
+        void registrarBitacoraFase(dbId, {
+          fase: faseNombre,
+          faseSiguiente: sigFase.fase,
+          estatusAnterior: formData.estatusSolicitud,
+          estatusNuevo: nuevoEstatus || formData.estatusSolicitud,
+          resultado: result.ok ? 'AUTORIZADA' : 'AUTORIZADA (sin confirmar en BD)',
+          validaciones: ['Requisitos obligatorios de la fase: cumplidos', 'Pantallas obligatorias de la fase: completas'],
+          producto: productoSeleccionado?.nombreProducto || formData.nombreProducto,
+        });
         if (result.ok) {
           toast.success('Fase avanzada correctamente', { description: `${faseActualReal?.fase || formData.descripcionFase} → ${sigFase.fase}` });
         } else {
@@ -2233,7 +2558,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
         // Guardar el estado completo de la solicitud para no perder datos al cambiar de fase
         try {
           const subtabsAutoSave: Record<string, any> = {};
-          const subtabKeys = ['terminos', 'simulacion', 'simulacion_cal', 'simulacion_inv', 'simulacion_arrendamiento', 'documentos', 'garantias', 'comisiones', 'autorizaciones', 'notas', 'partesRelacionadas', 'facturas', 'cargos', 'estructura2oPiso', 'modeloViabilidad', 'votacionCPC', 'resolucionCIC', 'validacionClausulas', '_originalData'];
+          const subtabKeys = ['terminos', 'simulacion', 'simulacion_cal', 'simulacion_inv', 'simulacion_arrendamiento', 'documentos', 'garantias', 'comisiones', 'autorizaciones', 'notas', 'partesRelacionadas', 'facturas', 'cargos', 'estructura2oPiso', 'modeloViabilidad', 'votacionCPC', 'resolucionCIC', 'validacionClausulas', 'lineaGlobalNafin', 'sublineaCarta', 'sublineaOriginacion', '_originalData'];
           for (const key of subtabKeys) {
             const data = loadFromSession(storageId, key) ?? loadFromSavedStore(storageId, key);
             if (data) subtabsAutoSave[key] = data;
@@ -3122,10 +3447,35 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
    * nuevo ni crea una segunda póliza.
    */
   const formalizarGarantiaSiEsGPO = useCallback(async (dbId: string, cuentaVinculadaId?: string) => {
-    if (!esGPOForm) return;
+    if (!esGPOForm && !esLineaGlobalNafinForm) return;
     if (formData.idGarantiaCartera) return;
     const terminosGPO: any = loadFromSession<any>(storageId, 'terminos') || loadFromSavedStore<any>(storageId, 'terminos') || {};
-    const monto = parseFloat(parseCurrency(String(terminosGPO.montoGarantizadoGpo || '0'))) || 0;
+    // MD NAFIN 09 — en la Línea Global la línea operativa nace con el Monto
+    // AUTORIZADO de la Resolución (Disponible = Autorizado), no con el Monto
+    // Garantizado GPO, que en NAFIN se calcula por SubLínea.
+    const nafin = esLineaGlobalNafinForm ? leerLineaGlobalNafin(storageId) : null;
+    const lineaGlobalOperativa = nafin
+      ? construirLineaGlobalOperativa({
+          noSol: formData.noSol || '',
+          producto: productoSeleccionado?.nombreProducto || formData.nombreProducto || '',
+          intermediario: (formData as any).denominacionRazonSocial
+            || `${formData.nombrePersona || ''} ${formData.apellidoPaternoPersona || ''}`.trim(),
+          terminos: await terminosConIntermediarioMaestro(terminosGPO, (formData as any)._clienteId),
+          nafin,
+        })
+      : null;
+    if (lineaGlobalOperativa && !(lineaGlobalOperativa.montoAutorizado > 0)) {
+      // Sin monto autorizado no hay línea que liberar: una póliza o un saldo en
+      // cero dejarían una Línea Global "activa" sin cupo.
+      toast.error('No se puede liberar la Línea Global', {
+        description: 'La Resolución Final no tiene Monto Autorizado.',
+        duration: 12000,
+      });
+      return;
+    }
+    const monto = lineaGlobalOperativa
+      ? lineaGlobalOperativa.montoAutorizado
+      : parseFloat(parseCurrency(String(terminosGPO.montoGarantizadoGpo || '0'))) || 0;
 
     // REQ-19 — la guía contabilizadora GPO-FORMAL-001 ("Formalización / Alta de
     // Garantía de Pago Oportuno") vive en el Motor Contable del producto, y los
@@ -3169,11 +3519,33 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
         });
       }
 
+      // MD NAFIN 09 — la Línea Global operativa: Autorizado, Disponible =
+      // Autorizado, Utilizado/Contingente/Reclamado/Pagado en 0 y estatus
+      // ACTIVA. Vive en el nodo de Banca 2º Piso, donde la leerán las SubLíneas.
+      if (lineaGlobalOperativa) {
+        const g = await guardarBanca2oPiso(dbId, { lineaGlobal: lineaGlobalOperativa });
+        if (g.ok) {
+          toast.success('Línea Global NAFIN liberada', {
+            description: `Estatus ACTIVA — Disponible ${formatCurrency(lineaGlobalOperativa.montoDisponible)}.`,
+            duration: 9000,
+          });
+        } else {
+          toast.warning('Póliza generada, pero no se pudo registrar la Línea Global operativa', {
+            description: g.error, duration: 12000,
+          });
+        }
+      }
+
       const idGarantiaCartera = resultado.idGarantiaCartera;
       const polizaContableApertura = resultado.polizaContableApertura;
-      setFormData(prev => ({ ...prev, idGarantiaCartera, polizaContableApertura, estatusSolicitud: 'En Administración' }));
+      // MD NAFIN 04 — la Solicitud de Línea Global lleva en su encabezado la
+      // vigencia AUTORIZADA (Fecha Inicio / Fecha Vencimiento de la Resolución).
+      const fechasLinea = lineaGlobalOperativa
+        ? { fechaInicio: lineaGlobalOperativa.fechaInicio, fechaFin: lineaGlobalOperativa.fechaVencimiento }
+        : {};
+      setFormData(prev => ({ ...prev, idGarantiaCartera, polizaContableApertura, estatusSolicitud: 'En Administración', ...fechasLinea }));
       try {
-        await onSave?.({ ...formData, idGarantiaCartera, polizaContableApertura, estatusSolicitud: 'En Administración' });
+        await onSave?.({ ...formData, idGarantiaCartera, polizaContableApertura, estatusSolicitud: 'En Administración', ...fechasLinea });
       } catch (err: any) {
         toast.warning('Garantía formalizada, pero no se pudo guardar de inmediato', { description: err?.message || String(err) });
       }
@@ -3628,7 +4000,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
 
     // ── Recopilar datos de TODAS las subtabs ANTES de commitAndClearSession ──
     const allSubtabs: Record<string, any> = {};
-    const subtabKeys = ['terminos', 'simulacion', 'simulacion_cal', 'simulacion_inv', 'simulacion_arrendamiento', 'documentos', 'garantias', 'comisiones', 'autorizaciones', 'notas', 'partesRelacionadas', 'facturas', 'cargos', 'estructura2oPiso', 'modeloViabilidad', 'votacionCPC', 'resolucionCIC', 'validacionClausulas', '_originalData'];
+    const subtabKeys = ['terminos', 'simulacion', 'simulacion_cal', 'simulacion_inv', 'simulacion_arrendamiento', 'documentos', 'garantias', 'comisiones', 'autorizaciones', 'notas', 'partesRelacionadas', 'facturas', 'cargos', 'estructura2oPiso', 'modeloViabilidad', 'votacionCPC', 'resolucionCIC', 'validacionClausulas', 'lineaGlobalNafin', 'sublineaCarta', 'sublineaOriginacion', '_originalData'];
     for (const key of subtabKeys) {
       // _originalData puede haber sido limpiado de session por commitAndClearSession en el save anterior;
       // usar savedStore como fallback para no perder los datos de banca móvil al hacer deep merge
@@ -3709,11 +4081,106 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
   const esGPOForm = useMemo(() => {
     const nombre = `${productoSeleccionado?.nombreProducto || ''} ${formData.nombreProducto || ''} ${formData.tipoProducto || ''}`
       .toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    // Una SubLínea de Carta de Crédito NO es GPO aunque capture Periodicidad
+    // Cobro Comisión: con esa sola señal se le pintaban los subtabs BANOBRAS y
+    // la Cotización usaba los campos de la Oportunidad (vacíos).
+    if (esSolicitudSublinea(productoSeleccionado?.rawData)
+      || loadFromSession<any>(storageId, 'sublineaCarta') || loadFromSavedStore<any>(storageId, 'sublineaCarta')) {
+      return false;
+    }
     if (nombre.includes('garant')) return true;
     const t: any = loadFromSession<any>(storageId, 'terminos') || loadFromSavedStore<any>(storageId, 'terminos') || {};
     return !!(t.periodicidadCobroGpo || t.porcentajeCoberturaGpo || t.montoGarantizadoGpo || t.sectorInfraestructura);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [productoSeleccionado, formData.nombreProducto, formData.tipoProducto, storageId, expedienteKey]);
+  /**
+   * MD NAFIN 10 §1 — ¿Línea Global NAFIN? Se resuelve por la configuración del
+   * producto (o por los datos NAFIN heredados), nunca por su nombre visible.
+   * Con esto los subtabs 2o Piso cambian de contenido y las compuertas de fase
+   * BANOBRAS dejan de aplicar.
+   */
+  const esLineaGlobalNafinForm = useMemo(() => {
+    const t: any = loadFromSession<any>(storageId, 'terminos') || loadFromSavedStore<any>(storageId, 'terminos') || {};
+    return esSolicitudLineaGlobalNafin(productoSeleccionado?.rawData, t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [productoSeleccionado, storageId, expedienteKey]);
+  /** MD SubLíneas 12 §2 — ¿producto hijo de Carta de Crédito (SubLínea)? */
+  const esSublineaForm = useMemo(
+    () => esSolicitudSublinea(productoSeleccionado?.rawData),
+    [productoSeleccionado],
+  );
+  // Catálogo de Línea de Crédito ya aplanado (cargos, motor contable, fases,
+  // cobertura): lo necesita ActivarSublinea. Sólo se carga para SubLíneas.
+  const { productos: productosLC } = useProductosLineaCreditoDB(esSublineaForm);
+  const productoSublinea = useMemo(
+    () => productoPorId(productosLC, formData.productoId),
+    [productosLC, formData.productoId],
+  );
+  const esSublineaSelectiva = !!productoSublinea && modalidadDe(productoSublinea) === MODALIDAD_SELECTIVA;
+
+  /**
+   * Datos de la Carta listos DESDE QUE CARGA la Solicitud, no hasta que se abre
+   * Términos y Condiciones: la Cotización y las validaciones de fase los leen
+   * de la sesión. Sólo se rellenan vacíos (nunca pisa lo capturado o lo que
+   * vino de la BD) con: Monto Elegible ← Monto Solicitado, % Cobertura y
+   * % Comisión ← default del producto, fechas ← encabezado.
+   */
+  useEffect(() => {
+    if (!esSublineaForm || isRO || !productoSublinea) return;
+    const actual: any = loadFromSession<any>(storageId, 'sublineaCarta') || loadFromSavedStore<any>(storageId, 'sublineaCarta') || {};
+    if (actual.estatus === ESTADO_SUBLINEA_ACTIVA) return;
+    const p = parametrosSubLinea(productoSublinea);
+    const monto = parseFloat(parseCurrency(String(formData.montoSolicitado || '0'))) || 0;
+    const patch: Record<string, string> = {};
+    if (!actual.montoElegible && monto > 0) patch.montoElegible = String(monto);
+    if (!actual.porcentajeCobertura && p.coberturaDefault) patch.porcentajeCobertura = String(p.coberturaDefault);
+    if (!actual.porcentajeComision && p.comisionDefault) patch.porcentajeComision = String(p.comisionDefault);
+    if (!actual.tipoCarta && p.tiposCartaPermitidos.length === 1) patch.tipoCarta = p.tiposCartaPermitidos[0];
+    if (!actual.moneda) patch.moneda = 'MXN';
+    if (!actual.estatus) patch.estatus = 'BORRADOR';
+    if (Object.keys(patch).length > 0) saveToSession(storageId, 'sublineaCarta', { ...actual, ...patch });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [esSublineaForm, productoSublinea, storageId, hidratacionKey, formData.montoSolicitado]);
+
+  /**
+   * Fecha Fin de una SubLínea = Fecha Inicio + Plazo × días de la Frecuencia de
+   * Términos y Condiciones. Se recalcula al cambiar cualquiera de los tres. Sólo
+   * en SubLíneas: en GPO / Línea Global el plazo es en AÑOS y en los créditos la
+   * Fecha Fin la fija la Simulación (último pago).
+   */
+  useEffect(() => {
+    if (!esSublineaForm || isRO) return;
+    const fin = calcularFechaFin(formData.fechaInicio || '', parseInt(String(formData.plazo || ''), 10) || 0, diasDeFrecuencia(frecuenciaSeleccionadaHeader));
+    if (fin && fin !== formData.fechaFin) setFormData(prev => ({ ...prev, fechaFin: fin }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [esSublineaForm, formData.fechaInicio, formData.plazo, frecuenciaSeleccionadaHeader]);
+
+  /**
+   * Aplica en la Solicitud el resultado de ActivarSublinea (Automática desde
+   * Términos, Selectiva desde la Fase 5): cargos generados y estatus. La línea
+   * y el nodo de la SubLínea ya quedaron escritos por el servicio.
+   */
+  const aplicarResultadoSublinea = async (r: ResultadoActivacion) => {
+    if (!r.ok || !r.datos || r.datos.estatus !== ESTADO_SUBLINEA_ACTIVA) return;
+    saveToSession(storageId, 'sublineaCarta', r.datos);
+    const allSubtabs: Record<string, any> = { sublineaCarta: r.datos };
+    if (r.cargos && r.cargos.length > 0) {
+      const previos: any[] = loadFromSession<any[]>(storageId, 'cargos') || loadFromSavedStore<any[]>(storageId, 'cargos') || [];
+      const todos = [...previos, ...r.cargos];
+      saveToSession(storageId, 'cargos', todos);
+      saveToSavedStore(storageId, 'cargos', todos);
+      allSubtabs.cargos = todos;
+      setCargosKey(k => k + 1);
+      toast.success(`${r.cargos.length} cargo(s) de activación generados`, { duration: 7000 });
+    }
+    setFormData(prev => ({ ...prev, estatusSolicitud: 'Activa' }));
+    try {
+      await onSave?.({ ...formData, estatusSolicitud: 'Activa', _allSubtabs: allSubtabs });
+    } catch (err: any) {
+      toast.warning('SubLínea activada, pero la Solicitud no se guardó de inmediato', { description: err?.message || String(err) });
+    }
+  };
+
   /**
    * REQ-13 — ¿la Solicitud está en la fase final del BPM GPO ("Activación de
    * Línea 2o Piso") o ya la cerró? Se detecta por NOMBRE de fase, igual que el
@@ -3731,20 +4198,26 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
   //   Captación:      sin Garantías (no aplica préstamo), sin Comisiones clásicas
   //   Crédito:        todas las secciones
   //   Línea de Crédito: igual que Crédito pero Simulación = "Disposiciones"
+  const es2oPisoForm = esGPOForm || esLineaGlobalNafinForm;
+  /** Intermediario / Emisor tal como lo muestran los subtabs 2o Piso. */
+  const acreditado2oPiso = (formData as any).denominacionRazonSocial
+    || `${formData.nombrePersona || ''} ${formData.apellidoPaternoPersona || ''}`.trim();
   const sections = [
     { id: 'default',           label: 'Default' },
     { id: 'terminos',          label: 'Términos y Condiciones' },
     // REQ-9 — solo en Garantía Financiera 2o Piso; va antes de cotizar porque el
     // analista "viste" el ecosistema al admitir la solicitud.
-    ...(esGPOForm ? [{ id: 'estructura2oPiso', label: 'Estructura Operativa de 2o Piso' }] : []),
+    // MD NAFIN 05-08 — en Línea Global se conservan los mismos subtabs y sólo
+    // cambian nombre y contenido (MD 10 §7: componente base + configuración).
+    ...(es2oPisoForm ? [{ id: 'estructura2oPiso', label: esLineaGlobalNafinForm ? 'Estructura Operativa de la Línea Global' : 'Estructura Operativa de 2o Piso' }] : []),
     // REQ-10 — Actividad 5 del BPM: Análisis de Grado de Riesgo.
-    ...(esGPOForm ? [{ id: 'modeloViabilidad', label: 'Modelo y Viabilidad Financiera' }] : []),
+    ...(es2oPisoForm || esSublineaSelectiva ? [{ id: 'modeloViabilidad', label: esSublineaSelectiva ? 'Evaluación' : esLineaGlobalNafinForm ? 'Evaluación Financiera y de Riesgo' : 'Modelo y Viabilidad Financiera' }] : []),
     // REQ-11 — Actividad 6.1 del BPM: Votación del Comité de Prepago y Crédito.
-    ...(esGPOForm ? [{ id: 'votacionCPC', label: 'Votación CPC' }] : []),
+    ...(es2oPisoForm || esSublineaSelectiva ? [{ id: 'votacionCPC', label: esLineaGlobalNafinForm || esSublineaSelectiva ? 'Votación' : 'Votación CPC' }] : []),
     // REQ-12 — Actividad 6.2 del BPM: Autorización del Comité Interno de Crédito.
-    ...(esGPOForm ? [{ id: 'resolucionCIC', label: 'Resolución Final CIC' }] : []),
+    ...(es2oPisoForm || esSublineaSelectiva ? [{ id: 'resolucionCIC', label: esLineaGlobalNafinForm || esSublineaSelectiva ? 'Resolución Final' : 'Resolución Final CIC' }] : []),
     // Actividad 7.1 del BPM: Confección y Validación de Cláusulas Fiduciarias.
-    ...(esGPOForm ? [{ id: 'validacionClausulas', label: 'Validación de Cláusulas Fiduciarias' }] : []),
+    ...(es2oPisoForm || esSublineaSelectiva ? [{ id: 'validacionClausulas', label: esSublineaSelectiva ? 'Instrumentación' : esLineaGlobalNafinForm ? 'Validación de Formalización' : 'Validación de Cláusulas Fiduciarias' }] : []),
     {
       id: 'simulacion',
       label: isCaptacionForm    ? 'Calendario de Aportaciones'
@@ -4529,7 +5002,50 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
                     estatusSolicitud={formData.estatusSolicitud}
                   />
                 )}
-                {sec.id === 'estructura2oPiso' && (
+                {/* ── MD SubLíneas 07 — Selectiva: mismos subtabs, contenido de SubLínea ── */}
+                {esSublineaSelectiva && sec.id === 'modeloViabilidad' && (
+                  <EvaluacionSublineaTab mode={mode} solicitudId={storageId} montoCarta={parseFloat(parseCurrency(String(formData.montoSolicitado || '0'))) || 0} />
+                )}
+                {esSublineaSelectiva && sec.id === 'votacionCPC' && (
+                  <VotacionCPCTab mode={mode} solicitudId={storageId} onChange={d => { votacionCPCRef.current = d; }} />
+                )}
+                {esSublineaSelectiva && sec.id === 'resolucionCIC' && (
+                  <ResolucionSublineaTab mode={mode} solicitudId={storageId} montoCarta={parseFloat(parseCurrency(String(formData.montoSolicitado || '0'))) || 0} />
+                )}
+                {esSublineaSelectiva && sec.id === 'validacionClausulas' && (
+                  <InstrumentacionSublineaTab mode={mode} solicitudId={storageId} montoCarta={parseFloat(parseCurrency(String(formData.montoSolicitado || '0'))) || 0} />
+                )}
+                {/* ── MD NAFIN — mismos subtabs, contenido de Línea Global ── */}
+                {esLineaGlobalNafinForm && sec.id === 'estructura2oPiso' && (
+                  <EstructuraLineaGlobalNafinTab mode={mode} solicitudId={storageId} intermediario={acreditado2oPiso} clienteId={formData._clienteId} />
+                )}
+                {esLineaGlobalNafinForm && sec.id === 'modeloViabilidad' && (
+                  <EvaluacionRiesgoNafinTab
+                    mode={mode}
+                    solicitudId={storageId}
+                    intermediario={acreditado2oPiso}
+                    // MD 06 — parámetros de Taller de Producto si existen; si no, los default.
+                    parametrosProducto={(productoSeleccionado?.rawData as any)?.parametrosEvaluacionIF || null}
+                    onGenerarActa={handleGenerarActaComiteCPC}
+                  />
+                )}
+                {esLineaGlobalNafinForm && sec.id === 'votacionCPC' && (
+                  <>
+                    <ResumenVotacionNafin
+                      solicitudId={storageId}
+                      intermediario={acreditado2oPiso}
+                      producto={productoSeleccionado?.nombreProducto || formData.nombreProducto}
+                    />
+                    <VotacionCPCTab mode={mode} solicitudId={storageId} onChange={d => { votacionCPCRef.current = d; }} />
+                  </>
+                )}
+                {esLineaGlobalNafinForm && sec.id === 'resolucionCIC' && (
+                  <ResolucionLineaGlobalNafinTab mode={mode} solicitudId={storageId} />
+                )}
+                {esLineaGlobalNafinForm && sec.id === 'validacionClausulas' && (
+                  <FormalizacionNafinTab mode={mode} solicitudId={storageId} intermediario={acreditado2oPiso} />
+                )}
+                {!esLineaGlobalNafinForm && sec.id === 'estructura2oPiso' && (
                   <EstructuraOperativa2oPisoTab
                     mode={mode}
                     solicitudId={storageId}
@@ -4540,7 +5056,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
                     onChange={datos => { estructura2oPisoRef.current = datos; }}
                   />
                 )}
-                {sec.id === 'modeloViabilidad' && (
+                {!esLineaGlobalNafinForm && !esSublineaSelectiva && sec.id === 'modeloViabilidad' && (
                   <ModeloViabilidadFinancieraTab
                     mode={mode}
                     solicitudId={storageId}
@@ -4554,14 +5070,14 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
                     onProcesarDictamen={handleProcesarDictamenRiesgo}
                   />
                 )}
-                {sec.id === 'votacionCPC' && (
+                {!esLineaGlobalNafinForm && !esSublineaSelectiva && sec.id === 'votacionCPC' && (
                   <VotacionCPCTab
                     mode={mode}
                     solicitudId={storageId}
                     onChange={d => { votacionCPCRef.current = d; }}
                   />
                 )}
-                {sec.id === 'resolucionCIC' && (
+                {!esLineaGlobalNafinForm && !esSublineaSelectiva && sec.id === 'resolucionCIC' && (
                   <ResolucionFinalCICTab
                     mode={mode}
                     solicitudId={storageId}
@@ -4569,7 +5085,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
                     onEmitirOficio={handleEmitirOficioCIC}
                   />
                 )}
-                {sec.id === 'validacionClausulas' && (
+                {!esLineaGlobalNafinForm && !esSublineaSelectiva && sec.id === 'validacionClausulas' && (
                   <ValidacionClausulasFiduciariasTab
                     mode={mode}
                     solicitudId={storageId}
@@ -4583,6 +5099,22 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
                     montoSolicitado={formData.montoSolicitado}
                     clienteNombre={`${formData.nombrePersona || ''} ${formData.apellidoPaternoPersona || ''} ${formData.apellidoMaternoPersona || ''}`.trim()}
                     clienteId={formData._clienteId}
+                  />
+                )}
+                {sec.id === 'terminos' && esSublineaForm && (
+                  <SublineaCartaCreditoSection
+                    // Remonta al terminar la auto-hidratación: si estaba montada antes,
+                    // se quedaba con datos vacíos y luego los escribía encima de los de la BD.
+                    key={`sublinea-${storageId}-${hidratacionKey}`}
+                    productosCatalogo={productosLC}
+                    mode={mode}
+                    solicitudId={storageId}
+                    productoId={formData.productoId}
+                    noSol={formData.noSol}
+                    montoCarta={parseFloat(parseCurrency(String(formData.montoSolicitado || '0'))) || 0}
+                    onActivacion={aplicarResultadoSublinea}
+                    fechaInicioHeader={formData.fechaInicio || ''}
+                    fechaFinHeader={formData.fechaFin || ''}
                   />
                 )}
                 {sec.id === 'terminos' && (
@@ -4625,7 +5157,14 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
                     tasaHeader={tasaSeleccionadaHeader}
                     fechaInicioHeader={formData.fechaInicio || ''}
                     frecuenciaHeader={frecuenciaSeleccionadaHeader}
-                    onFechaFinChange={v => set('fechaFin', v)}
+                    // SubLínea: la Fecha Fin es Inicio + Plazo × Frecuencia; el último
+                    // cobro de comisión no debe sobrescribirla.
+                    onFechaFinChange={esSublineaForm ? undefined : v => set('fechaFin', v)}
+                    sublinea={esSublineaForm ? {
+                      montoElegible: parseFloat(parseCurrency(String(formData.montoSolicitado || '0'))) || 0,
+                      porcentajeCobertura: productoSublinea ? parametrosSubLinea(productoSublinea).coberturaDefault : 0,
+                      porcentajeComision: productoSublinea ? parametrosSubLinea(productoSublinea).comisionDefault : 0,
+                    } : null}
                   />
                 )}
                 {sec.id === 'facturas' && (

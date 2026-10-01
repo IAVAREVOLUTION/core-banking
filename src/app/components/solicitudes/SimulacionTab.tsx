@@ -9,6 +9,7 @@ import {
 import { FlujInversionRow, calcularFlujInversion, TASA_ISR_ANUAL } from '../cotizaciones/cotizacionCaptacionTypes';
 import { generarTablaArrendamiento, generarTablaArrendamientoFinanciero, type SimulacionArrendamiento } from '../cotizaciones/cotizacionArrendamientoTypes';
 import { fechasCobroComision } from '../../lib/fechasComisionGPO';
+import { construirCalendarioComisiones, cobrosEnVigencia } from '../../lib/calendarioComisiones';
 
 interface AportacionRow {
   noAportacion: number;
@@ -40,6 +41,12 @@ interface Props {
   frecuenciaHeader?: string;
   /** Notifica la fecha del último pago cuando cambia la tabla/calendario */
   onFechaFinChange?: (fecha: string) => void;
+  /**
+   * SubLínea de Carta de Crédito: el formulario la identifica por el PRODUCTO y
+   * pasa los defaults del producto, para cotizar aunque Términos y Condiciones
+   * no se haya abierto todavía (sin nodo de Carta en sesión).
+   */
+  sublinea?: { montoElegible?: number; porcentajeCobertura?: number; porcentajeComision?: number } | null;
 }
 
 /** Determina si el producto es de tipo Captación/Aportación (no crédito) */
@@ -195,7 +202,7 @@ function sumarDias(fechaIso: string, dias: number): string {
   return d.toISOString().split('T')[0];
 }
 
-export function SimulacionTab({ mode, solicitudId, lineaProducto, tipoProducto, calendarioAportaciones, simulacionInicial, montoAutorizado, montoSolicitadoHeader, plazoHeader, tasaHeader, fechaInicioHeader, frecuenciaHeader, onFechaFinChange }: Props) {
+export function SimulacionTab({ mode, solicitudId, lineaProducto, tipoProducto, calendarioAportaciones, simulacionInicial, montoAutorizado, montoSolicitadoHeader, plazoHeader, tasaHeader, fechaInicioHeader, frecuenciaHeader, onFechaFinChange, sublinea }: Props) {
   const isRO = mode === 'ver';
   const isCap = esCaptacion(lineaProducto, tipoProducto);
   const _tpRaw = (tipoProducto || lineaProducto || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
@@ -227,13 +234,51 @@ export function SimulacionTab({ mode, solicitudId, lineaProducto, tipoProducto, 
     (loadFromSession<any>(solicitudId, '_originalData') ||
       loadFromSavedStore<any>(solicitudId, '_originalData'))
       ?.solicitud?.terminos_condiciones?._raw || {};
-  const isGPO = !isCap && !isArrendamiento && (
+  /**
+   * SubLínea de Carta de Crédito NAFIN — igual que la Línea Global, la
+   * "cotización" es el flujo de COMISIONES sobre el Monto Garantizado, no una
+   * amortización. La señal es el nodo de la Carta, que sólo existe en estas
+   * Solicitudes. Se evalúa ANTES que la GPO: una SubLínea también captura
+   * Periodicidad Cobro Comisión, y con esa sola señal se tomaba por GPO y
+   * cotizaba con los campos de la Oportunidad (vacíos → "Monto Garantizado (0)").
+   */
+  const isSublinea = !isCap && !isArrendamiento && (!!sublinea || !!(
+    loadFromSession<any>(solicitudId, 'sublineaCarta') || loadFromSavedStore<any>(solicitudId, 'sublineaCarta')
+  ));
+
+  /**
+   * Entradas de la cotización de la SubLínea, leídas al momento:
+   *   Monto a cotizar = Monto Garantizado × % Comisión
+   *   Monto Garantizado = el de la activación, o Monto Elegible × % Cobertura.
+   * Toma lo capturado en Términos (Bloque C); lo que falte sale del producto
+   * (default de cobertura/comisión) y del Monto Solicitado.
+   */
+  const entradasSublinea = () => {
+    const c: any = loadFromSession<any>(solicitudId, 'sublineaCarta') || loadFromSavedStore<any>(solicitudId, 'sublineaCarta') || {};
+    const t = readTerminos() as any;
+    const n = (v: unknown) => parseFloat(parseCurrency(String(v ?? '0'))) || 0;
+    const montoElegible = n(c.montoElegible) || n(sublinea?.montoElegible) || n(montoSolicitadoHeader);
+    const porcentajeCobertura = n(c.porcentajeCobertura) || n(sublinea?.porcentajeCobertura);
+    const porcentajeComision = n(c.porcentajeComision) || n(sublinea?.porcentajeComision);
+    const montoGarantizado = n(c.montoGarantizado) > 0 ? n(c.montoGarantizado) : montoElegible * (porcentajeCobertura / 100);
+    return {
+      montoElegible, porcentajeCobertura, porcentajeComision, montoGarantizado,
+      montoACotizar: montoGarantizado * (porcentajeComision / 100),
+      periodicidad: String(t.periodicidadCobroGpo || ''),
+      frecuencia: String(t.frecuencia || frecuenciaHeader || ''),
+      plazo: parseInt(String(plazoHeader || t.plazo || '0'), 10) || 0,
+      ancla: String(t.fechaPrimerPago || fechaInicioHeader || ''),
+    };
+  };
+  const isGPO = !isCap && !isArrendamiento && !isSublinea && (
     _tpRaw.includes('garant') ||
     !!_terminosGPO?.periodicidadCobroGpo ||
     !!_terminosGPO?.porcentajeCoberturaGpo ||
     !!_origRawGPO.periodicidadCobroGpo ||
     !!_origRawGPO.porcentajeCoberturaGpo
   );
+  /** Ambas pintan la tabla de comisiones (Fecha, Comisión, IVA, Total). */
+  const isComisiones = isGPO || isSublinea;
 
   // ── Amortización (solo crédito) ──
   const getInitRows = (): SimulacionRow[] => {
@@ -481,7 +526,28 @@ export function SimulacionTab({ mode, solicitudId, lineaProducto, tipoProducto, 
   // abortaba la cotización con "Datos insuficientes".
   const PERIODOS_ANIO_GPO: Record<string, number> = {
     Semanal: 52, Catorcenal: 26, Quincenal: 24, Mensual: 12,
-    Trimestral: 4, Semestral: 2, Anual: 1,
+    Bimestral: 6, Trimestral: 4, Semestral: 2, Anual: 1,
+  };
+
+  /**
+   * Calendario de comisiones — UNA sola implementación para la Línea Global
+   * (GPO) y la SubLínea de Carta de Crédito:
+   *   Comisión anual   = Monto Garantizado × % Comisión
+   *   Comisión periodo = Comisión anual ÷ cobros por año de la Periodicidad
+   *   IVA              = % de la tabla previa (si trae IVA) o 16%
+   * con `totalPeriodos` cobros fechados desde `ancla` cada (12 ÷ cobros/año) meses.
+   */
+  const calendarioComisiones = (
+    montoGarantizado: number, tasaComision: number, periodosPorAnio: number,
+    totalPeriodos: number, ancla: string,
+  ): SimulacionRow[] => {
+    const ivaPct = rows.length > 0 && rows[0].pagoInteres > 0 && rows[0].ivaInteres > 0
+      ? (rows[0].ivaInteres / rows[0].pagoInteres) * 100
+      : 16;
+    return construirCalendarioComisiones({
+      montoGarantizado, porcentajeComision: tasaComision, cobrosPorAnio: periodosPorAnio,
+      totalPeriodos, ancla, ivaPct,
+    });
   };
 
   const handleCotizarGPO = () => {
@@ -522,23 +588,7 @@ export function SimulacionTab({ mode, solicitudId, lineaProducto, tipoProducto, 
       return;
     }
 
-    // Conserva la tasa de IVA con la que se generó la tabla original (el
-    // producto puede tener un % distinto al 16 general); si no hay tabla
-    // previa de dónde deducirla, usa el 16% general.
-    //
-    // BUG FIX: antes bastaba con que pagoInteres > 0 para deducir la tasa. Si
-    // la tabla heredada traía ivaInteres = 0 (la Oportunidad la generó con un
-    // % de IVA sin capturar), la división daba 0% y la columna "IVA del
-    // Periodo" se quedaba en $0.00 para siempre: recotizar volvía a deducir 0
-    // de sus propias filas. Solo se deduce del histórico cuando ese histórico
-    // efectivamente trae IVA; si no, se cae al 16%.
-    const ivaPct = rows.length > 0 && rows[0].pagoInteres > 0 && rows[0].ivaInteres > 0
-      ? (rows[0].ivaInteres / rows[0].pagoInteres) * 100
-      : 16;
-
-    const ingresoAnual = montoGarantizado * (tasaComision / 100);
-    const ingresoPorPeriodo = ingresoAnual / periodosPorAnio;
-    const ivaPorPeriodo = ingresoPorPeriodo * (ivaPct / 100);
+    // IVA, comisión por periodo y filas: calendarioComisiones (común con la SubLínea).
     // Horizonte = TODO EL PLAZO de la garantía, no un año.
     //
     // CAMBIO (2026-08-31): antes se fijaba en `periodosPorAnio` (Mensual→12,
@@ -560,25 +610,52 @@ export function SimulacionTab({ mode, solicitudId, lineaProducto, tipoProducto, 
     // evita el desbordamiento de fin de mes (31-ago + 3 meses daba 01-dic).
     const terminos = readTerminos();
     const anclaCobro = terminos.fechaPrimerPago || fechaInicioHeader || '';
-    const fechas = fechasCobroComision(totalPeriodos, periodosPorAnio, anclaCobro);
-
-    const nuevas: SimulacionRow[] = fechas.map((fechaPago, i) => ({
-      noPago: i + 1,
-      fechaPago,
-      saldoInsoluto: montoGarantizado,
-      pagoCapital: 0,
-      pagoInteres: ingresoPorPeriodo,
-      ivaInteres: ivaPorPeriodo,
-      pagoPeriodo: ingresoPorPeriodo,
-      pagoSeguro: 0,
-      pagoTotal: ingresoPorPeriodo + ivaPorPeriodo,
-    }));
+    const nuevas = calendarioComisiones(montoGarantizado, tasaComision, periodosPorAnio, totalPeriodos, anclaCobro);
 
     setRows(nuevas);
     saveToSession(solicitudId, 'simulacion', nuevas);
     toast.success('Cotización generada', {
       description: `${nuevas.length} comisión(es) · ${periodicidad} · ${plazoAnios} año(s) · Total ${formatCurrency(nuevas.reduce((s, r) => s + r.pagoTotal, 0))}`,
       duration: 4000,
+    });
+  };
+
+  /**
+   * Cotización de la SubLínea — la MISMA simulación que la Línea Global:
+   *   entrada  = Monto Garantizado × % Comisión (comisión anual)
+   *   calendario por la Periodicidad Cobro Comisión capturada en Términos.
+   * Datos de la SubLínea:
+   *   · Monto Garantizado: el de la activación si ya existe; si no, el
+   *     estimado Monto Elegible × % Cobertura (Bloque C).
+   *   · % Comisión: Bloque C de Términos.
+   *   · Horizonte: la vigencia de la carta (Plazo × días de la Frecuencia) en
+   *     cobros de la Periodicidad, redondeado hacia arriba — el equivalente a
+   *     "todo el plazo" de la Línea Global, cuyo plazo va en años.
+   */
+  const handleCotizarSublinea = () => {
+    const e = entradasSublinea();
+    const montoGarantizado = e.montoGarantizado;
+    const tasaComision = e.porcentajeComision;
+    const periodicidad = e.periodicidad;
+    const periodosPorAnio = PERIODOS_ANIO_GPO[periodicidad] || 0;
+    const frecuencia = e.frecuencia;
+    const plazo = e.plazo;
+    const totalPeriodos = cobrosEnVigencia(plazo, frecuencia, periodicidad);
+
+    if (montoGarantizado <= 0 || tasaComision <= 0 || !periodosPorAnio || totalPeriodos <= 0) {
+      toast.error('Datos insuficientes para cotizar', {
+        description: `Revise Monto Garantizado (${montoGarantizado}), % Comisión (${tasaComision}%) y Periodicidad Cobro Comisión (${periodicidad || 'sin capturar'}) en Términos y Condiciones, y Plazo (${plazo}) / Frecuencia (${frecuencia || 'sin capturar'}) para la vigencia.`,
+        duration: 7000,
+      });
+      return;
+    }
+
+    const nuevas = calendarioComisiones(montoGarantizado, tasaComision, periodosPorAnio, totalPeriodos, e.ancla);
+    setRows(nuevas);
+    saveToSession(solicitudId, 'simulacion', nuevas);
+    toast.success('Cotización generada', {
+      description: `${formatCurrency(montoGarantizado)} × ${tasaComision}% = ${formatCurrency(montoGarantizado * tasaComision / 100)} anual · ${nuevas.length} comisión(es) ${periodicidad} · Total ${formatCurrency(nuevas.reduce((acc, r) => acc + r.pagoTotal, 0))}`,
+      duration: 6000,
     });
   };
 
@@ -1033,7 +1110,9 @@ export function SimulacionTab({ mode, solicitudId, lineaProducto, tipoProducto, 
   // ════════════════════════════════════════════════
   // CRÉDITO / LÍNEA DE CRÉDITO — tabla de amortización
   // ════════════════════════════════════════════════
-  const tableTitle = isGPO ? 'Cotización — Comisiones GPO' : lineaProducto === 'Línea de Crédito' ? 'Cotización' : 'Tabla de Pagos';
+  const tableTitle = isGPO ? 'Cotización — Comisiones GPO'
+    : isSublinea ? 'Cotización — Comisiones de la SubLínea'
+    : lineaProducto === 'Línea de Crédito' ? 'Cotización' : 'Tabla de Pagos';
   const totalCapital = rows.reduce((s, r) => s + r.pagoCapital, 0);
   const totalInteres = rows.reduce((s, r) => s + r.pagoInteres, 0);
   const totalIVA = rows.reduce((s, r) => s + r.ivaInteres, 0);
@@ -1046,9 +1125,9 @@ export function SimulacionTab({ mode, solicitudId, lineaProducto, tipoProducto, 
         <h4 className="text-sm font-medium text-gray-800">{tableTitle}</h4>
         {!isRO && (
           <button
-            onClick={isGPO ? handleCotizarGPO : handleSimularCredito}
-            title={isGPO
-              ? 'Recalcula las comisiones GPO del año con los datos de Términos y Condiciones'
+            onClick={isGPO ? handleCotizarGPO : isSublinea ? handleCotizarSublinea : handleSimularCredito}
+            title={isComisiones
+              ? 'Calcula las comisiones con los datos de Términos y Condiciones'
               : 'Genera la tabla de amortización'}
             className="px-4 py-1.5 btn-secondary-theme rounded text-xs flex items-center gap-1.5"
           >
@@ -1056,10 +1135,23 @@ export function SimulacionTab({ mode, solicitudId, lineaProducto, tipoProducto, 
               <path d="M6.5 1v5.5L9 9" strokeLinecap="round" strokeLinejoin="round"/>
               <circle cx="6.5" cy="6.5" r="5.5"/>
             </svg>
-            {isGPO ? 'Cotizar' : 'Simular'}
+            {isComisiones ? 'Cotizar' : 'Simular'}
           </button>
         )}
       </div>
+
+      {isSublinea && (() => {
+        const e = entradasSublinea();
+        return (
+          <div className="mb-3 px-3 py-2 bg-teal-50 border border-teal-200 rounded text-[11px] text-teal-900 grid grid-cols-2 md:grid-cols-4 gap-2">
+            <div><span className="text-gray-500">Monto Garantizado</span><br /><strong>{formatCurrency(e.montoGarantizado)}</strong>
+              <span className="text-gray-500"> ({formatCurrency(e.montoElegible)} × {e.porcentajeCobertura}%)</span></div>
+            <div><span className="text-gray-500">% Comisión</span><br /><strong>{e.porcentajeComision}%</strong></div>
+            <div><span className="text-gray-500">Monto a cotizar (anual)</span><br /><strong>{formatCurrency(e.montoACotizar)}</strong></div>
+            <div><span className="text-gray-500">Periodicidad Cobro Comisión</span><br /><strong>{e.periodicidad || 'sin capturar'}</strong></div>
+          </div>
+        );
+      })()}
 
       {rows.length === 0 ? (
         <div className="text-center py-10 text-gray-500 text-xs">
@@ -1067,11 +1159,11 @@ export function SimulacionTab({ mode, solicitudId, lineaProducto, tipoProducto, 
             <rect x="5" y="8" width="30" height="24" rx="2" />
             <path d="M5 14h30M13 8v6M20 8v6M27 8v6" />
           </svg>
-          {isGPO
+          {isComisiones
             ? 'No hay comisiones generadas. Presione "Cotizar" para calcularlas con los datos de Términos y Condiciones.'
             : 'No hay simulación generada. Complete los Términos y Condiciones y presione "Simular".'}
         </div>
-      ) : isGPO ? (
+      ) : isComisiones ? (
         /*
          * BUG FIX (2026-08-25): esta tabla venía pintando columnas de
          * amortización de crédito (Saldo Insoluto, Capital) sobre filas que

@@ -23,6 +23,7 @@ import { OportunidadForm } from './OportunidadForm';
 import type { CotizacionCredito } from '../cotizaciones/cotizacionCreditoTypes';
 import { generarNoCotizaCredito, crearCotizacionCreditoVacia, ESTATUS_OPORTUNIDAD_INICIAL } from '../cotizaciones/cotizacionCreditoTypes';
 import { useCotizacionesCaptacionDB } from '../../hooks/useCotizacionesCaptacionDB';
+import { fetchSiguienteNoIntermediarioNafin } from '../../lib/intermediarioNafin';
 
 type Vista = 'home' | 'list' | 'form';
 type FormMode = 'create' | 'edit' | 'view';
@@ -97,6 +98,16 @@ export function OportunidadesModule({
     ...locales.filter(c => !dbIds.has(c.id) && !dbFolios.has(c.no_cotiza)),
   ];
 
+  /**
+   * No. Intermediario NAFIN — consecutivo automático (IF-00001, IF-00002…).
+   * El número es del maestro Persona/Cliente (MD NAFIN 03) y llega con el
+   * Lead; esto sólo cubre a los clientes aún no clasificados como Intermediario
+   * Financiero. Se calcula sobre el maestro Y las Oportunidades, para no repetir
+   * un número que ya circula en cualquiera de los dos.
+   */
+  const siguienteNoIntermediarioNafin = (): Promise<string> =>
+    fetchSiguienteNoIntermediarioNafin(oportunidades.map(o => (o.data as any)?.numeroIntermediarioNafin));
+
   // ══════════════════════════════════════════════════════════════
   // HU-CRM-03 CA-05/CA-06 — Oportunidad desde Lead calificado
   // Se abre NUEVA y sin guardar: el ejecutivo completa la estructura
@@ -135,6 +146,11 @@ export function OportunidadesModule({
         tipoFinanciamiento: L.tipoFinanciamiento || '',
         descripcionObra: L.descripcionObra || '',
         leadOrigenId: L.leadOrigenId || '',
+        // ── MD NAFIN 01/03 — Intermediario heredado del maestro vía el Lead ──
+        tipoIntermediario: L.tipoIntermediario || '',
+        numeroIntermediarioNafin: L.numeroIntermediarioNafin || '',
+        estatusIntermediarioNafin: L.estatusIntermediarioNafin || '',
+        fechaIncorporacionNafin: L.fechaIncorporacionNafin || '',
       },
     };
 
@@ -187,6 +203,11 @@ export function OportunidadesModule({
   const handleEdit = (o: CotizacionCredito) => { setSelected(o); setFormMode('edit'); setVista('form'); };
 
   const handleSave = async (o: CotizacionCredito) => {
+    // Sin número del maestro (cliente no clasificado como Intermediario): se
+    // asigna uno provisional al guardar.
+    if (!(o.data as any)?.numeroIntermediarioNafin) {
+      o = { ...o, data: { ...(o.data as any), numeroIntermediarioNafin: await siguienteNoIntermediarioNafin() } };
+    }
     const dbResult = await saveCotizacion(o as any);
     const finalId = dbResult.id ?? o.id;
 

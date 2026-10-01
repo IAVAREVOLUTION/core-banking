@@ -16,6 +16,8 @@ const DEFAULT_CLASIFICACIONES = [
   'Persona',
   'Empresa Privada',
   'Gobierno Magisterio',
+  // MD NAFIN 01/03 — habilita los datos del Intermediario NAFIN en el maestro.
+  'Intermediario Financiero',
   'Otros',
 ];
 

@@ -33,6 +33,8 @@ import { CampoInstitucionGobierno } from '../ui/CatalogoInstitucionGobierno';
 import type { InstitucionGobiernoSeleccion } from '../ui/CatalogoInstitucionGobierno';
 import { useCatalogoClasificaciones } from '../../hooks/useCatalogoClasificaciones';
 import { syncToJClientes } from '../../hooks/useSyncJClientes';
+import { esIntermediarioFinanciero, fetchSiguienteNoIntermediarioNafin } from '../../lib/intermediarioNafin';
+import { IntermediarioNafinSection } from './IntermediarioNafinSection';
 import { generarCuentaEje, clienteTieneCuentaEje } from '../../hooks/useCuentaEjeGenerator';
 
 // Semáforo en memoria: evita doble creación si se guarda rápido dos veces
@@ -109,6 +111,11 @@ interface FormData {
   activacionTarjetaDebito: boolean;
   numeroTarjetaDebito: string;
   clasificacionCliente: string;
+  // ── MD NAFIN 03 — Intermediario Financiero ──
+  tipoIntermediario?: string;
+  numeroIntermediarioNafin?: string;
+  estatusIntermediarioNafin?: string;
+  fechaIncorporacionNafin?: string;
   /** Escribe la columna type de J_CLIENTES — 'Clientes' (default) | 'Proveedor' */
   tipoPersona?: string;
 
@@ -360,6 +367,10 @@ export function AltaClienteDefault({ onBack, onSave, mode, cliente, onNavigateTo
       activacionTarjetaDebito: false,
       numeroTarjetaDebito: '',
       clasificacionCliente: '',
+      tipoIntermediario: '',
+      numeroIntermediarioNafin: '',
+      estatusIntermediarioNafin: '',
+      fechaIncorporacionNafin: '',
       tipoPersona: 'Clientes',
 
       telefonoDomicilio: '',
@@ -632,6 +643,10 @@ export function AltaClienteDefault({ onBack, onSave, mode, cliente, onNavigateTo
         activacionTarjetaDebito: raw.activacionTarjetaDebito || def.activacionTarjetaDebito || clienteCompleto.activacionTarjetaDebito || false,
         numeroTarjetaDebito: gMulti('numeroTarjetaDebito', 'numero_tarjeta_debito') || '',
         clasificacionCliente: gMulti('clasificacionCliente', 'clasificacion_cliente') || '',
+        tipoIntermediario: gMulti('tipoIntermediario') || '',
+        numeroIntermediarioNafin: gMulti('numeroIntermediarioNafin') || '',
+        estatusIntermediarioNafin: gMulti('estatusIntermediarioNafin') || '',
+        fechaIncorporacionNafin: gMulti('fechaIncorporacionNafin') || '',
         tipoPersona: clienteCompleto.tipo || 'Clientes',
 
         telefonoDomicilio: gMulti('telefonoDomicilio', 'telefono', 'telefonoCelular', 'celular') || '',
@@ -1053,6 +1068,10 @@ export function AltaClienteDefault({ onBack, onSave, mode, cliente, onNavigateTo
       activacionTarjetaDebito: false,
       numeroTarjetaDebito: '',
       clasificacionCliente: '',
+      tipoIntermediario: '',
+      numeroIntermediarioNafin: '',
+      estatusIntermediarioNafin: '',
+      fechaIncorporacionNafin: '',
       tipoPersona: 'Clientes',
       institucionGobierno: '',
       institucionGobiernoId: '',
@@ -1387,6 +1406,14 @@ export function AltaClienteDefault({ onBack, onSave, mode, cliente, onNavigateTo
         ? formData.nombre.trim()
         : `${formData.nombre} ${formData.apellidoPaterno} ${formData.apellidoMaterno}`.trim();
 
+      // MD NAFIN 03 — No. Intermediario NAFIN: consecutivo del maestro, se
+      // asigna una sola vez al guardar un Intermediario Financiero sin número.
+      let noIntermediarioNafin: string = (formData as any).numeroIntermediarioNafin || '';
+      if (esIntermediarioFinanciero(formData.clasificacionCliente) && !noIntermediarioNafin) {
+        noIntermediarioNafin = await fetchSiguienteNoIntermediarioNafin();
+        setFormData(prev => ({ ...prev, numeroIntermediarioNafin: noIntermediarioNafin }));
+      }
+
       // ════════════════════════════════════════════════════════════════
       // REGLA INSTITUCIONAL: Construcción del JSON (campo DATA)
       // Nodo padre (Datos Generales) + 22 nodos hijos (subtabs)
@@ -1438,6 +1465,11 @@ export function AltaClienteDefault({ onBack, onSave, mode, cliente, onNavigateTo
         activacionTarjetaDebito: formData.activacionTarjetaDebito || false,
         numeroTarjetaDebito: formData.numeroTarjetaDebito || '',
         clasificacionCliente: formData.clasificacionCliente || '',
+        // MD NAFIN 03 — maestro del Intermediario; vacío no viaja si no es IF.
+        tipoIntermediario: (formData as any).tipoIntermediario || '',
+        numeroIntermediarioNafin: noIntermediarioNafin,
+        estatusIntermediarioNafin: (formData as any).estatusIntermediarioNafin || '',
+        fechaIncorporacionNafin: (formData as any).fechaIncorporacionNafin || '',
         telefonoDomicilio: formData.telefonoDomicilio || '',
         telefonoOficina: formData.telefonoOficina || '',
         telefonoCasa: formData.telefonoCasa || '',
@@ -2453,6 +2485,18 @@ export function AltaClienteDefault({ onBack, onSave, mode, cliente, onNavigateTo
                 />
               </div>
             </div>
+            {/* MD NAFIN 03 — Intermediario Financiero. Mismo maestro que el
+                Prospecto (misma fila de J_CLIENTES); de aquí lo leen la
+                Oportunidad y la Solicitud de Línea Global. */}
+            {esIntermediarioFinanciero(formData.clasificacionCliente) && (
+              <div className="mt-4">
+                <IntermediarioNafinSection
+                  datos={formData as any}
+                  onChange={(campo, valor) => handleChange(campo as any, valor)}
+                  isView={!camposEditables}
+                />
+              </div>
+            )}
           </div>
             ); /* cierre del return del IIFE de personalidad */
           })()}

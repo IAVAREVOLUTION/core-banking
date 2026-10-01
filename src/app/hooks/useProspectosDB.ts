@@ -109,6 +109,11 @@ function mapRowToProspecto(row: ClienteProspectoRow, index: number): Prospecto {
     monedaInversion:   (d.monedaInversion as string) || '',
     tipoFinanciamiento: (d.tipoFinanciamiento as string) || '',
     descripcionObra:   (d.descripcionObra as string) || '',
+    // ── MD NAFIN 01 — Intermediario Financiero ──
+    tipoIntermediario:         (d.tipoIntermediario as string) || '',
+    numeroIntermediarioNafin:  (d.numeroIntermediarioNafin as string) || '',
+    estatusIntermediarioNafin: (d.estatusIntermediarioNafin as string) || '',
+    fechaIncorporacionNafin:   (d.fechaIncorporacionNafin as string) || '',
     direcciones:       Array.isArray(d.direcciones) ? d.direcciones : undefined,
     cotizaciones:      Array.isArray(d.cotizaciones) ? d.cotizaciones : undefined,
     consultas:         Array.isArray(d.sic) ? d.sic : (Array.isArray(d.consultas) ? d.consultas : undefined),
