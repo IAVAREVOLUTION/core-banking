@@ -23,6 +23,8 @@ export interface SolicitudActivacionFormData {
   lineaProducto?: string;
   /** Marca interna: true cuando el guardado proviene del botón "Activar" (Pagado → Enviada) */
   _fromActivar?: boolean;
+  /** Estatus tal como vino de la BD (lo actualiza el flujo de activación). */
+  _estatusFromDB?: string;
   estatus: string;                 // fijo 'Pendiente' — read-only
 
   // ── JOIN-sourced read-only display fields ────────────────────────
@@ -65,6 +67,8 @@ export interface SolicitudActivacionListItem {
   _raw?: Record<string, unknown>;
   /** Marca interna: true cuando el guardado proviene del botón "Activar" (Pagado → Enviada) */
   _fromActivar?: boolean;
+  /** Estatus tal como vino de la BD (lo actualiza el flujo de activación). */
+  _estatusFromDB?: string;
 }
 
 // ═══════════════════════════════════════════════════════════════════

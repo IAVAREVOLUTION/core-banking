@@ -65,7 +65,7 @@ export function DatosContactoTab({ formData, updateFormData, isView }: DatosCont
                 type="tel"
                 value={formData.telefonoDomicilio || ''}
                 onChange={(e) => updateFormData('telefonoDomicilio', e.target.value)}
-                className="border-[#E0E0E0] focus:border-[#2E5C91]"
+                className="border-[#E0E0E0] focus:border-[color:var(--theme-secondary)]"
                 placeholder="5555-1234"
               />
             )}
@@ -83,7 +83,7 @@ export function DatosContactoTab({ formData, updateFormData, isView }: DatosCont
                 type="tel"
                 value={formData.telefonoOficina || ''}
                 onChange={(e) => updateFormData('telefonoOficina', e.target.value)}
-                className="border-[#E0E0E0] focus:border-[#2E5C91]"
+                className="border-[#E0E0E0] focus:border-[color:var(--theme-secondary)]"
                 placeholder="5555-5678"
               />
             )}
@@ -101,7 +101,7 @@ export function DatosContactoTab({ formData, updateFormData, isView }: DatosCont
                 type="tel"
                 value={formData.celular || ''}
                 onChange={(e) => updateFormData('celular', e.target.value)}
-                className="border-[#E0E0E0] focus:border-[#2E5C91]"
+                className="border-[#E0E0E0] focus:border-[color:var(--theme-secondary)]"
                 placeholder="5512345678"
               />
             )}
@@ -127,7 +127,7 @@ export function DatosContactoTab({ formData, updateFormData, isView }: DatosCont
                 type="email"
                 value={formData.correoElectronico || ''}
                 onChange={(e) => updateFormData('correoElectronico', e.target.value)}
-                className="border-[#E0E0E0] focus:border-[#2E5C91]"
+                className="border-[#E0E0E0] focus:border-[color:var(--theme-secondary)]"
                 placeholder="correo@ejemplo.com"
               />
             )}
@@ -151,7 +151,7 @@ export function DatosContactoTab({ formData, updateFormData, isView }: DatosCont
               id="direccionPrincipal"
               value={formData.direccionPrincipal || ''}
               onChange={(e) => updateFormData('direccionPrincipal', e.target.value)}
-              className="w-full px-3 py-2 text-sm border border-[#E0E0E0] rounded-md focus:border-[#2E5C91] focus:outline-none focus:ring-1 focus:ring-[#2E5C91] resize-none"
+              className="w-full px-3 py-2 text-sm border border-[#E0E0E0] rounded-md focus:border-[color:var(--theme-secondary)] focus:outline-none focus:ring-1 focus:ring-[color:var(--theme-secondary)] resize-none"
               placeholder="Calle, número, colonia, ciudad, estado, código postal"
               rows={3}
             />

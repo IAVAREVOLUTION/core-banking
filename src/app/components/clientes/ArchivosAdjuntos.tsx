@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 import { Eye, X } from 'lucide-react';
 
 interface ArchivosAdjuntosProps {
@@ -264,7 +264,7 @@ ${legalValidated === 'Sí' ? 'La identidad del representante legal ha sido verif
       <div className="mb-4">
         {/* Título y botones al mismo nivel */}
         <div className="bg-blue-50 border-l-4 border-primary-theme px-3 py-2 mb-3 flex items-center justify-between">
-          <span className="text-sm font-medium text-gray-800">ARCHIVOS ADJUNTOS</span>
+          <span className="text-sm font-medium text-gray-800">KM DIGITAL</span>
           {!isView && (
             <div className="flex items-center gap-2">
               <button
@@ -789,7 +789,7 @@ ${legalValidated === 'Sí' ? 'La identidad del representante legal ha sido verif
                 <h3 className="text-sm font-medium text-gray-800">{currentFile.fileName}</h3>
                 <p className="text-xs text-gray-600 mt-0.5">{currentFile.documentType}</p>
               </div>
-              <button
+              <button aria-label="Cerrar" title="Cerrar"
                 onClick={() => setShowViewer(false)}
                 className="p-1.5 hover:bg-gray-200 rounded transition-colors"
               >
@@ -812,7 +812,7 @@ ${legalValidated === 'Sí' ? 'La identidad del representante legal ha sido verif
                   <div className="text-center text-gray-500 text-sm">
                     <p className="mb-3">Vista previa no disponible para este tipo de archivo.</p>
                     <a href={currentFile.fileData} download={currentFile.fileName}
-                      className="px-4 py-2 bg-[#4A6FA5] text-white text-xs rounded hover:bg-[#3E5C91]">
+                      className="px-4 py-2 bg-[color:var(--theme-primary)] text-white text-xs rounded hover:bg-[color:var(--theme-secondary)]">
                       Descargar archivo
                     </a>
                   </div>
@@ -844,7 +844,7 @@ ${legalValidated === 'Sí' ? 'La identidad del representante legal ha sido verif
               <h3 className="text-sm font-medium text-white">
                 {modalMode === 'crear' ? 'Nuevo Archivo Adjunto' : 'Editar Archivo Adjunto'}
               </h3>
-              <button
+              <button aria-label="Cerrar" title="Cerrar"
                 onClick={() => setShowModal(false)}
                 className="text-white hover:text-gray-200 transition-colors"
               >
@@ -961,7 +961,7 @@ ${legalValidated === 'Sí' ? 'La identidad del representante legal ha sido verif
               <h3 className="text-base font-medium text-white">
                 Agregar Documento desde Web
               </h3>
-              <button
+              <button type="button" aria-label="Cerrar" title="Cerrar"
                 onClick={() => {
                   setShowWmdModal(false);
                   setWmdUrl('');

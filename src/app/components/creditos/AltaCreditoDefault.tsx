@@ -5,6 +5,7 @@ import { TabGarantias } from './TabGarantias';
 import { TabCargos } from './TabCargos';
 import { TabAvisos } from './TabAvisos';
 import { TabSolicitudesExtraordinarias } from './TabSolicitudesExtraordinarias';
+import { CampoMonto } from '@/app/components/ui/CampoMonto';
 
 type FormMode = 'nuevo' | 'editar' | 'ver';
 
@@ -283,7 +284,7 @@ export function AltaCreditoDefault({ onBack, onSave, mode }: AltaCreditoDefaultP
     { id: 'montos-plazos', label: 'Montos/Plazos' },
     { id: 'tasas', label: 'Tasas' },
     { id: 'amortizaciones', label: 'Amortizaciones' },
-    { id: 'expedientes', label: 'Expedientes Electrónicos' },
+    { id: 'expedientes', label: 'KM Digital' },
     { id: 'autorizacion', label: 'Autorización' },
     { id: 'garantias', label: 'Bienes' },
     { id: 'cargos', label: 'Cargos' },
@@ -293,7 +294,7 @@ export function AltaCreditoDefault({ onBack, onSave, mode }: AltaCreditoDefaultP
 
   const inputClass = mode === 'nuevo' 
     ? "w-full px-2 py-1 text-xs border border-gray-300 rounded bg-white" 
-    : "w-full px-2 py-1 text-xs border-b border-gray-300 bg-transparent focus:outline-none focus:border-[#2E5C91]";
+    : "w-full px-2 py-1 text-xs border-b border-gray-300 bg-transparent focus:outline-none focus:border-[color:var(--theme-secondary)]";
 
   const disabledInputClass = "w-full px-2 py-1 text-xs bg-gray-100 text-gray-600 border border-gray-300 rounded";
 
@@ -426,8 +427,7 @@ export function AltaCreditoDefault({ onBack, onSave, mode }: AltaCreditoDefaultP
                 {!camposEditables ? (
                   <div className={readOnlyTextClass}>{formData.montoSolicitado || 'N/A'}</div>
                 ) : (
-                  <input
-                    type="text"
+                  <CampoMonto
                     value={formData.montoSolicitado}
                     onChange={(e) => handleInputChange('montoSolicitado', e.target.value)}
                     className={inputClass}
@@ -625,8 +625,7 @@ export function AltaCreditoDefault({ onBack, onSave, mode }: AltaCreditoDefaultP
                 {!camposEditables ? (
                   <div className={readOnlyTextClass}>{formData.montoAutorizado || 'N/A'}</div>
                 ) : (
-                  <input
-                    type="text"
+                  <CampoMonto
                     value={formData.montoAutorizado}
                     onChange={(e) => handleInputChange('montoAutorizado', e.target.value)}
                     className={inputClass}
@@ -695,18 +694,8 @@ export function AltaCreditoDefault({ onBack, onSave, mode }: AltaCreditoDefaultP
                   className={`px-4 py-2 text-[11px] whitespace-nowrap text-white transition-colors ${
                     activeTab === tab.id
                       ? 'btn-primary-theme font-semibold'
-                      : ''
+                      : 'hover:bg-[color:var(--theme-primary-hover)]'
                   }`}
-                  onMouseEnter={(e) => {
-                    if (activeTab !== tab.id) {
-                      e.currentTarget.style.backgroundColor = 'var(--theme-primary-hover)';
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (activeTab !== tab.id) {
-                      e.currentTarget.style.backgroundColor = '';
-                    }
-                  }}
                 >
                   {tab.label}
                 </button>
@@ -942,8 +931,7 @@ export function AltaCreditoDefault({ onBack, onSave, mode }: AltaCreditoDefaultP
                       {!camposEditables ? (
                         <div className={readOnlyTextClass}>{formData.montoAutorizado || 'N/A'}</div>
                       ) : (
-                        <input
-                          type="text"
+                        <CampoMonto
                           value={formData.montoAutorizado}
                           onChange={(e) => handleInputChange('montoAutorizado', e.target.value)}
                           className={inputClass}

@@ -220,21 +220,24 @@ export function useProspectosDB(active: boolean) {
       let method = '';
       const errors: string[] = [];
 
-      // ── INTENTO 1: Schema directo ──
-      const r1 = await tryDirectSchema();
+      // ── INTENTO 1: RPC ──
+      // Va primero: la llave anon no tiene permiso de lectura directa sobre
+      // J_CLIENTES (42501); el schema directo siempre fallaba y sólo sumaba
+      // una petición de ~0.3 s.
+      const r1 = await tryRPC();
       if (r1.ok) {
         rows = r1.rows;
         method = r1.method;
       } else {
-        errors.push(`Schema directo: ${r1.error}`);
+        errors.push(`RPC: ${r1.error}`);
 
-        // ── INTENTO 2: RPC ──
-        const r2 = await tryRPC();
+        // ── INTENTO 2: Schema directo ──
+        const r2 = await tryDirectSchema();
         if (r2.ok) {
           rows = r2.rows;
           method = r2.method;
         } else {
-          errors.push(`RPC: ${r2.error}`);
+          errors.push(`Schema directo: ${r2.error}`);
 
           // ── INTENTO 3: Edge function (legacy) ──
           const r3 = await tryEdgeFunction();

@@ -26,7 +26,7 @@ export function ClienteDireccionForm({ onBack }: ClienteDireccionFormProps) {
     { id: 'general', label: 'General' },
     { id: 'personas-relacionadas', label: 'Personas Relacionadas' },
     { id: 'direcciones', label: 'Direcciones' },
-    { id: 'expedientes', label: 'Expedientes Electrónicos' },
+    { id: 'expedientes', label: 'KM Digital' },
     { id: 'sic', label: 'SIC' },
     { id: 'listas-negras', label: 'Listas Negras' },
     { id: 'kyc', label: 'KYC' },
@@ -52,7 +52,7 @@ export function ClienteDireccionForm({ onBack }: ClienteDireccionFormProps) {
               <path d="M4 20c0-4 3.5-7 8-7s8 3 8 7"/>
             </svg>
             <h2 className="text-lg font-normal text-gray-800">Alta Cliente</h2>
-            <button className="p-1 ml-2">
+            <button type="button" aria-label="Buscar" title="Buscar" className="p-1 ml-2">
               <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#999" strokeWidth="2">
                 <circle cx="8" cy="8" r="6"/>
                 <path d="M13 13l3 3"/>
@@ -271,7 +271,7 @@ export function ClienteDireccionForm({ onBack }: ClienteDireccionFormProps) {
                   onClick={() => setActiveTab(tab.id)}
                   className={`px-4 py-2.5 text-xs whitespace-nowrap transition-colors ${
                     activeTab === tab.id
-                      ? 'bg-[#6B8AB8] text-white font-medium'
+                      ? 'bg-[color:var(--theme-primary)] text-white font-medium'
                       : 'text-white/90 hover:text-white hover:bg-[#5A7A95]'
                   }`}
                 >
@@ -307,10 +307,10 @@ export function ClienteDireccionForm({ onBack }: ClienteDireccionFormProps) {
                     direcciones.map((direccion) => (
                       <tr key={direccion.id} className="border-b border-gray-200">
                         <td className="px-3 py-2.5 text-xs">
-                          <a href="#" className="text-[#0066CC] hover:underline">Editar</a>
+                          <button type="button" className="enlace-accion text-[color:var(--theme-link)] hover:underline">Editar</button>
                         </td>
                         <td className="px-3 py-2.5 text-xs">
-                          <a href="#" className="text-[#0066CC] hover:underline">Ver</a>
+                          <button type="button" className="enlace-accion text-[color:var(--theme-link)] hover:underline">Ver</button>
                         </td>
                         <td className="px-3 py-2.5 text-xs text-gray-700">{direccion.tipo}</td>
                         <td className="px-3 py-2.5 text-xs text-gray-700">{direccion.direccionCompleta}</td>

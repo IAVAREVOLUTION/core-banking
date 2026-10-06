@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
+import { useOrdenTabla, coincideBusqueda } from '@/app/lib/ordenTabla';
 import { BarChart, Bar, PieChart, Pie, Cell, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { DatePicker } from '@/app/components/ui/DatePicker';
 import { ExpedientesCreditoSection } from './ExpedientesCreditoSection';
@@ -18,6 +19,7 @@ import {
   CAT_TIPO_SOL_EXTRA, CAT_ESTATUS_SOL_EXTRA,
   CLIENT_DETAIL_MAP,
 } from './creditoStore';
+import { CampoMonto } from '@/app/components/ui/CampoMonto';
 
 type ViewState = { type: 'dashboard' } | { type: 'list' } | { type: 'form'; mode: 'nuevo' | 'editar' | 'ver'; id?: number };
 
@@ -150,19 +152,38 @@ function CreditosDashboardView({ items, onGoToList, onNuevo }: { items: CreditoL
 // ═══════════════════════════════════════════════════════════════════
 function CreditoListView({ items, onNuevo, onEditar, onVer }: { items: CreditoListItem[]; onNuevo: () => void; onEditar: (i: CreditoListItem) => void; onVer: (i: CreditoListItem) => void }) {
   const [searchTerm, setSearchTerm] = useState('');
-  const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 8;
   const tableRef = useRef<HTMLDivElement>(null);
   const searchBarRef = useRef<HTMLInputElement>(null);
 
-  const filtered = items.filter(i => {
-    if (!searchTerm) return true;
-    const s = searchTerm.toLowerCase();
-    return i.noCredito.toLowerCase().includes(s) || i.cliente.toLowerCase().includes(s) || i.sucursal.toLowerCase().includes(s) || i.estatusCredito.toLowerCase().includes(s);
-  }).sort((a, b) => { const da = parseDate(a.fechaCredito).getTime(); const db = parseDate(b.fechaCredito).getTime(); return sortOrder === 'desc' ? db - da : da - db; });
-  const totalPages = Math.ceil(filtered.length / itemsPerPage);
-  const paginated = filtered.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+  const filtered = items.filter(i => coincideBusqueda(searchTerm, [
+    i.noCredito, i.cliente, i.fechaCredito, i.lineaProducto, i.sublinea, i.producto, i.sucursal,
+    i.estatusCredito, i.fechaInicio, i.fechaFin,
+  ]));
+  // Más recientes primero (fecha de crédito; a igual fecha, el número de crédito).
+  const orden = useOrdenTabla(filtered, {
+    id: 'creditos',
+    columnas: {
+      noCredito: i => i.noCredito,
+      cliente: i => i.cliente,
+      fecha: i => parseDate(i.fechaCredito),
+      montoSol: i => i.montoSolicitado,
+      montoAut: i => i.montoAutorizado,
+      linea: i => i.lineaProducto,
+      sublinea: i => i.sublinea,
+      producto: i => i.producto,
+      sucursal: i => i.sucursal,
+      estatus: i => i.estatusCredito,
+      inicio: i => i.fechaInicio,
+      fin: i => i.fechaFin,
+    },
+    porDefecto: { campo: 'fecha', dir: 'desc' },
+    desempate: i => i.noCredito,
+    alCambiar: () => setCurrentPage(1),
+  });
+  const totalPages = Math.ceil(orden.filas.length / itemsPerPage);
+  const paginated = orden.filas.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
   return (
     <div className="bg-white min-h-screen">
@@ -172,11 +193,11 @@ function CreditoListView({ items, onNuevo, onEditar, onVer }: { items: CreditoLi
           <div className="flex items-center gap-3">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#666" strokeWidth="1.5"><rect x="2" y="3" width="20" height="18" rx="2"/><path d="M2 9h20"/><path d="M7 3v4M17 3v4"/></svg>
             <h2 className="text-lg text-gray-800">Crédito</h2>
-            <button className="p-1 ml-2"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#999" strokeWidth="2"><circle cx="8" cy="8" r="6"/><path d="M13 13l3 3"/></svg></button>
+            <button type="button" aria-label="Buscar" title="Buscar" className="p-1 ml-2"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#999" strokeWidth="2"><circle cx="8" cy="8" r="6"/><path d="M13 13l3 3"/></svg></button>
           </div>
           <div className="flex items-center gap-4 text-sm text-gray-700">
-            <span onClick={() => tableRef.current?.scrollIntoView({ behavior: 'smooth' })} className="cursor-pointer hover:text-[#0099CC] transition-colors">Lista</span>
-            <span onClick={() => searchBarRef.current?.focus()} className="cursor-pointer hover:text-[#0099CC] transition-colors">Buscar</span>
+            <span onClick={() => tableRef.current?.scrollIntoView({ behavior: 'smooth' })} className="cursor-pointer hover:text-[color:var(--theme-action)] transition-colors">Lista</span>
+            <span onClick={() => searchBarRef.current?.focus()} className="cursor-pointer hover:text-[color:var(--theme-action)] transition-colors">Buscar</span>
           </div>
         </div>
       </div>
@@ -185,7 +206,7 @@ function CreditoListView({ items, onNuevo, onEditar, onVer }: { items: CreditoLi
         <div className="flex items-center gap-3">
           <span className="text-sm text-gray-700">Ver</span>
           <div className="relative"><select className="px-3 py-1.5 border border-gray-400 rounded text-sm bg-white pr-8 appearance-none min-w-[200px]"><option>Vista general de Créditos</option></select><svg className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" width="12" height="12" viewBox="0 0 12 12" fill="#666"><path d="M6 8l-4-4h8z"/></svg></div>
-          <button onClick={onNuevo} className="px-5 py-1.5 bg-[#0099CC] text-white rounded text-sm hover:bg-[#0088BB]">Nuevo</button>
+          <button onClick={onNuevo} className="px-5 py-1.5 bg-[color:var(--theme-action)] text-white rounded text-sm hover:bg-[color:var(--theme-action-hover)]">Nuevo</button>
         </div>
       </div>
       {/* Filtros */}
@@ -207,11 +228,11 @@ function CreditoListView({ items, onNuevo, onEditar, onVer }: { items: CreditoLi
           <div className="flex items-center gap-4 text-sm text-gray-700">
             <div className="flex items-center gap-2">
               <span>Orden Rápido</span>
-              <div className="relative"><select value={sortOrder} onChange={e => { setSortOrder(e.target.value as any); setCurrentPage(1); }} className="px-2 py-1 border border-gray-400 rounded text-sm bg-white pr-6 appearance-none"><option value="desc">Descendente</option><option value="asc">Ascendente</option></select><svg className="absolute right-1 top-1/2 -translate-y-1/2 pointer-events-none" width="10" height="10" viewBox="0 0 10 10" fill="#666"><path d="M5 7l-3-3h6z"/></svg></div>
+              <div className="relative"><select value={orden.dir} onChange={e => orden.fijar(orden.campo, e.target.value as 'asc' | 'desc')} className="px-2 py-1 border border-gray-400 rounded text-sm bg-white pr-6 appearance-none"><option value="desc">Descendente</option><option value="asc">Ascendente</option></select><svg className="absolute right-1 top-1/2 -translate-y-1/2 pointer-events-none" width="10" height="10" viewBox="0 0 10 10" fill="#666"><path d="M5 7l-3-3h6z"/></svg></div>
             </div>
             <div className="flex items-center gap-2">
-              <button className="p-0.5 text-[#0099CC] hover:text-[#0088BB] disabled:opacity-40" title="Anterior" onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}><svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M10 3L5 8l5 5V3z"/></svg></button>
-              <button className="p-0.5 text-[#0099CC] hover:text-[#0088BB] disabled:opacity-40" title="Siguiente" onClick={() => setCurrentPage(p => Math.min(totalPages || 1, p + 1))} disabled={currentPage >= totalPages}><svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M6 3l5 5-5 5V3z"/></svg></button>
+              <button className="p-0.5 text-[color:var(--theme-action)] hover:text-[color:var(--theme-action-hover)] disabled:opacity-40" title="Anterior" onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}><svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M10 3L5 8l5 5V3z"/></svg></button>
+              <button className="p-0.5 text-[color:var(--theme-action)] hover:text-[color:var(--theme-action-hover)] disabled:opacity-40" title="Siguiente" onClick={() => setCurrentPage(p => Math.min(totalPages || 1, p + 1))} disabled={currentPage >= totalPages}><svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M6 3l5 5-5 5V3z"/></svg></button>
             </div>
             <span>Total: {items.length}</span>
           </div>
@@ -223,18 +244,18 @@ function CreditoListView({ items, onNuevo, onEditar, onVer }: { items: CreditoLi
           <table className="w-full text-sm" style={{ backgroundColor: 'transparent' }}>
             <thead><tr className="bg-[#D0D0D0] border-b border-gray-300">
               <th className="px-3 py-2.5 text-left text-xs text-gray-700 whitespace-nowrap">Editar | Ver</th>
-              <th className="px-3 py-2.5 text-left text-xs text-gray-700">NO. DE CRÉDITO</th>
-              <th className="px-3 py-2.5 text-left text-xs text-gray-700">CLIENTE</th>
-              <th className="px-3 py-2.5 text-left text-xs text-gray-700">FECHA DE CRÉDITO</th>
-              <th className="px-3 py-2.5 text-left text-xs text-gray-700">MONTO SOLICITADO</th>
-              <th className="px-3 py-2.5 text-left text-xs text-gray-700">MONTO AUTORIZADO</th>
-              <th className="px-3 py-2.5 text-left text-xs text-gray-700">LÍNEA PRODUCTO</th>
-              <th className="px-3 py-2.5 text-left text-xs text-gray-700">SUBLÍNEA</th>
-              <th className="px-3 py-2.5 text-left text-xs text-gray-700">PRODUCTO</th>
-              <th className="px-3 py-2.5 text-left text-xs text-gray-700">SUCURSAL</th>
-              <th className="px-3 py-2.5 text-left text-xs text-gray-700">ESTATUS CRÉDITO</th>
-              <th className="px-3 py-2.5 text-left text-xs text-gray-700">FECHA DE INICIO</th>
-              <th className="px-3 py-2.5 text-left text-xs text-gray-700">FECHA FIN</th>
+              <th className="px-3 py-2.5 text-left text-xs text-gray-700" {...orden.th('noCredito')}>NO. DE CRÉDITO{orden.flecha('noCredito')}</th>
+              <th className="px-3 py-2.5 text-left text-xs text-gray-700" {...orden.th('cliente')}>CLIENTE{orden.flecha('cliente')}</th>
+              <th className="px-3 py-2.5 text-left text-xs text-gray-700" {...orden.th('fecha')}>FECHA DE CRÉDITO{orden.flecha('fecha')}</th>
+              <th className="px-3 py-2.5 text-left text-xs text-gray-700" {...orden.th('montoSol')}>MONTO SOLICITADO{orden.flecha('montoSol')}</th>
+              <th className="px-3 py-2.5 text-left text-xs text-gray-700" {...orden.th('montoAut')}>MONTO AUTORIZADO{orden.flecha('montoAut')}</th>
+              <th className="px-3 py-2.5 text-left text-xs text-gray-700" {...orden.th('linea')}>LÍNEA PRODUCTO{orden.flecha('linea')}</th>
+              <th className="px-3 py-2.5 text-left text-xs text-gray-700" {...orden.th('sublinea')}>SUBLÍNEA{orden.flecha('sublinea')}</th>
+              <th className="px-3 py-2.5 text-left text-xs text-gray-700" {...orden.th('producto')}>PRODUCTO{orden.flecha('producto')}</th>
+              <th className="px-3 py-2.5 text-left text-xs text-gray-700" {...orden.th('sucursal')}>SUCURSAL{orden.flecha('sucursal')}</th>
+              <th className="px-3 py-2.5 text-left text-xs text-gray-700" {...orden.th('estatus')}>ESTATUS CRÉDITO{orden.flecha('estatus')}</th>
+              <th className="px-3 py-2.5 text-left text-xs text-gray-700" {...orden.th('inicio')}>FECHA DE INICIO{orden.flecha('inicio')}</th>
+              <th className="px-3 py-2.5 text-left text-xs text-gray-700" {...orden.th('fin')}>FECHA FIN{orden.flecha('fin')}</th>
             </tr></thead>
             <tbody>
               {paginated.length === 0 ? <tr><td colSpan={13} className="px-3 py-8 text-center text-gray-500">No se encontraron créditos</td></tr>
@@ -243,9 +264,9 @@ function CreditoListView({ items, onNuevo, onEditar, onVer }: { items: CreditoLi
                   onMouseEnter={e => { e.currentTarget.style.backgroundColor = '#E8F4F8'; }}
                   onMouseLeave={e => { e.currentTarget.style.backgroundColor = idx % 2 === 1 ? '#EEEEEE' : '#FFFFFF'; }}>
                   <td className="px-3 py-2.5 text-xs whitespace-nowrap">
-                    <a href="#" className="text-[#0066CC] hover:underline" onClick={e => { e.preventDefault(); onEditar(item); }}>Editar</a>
+                    <button type="button" className="enlace-accion text-[color:var(--theme-link)] hover:underline" onClick={() => { onEditar(item); }}>Editar</button>
                     <span className="text-gray-700"> | </span>
-                    <a href="#" className="text-[#0066CC] hover:underline" onClick={e => { e.preventDefault(); onVer(item); }}>Ver</a>
+                    <button type="button" className="enlace-accion text-[color:var(--theme-link)] hover:underline" onClick={() => { onVer(item); }}>Ver</button>
                   </td>
                   <td className="px-3 py-2.5 text-xs text-gray-700">{item.noCredito}</td>
                   <td className="px-3 py-2.5 text-xs text-gray-700">{item.cliente}</td>
@@ -303,12 +324,12 @@ function CreditoFormView({ mode, creditoId, onCancel, onSave }: { mode: 'nuevo' 
   const ic = (err = false, dis = false) => `flex-1 px-2 py-1 text-xs border rounded focus:outline-none ${err ? 'border-red-400' : 'border-gray-300'} ${dis || isRO ? 'bg-gray-100 text-gray-600' : 'bg-white focus:ring-2 focus:ring-primary-theme'}`;
   const sc = (err = false) => `flex-1 px-2 py-1 text-xs border rounded focus:outline-none ${err ? 'border-red-400' : 'border-gray-300'} ${isRO ? 'bg-gray-100 text-gray-600' : 'bg-white focus:ring-2 focus:ring-primary-theme'}`;
   const Field = FormField;
-  const sections = [{ id: 'default', label: 'Default' }, { id: 'montos', label: 'Montos/Plazos' }, { id: 'tasas', label: 'Tasas' }, { id: 'amortizaciones', label: 'Amortizaciones' }, { id: 'expedientes', label: 'Expedientes Electrónicos' }, { id: 'autorizacion', label: 'Autorización' }, { id: 'garantias', label: 'Bienes' }, { id: 'scoring', label: 'Scoring Crediticio' }, { id: 'cargos', label: 'Cargos' }, { id: 'avisos', label: 'Avisos' }, { id: 'solicitudes', label: 'Sol. Extraordinarias' }];
+  const sections = [{ id: 'default', label: 'Default' }, { id: 'montos', label: 'Montos/Plazos' }, { id: 'tasas', label: 'Tasas' }, { id: 'amortizaciones', label: 'Amortizaciones' }, { id: 'expedientes', label: 'KM Digital' }, { id: 'autorizacion', label: 'Autorización' }, { id: 'garantias', label: 'Bienes' }, { id: 'scoring', label: 'Scoring Crediticio' }, { id: 'cargos', label: 'Cargos' }, { id: 'avisos', label: 'Avisos' }, { id: 'solicitudes', label: 'Sol. Extraordinarias' }];
 
   return (
     <div className="bg-white min-h-screen">
-      <div className="bg-white px-4 py-3 border-b border-gray-300"><div className="flex items-center justify-between"><div className="flex items-center gap-3"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#666" strokeWidth="1.5"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg><h2 className="text-lg text-gray-800">{mode === 'nuevo' ? 'Alta Crédito' : mode === 'editar' ? 'Editar Crédito' : 'Ver Crédito'}</h2><button className="p-1 ml-2"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#999" strokeWidth="2"><circle cx="8" cy="8" r="6"/><path d="M13 13l3 3"/></svg></button></div></div></div>
-      <div className="px-4 py-2.5 bg-white border-b border-gray-300"><div className="flex items-center gap-2">{!isRO && <button onClick={handleSave} className="px-5 py-1.5 bg-[#0099CC] text-white rounded text-sm hover:bg-[#0088BB]">Guardar</button>}<button onClick={handleCancel} className="px-5 py-1.5 bg-white border border-gray-400 rounded text-sm hover:bg-gray-50 text-gray-700">{isRO ? 'Volver' : 'Cancelar'}</button></div></div>
+      <div className="bg-white px-4 py-3 border-b border-gray-300"><div className="flex items-center justify-between"><div className="flex items-center gap-3"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#666" strokeWidth="1.5"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg><h2 className="text-lg text-gray-800">{mode === 'nuevo' ? 'Alta Crédito' : mode === 'editar' ? 'Editar Crédito' : 'Ver Crédito'}</h2><button type="button" aria-label="Buscar" title="Buscar" className="p-1 ml-2"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#999" strokeWidth="2"><circle cx="8" cy="8" r="6"/><path d="M13 13l3 3"/></svg></button></div></div></div>
+      <div className="px-4 py-2.5 bg-white border-b border-gray-300"><div className="flex items-center gap-2">{!isRO && <button onClick={handleSave} className="px-5 py-1.5 bg-[color:var(--theme-action)] text-white rounded text-sm hover:bg-[color:var(--theme-action-hover)]">Guardar</button>}<button onClick={handleCancel} className="px-5 py-1.5 bg-white border border-gray-400 rounded text-sm hover:bg-gray-50 text-gray-700">{isRO ? 'Volver' : 'Cancelar'}</button></div></div>
 
       <div className="px-4 py-4 bg-[#F5F5F5]">
         <div className="bg-white border border-gray-300 p-4">
@@ -332,8 +353,8 @@ function CreditoFormView({ mode, creditoId, onCancel, onSave }: { mode: 'nuevo' 
                 <Field label="FECHA FIN" req>{isRO ? <div className="flex-1 px-2 py-1 text-xs text-gray-700">{fd.fechaFin}</div> : <DatePicker value={fd.fechaFin} onChange={v => set('fechaFin', v)} placeholder="dd/mm/aaaa" />}</Field>
               </div>
               <div className="space-y-1">
-                <Field label="MONTO SOLICITADO" req error={errors.montoSolicitado}>{isRO ? <div className="flex-1 px-2 py-1 text-xs text-gray-700">{fd.montoSolicitado}</div> : <input type="text" value={fd.montoSolicitado} onChange={e => set('montoSolicitado', e.target.value.replace(/[^0-9.,-]/g, ''))} onBlur={() => curBlur('montoSolicitado')} className={ic(!!errors.montoSolicitado)} />}</Field>
-                <Field label="MONTO AUTORIZADO">{isRO ? <div className="flex-1 px-2 py-1 text-xs text-gray-700">{fd.montoAutorizado}</div> : <input type="text" value={fd.montoAutorizado} onChange={e => set('montoAutorizado', e.target.value.replace(/[^0-9.,-]/g, ''))} onBlur={() => curBlur('montoAutorizado')} className={ic()} />}</Field>
+                <Field label="MONTO SOLICITADO" req error={errors.montoSolicitado}>{isRO ? <div className="flex-1 px-2 py-1 text-xs text-gray-700">{fd.montoSolicitado}</div> : <CampoMonto value={fd.montoSolicitado} onChange={e => set('montoSolicitado', e.target.value.replace(/[^0-9.,-]/g, ''))} onBlur={() => curBlur('montoSolicitado')} className={ic(!!errors.montoSolicitado)} />}</Field>
+                <Field label="MONTO AUTORIZADO">{isRO ? <div className="flex-1 px-2 py-1 text-xs text-gray-700">{fd.montoAutorizado}</div> : <CampoMonto value={fd.montoAutorizado} onChange={e => set('montoAutorizado', e.target.value.replace(/[^0-9.,-]/g, ''))} onBlur={() => curBlur('montoAutorizado')} className={ic()} />}</Field>
                 <Field label="ESTATUS CRÉDITO">{isRO ? <div className="flex-1 px-2 py-1 text-xs text-gray-700">{fd.estatusCredito}</div> : <select value={fd.estatusCredito} onChange={e => set('estatusCredito', e.target.value)} className={sc()}>{CAT_ESTATUS_CREDITO.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}</select>}</Field>
                 <Field label="ESTATUS DE PAGO">{isRO ? <div className="flex-1 px-2 py-1 text-xs text-gray-700">{fd.estatusPago}</div> : <select value={fd.estatusPago} onChange={e => set('estatusPago', e.target.value)} className={sc()}>{CAT_ESTATUS_PAGO.map(s => <option key={s} value={s}>{s}</option>)}</select>}</Field>
                 <Field label="ESTATUS CARTERA">{isRO ? <div className="flex-1 px-2 py-1 text-xs text-gray-700">{fd.estatusCartera}</div> : <select value={fd.estatusCartera} onChange={e => set('estatusCartera', e.target.value)} className={sc()}>{CAT_ESTATUS_CARTERA.map(s => <option key={s} value={s}>{s}</option>)}</select>}</Field>
@@ -404,11 +425,11 @@ function MontosSection({ fd, set, isRO }: any) {
       <div className="grid grid-cols-2 gap-x-6">
         <div className="space-y-1">
           <div className="flex items-center gap-2"><label className="text-xs w-32 flex-shrink-0 text-gray-700">PLAZO MÍNIMO</label><input type="text" value={fd.plazoMinimo} onChange={(e: any) => set('plazoMinimo', e.target.value.replace(/[^0-9]/g, ''))} disabled={isRO} className={ic()} /></div>
-          <div className="flex items-center gap-2"><label className="text-xs w-32 flex-shrink-0 text-gray-700">MONTO MÍNIMO</label><input type="text" value={fd.montoMinimo} onChange={(e: any) => set('montoMinimo', e.target.value.replace(/[^0-9.,-]/g, ''))} disabled={isRO} className={ic()} /></div>
+          <div className="flex items-center gap-2"><label className="text-xs w-32 flex-shrink-0 text-gray-700">MONTO MÍNIMO</label><CampoMonto value={fd.montoMinimo} onChange={(e: any) => set('montoMinimo', e.target.value.replace(/[^0-9.,-]/g, ''))} disabled={isRO} className={ic()} /></div>
         </div>
         <div className="space-y-1">
           <div className="flex items-center gap-2"><label className="text-xs w-32 flex-shrink-0 text-gray-700">PLAZO MÁXIMO</label><input type="text" value={fd.plazoMaximo} onChange={(e: any) => set('plazoMaximo', e.target.value.replace(/[^0-9]/g, ''))} disabled={isRO} className={ic()} /></div>
-          <div className="flex items-center gap-2"><label className="text-xs w-32 flex-shrink-0 text-gray-700">MONTO MÁXIMO</label><input type="text" value={fd.montoMaximo} onChange={(e: any) => set('montoMaximo', e.target.value.replace(/[^0-9.,-]/g, ''))} disabled={isRO} className={ic()} /></div>
+          <div className="flex items-center gap-2"><label className="text-xs w-32 flex-shrink-0 text-gray-700">MONTO MÁXIMO</label><CampoMonto value={fd.montoMaximo} onChange={(e: any) => set('montoMaximo', e.target.value.replace(/[^0-9.,-]/g, ''))} disabled={isRO} className={ic()} /></div>
         </div>
       </div>
     </div>
@@ -471,7 +492,7 @@ function AutorizacionSection({ sid, mode, isRO }: { sid: number | 'new'; mode: s
   const [items, setItems] = useState<CreditoAutorizacion[]>(() => loadFromSession<CreditoAutorizacion[]>(sid, 'autorizaciones') || (mode !== 'nuevo' ? loadFromSavedStore<CreditoAutorizacion[]>(sid, 'autorizaciones') : null) || []);
   useEffect(() => { if (!isRO) saveToSession(sid, 'autorizaciones', items); }, [items, sid, isRO]);
   const [showModal, setShowModal] = useState(false);
-  const [editId, setEditId] = useState<string | null>(null);
+  const [editId, setEditId] = useState<number | null>(null);
   const emptyDraft = (): CreditoAutorizacion => { const n = new Date(); return { id: generateId(), fechaHora: `${n.getDate().toString().padStart(2,'0')}/${(n.getMonth()+1).toString().padStart(2,'0')}/${n.getFullYear()} ${n.getHours().toString().padStart(2,'0')}:${n.getMinutes().toString().padStart(2,'0')}`, usuario: '', area: '', descripcion: '', observaciones: '', estatus: 'Pendiente' }; };
   const [draft, setDraft] = useState<CreditoAutorizacion>(emptyDraft);
   const openNew = () => { setDraft(emptyDraft()); setEditId(null); setShowModal(true); };
@@ -482,12 +503,12 @@ function AutorizacionSection({ sid, mode, isRO }: { sid: number | 'new'; mode: s
     <div className="flex items-center justify-between mb-3"><div className="bg-primary-tint-theme border-l-4 border-primary-theme px-3 py-1.5"><span className="text-xs text-gray-800">AUTORIZACIONES</span></div>{!isRO && <button onClick={openNew} className="px-4 py-1.5 btn-secondary-theme rounded text-xs">Autorizar</button>}</div>
     <div className="border border-gray-300 bg-white overflow-x-auto"><table className="w-full border-collapse min-w-[900px]"><thead><tr className="bg-gray-100 border-b border-gray-300"><th className="px-2 py-2 text-xs text-gray-700 text-left border-r border-gray-300">Fecha</th><th className="px-2 py-2 text-xs text-gray-700 text-left border-r border-gray-300">Usuario</th><th className="px-2 py-2 text-xs text-gray-700 text-left border-r border-gray-300">Área</th><th className="px-2 py-2 text-xs text-gray-700 text-left border-r border-gray-300">Descripción</th><th className="px-2 py-2 text-xs text-gray-700 text-left border-r border-gray-300">Observaciones</th><th className="px-2 py-2 text-xs text-gray-700 text-left border-r border-gray-300">Estatus</th>{!isRO && <th className="px-2 py-2 text-xs text-gray-700 text-center w-16">Acción</th>}</tr></thead><tbody>
       {items.length === 0 ? <tr><td colSpan={isRO ? 6 : 7} className="px-3 py-6 text-center text-xs text-gray-400">Sin autorizaciones</td></tr>
-      : items.map(a => <tr key={a.id} className="border-b border-gray-200 hover:bg-gray-50"><td className="px-2 py-1.5 text-xs border-r border-gray-200">{a.fechaHora}</td><td className="px-2 py-1.5 text-xs border-r border-gray-200">{a.usuario}</td><td className="px-2 py-1.5 text-xs border-r border-gray-200">{a.area}</td><td className="px-2 py-1.5 text-xs border-r border-gray-200">{a.descripcion}</td><td className="px-2 py-1.5 text-xs border-r border-gray-200">{a.observaciones}</td><td className="px-2 py-1.5 text-xs border-r border-gray-200">{a.estatus}</td>{!isRO && <td className="px-2 py-1.5 text-center"><a href="#" className="text-[#0066CC] hover:underline text-xs" onClick={e => { e.preventDefault(); openEdit(a); }}>Editar</a></td>}</tr>)}
+      : items.map(a => <tr key={a.id} className="border-b border-gray-200 hover:bg-gray-50"><td className="px-2 py-1.5 text-xs border-r border-gray-200">{a.fechaHora}</td><td className="px-2 py-1.5 text-xs border-r border-gray-200">{a.usuario}</td><td className="px-2 py-1.5 text-xs border-r border-gray-200">{a.area}</td><td className="px-2 py-1.5 text-xs border-r border-gray-200">{a.descripcion}</td><td className="px-2 py-1.5 text-xs border-r border-gray-200">{a.observaciones}</td><td className="px-2 py-1.5 text-xs border-r border-gray-200">{a.estatus}</td>{!isRO && <td className="px-2 py-1.5 text-center"><button type="button" className="enlace-accion text-[color:var(--theme-link)] hover:underline text-xs" onClick={() => { openEdit(a); }}>Editar</button></td>}</tr>)}
     </tbody></table></div>
     {showModal && (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
         <div className="bg-white rounded shadow-xl w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col">
-          <div className="bg-primary-theme px-6 py-4 flex items-center justify-between"><h3 className="text-base text-white">{editId ? 'Editar Autorización' : 'Nueva Autorización'}</h3><button onClick={() => setShowModal(false)} className="text-white hover:text-gray-200"><svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor"><path d="M10 8.586L2.929 1.515 1.515 2.929 8.586 10l-7.071 7.071 1.414 1.414L10 11.414l7.071 7.071 1.414-1.414L11.414 10l7.071-7.071-1.414-1.414L10 8.586z"/></svg></button></div>
+          <div className="bg-primary-theme px-6 py-4 flex items-center justify-between"><h3 className="text-base text-white">{editId ? 'Editar Autorización' : 'Nueva Autorización'}</h3><button type="button" aria-label="Cerrar" title="Cerrar" onClick={() => setShowModal(false)} className="text-white hover:text-gray-200"><svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor"><path d="M10 8.586L2.929 1.515 1.515 2.929 8.586 10l-7.071 7.071 1.414 1.414L10 11.414l7.071 7.071 1.414-1.414L11.414 10l7.071-7.071-1.414-1.414L10 8.586z"/></svg></button></div>
           <div className="p-6 overflow-y-auto flex-1 space-y-3">
             <div className="flex items-center gap-2"><label className="text-xs w-28 flex-shrink-0 text-gray-700">Fecha/Hora</label><input type="text" value={draft.fechaHora} disabled className={`${mIc} !bg-gray-100 text-gray-600`} /></div>
             <div className="flex items-center gap-2"><label className="text-xs w-28 flex-shrink-0 text-gray-700">Usuario</label><input type="text" value={draft.usuario} onChange={e => setDraft(p => ({ ...p, usuario: e.target.value }))} className={mIc} /></div>
@@ -508,7 +529,7 @@ function GarantiasSection({ sid, mode, isRO }: { sid: number | 'new'; mode: stri
   const [items, setItems] = useState<CreditoGarantia[]>(() => loadFromSession<CreditoGarantia[]>(sid, 'garantias') || (mode !== 'nuevo' ? loadFromSavedStore<CreditoGarantia[]>(sid, 'garantias') : null) || []);
   useEffect(() => { if (!isRO) saveToSession(sid, 'garantias', items); }, [items, sid, isRO]);
   const [showModal, setShowModal] = useState(false);
-  const [editId, setEditId] = useState<string | null>(null);
+  const [editId, setEditId] = useState<number | null>(null);
   const emptyDraft = (): CreditoGarantia => ({ id: generateId(), tipo: '', subtipo: '', descripcion: '', valorNominal: 0, ubicacion: '', estatus: 'Vigente' });
   const [draft, setDraft] = useState<CreditoGarantia>(emptyDraft);
   const openNew = () => { setDraft(emptyDraft()); setEditId(null); setShowModal(true); };
@@ -519,17 +540,17 @@ function GarantiasSection({ sid, mode, isRO }: { sid: number | 'new'; mode: stri
     <div className="flex items-center justify-between mb-3"><div className="bg-primary-tint-theme border-l-4 border-primary-theme px-3 py-1.5"><span className="text-xs text-gray-800">BIENES</span></div>{!isRO && <button onClick={openNew} className="px-4 py-1.5 btn-secondary-theme rounded text-xs">Nuevo</button>}</div>
     <div className="border border-gray-300 bg-white overflow-x-auto"><table className="w-full border-collapse min-w-[800px]"><thead><tr className="bg-gray-100 border-b border-gray-300"><th className="px-2 py-2 text-xs text-gray-700 text-left border-r border-gray-300">Tipo</th><th className="px-2 py-2 text-xs text-gray-700 text-left border-r border-gray-300">Subtipo</th><th className="px-2 py-2 text-xs text-gray-700 text-left border-r border-gray-300">Descripción</th><th className="px-2 py-2 text-xs text-gray-700 text-right border-r border-gray-300">Valor Nominal</th><th className="px-2 py-2 text-xs text-gray-700 text-left border-r border-gray-300">Ubicación</th><th className="px-2 py-2 text-xs text-gray-700 text-left border-r border-gray-300">Estatus</th>{!isRO && <th className="px-2 py-2 text-xs text-gray-700 text-center w-16">Acción</th>}</tr></thead><tbody>
       {items.length === 0 ? <tr><td colSpan={isRO ? 6 : 7} className="px-3 py-6 text-center text-xs text-gray-400">Sin garantías</td></tr>
-      : items.map(g => <tr key={g.id} className="border-b border-gray-200 hover:bg-gray-50"><td className="px-2 py-1.5 text-xs border-r border-gray-200">{CAT_TIPO_GARANTIA.find(t => t.value === g.tipo)?.label || g.tipo}</td><td className="px-2 py-1.5 text-xs border-r border-gray-200">{g.subtipo}</td><td className="px-2 py-1.5 text-xs border-r border-gray-200">{g.descripcion}</td><td className="px-2 py-1.5 text-xs text-right border-r border-gray-200">{fmtCur(g.valorNominal)}</td><td className="px-2 py-1.5 text-xs border-r border-gray-200">{g.ubicacion}</td><td className="px-2 py-1.5 text-xs border-r border-gray-200">{g.estatus}</td>{!isRO && <td className="px-2 py-1.5 text-center"><a href="#" className="text-[#0066CC] hover:underline text-xs" onClick={e => { e.preventDefault(); openEdit(g); }}>Editar</a></td>}</tr>)}
+      : items.map(g => <tr key={g.id} className="border-b border-gray-200 hover:bg-gray-50"><td className="px-2 py-1.5 text-xs border-r border-gray-200">{CAT_TIPO_GARANTIA.find(t => t.value === g.tipo)?.label || g.tipo}</td><td className="px-2 py-1.5 text-xs border-r border-gray-200">{g.subtipo}</td><td className="px-2 py-1.5 text-xs border-r border-gray-200">{g.descripcion}</td><td className="px-2 py-1.5 text-xs text-right border-r border-gray-200">{fmtCur(g.valorNominal)}</td><td className="px-2 py-1.5 text-xs border-r border-gray-200">{g.ubicacion}</td><td className="px-2 py-1.5 text-xs border-r border-gray-200">{g.estatus}</td>{!isRO && <td className="px-2 py-1.5 text-center"><button type="button" className="enlace-accion text-[color:var(--theme-link)] hover:underline text-xs" onClick={() => { openEdit(g); }}>Editar</button></td>}</tr>)}
     </tbody></table></div>
     {showModal && (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
         <div className="bg-white rounded shadow-xl w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col">
-          <div className="bg-primary-theme px-6 py-4 flex items-center justify-between"><h3 className="text-base text-white">{editId ? 'Editar Bien' : 'Nuevo Bien'}</h3><button onClick={() => setShowModal(false)} className="text-white hover:text-gray-200"><svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor"><path d="M10 8.586L2.929 1.515 1.515 2.929 8.586 10l-7.071 7.071 1.414 1.414L10 11.414l7.071 7.071 1.414-1.414L11.414 10l7.071-7.071-1.414-1.414L10 8.586z"/></svg></button></div>
+          <div className="bg-primary-theme px-6 py-4 flex items-center justify-between"><h3 className="text-base text-white">{editId ? 'Editar Bien' : 'Nuevo Bien'}</h3><button type="button" aria-label="Cerrar" title="Cerrar" onClick={() => setShowModal(false)} className="text-white hover:text-gray-200"><svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor"><path d="M10 8.586L2.929 1.515 1.515 2.929 8.586 10l-7.071 7.071 1.414 1.414L10 11.414l7.071 7.071 1.414-1.414L11.414 10l7.071-7.071-1.414-1.414L10 8.586z"/></svg></button></div>
           <div className="p-6 overflow-y-auto flex-1 space-y-3">
             <div className="flex items-center gap-2"><label className="text-xs w-28 flex-shrink-0 text-gray-700">Tipo</label><select value={draft.tipo} onChange={e => setDraft(p => ({ ...p, tipo: e.target.value }))} className={mIc}><option value="">Seleccione...</option>{CAT_TIPO_GARANTIA.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}</select></div>
             <div className="flex items-center gap-2"><label className="text-xs w-28 flex-shrink-0 text-gray-700">Subtipo</label><input type="text" value={draft.subtipo} onChange={e => setDraft(p => ({ ...p, subtipo: e.target.value }))} className={mIc} /></div>
             <div className="flex items-center gap-2"><label className="text-xs w-28 flex-shrink-0 text-gray-700">Descripción</label><input type="text" value={draft.descripcion} onChange={e => setDraft(p => ({ ...p, descripcion: e.target.value }))} className={mIc} /></div>
-            <div className="flex items-center gap-2"><label className="text-xs w-28 flex-shrink-0 text-gray-700">Valor Nominal</label><input type="text" value={draft.valorNominal || ''} onChange={e => { const v = e.target.value.replace(/[^0-9.,-]/g, ''); setDraft(p => ({ ...p, valorNominal: v as any })); }} onBlur={() => { const n = parseFloat(String(draft.valorNominal).replace(/[^0-9.-]/g, '')) || 0; setDraft(p => ({ ...p, valorNominal: n })); }} className={mIc} /></div>
+            <div className="flex items-center gap-2"><label className="text-xs w-28 flex-shrink-0 text-gray-700">Valor Nominal</label><CampoMonto value={draft.valorNominal || ''} onChange={e => { const v = e.target.value.replace(/[^0-9.,-]/g, ''); setDraft(p => ({ ...p, valorNominal: v as any })); }} onBlur={() => { const n = parseFloat(String(draft.valorNominal).replace(/[^0-9.-]/g, '')) || 0; setDraft(p => ({ ...p, valorNominal: n })); }} className={mIc} /></div>
             <div className="flex items-center gap-2"><label className="text-xs w-28 flex-shrink-0 text-gray-700">Ubicación</label><input type="text" value={draft.ubicacion} onChange={e => setDraft(p => ({ ...p, ubicacion: e.target.value }))} className={mIc} /></div>
             <div className="flex items-center gap-2"><label className="text-xs w-28 flex-shrink-0 text-gray-700">Estatus</label><select value={draft.estatus} onChange={e => setDraft(p => ({ ...p, estatus: e.target.value }))} className={mIc}><option>Vigente</option><option>En trámite</option><option>Cancelada</option></select></div>
           </div>
@@ -545,7 +566,7 @@ function CargosSection({ sid, mode, isRO }: { sid: number | 'new'; mode: string;
   const [items, setItems] = useState<CreditoCargo[]>(() => loadFromSession<CreditoCargo[]>(sid, 'cargos') || (mode !== 'nuevo' ? loadFromSavedStore<CreditoCargo[]>(sid, 'cargos') : null) || []);
   useEffect(() => { if (!isRO) saveToSession(sid, 'cargos', items); }, [items, sid, isRO]);
   const [showModal, setShowModal] = useState(false);
-  const [editId, setEditId] = useState<string | null>(null);
+  const [editId, setEditId] = useState<number | null>(null);
   const emptyDraft = (): CreditoCargo => ({ id: generateId(), tipoCargo: '', descripcion: '', monto: 0, fechaCargo: '', estatus: 'Pendiente', notas: '' });
   const [draft, setDraft] = useState<CreditoCargo>(emptyDraft);
   const openNew = () => { setDraft(emptyDraft()); setEditId(null); setShowModal(true); };
@@ -556,16 +577,16 @@ function CargosSection({ sid, mode, isRO }: { sid: number | 'new'; mode: string;
     <div className="flex items-center justify-between mb-3"><div className="bg-primary-tint-theme border-l-4 border-primary-theme px-3 py-1.5"><span className="text-xs text-gray-800">CARGOS</span></div>{!isRO && <button onClick={openNew} className="px-4 py-1.5 btn-secondary-theme rounded text-xs">Nuevo</button>}</div>
     <div className="border border-gray-300 bg-white overflow-x-auto"><table className="w-full border-collapse min-w-[800px]"><thead><tr className="bg-gray-100 border-b border-gray-300"><th className="px-2 py-2 text-xs text-gray-700 text-left border-r border-gray-300">Tipo Cargo</th><th className="px-2 py-2 text-xs text-gray-700 text-left border-r border-gray-300">Descripción</th><th className="px-2 py-2 text-xs text-gray-700 text-right border-r border-gray-300">Monto</th><th className="px-2 py-2 text-xs text-gray-700 text-left border-r border-gray-300">Estatus</th><th className="px-2 py-2 text-xs text-gray-700 text-left border-r border-gray-300">Notas</th>{!isRO && <th className="px-2 py-2 text-xs text-gray-700 text-center w-16">Acción</th>}</tr></thead><tbody>
       {items.length === 0 ? <tr><td colSpan={isRO ? 5 : 6} className="px-3 py-6 text-center text-xs text-gray-400">Sin cargos</td></tr>
-      : items.map(c => <tr key={c.id} className="border-b border-gray-200 hover:bg-gray-50"><td className="px-2 py-1.5 text-xs border-r border-gray-200">{CAT_TIPO_CARGO.find(t => t.value === c.tipoCargo)?.label || c.tipoCargo}</td><td className="px-2 py-1.5 text-xs border-r border-gray-200">{c.descripcion}</td><td className="px-2 py-1.5 text-xs text-right border-r border-gray-200">{fmtCur(c.monto)}</td><td className="px-2 py-1.5 text-xs border-r border-gray-200">{c.estatus}</td><td className="px-2 py-1.5 text-xs border-r border-gray-200">{c.notas}</td>{!isRO && <td className="px-2 py-1.5 text-center"><a href="#" className="text-[#0066CC] hover:underline text-xs" onClick={e => { e.preventDefault(); openEdit(c); }}>Editar</a></td>}</tr>)}
+      : items.map(c => <tr key={c.id} className="border-b border-gray-200 hover:bg-gray-50"><td className="px-2 py-1.5 text-xs border-r border-gray-200">{CAT_TIPO_CARGO.find(t => t.value === c.tipoCargo)?.label || c.tipoCargo}</td><td className="px-2 py-1.5 text-xs border-r border-gray-200">{c.descripcion}</td><td className="px-2 py-1.5 text-xs text-right border-r border-gray-200">{fmtCur(c.monto)}</td><td className="px-2 py-1.5 text-xs border-r border-gray-200">{c.estatus}</td><td className="px-2 py-1.5 text-xs border-r border-gray-200">{c.notas}</td>{!isRO && <td className="px-2 py-1.5 text-center"><button type="button" className="enlace-accion text-[color:var(--theme-link)] hover:underline text-xs" onClick={() => { openEdit(c); }}>Editar</button></td>}</tr>)}
     </tbody></table></div>
     {showModal && (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
         <div className="bg-white rounded shadow-xl w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col">
-          <div className="bg-primary-theme px-6 py-4 flex items-center justify-between"><h3 className="text-base text-white">{editId ? 'Editar Cargo' : 'Nuevo Cargo'}</h3><button onClick={() => setShowModal(false)} className="text-white hover:text-gray-200"><svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor"><path d="M10 8.586L2.929 1.515 1.515 2.929 8.586 10l-7.071 7.071 1.414 1.414L10 11.414l7.071 7.071 1.414-1.414L11.414 10l7.071-7.071-1.414-1.414L10 8.586z"/></svg></button></div>
+          <div className="bg-primary-theme px-6 py-4 flex items-center justify-between"><h3 className="text-base text-white">{editId ? 'Editar Cargo' : 'Nuevo Cargo'}</h3><button type="button" aria-label="Cerrar" title="Cerrar" onClick={() => setShowModal(false)} className="text-white hover:text-gray-200"><svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor"><path d="M10 8.586L2.929 1.515 1.515 2.929 8.586 10l-7.071 7.071 1.414 1.414L10 11.414l7.071 7.071 1.414-1.414L11.414 10l7.071-7.071-1.414-1.414L10 8.586z"/></svg></button></div>
           <div className="p-6 overflow-y-auto flex-1 space-y-3">
             <div className="flex items-center gap-2"><label className="text-xs w-28 flex-shrink-0 text-gray-700">Tipo Cargo</label><select value={draft.tipoCargo} onChange={e => setDraft(p => ({ ...p, tipoCargo: e.target.value }))} className={mIc}><option value="">Seleccione...</option>{CAT_TIPO_CARGO.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}</select></div>
             <div className="flex items-center gap-2"><label className="text-xs w-28 flex-shrink-0 text-gray-700">Descripción</label><input type="text" value={draft.descripcion} onChange={e => setDraft(p => ({ ...p, descripcion: e.target.value }))} className={mIc} /></div>
-            <div className="flex items-center gap-2"><label className="text-xs w-28 flex-shrink-0 text-gray-700">Monto</label><input type="text" value={draft.monto || ''} onChange={e => { const v = e.target.value.replace(/[^0-9.,-]/g, ''); setDraft(p => ({ ...p, monto: v as any })); }} onBlur={() => { const n = parseFloat(String(draft.monto).replace(/[^0-9.-]/g, '')) || 0; setDraft(p => ({ ...p, monto: n })); }} className={mIc} /></div>
+            <div className="flex items-center gap-2"><label className="text-xs w-28 flex-shrink-0 text-gray-700">Monto</label><CampoMonto value={draft.monto || ''} onChange={e => { const v = e.target.value.replace(/[^0-9.,-]/g, ''); setDraft(p => ({ ...p, monto: v as any })); }} onBlur={() => { const n = parseFloat(String(draft.monto).replace(/[^0-9.-]/g, '')) || 0; setDraft(p => ({ ...p, monto: n })); }} className={mIc} /></div>
             <div className="flex items-center gap-2"><label className="text-xs w-28 flex-shrink-0 text-gray-700">Estatus</label><select value={draft.estatus} onChange={e => setDraft(p => ({ ...p, estatus: e.target.value }))} className={mIc}>{CAT_ESTATUS_CARGO.map(s => <option key={s} value={s}>{s}</option>)}</select></div>
             <div className="flex items-center gap-2"><label className="text-xs w-28 flex-shrink-0 text-gray-700">Notas</label><input type="text" value={draft.notas} onChange={e => setDraft(p => ({ ...p, notas: e.target.value }))} className={mIc} /></div>
           </div>
@@ -581,7 +602,7 @@ function AvisosSection({ sid, mode, isRO }: { sid: number | 'new'; mode: string;
   const [items, setItems] = useState<CreditoAviso[]>(() => loadFromSession<CreditoAviso[]>(sid, 'avisos') || (mode !== 'nuevo' ? loadFromSavedStore<CreditoAviso[]>(sid, 'avisos') : null) || []);
   useEffect(() => { if (!isRO) saveToSession(sid, 'avisos', items); }, [items, sid, isRO]);
   const [showModal, setShowModal] = useState(false);
-  const [editId, setEditId] = useState<string | null>(null);
+  const [editId, setEditId] = useState<number | null>(null);
   const emptyDraft = (): CreditoAviso => { const n = new Date(); return { id: generateId(), tipo: '', mensaje: '', fechaCreacion: `${n.getDate().toString().padStart(2,'0')}/${(n.getMonth()+1).toString().padStart(2,'0')}/${n.getFullYear()}`, fechaVencimiento: '', destinatario: '', estatus: 'Activo' }; };
   const [draft, setDraft] = useState<CreditoAviso>(emptyDraft);
   const openNew = () => { setDraft(emptyDraft()); setEditId(null); setShowModal(true); };
@@ -592,12 +613,12 @@ function AvisosSection({ sid, mode, isRO }: { sid: number | 'new'; mode: string;
     <div className="flex items-center justify-between mb-3"><div className="bg-primary-tint-theme border-l-4 border-primary-theme px-3 py-1.5"><span className="text-xs text-gray-800">AVISOS</span></div>{!isRO && <button onClick={openNew} className="px-4 py-1.5 btn-secondary-theme rounded text-xs">Nuevo</button>}</div>
     <div className="border border-gray-300 bg-white overflow-x-auto"><table className="w-full border-collapse min-w-[800px]"><thead><tr className="bg-gray-100 border-b border-gray-300"><th className="px-2 py-2 text-xs text-gray-700 text-left border-r border-gray-300">Tipo</th><th className="px-2 py-2 text-xs text-gray-700 text-left border-r border-gray-300">Mensaje</th><th className="px-2 py-2 text-xs text-gray-700 text-left border-r border-gray-300">Fecha Creación</th><th className="px-2 py-2 text-xs text-gray-700 text-left border-r border-gray-300">Destinatario</th><th className="px-2 py-2 text-xs text-gray-700 text-left border-r border-gray-300">Estatus</th>{!isRO && <th className="px-2 py-2 text-xs text-gray-700 text-center w-16">Acción</th>}</tr></thead><tbody>
       {items.length === 0 ? <tr><td colSpan={isRO ? 5 : 6} className="px-3 py-6 text-center text-xs text-gray-400">Sin avisos</td></tr>
-      : items.map(a => <tr key={a.id} className="border-b border-gray-200 hover:bg-gray-50"><td className="px-2 py-1.5 text-xs border-r border-gray-200">{CAT_TIPO_AVISO.find(t => t.value === a.tipo)?.label || a.tipo}</td><td className="px-2 py-1.5 text-xs border-r border-gray-200">{a.mensaje}</td><td className="px-2 py-1.5 text-xs border-r border-gray-200">{a.fechaCreacion}</td><td className="px-2 py-1.5 text-xs border-r border-gray-200">{a.destinatario}</td><td className="px-2 py-1.5 text-xs border-r border-gray-200">{a.estatus}</td>{!isRO && <td className="px-2 py-1.5 text-center"><a href="#" className="text-[#0066CC] hover:underline text-xs" onClick={e => { e.preventDefault(); openEdit(a); }}>Editar</a></td>}</tr>)}
+      : items.map(a => <tr key={a.id} className="border-b border-gray-200 hover:bg-gray-50"><td className="px-2 py-1.5 text-xs border-r border-gray-200">{CAT_TIPO_AVISO.find(t => t.value === a.tipo)?.label || a.tipo}</td><td className="px-2 py-1.5 text-xs border-r border-gray-200">{a.mensaje}</td><td className="px-2 py-1.5 text-xs border-r border-gray-200">{a.fechaCreacion}</td><td className="px-2 py-1.5 text-xs border-r border-gray-200">{a.destinatario}</td><td className="px-2 py-1.5 text-xs border-r border-gray-200">{a.estatus}</td>{!isRO && <td className="px-2 py-1.5 text-center"><button type="button" className="enlace-accion text-[color:var(--theme-link)] hover:underline text-xs" onClick={() => { openEdit(a); }}>Editar</button></td>}</tr>)}
     </tbody></table></div>
     {showModal && (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
         <div className="bg-white rounded shadow-xl w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col">
-          <div className="bg-primary-theme px-6 py-4 flex items-center justify-between"><h3 className="text-base text-white">{editId ? 'Editar Aviso' : 'Nuevo Aviso'}</h3><button onClick={() => setShowModal(false)} className="text-white hover:text-gray-200"><svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor"><path d="M10 8.586L2.929 1.515 1.515 2.929 8.586 10l-7.071 7.071 1.414 1.414L10 11.414l7.071 7.071 1.414-1.414L11.414 10l7.071-7.071-1.414-1.414L10 8.586z"/></svg></button></div>
+          <div className="bg-primary-theme px-6 py-4 flex items-center justify-between"><h3 className="text-base text-white">{editId ? 'Editar Aviso' : 'Nuevo Aviso'}</h3><button type="button" aria-label="Cerrar" title="Cerrar" onClick={() => setShowModal(false)} className="text-white hover:text-gray-200"><svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor"><path d="M10 8.586L2.929 1.515 1.515 2.929 8.586 10l-7.071 7.071 1.414 1.414L10 11.414l7.071 7.071 1.414-1.414L11.414 10l7.071-7.071-1.414-1.414L10 8.586z"/></svg></button></div>
           <div className="p-6 overflow-y-auto flex-1 space-y-3">
             <div className="flex items-center gap-2"><label className="text-xs w-28 flex-shrink-0 text-gray-700">Tipo</label><select value={draft.tipo} onChange={e => setDraft(p => ({ ...p, tipo: e.target.value }))} className={mIc}><option value="">Seleccione...</option>{CAT_TIPO_AVISO.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}</select></div>
             <div className="flex items-center gap-2"><label className="text-xs w-28 flex-shrink-0 text-gray-700">Mensaje</label><input type="text" value={draft.mensaje} onChange={e => setDraft(p => ({ ...p, mensaje: e.target.value }))} className={mIc} /></div>
@@ -783,7 +804,7 @@ function SolicitudesExtraSection({ sid, mode, isRO }: { sid: number | 'new'; mod
   const [items, setItems] = useState<CreditoSolicitudExtra[]>(() => loadFromSession<CreditoSolicitudExtra[]>(sid, 'solicitudes_extra') || (mode !== 'nuevo' ? loadFromSavedStore<CreditoSolicitudExtra[]>(sid, 'solicitudes_extra') : null) || []);
   useEffect(() => { if (!isRO) saveToSession(sid, 'solicitudes_extra', items); }, [items, sid, isRO]);
   const [showModal, setShowModal] = useState(false);
-  const [editId, setEditId] = useState<string | null>(null);
+  const [editId, setEditId] = useState<number | null>(null);
   const emptyDraft = (): CreditoSolicitudExtra => { const n = new Date(); return { id: generateId(), tipo: '', descripcion: '', fechaSolicitud: `${n.getDate().toString().padStart(2,'0')}/${(n.getMonth()+1).toString().padStart(2,'0')}/${n.getFullYear()}`, solicitante: '', estatus: 'Pendiente', observaciones: '' }; };
   const [draft, setDraft] = useState<CreditoSolicitudExtra>(emptyDraft);
   const openNew = () => { setDraft(emptyDraft()); setEditId(null); setShowModal(true); };
@@ -794,12 +815,12 @@ function SolicitudesExtraSection({ sid, mode, isRO }: { sid: number | 'new'; mod
     <div className="flex items-center justify-between mb-3"><div className="bg-primary-tint-theme border-l-4 border-primary-theme px-3 py-1.5"><span className="text-xs text-gray-800">SOLICITUDES EXTRAORDINARIAS</span></div>{!isRO && <button onClick={openNew} className="px-4 py-1.5 btn-secondary-theme rounded text-xs">Nuevo</button>}</div>
     <div className="border border-gray-300 bg-white overflow-x-auto"><table className="w-full border-collapse min-w-[900px]"><thead><tr className="bg-gray-100 border-b border-gray-300"><th className="px-2 py-2 text-xs text-gray-700 text-left border-r border-gray-300">Tipo</th><th className="px-2 py-2 text-xs text-gray-700 text-left border-r border-gray-300">Descripción</th><th className="px-2 py-2 text-xs text-gray-700 text-left border-r border-gray-300">Fecha</th><th className="px-2 py-2 text-xs text-gray-700 text-left border-r border-gray-300">Solicitante</th><th className="px-2 py-2 text-xs text-gray-700 text-left border-r border-gray-300">Estatus</th><th className="px-2 py-2 text-xs text-gray-700 text-left border-r border-gray-300">Observaciones</th>{!isRO && <th className="px-2 py-2 text-xs text-gray-700 text-center w-16">Acción</th>}</tr></thead><tbody>
       {items.length === 0 ? <tr><td colSpan={isRO ? 6 : 7} className="px-3 py-6 text-center text-xs text-gray-400">Sin solicitudes extraordinarias</td></tr>
-      : items.map(s => <tr key={s.id} className="border-b border-gray-200 hover:bg-gray-50"><td className="px-2 py-1.5 text-xs border-r border-gray-200">{CAT_TIPO_SOL_EXTRA.find(t => t.value === s.tipo)?.label || s.tipo}</td><td className="px-2 py-1.5 text-xs border-r border-gray-200">{s.descripcion}</td><td className="px-2 py-1.5 text-xs border-r border-gray-200">{s.fechaSolicitud}</td><td className="px-2 py-1.5 text-xs border-r border-gray-200">{s.solicitante}</td><td className="px-2 py-1.5 text-xs border-r border-gray-200">{s.estatus}</td><td className="px-2 py-1.5 text-xs border-r border-gray-200">{s.observaciones}</td>{!isRO && <td className="px-2 py-1.5 text-center"><a href="#" className="text-[#0066CC] hover:underline text-xs" onClick={e => { e.preventDefault(); openEdit(s); }}>Editar</a></td>}</tr>)}
+      : items.map(s => <tr key={s.id} className="border-b border-gray-200 hover:bg-gray-50"><td className="px-2 py-1.5 text-xs border-r border-gray-200">{CAT_TIPO_SOL_EXTRA.find(t => t.value === s.tipo)?.label || s.tipo}</td><td className="px-2 py-1.5 text-xs border-r border-gray-200">{s.descripcion}</td><td className="px-2 py-1.5 text-xs border-r border-gray-200">{s.fechaSolicitud}</td><td className="px-2 py-1.5 text-xs border-r border-gray-200">{s.solicitante}</td><td className="px-2 py-1.5 text-xs border-r border-gray-200">{s.estatus}</td><td className="px-2 py-1.5 text-xs border-r border-gray-200">{s.observaciones}</td>{!isRO && <td className="px-2 py-1.5 text-center"><button type="button" className="enlace-accion text-[color:var(--theme-link)] hover:underline text-xs" onClick={() => { openEdit(s); }}>Editar</button></td>}</tr>)}
     </tbody></table></div>
     {showModal && (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
         <div className="bg-white rounded shadow-xl w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col">
-          <div className="bg-primary-theme px-6 py-4 flex items-center justify-between"><h3 className="text-base text-white">{editId ? 'Editar Solicitud Extraordinaria' : 'Nueva Solicitud Extraordinaria'}</h3><button onClick={() => setShowModal(false)} className="text-white hover:text-gray-200"><svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor"><path d="M10 8.586L2.929 1.515 1.515 2.929 8.586 10l-7.071 7.071 1.414 1.414L10 11.414l7.071 7.071 1.414-1.414L11.414 10l7.071-7.071-1.414-1.414L10 8.586z"/></svg></button></div>
+          <div className="bg-primary-theme px-6 py-4 flex items-center justify-between"><h3 className="text-base text-white">{editId ? 'Editar Solicitud Extraordinaria' : 'Nueva Solicitud Extraordinaria'}</h3><button type="button" aria-label="Cerrar" title="Cerrar" onClick={() => setShowModal(false)} className="text-white hover:text-gray-200"><svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor"><path d="M10 8.586L2.929 1.515 1.515 2.929 8.586 10l-7.071 7.071 1.414 1.414L10 11.414l7.071 7.071 1.414-1.414L11.414 10l7.071-7.071-1.414-1.414L10 8.586z"/></svg></button></div>
           <div className="p-6 overflow-y-auto flex-1 space-y-3">
             <div className="flex items-center gap-2"><label className="text-xs w-28 flex-shrink-0 text-gray-700">Tipo</label><select value={draft.tipo} onChange={e => setDraft(p => ({ ...p, tipo: e.target.value }))} className={mIc}><option value="">Seleccione...</option>{CAT_TIPO_SOL_EXTRA.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}</select></div>
             <div className="flex items-center gap-2"><label className="text-xs w-28 flex-shrink-0 text-gray-700">Descripción</label><input type="text" value={draft.descripcion} onChange={e => setDraft(p => ({ ...p, descripcion: e.target.value }))} className={mIc} /></div>

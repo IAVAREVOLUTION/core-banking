@@ -9,9 +9,9 @@ interface ProductoFormDefaultTabProps {
 }
 
 // ── Estilos reutilizables ──
-const inputBase = 'w-full px-2.5 py-1.5 text-xs border border-gray-300 rounded bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-[#4A6FA5]/40 focus:border-[#4A6FA5] transition-colors';
+const inputBase = 'w-full px-2.5 py-1.5 text-xs border border-gray-300 rounded bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-[color:var(--theme-primary)]/40 focus:border-[color:var(--theme-primary)] transition-colors';
 const inputDisabled = 'w-full px-2.5 py-1.5 text-xs border border-gray-200 rounded bg-gray-50 text-gray-500 cursor-not-allowed';
-const selectBase = 'w-full px-2.5 py-1.5 text-xs border border-gray-300 rounded bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-[#4A6FA5]/40 focus:border-[#4A6FA5] transition-colors';
+const selectBase = 'w-full px-2.5 py-1.5 text-xs border border-gray-300 rounded bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-[color:var(--theme-primary)]/40 focus:border-[color:var(--theme-primary)] transition-colors';
 const viewText = 'w-full px-2.5 py-1.5 text-xs text-gray-700 bg-gray-50 border border-gray-200 rounded';
 
 const Lbl = ({ children, req }: { children: string; req?: boolean }) => (
@@ -245,7 +245,7 @@ export function ProductoFormDefaultTab({ formData, mode, handleChange, showDescu
               checked={formData.descuentoNomina || false}
               onChange={isView ? undefined : (e) => handleChange('descuentoNomina', e.target.checked)}
               disabled={isView}
-              className={`w-4 h-4 rounded border-gray-300 text-[#4A6FA5] focus:ring-[#4A6FA5]/40 ${isView ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}
+              className={`w-4 h-4 rounded border-gray-300 text-[color:var(--theme-primary)] focus:ring-[color:var(--theme-primary)]/40 ${isView ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}
             />
             <label htmlFor="descuentoNomina" className={`text-xs text-gray-700 ${isView ? '' : 'cursor-pointer'}`}>
               Descuento en Nómina

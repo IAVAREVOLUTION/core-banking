@@ -128,7 +128,7 @@ export function etiquetaMomento(momento: string | undefined, fases?: FaseProduct
 export const EVENTOS_COMISION_GPO = ['DEVENGO_COMISION_GPO', 'COBRO_COMISION_GPO'];
 
 const norm = (v: unknown) =>
-  String(v ?? '').trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  String(v ?? '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 
 /** Cargo tal como lo captura `CargoTab` en `producto.cargo`. */
 export interface CargoProducto {

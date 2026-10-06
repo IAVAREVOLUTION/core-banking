@@ -1,14 +1,15 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Garantia, DocumentoExpediente } from '@/types/garantia';
-import { FormMode } from '@/types/product';
+import { FormMode } from '@/app/types/product';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { currentUser } from '@/app/data/mockData';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 import { DatePicker } from '@/app/components/ui/DatePicker';
 import { Eye, Search, X, Users } from 'lucide-react';
 import { useClientesDB, type ClienteDB } from '@/app/hooks/useClientesDB';
 import { useCategoriaBienDB } from '@/app/hooks/useCategoriaBienDB';
+import { CampoMonto } from '@/app/components/ui/CampoMonto';
 
 // ─── Persistencia sessionStorage ───
 const STORAGE_KEY_FORM = 'garantia_form_data';
@@ -580,7 +581,7 @@ export function GarantiaForm({
   };
 
   const tabs = [
-    { id: 'expediente', label: 'Expediente Electrónico' },
+    { id: 'expediente', label: 'KM Digital' },
   ];
 
   return (
@@ -594,7 +595,7 @@ export function GarantiaForm({
               <path d="M4 9h16M9 4v16" stroke="currentColor" strokeWidth="1.5"/>
             </svg>
             <h2 className="text-lg font-normal text-gray-800">Alta Bien</h2>
-            <button className="p-1 ml-2">
+            <button type="button" aria-label="Buscar" title="Buscar" className="p-1 ml-2">
               <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#999" strokeWidth="2">
                 <circle cx="8" cy="8" r="6"/>
                 <path d="M13 13l3 3"/>
@@ -610,7 +611,7 @@ export function GarantiaForm({
           {!isView && (
             <button 
               onClick={handleSubmit}
-              className="px-5 py-1.5 bg-[#0099CC] text-white rounded text-sm hover:bg-[#0088BB] font-medium"
+              className="px-5 py-1.5 bg-[color:var(--theme-action)] text-white rounded text-sm hover:bg-[color:var(--theme-action-hover)] font-medium"
             >
               Guardar
             </button>
@@ -631,7 +632,7 @@ export function GarantiaForm({
 
             {/* ═══ Clasificación — Categoría condiciona Tipo/Subtipo ═══ */}
             <section>
-              <div className="bg-[#D9E2F3] px-3 py-1.5 mb-3 text-sm font-medium text-gray-800 border-l-4 border-[#4A6FA5]">
+              <div className="bg-[color:var(--theme-tint)] px-3 py-1.5 mb-3 text-sm font-medium text-gray-800 border-l-4 border-[color:var(--theme-primary)]">
                 Clasificación del Bien
               </div>
               <div className="grid grid-cols-4 gap-4">
@@ -696,7 +697,7 @@ export function GarantiaForm({
 
             {/* ═══ Cliente / Proveedor ═══ */}
             <section>
-              <div className="bg-[#D9E2F3] px-3 py-1.5 mb-3 text-sm font-medium text-gray-800 border-l-4 border-[#4A6FA5]">
+              <div className="bg-[color:var(--theme-tint)] px-3 py-1.5 mb-3 text-sm font-medium text-gray-800 border-l-4 border-[color:var(--theme-primary)]">
                 Cliente / Proveedor
               </div>
               <div className="grid grid-cols-4 gap-4">
@@ -791,7 +792,7 @@ export function GarantiaForm({
 
             {/* ═══ Identificación del Bien ═══ */}
             <section>
-              <div className="bg-[#D9E2F3] px-3 py-1.5 mb-3 text-sm font-medium text-gray-800 border-l-4 border-[#4A6FA5]">
+              <div className="bg-[color:var(--theme-tint)] px-3 py-1.5 mb-3 text-sm font-medium text-gray-800 border-l-4 border-[color:var(--theme-primary)]">
                 Identificación del Bien
               </div>
               <div className="grid grid-cols-2 gap-4">
@@ -876,7 +877,7 @@ export function GarantiaForm({
 
             {/* ═══ Valores y Tasación ═══ */}
             <section>
-              <div className="bg-[#D9E2F3] px-3 py-1.5 mb-3 text-sm font-medium text-gray-800 border-l-4 border-[#4A6FA5]">
+              <div className="bg-[color:var(--theme-tint)] px-3 py-1.5 mb-3 text-sm font-medium text-gray-800 border-l-4 border-[color:var(--theme-primary)]">
                 Valores y Tasación
               </div>
               <div className="grid grid-cols-4 gap-4">
@@ -884,11 +885,9 @@ export function GarantiaForm({
                   {isView ? (
                     <ViewValue>{formatCurrencyMXN(formData.valorNominal)}</ViewValue>
                   ) : (
-                    <input
-                      type="number"
+                    <CampoMonto
                       value={formData.valorNominal === 0 ? '' : formData.valorNominal}
                       onChange={(e) => handleChange('valorNominal', e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
-                      step="0.01"
                       placeholder="0.00"
                       className={inputClass(!!errors.valorNominal)}
                     />
@@ -952,11 +951,9 @@ export function GarantiaForm({
                   ) : (
                     <div className="relative">
                       <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-400">$</span>
-                      <input
-                        type="number"
+                      <CampoMonto
                         value={formData.montoCubrirGarantia ?? ''}
                         onChange={(e) => handleChange('montoCubrirGarantia', e.target.value === '' ? (undefined as any) : parseFloat(e.target.value) || 0)}
-                        step="0.01"
                         placeholder="0.00"
                         className={`${inputClass(false)} pl-5`}
                       />
@@ -997,7 +994,7 @@ export function GarantiaForm({
 
             {/* ═══ Notas ═══ */}
             <section>
-              <div className="bg-[#D9E2F3] px-3 py-1.5 mb-3 text-sm font-medium text-gray-800 border-l-4 border-[#4A6FA5]">
+              <div className="bg-[color:var(--theme-tint)] px-3 py-1.5 mb-3 text-sm font-medium text-gray-800 border-l-4 border-[color:var(--theme-primary)]">
                 Notas
               </div>
               <div className="grid grid-cols-2 gap-4">
@@ -1050,19 +1047,9 @@ export function GarantiaForm({
                   className={`px-3 py-2 text-[10px] whitespace-nowrap border-r border-gray-500/30 ${
                     activeTab === tab.id
                       ? 'bg-secondary-theme text-white font-medium'
-                      : 'text-white/90'
+                      : 'text-white/90 hover:bg-[color:var(--theme-primary-hover)]'
                   }`}
                   style={activeTab !== tab.id ? { transition: 'background-color 0.2s' } : {}}
-                  onMouseEnter={(e) => {
-                    if (activeTab !== tab.id) {
-                      e.currentTarget.style.backgroundColor = 'var(--theme-primary-hover)';
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (activeTab !== tab.id) {
-                      e.currentTarget.style.backgroundColor = '';
-                    }
-                  }}
                 >
                   {tab.label}
                 </button>
@@ -1074,12 +1061,12 @@ export function GarantiaForm({
           <div className="p-4">
             {activeTab === 'expediente' && (
               <div>
-                <h4 className="text-xs font-semibold text-gray-800 mb-2">Expediente electrónico</h4>
+                <h4 className="text-xs font-semibold text-gray-800 mb-2">KM Digital</h4>
                 
                 {/* BOTONES PRINCIPALES */}
                 <div className="flex items-center gap-2 mb-2">
                   <button
-                    className="px-4 py-1 bg-[#5B9BD5] text-white rounded text-[10px] hover:bg-[#4A8BC5] disabled:opacity-50"
+                    className="px-4 py-1 bg-[color:var(--theme-accent)] text-white rounded text-[10px] hover:bg-[color:var(--theme-accent-hover)] disabled:opacity-50"
                     onClick={() => setShowAdjuntarOptions(!showAdjuntarOptions)}
                     disabled={isView}
                   >
@@ -1232,7 +1219,7 @@ export function GarantiaForm({
                                   e.stopPropagation();
                                   handleViewFile(doc);
                                 }}
-                                className="inline-flex items-center justify-center px-2 py-1 bg-[#5B9BD5] text-white text-xs rounded hover:bg-[#4A8BC2]"
+                                className="inline-flex items-center justify-center px-2 py-1 bg-[color:var(--theme-accent)] text-white text-xs rounded hover:bg-[color:var(--theme-accent-hover)]"
                                 title="Visualizar archivo"
                               >
                                 <Eye className="w-3.5 h-3.5" />
@@ -1275,7 +1262,7 @@ export function GarantiaForm({
                         </button>
                         <button
                           onClick={handleWebUrl}
-                          className="px-4 py-1.5 text-sm bg-[#5B9BD5] text-white rounded hover:bg-[#4A8BC5]"
+                          className="px-4 py-1.5 text-sm bg-[color:var(--theme-accent)] text-white rounded hover:bg-[color:var(--theme-accent-hover)]"
                         >
                           Agregar
                         </button>
@@ -1294,12 +1281,12 @@ export function GarantiaForm({
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[80vh] flex flex-col">
             {/* Header */}
-            <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200 bg-[#D9E2F3]">
+            <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200 bg-[color:var(--theme-tint)]">
               <div className="flex items-center gap-2">
-                <Users className="w-4 h-4 text-[#4A6FA5]" />
+                <Users className="w-4 h-4 text-[color:var(--theme-primary)]" />
                 <h3 className="text-sm font-semibold text-gray-800">Seleccionar Cliente</h3>
               </div>
-              <button onClick={() => { setShowClienteModal(false); setClienteSearch(''); }} className="text-gray-500 hover:text-gray-700">
+              <button aria-label="Cerrar" title="Cerrar" onClick={() => { setShowClienteModal(false); setClienteSearch(''); }} className="text-gray-500 hover:text-gray-700">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -1340,7 +1327,7 @@ export function GarantiaForm({
                       <td colSpan={5} className="px-3 py-8 text-center text-gray-500">
                         <div className="flex items-center justify-center gap-2">
                           <div className="w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
-                          Cargando clientes desde J_CLIENTES...
+                          Cargando clientes...
                         </div>
                       </td>
                     </tr>
@@ -1400,7 +1387,7 @@ export function GarantiaForm({
                 <Users className="w-4 h-4 text-amber-600" />
                 <h3 className="text-sm font-semibold text-gray-800">Seleccionar Proveedor</h3>
               </div>
-              <button onClick={() => { setShowProveedorModal(false); setProveedorSearch(''); }} className="text-gray-500 hover:text-gray-700">
+              <button aria-label="Cerrar" title="Cerrar" onClick={() => { setShowProveedorModal(false); setProveedorSearch(''); }} className="text-gray-500 hover:text-gray-700">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -1440,7 +1427,7 @@ export function GarantiaForm({
                       <td colSpan={4} className="px-3 py-8 text-center text-gray-500">
                         <div className="flex items-center justify-center gap-2">
                           <div className="w-4 h-4 border-2 border-amber-400 border-t-transparent rounded-full animate-spin" />
-                          Cargando desde J_CLIENTES...
+                          Cargando...
                         </div>
                       </td>
                     </tr>
@@ -1504,10 +1491,10 @@ export function GarantiaForm({
               {/* Header */}
               <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
                 <div className="flex items-center gap-2">
-                  <Eye className="w-4 h-4 text-[#5B9BD5]" />
+                  <Eye className="w-4 h-4 text-[color:var(--theme-accent)]" />
                   <h3 className="text-sm font-semibold text-gray-800">Visualizador de Documento</h3>
                 </div>
-                <button
+                <button type="button" aria-label="Cerrar" title="Cerrar"
                   onClick={() => {
                     setShowViewer(false);
                     setCurrentFile(null);
@@ -1574,7 +1561,7 @@ export function GarantiaForm({
                       <a
                         href={currentFile.fileData}
                         download={currentFile.archivo}
-                        className="px-4 py-2 text-xs bg-[#5B9BD5] text-white rounded hover:bg-[#4A8BC2]"
+                        className="px-4 py-2 text-xs bg-[color:var(--theme-accent)] text-white rounded hover:bg-[color:var(--theme-accent-hover)]"
                       >
                         Descargar Archivo
                       </a>
@@ -1605,7 +1592,7 @@ export function GarantiaForm({
                       setShowViewer(false);
                       setCurrentFile(null);
                     }}
-                    className="px-4 py-2 text-xs bg-[#5B9BD5] text-white rounded hover:bg-[#4A8BC2]"
+                    className="px-4 py-2 text-xs bg-[color:var(--theme-accent)] text-white rounded hover:bg-[color:var(--theme-accent-hover)]"
                   >
                     Cerrar
                   </button>

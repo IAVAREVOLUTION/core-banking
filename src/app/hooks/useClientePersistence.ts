@@ -32,7 +32,7 @@ export function useClientePersistence<T extends Record<string, any>>(
         const persistedData = JSON.parse(saved);
         // Si los datos son un array, retornar directamente sin hacer spread de objeto
         if (Array.isArray(persistedData)) {
-          return persistedData as T;
+          return persistedData as unknown as T;
         }
         // Filtrar valores undefined del persistedData para no sobrescribir defaults
         const cleanedData: any = {};

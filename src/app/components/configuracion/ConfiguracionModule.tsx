@@ -99,8 +99,8 @@ export function ConfiguracionModule() {
                       onClick={() => setActiveTab(tab.id)}
                       className={`flex items-center gap-1.5 px-3 py-1.5 text-[12px] font-medium rounded-sm transition-all duration-150 border ${
                         isActive
-                          ? 'bg-[#2E5C91] text-white border-[#2E5C91] shadow-sm'
-                          : 'bg-white text-gray-600 border-gray-300 hover:bg-[#E8EDF3] hover:text-[#2E5C91] hover:border-[#2E5C91]/40'
+                          ? 'bg-[color:var(--theme-secondary)] text-white border-[color:var(--theme-secondary)] shadow-sm'
+                          : 'bg-white text-gray-600 border-gray-300 hover:bg-[#E8EDF3] hover:text-[color:var(--theme-secondary)] hover:border-[color:var(--theme-secondary)]/40'
                       }`}
                     >
                       <span className={isActive ? 'text-white/80' : 'text-gray-400'}>{tab.icon}</span>

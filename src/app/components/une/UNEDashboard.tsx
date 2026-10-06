@@ -50,7 +50,7 @@ export function UNEDashboard({ casos, onVerCaso }: Props) {
     .slice(0, 5);
 
   const kpis = [
-    { label: 'Total de casos', valor: stats.total,          color: '#2E5C91', bg: '#EFF6FF' },
+    { label: 'Total de casos', valor: stats.total,          color: 'var(--theme-secondary)', bg: '#EFF6FF' },
     { label: 'Casos abiertos', valor: stats.abiertos,       color: '#0891B2', bg: '#E0F7FA' },
     { label: 'Casos cerrados', valor: stats.cerrados,       color: '#059669', bg: '#ECFDF5' },
     { label: 'Alta prioridad', valor: stats.altaPrioridad,  color: '#DC2626', bg: '#FEF2F2' },

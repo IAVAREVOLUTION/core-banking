@@ -10,7 +10,8 @@
  *   - Validación: suma(valores) >= monto × (aforo/100) si hay aforo, o >= monto si no hay
  */
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
+import { getUsuarioSesion } from '../../lib/sesion';
 import {
   Garantia,
   saveToSession, loadFromSession, loadFromSavedStore, generateId,
@@ -21,7 +22,6 @@ import { useGarantiasDB } from '../../hooks/useGarantiasDB';
 import { useCategoriaBienDB } from '../../hooks/useCategoriaBienDB';
 
 const LOG = '[GarantiasTab]';
-const CURRENT_USER = '(sesión pendiente)';
 
 // Categoría default según tipo de producto: arrendamiento (Puro o Financiero)
 // → Activo Fijo, cualquier otro (crédito tradicional, etc.) → Garantía.
@@ -287,7 +287,7 @@ export function GarantiasTab({ mode, solicitudId, montoSolicitado, clienteId, fa
         id: generateId(),
         garantiaDbId: String(g.id),
         fecha,
-        usuario: CURRENT_USER,
+        usuario: getUsuarioSesion(),
         categoria: g.categoria || categoriaDefault,
         tipo: g.tipo || '',
         subtipo: g.subtipo || '',
@@ -331,7 +331,7 @@ export function GarantiasTab({ mode, solicitudId, montoSolicitado, clienteId, fa
           {!isRO && (
             <button
               onClick={() => setShowModal(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-[#4A6FA5] text-white text-xs rounded hover:bg-[#3E5C91]"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-[color:var(--theme-primary)] text-white text-xs rounded hover:bg-[color:var(--theme-secondary)]"
             >
               <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M6 1v10M1 6h10"/>
@@ -499,7 +499,7 @@ export function GarantiasTab({ mode, solicitudId, montoSolicitado, clienteId, fa
           </div>
         ) : garantiasCliente.length === 0 ? (
           <p className="text-xs text-gray-400 italic py-2">
-            {clienteId ? 'El cliente no tiene bienes registrados en J_GARANTIAS.' : 'No hay cliente asociado.'}
+            {clienteId ? 'El cliente no tiene bienes registrados.' : 'No hay cliente asociado.'}
           </p>
         ) : (
           <div className="border border-gray-300 overflow-hidden overflow-x-auto">
@@ -552,9 +552,9 @@ export function GarantiasTab({ mode, solicitudId, montoSolicitado, clienteId, fa
           <div className="relative bg-white shadow-2xl w-full max-w-2xl mx-4 overflow-hidden" onClick={e => e.stopPropagation()}>
 
             {/* Header */}
-            <div className="bg-[#4A6FA5] px-5 py-3 flex items-center justify-between">
+            <div className="bg-[color:var(--theme-primary)] px-5 py-3 flex items-center justify-between">
               <span className="text-sm font-semibold text-white">Seleccionar Bien</span>
-              <button onClick={() => setShowModal(false)} className="text-white/80 hover:text-white">
+              <button type="button" aria-label="Cerrar" title="Cerrar" onClick={() => setShowModal(false)} className="text-white/80 hover:text-white">
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
                   <path d="M2 2l12 12M14 2L2 14"/>
                 </svg>
@@ -566,7 +566,7 @@ export function GarantiasTab({ mode, solicitudId, montoSolicitado, clienteId, fa
               {garantiasDisponibles.length === 0 ? (
                 <div className="text-center py-8 text-gray-400 text-xs">
                   {garantiasCliente.length === 0
-                    ? 'El cliente no tiene bienes registrados en J_GARANTIAS.'
+                    ? 'El cliente no tiene bienes registrados.'
                     : 'Todos los bienes del cliente ya fueron agregados a esta solicitud.'}
                 </div>
               ) : (
@@ -584,7 +584,7 @@ export function GarantiasTab({ mode, solicitudId, montoSolicitado, clienteId, fa
                               type="checkbox"
                               checked={selectedDbIds.size === garantiasDisponibles.length && garantiasDisponibles.length > 0}
                               onChange={toggleAll}
-                              className="w-3 h-3 accent-[#4A6FA5]"
+                              className="w-3 h-3 accent-[color:var(--theme-primary)]"
                             />
                           </th>
                           <th className="px-3 py-2 text-left text-[10px] text-gray-700 font-semibold border-r border-gray-300">CATEGORÍA</th>
@@ -610,7 +610,7 @@ export function GarantiasTab({ mode, solicitudId, montoSolicitado, clienteId, fa
                                   checked={sel}
                                   onChange={() => toggleDbSelect(g.id)}
                                   onClick={e => e.stopPropagation()}
-                                  className="w-3 h-3 accent-[#4A6FA5]"
+                                  className="w-3 h-3 accent-[color:var(--theme-primary)]"
                                 />
                               </td>
                               <td className="px-3 py-2 border-r border-gray-200 text-gray-600">{categoriaLabel(g.categoria)}</td>
@@ -665,7 +665,7 @@ export function GarantiasTab({ mode, solicitudId, montoSolicitado, clienteId, fa
               <button
                 onClick={handleAgregarSeleccionadas}
                 disabled={selectedDbIds.size === 0}
-                className="px-4 py-1.5 bg-[#4A6FA5] text-white text-xs rounded hover:bg-[#3E5C91] disabled:opacity-40 disabled:cursor-not-allowed"
+                className="px-4 py-1.5 bg-[color:var(--theme-primary)] text-white text-xs rounded hover:bg-[color:var(--theme-secondary)] disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 Agregar {selectedDbIds.size > 0 ? `(${selectedDbIds.size})` : ''}
               </button>

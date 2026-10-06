@@ -3018,8 +3018,102 @@ app.delete("/catalogos/documentos/:id", deleteCatalogoDocumentoHandler);
 
 // ── Solicitudes de Crédito (direct SQL — J_CUENTAS_CORP_CLIENTES) ──
 
+// Columnas de J_CLIENTES / J_PRODUCTOS que acompañan a cada solicitud (JOIN).
+const SOLICITUD_JOIN_COLS = (sql: any) => sql`
+  cl.data->>'nombre'                AS cliente_nombre,
+  cl.data->>'apellidoPaterno'       AS cliente_ap_paterno,
+  cl.data->>'apellidoMaterno'       AS cliente_ap_materno,
+  cl.data->>'rfc'                   AS cliente_rfc,
+  cl.data->>'curp'                  AS cliente_curp,
+  cl.data->>'institucionGobierno'   AS institucion_gobierno,
+  cl.type                           AS cliente_tipo,
+  cl.subtipo                        AS cliente_subtipo,
+  p.data->>'nombreProducto'    AS producto_nombre,
+  p.data->>'claveProducto'     AS producto_clave,
+  p.data->>'sucursal'          AS producto_sucursal
+`;
+
+/**
+ * GET /solicitudes-credito?vista=lista — listado LIGERO.
+ *
+ * El listado completo arma el JSONB de todas las solicitudes (~5.8 MB, ~2 s de
+ * servidor): expediente, resultados IA, simulaciones, calendarios. Las tablas
+ * sólo pintan columnas y unos cuantos campos del JSONB, así que aquí `data` se
+ * reduce en SQL a lo que usan las listas (~15x menos). Va marcado con
+ * `_resumen: true`; el frontend pide GET /solicitudes-credito/:id antes de
+ * abrir, editar o guardar una solicitud.
+ */
+const getSolicitudesListaLigera = async (c: any) => {
+  const rows = await sql`
+    SELECT
+      to_jsonb(s) - 'data' AS cols,
+      CASE WHEN jsonb_typeof(s.data) = 'object' THEN
+        jsonb_strip_nulls(jsonb_build_object(
+          'nombreCompleto',         s.data->'nombreCompleto',
+          'nombrePersona',          s.data->'nombrePersona',
+          'apellidoPaternoPersona', s.data->'apellidoPaternoPersona',
+          'apellidoMaternoPersona', s.data->'apellidoMaternoPersona',
+          'nombreProducto',         s.data->'nombreProducto',
+          'tipoProducto',           s.data->'tipoProducto',
+          'sucursal',               s.data->'sucursal',
+          'descripcionFase',        s.data->'descripcionFase',
+          'estatusSolicitud',       s.data->'estatusSolicitud',
+          'noSol',                  s.data->'noSol',
+          'tipoPersona',            s.data->'tipoPersona',
+          'disposicionDe',          s.data->'disposicionDe',
+          'solicitud', jsonb_build_object(
+            'header',        s.data->'solicitud'->'header',
+            'tesoreria',     s.data->'solicitud'->'tesoreria',
+            'garantias',     s.data->'solicitud'->'garantias',
+            'disposicionDe', s.data->'solicitud'->'disposicionDe',
+            'terminos_condiciones', jsonb_build_object(
+              'parametros_simulacion', s.data->'solicitud'->'terminos_condiciones'->'parametros_simulacion',
+              '_raw',                  s.data->'solicitud'->'terminos_condiciones'->'_raw'
+            )
+          )
+        )) || '{"_resumen": true}'::jsonb
+      ELSE s.data END AS data,
+      ${SOLICITUD_JOIN_COLS(sql)}
+    FROM "EFINANCIANET_DB"."J_CUENTAS_CORP_CLIENTES" s
+    LEFT JOIN "EFINANCIANET_DB"."J_CLIENTES" cl ON cl.id = s.cliente_id
+    LEFT JOIN "EFINANCIANET_DB"."J_PRODUCTOS" p  ON p.id  = s.producto_id
+    ORDER BY s.fecha_sol DESC NULLS LAST
+  `;
+  const data = rows.map((r: any) => {
+    const { cols, data: d, ...join } = r;
+    return { ...(cols || {}), ...join, data: typeof d === 'string' ? (() => { try { return JSON.parse(d); } catch { return d; } })() : d };
+  });
+  console.log(`[SOLICITUDES] GET lista ligera — ${data.length} registros`);
+  return c.json({ data, _vista: 'lista' });
+};
+
+/** GET /solicitudes-credito/:id — una solicitud con su JSONB completo. */
+const getSolicitudPorIdHandler = async (c: any) => {
+  const id = c.req.param('id');
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id || '')) {
+    return c.json({ error: 'ID inválido (se espera UUID)' }, 400);
+  }
+  try {
+    const rows = await sql`
+      SELECT s.*, ${SOLICITUD_JOIN_COLS(sql)}
+      FROM "EFINANCIANET_DB"."J_CUENTAS_CORP_CLIENTES" s
+      LEFT JOIN "EFINANCIANET_DB"."J_CLIENTES" cl ON cl.id = s.cliente_id
+      LEFT JOIN "EFINANCIANET_DB"."J_PRODUCTOS" p  ON p.id  = s.producto_id
+      WHERE s.id = ${id}::uuid
+    `;
+    if (rows.length === 0) return c.json({ error: 'Solicitud no encontrada' }, 404);
+    const r: any = rows[0];
+    if (typeof r.data === 'string') { try { r.data = JSON.parse(r.data); } catch { /* keep */ } }
+    return c.json({ data: r });
+  } catch (err: any) {
+    console.log("[SOLICITUDES] Error GET por id:", err?.message);
+    return c.json({ error: `Error consultando solicitud: ${err?.message}` }, 500);
+  }
+};
+
 const getSolicitudesHandler = async (c: any) => {
   try {
+    if (c.req.query('vista') === 'lista') return await getSolicitudesListaLigera(c);
     console.log("[SOLICITUDES] GET /solicitudes-credito — ALL rows (inclusive) with JOIN");
     const rows = await sql`
       SELECT
@@ -3474,12 +3568,14 @@ const getNextNoSolHandler = async (c: any) => {
 
 app.get(`${PREFIX}/solicitudes-credito/next-no-sol`, getNextNoSolHandler);
 app.get(`${PREFIX}/solicitudes-credito`, getSolicitudesHandler);
+app.get(`${PREFIX}/solicitudes-credito/:id`, getSolicitudPorIdHandler);
 app.post(`${PREFIX}/solicitudes-credito`, postSolicitudesHandler);
 app.put(`${PREFIX}/solicitudes-credito/:id`, putSolicitudesHandler);
 app.delete(`${PREFIX}/solicitudes-credito/:id`, deleteSolicitudesHandler);
 // ── Solicitudes (sin prefijo — fallback) ──
 app.get("/solicitudes-credito/next-no-sol", getNextNoSolHandler);
 app.get("/solicitudes-credito", getSolicitudesHandler);
+app.get("/solicitudes-credito/:id", getSolicitudPorIdHandler);
 app.post("/solicitudes-credito", postSolicitudesHandler);
 app.put("/solicitudes-credito/:id", putSolicitudesHandler);
 app.delete("/solicitudes-credito/:id", deleteSolicitudesHandler);

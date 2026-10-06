@@ -15,7 +15,7 @@
  */
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Search, X, Building2, AlertTriangle, Shield, Calculator, CalendarDays, CheckCircle2 } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 import { format, parse, isValid } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { DayPicker } from 'react-day-picker';
@@ -44,6 +44,7 @@ import { useProductosLineaCreditoDB } from '../../hooks/useProductosLineaCredito
 import { useProductosSeguros } from '../../hooks/useProductosSeguros';
 import { CampoInstitucionGobierno } from '../ui/CatalogoInstitucionGobierno';
 import type { InstitucionGobiernoSeleccion } from '../ui/CatalogoInstitucionGobierno';
+import { CampoMonto } from '@/app/components/ui/CampoMonto';
 
 type FormMode = 'create' | 'edit' | 'view';
 type LineaProducto = 'Crédito' | 'Línea de Crédito';
@@ -677,10 +678,8 @@ export function CotizacionCreditoForm({ mode, lineaProducto, cotizacion, onSave,
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
                   className={`px-3 py-2 text-[10px] whitespace-nowrap border-r border-gray-500/30 ${
-                    activeTab === tab.id ? 'bg-secondary-theme text-white font-medium' : 'text-white/90'
+                    activeTab === tab.id ? 'bg-secondary-theme text-white font-medium' : 'text-white/90 hover:bg-[color:var(--theme-primary-hover)]'
                   }`}
-                  onMouseEnter={(e) => { if (activeTab !== tab.id) e.currentTarget.style.backgroundColor = 'var(--theme-primary-hover)'; }}
-                  onMouseLeave={(e) => { if (activeTab !== tab.id) e.currentTarget.style.backgroundColor = ''; }}
                 >
                   {tab.label}
                 </button>
@@ -695,7 +694,7 @@ export function CotizacionCreditoForm({ mode, lineaProducto, cotizacion, onSave,
               {/* ── §2.1 Prospecto/Cliente ── */}
               <div className="border-t border-gray-300">
                 <div className="border-l-4 border-primary-theme px-3 py-1.5">
-                  <span className="text-xs font-medium text-gray-800 uppercase">Prospecto / Cliente</span>
+                  <span className="text-xs font-medium text-gray-800 uppercase">Tipo Interlocutor / Cliente</span>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4">
                   <div className="flex flex-col">
@@ -875,8 +874,7 @@ export function CotizacionCreditoForm({ mode, lineaProducto, cotizacion, onSave,
                             Monto Solicitado <span className="text-red-500">*</span>
                             <span className="text-gray-400 ml-1">({formatMoney(data.montoMinimo)}–{formatMoney(data.montoMaximo)})</span>
                           </label>
-                          <input
-                            type="number"
+                          <CampoMonto
                             value={data.montoSolicitado || ''}
                             disabled={isView}
                             onChange={e => setData({ montoSolicitado: parseFloat(e.target.value) || 0 })}
@@ -1095,7 +1093,7 @@ export function CotizacionCreditoForm({ mode, lineaProducto, cotizacion, onSave,
                   {/* §7 Seguro Financiado — Montos y Coberturas del Producto Seguro (tabla seleccionable) */}
                   <div className="border-2 border-gray-400 bg-[#FAFBFC]">
                     {/* Header */}
-                    <div className="bg-gradient-to-r from-[#2E5C91] to-[#4A6FA5] px-3 py-1.5 flex items-center gap-2">
+                    <div className="bg-gradient-to-r from-[color:var(--theme-secondary)] to-[color:var(--theme-primary)] px-3 py-1.5 flex items-center gap-2">
                       <Shield className="w-4 h-4 text-white" />
                       <span className="text-[11px] font-semibold text-white uppercase tracking-wider">Seguro Financiado</span>
                       <label className="flex items-center gap-1.5 ml-auto cursor-pointer">
@@ -1181,7 +1179,7 @@ export function CotizacionCreditoForm({ mode, lineaProducto, cotizacion, onSave,
                               <div className="overflow-x-auto border-2 border-gray-400">
                                 <table className="w-full text-[10px]">
                                   <thead>
-                                    <tr className="bg-[#2E5C91] text-white">
+                                    <tr className="bg-[color:var(--theme-secondary)] text-white">
                                       <th className="px-2 py-1.5 text-center w-8"></th>
                                       <th className="px-2 py-1.5 text-center">Periodo</th>
                                       <th className="px-2 py-1.5 text-center">Plazo Min</th>
@@ -1432,7 +1430,7 @@ export function CotizacionCreditoForm({ mode, lineaProducto, cotizacion, onSave,
                 <Building2 className="w-5 h-5 text-gray-500" />
                 <h3 className="text-sm font-medium text-gray-800">Seleccionar Cliente</h3>
               </div>
-              <button onClick={() => setShowClienteModal(false)} className="p-1 hover:bg-gray-100 rounded">
+              <button aria-label="Cerrar" title="Cerrar" onClick={() => setShowClienteModal(false)} className="p-1 hover:bg-gray-100 rounded">
                 <X className="w-4 h-4 text-gray-500" />
               </button>
             </div>

@@ -88,7 +88,7 @@ export function ComitesTab({ mode, solicitudId, readOnly }: Props) {
   const update = <K extends keyof Comite>(id: number, field: K, value: Comite[K]) =>
     setItems(p => p.map(c => (c.id === id ? { ...c, [field]: value } : c)));
 
-  const ic = 'w-full px-2 py-1 border border-gray-300 rounded text-xs focus:outline-none focus:ring-2 focus:ring-[#4A6FA5] bg-white text-gray-800';
+  const ic = 'w-full px-2 py-1 border border-gray-300 rounded text-xs focus:outline-none focus:ring-2 focus:ring-[color:var(--theme-primary)] bg-white text-gray-800';
   const icRO = 'w-full px-2 py-1 border border-gray-200 rounded text-xs bg-gray-50 text-gray-700';
 
   return (
@@ -106,7 +106,7 @@ export function ComitesTab({ mode, solicitudId, readOnly }: Props) {
         {!isRO && (
           <button
             onClick={handleAgregar}
-            className="px-3 py-1 bg-[#4A6FA5] text-white rounded text-xs hover:bg-[#3d5d8a] flex items-center gap-1"
+            className="px-3 py-1 bg-[color:var(--theme-primary)] text-white rounded text-xs hover:bg-[color:var(--theme-primary-hover)] flex items-center gap-1"
           >
             <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M6 1v10M1 6h10" />

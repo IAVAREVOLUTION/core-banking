@@ -14,7 +14,7 @@
  * repartir de más o de menos es el error caro de esta pantalla.
  */
 import { useState, useMemo, useEffect, useCallback } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 import { useCuentasBancariasDB, type CuentaBancaria } from '../../hooks/useCuentasBancariasDB';
 import {
   loadFromSession, loadFromSavedStore, saveToSession, saveToSavedStore, generateId,
@@ -22,6 +22,7 @@ import {
 import {
   guardarCuentasBeneficiarias, fetchCuentasBeneficiarias,
 } from '../banca-2o-piso/banca2oPisoStore';
+import { CampoMonto } from '@/app/components/ui/CampoMonto';
 
 export interface CuentaBeneficiaria {
   id: number;
@@ -190,7 +191,7 @@ export function CuentasBeneficiariasTab({
         {!isRO && (
           <button
             onClick={() => { setBusqueda(''); setShowModal(true); }}
-            className="px-3 py-1 bg-[#4A6FA5] text-white text-xs hover:bg-[#3E5C91] border border-[#3E5C91] rounded"
+            className="px-3 py-1 bg-[color:var(--theme-primary)] text-white text-xs hover:bg-[color:var(--theme-secondary)] border border-[color:var(--theme-secondary)] rounded"
           >
             + Nuevo
           </button>
@@ -205,7 +206,7 @@ export function CuentasBeneficiariasTab({
       <div className="border border-gray-300 overflow-x-auto">
         <table className="w-full text-xs">
           <thead>
-            <tr className="bg-[#4A6FA5] text-white">
+            <tr className="bg-[color:var(--theme-primary)] text-white">
               <th className="px-2 py-2 text-left font-medium">Id Cliente</th>
               <th className="px-2 py-2 text-left font-medium">Beneficiario</th>
               <th className="px-2 py-2 text-left font-medium">Banco</th>
@@ -244,8 +245,7 @@ export function CuentasBeneficiariasTab({
                 <td className="px-2 py-1.5 text-center text-gray-700">{i.moneda || 'MXN'}</td>
                 <td className="px-2 py-1.5 text-right">
                   {isRO ? fmt(i.montoDispersion) : (
-                    <input
-                      type="text"
+                    <CampoMonto
                       value={String(i.montoDispersion)}
                       onChange={e => cambiarMonto(i.id, e.target.value)}
                       className="w-32 px-1.5 py-1 border border-gray-300 rounded text-xs text-right font-mono"
@@ -294,7 +294,7 @@ export function CuentasBeneficiariasTab({
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setShowModal(false)}>
           <div className="bg-white rounded shadow-xl w-full max-w-3xl" onClick={e => e.stopPropagation()}>
-            <div className="bg-[#4A6FA5] px-4 py-2.5 flex items-center justify-between rounded-t">
+            <div className="bg-[color:var(--theme-primary)] px-4 py-2.5 flex items-center justify-between rounded-t">
               <h4 className="text-sm font-bold text-white">Cuentas Bancarias del Cliente</h4>
               <button onClick={() => setShowModal(false)} className="text-white/70 hover:text-white">✕</button>
             </div>
@@ -344,7 +344,7 @@ export function CuentasBeneficiariasTab({
                           <td className="px-2 py-1.5 text-center">
                             <button
                               onClick={() => agregar(c)}
-                              className="px-2 py-1 bg-[#0099CC] text-white rounded text-[10px] hover:bg-[#0088BB]"
+                              className="px-2 py-1 bg-[color:var(--theme-action)] text-white rounded text-[10px] hover:bg-[color:var(--theme-action-hover)]"
                             >
                               Agregar
                             </button>

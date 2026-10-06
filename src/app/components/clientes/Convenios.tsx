@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 import { X } from 'lucide-react';
 import { mockProducts, captacionProducts } from '../../data/mockData';
 import { mockProductosLineaCredito } from '../../data/mockDataLineaCredito';
@@ -546,7 +546,7 @@ export function Convenios({ clienteId, mode, isView }: ConveniosProps = {}) {
               <h3 className="text-sm font-medium text-gray-800">
                 {editingId !== null ? 'Editar Convenio' : 'Nuevo Convenio'}
               </h3>
-              <button
+              <button aria-label="Cerrar" title="Cerrar"
                 onClick={() => {
                   setShowModal(false);
                   setFormData({ ...emptyForm });

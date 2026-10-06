@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
+import { getUsuarioSesion } from '../../lib/sesion';
 import {
   OriginacionExpediente,
   saveToSession, loadFromSession, loadFromSavedStore, generateId,
@@ -33,7 +34,7 @@ export function ExpedientesSection({ sid, mode, isRO }: Props) {
     const newExp: OriginacionExpediente = {
       id: generateId(),
       fechaHora: nowStr(),
-      usuario: 'Usuario Actual',
+      usuario: getUsuarioSesion(),
       tipoDocumento: '',
       archivo: file.name,
       descripcion: '',
@@ -51,7 +52,7 @@ export function ExpedientesSection({ sid, mode, isRO }: Props) {
     const newExp: OriginacionExpediente = {
       id: generateId(),
       fechaHora: nowStr(),
-      usuario: 'Usuario Actual',
+      usuario: getUsuarioSesion(),
       tipoDocumento: 'Documento web',
       archivo: wmdUrl,
       descripcion: '',
@@ -100,8 +101,8 @@ export function ExpedientesSection({ sid, mode, isRO }: Props) {
   return (
     <>
       {/* Header con titulo y botones */}
-      <div className="bg-[#D9E2F3] border-l-4 border-[#4A6FA5] px-3 py-2 mb-3 flex items-center justify-between">
-        <span className="text-xs text-gray-800">EXPEDIENTE ELECTRÓNICO</span>
+      <div className="bg-[color:var(--theme-tint)] border-l-4 border-[color:var(--theme-primary)] px-3 py-2 mb-3 flex items-center justify-between">
+        <span className="text-xs text-gray-800">KM DIGITAL</span>
         {!isRO && (
           <div className="flex items-center gap-2">
             <button onClick={() => setShowOpts(!showOpts)} className="px-4 py-1.5 btn-secondary-theme rounded text-xs">Nuevo</button>
@@ -193,7 +194,7 @@ export function ExpedientesSection({ sid, mode, isRO }: Props) {
                 <td className="px-2 py-1.5 text-center">
                   <button
                     onClick={() => handleVisualizar(e)}
-                    className="inline-flex items-center justify-center px-2 py-1 bg-[#5B9BD5] text-white text-xs rounded hover:bg-[#4A8BC2]"
+                    className="inline-flex items-center justify-center px-2 py-1 bg-[color:var(--theme-accent)] text-white text-xs rounded hover:bg-[color:var(--theme-accent-hover)]"
                     title="Visualizar archivo"
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
@@ -210,9 +211,9 @@ export function ExpedientesSection({ sid, mode, isRO }: Props) {
       {showWmdModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="bg-white rounded shadow-xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
-            <div className="bg-[#4A6FA5] px-6 py-4 flex items-center justify-between">
+            <div className="bg-[color:var(--theme-primary)] px-6 py-4 flex items-center justify-between">
               <h3 className="text-base text-white">Agregar Documento desde Web</h3>
-              <button onClick={() => { setShowWmdModal(false); setWmdUrl(''); }} className="text-white hover:text-gray-200">
+              <button type="button" aria-label="Cerrar" title="Cerrar" onClick={() => { setShowWmdModal(false); setWmdUrl(''); }} className="text-white hover:text-gray-200">
                 <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor"><path d="M10 8.586L2.929 1.515 1.515 2.929 8.586 10l-7.071 7.071 1.414 1.414L10 11.414l7.071 7.071 1.414-1.414L11.414 10l7.071-7.071-1.414-1.414L10 8.586z"/></svg>
               </button>
             </div>
@@ -226,7 +227,7 @@ export function ExpedientesSection({ sid, mode, isRO }: Props) {
                   value={wmdUrl}
                   onChange={(e) => setWmdUrl(e.target.value)}
                   placeholder="https://ejemplo.com/documento.pdf"
-                  className="w-full px-3 py-2 text-xs border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-[#4A6FA5]"
+                  className="w-full px-3 py-2 text-xs border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-[color:var(--theme-primary)]"
                   onKeyDown={(e) => { if (e.key === 'Enter' && wmdUrl.trim()) handleWebDocument(); }}
                 />
                 <p className="text-xs text-gray-500 mt-1">
@@ -258,7 +259,7 @@ export function ExpedientesSection({ sid, mode, isRO }: Props) {
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5B9BD5" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
                   <h3 className="text-sm text-gray-800">Visualizador de Documento</h3>
                 </div>
-                <button onClick={() => { setShowViewer(false); setCurrentFile(null); }} className="text-gray-500 hover:text-gray-700">
+                <button type="button" aria-label="Cerrar" title="Cerrar" onClick={() => { setShowViewer(false); setCurrentFile(null); }} className="text-gray-500 hover:text-gray-700">
                   <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor"><path d="M10 8.586L2.929 1.515 1.515 2.929 8.586 10l-7.071 7.071 1.414 1.414L10 11.414l7.071 7.071 1.414-1.414L11.414 10l7.071-7.071-1.414-1.414L10 8.586z"/></svg>
                 </button>
               </div>
@@ -295,7 +296,7 @@ export function ExpedientesSection({ sid, mode, isRO }: Props) {
                     <p className="text-sm text-gray-700 mb-2">Vista previa no disponible</p>
                     <p className="text-xs text-gray-500 mb-4">Este tipo de archivo no se puede visualizar en el navegador</p>
                     {currentFile.fileData && (
-                      <a href={currentFile.fileData} download={currentFile.archivo} className="px-4 py-2 text-xs bg-[#5B9BD5] text-white rounded hover:bg-[#4A8BC2]">
+                      <a href={currentFile.fileData} download={currentFile.archivo} className="px-4 py-2 text-xs bg-[color:var(--theme-accent)] text-white rounded hover:bg-[color:var(--theme-accent-hover)]">
                         Descargar Archivo
                       </a>
                     )}
@@ -314,7 +315,7 @@ export function ExpedientesSection({ sid, mode, isRO }: Props) {
                       Descargar
                     </a>
                   )}
-                  <button onClick={() => { setShowViewer(false); setCurrentFile(null); }} className="px-4 py-2 text-xs bg-[#5B9BD5] text-white rounded hover:bg-[#4A8BC2]">
+                  <button onClick={() => { setShowViewer(false); setCurrentFile(null); }} className="px-4 py-2 text-xs bg-[color:var(--theme-accent)] text-white rounded hover:bg-[color:var(--theme-accent-hover)]">
                     Cerrar
                   </button>
                 </div>

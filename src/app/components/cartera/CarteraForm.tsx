@@ -74,7 +74,7 @@ export function CarteraForm({ credito, mode, onBack }: Props) {
       <div className="bg-white px-4 py-3 border-b border-gray-300">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <button onClick={onBack} className="text-gray-400 hover:text-gray-700 p-1">
+            <button type="button" aria-label="Regresar" title="Regresar" onClick={onBack} className="text-gray-400 hover:text-gray-700 p-1">
               <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                 <path d="M11 4L6 9l5 5"/>
               </svg>

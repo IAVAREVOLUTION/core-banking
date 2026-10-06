@@ -86,7 +86,7 @@ export function ClasificacionRiesgoTab({ formData, updateFormData, isView }: Cla
                 value={formData.sector}
                 onValueChange={(value) => updateFormData('sector', value)}
               >
-                <SelectTrigger className="border-[#E0E0E0] focus:border-[#2E5C91]">
+                <SelectTrigger className="border-[#E0E0E0] focus:border-[color:var(--theme-secondary)]">
                   <SelectValue placeholder="Seleccione..." />
                 </SelectTrigger>
                 <SelectContent>
@@ -109,7 +109,7 @@ export function ClasificacionRiesgoTab({ formData, updateFormData, isView }: Cla
                 id="tipoGiro"
                 value={formData.tipoGiro || ''}
                 onChange={(e) => updateFormData('tipoGiro', e.target.value)}
-                className="border-[#E0E0E0] focus:border-[#2E5C91]"
+                className="border-[#E0E0E0] focus:border-[color:var(--theme-secondary)]"
               />
             )}
           </div>
@@ -125,7 +125,7 @@ export function ClasificacionRiesgoTab({ formData, updateFormData, isView }: Cla
                 id="tipoIndustria"
                 value={formData.tipoIndustria || ''}
                 onChange={(e) => updateFormData('tipoIndustria', e.target.value)}
-                className="border-[#E0E0E0] focus:border-[#2E5C91]"
+                className="border-[#E0E0E0] focus:border-[color:var(--theme-secondary)]"
               />
             )}
           </div>
@@ -141,7 +141,7 @@ export function ClasificacionRiesgoTab({ formData, updateFormData, isView }: Cla
                 id="giroEmpresa"
                 value={formData.giroEmpresa || ''}
                 onChange={(e) => updateFormData('giroEmpresa', e.target.value)}
-                className="border-[#E0E0E0] focus:border-[#2E5C91]"
+                className="border-[#E0E0E0] focus:border-[color:var(--theme-secondary)]"
               />
             )}
           </div>
@@ -157,7 +157,7 @@ export function ClasificacionRiesgoTab({ formData, updateFormData, isView }: Cla
                 id="actividadEconomica"
                 value={formData.actividadEconomica || ''}
                 onChange={(e) => updateFormData('actividadEconomica', e.target.value)}
-                className="border-[#E0E0E0] focus:border-[#2E5C91]"
+                className="border-[#E0E0E0] focus:border-[color:var(--theme-secondary)]"
               />
             )}
           </div>
@@ -173,7 +173,7 @@ export function ClasificacionRiesgoTab({ formData, updateFormData, isView }: Cla
                 id="sectorCNBV"
                 value={formData.sectorCNBV || ''}
                 onChange={(e) => updateFormData('sectorCNBV', e.target.value)}
-                className="border-[#E0E0E0] focus:border-[#2E5C91]"
+                className="border-[#E0E0E0] focus:border-[color:var(--theme-secondary)]"
               />
             )}
           </div>
@@ -197,7 +197,7 @@ export function ClasificacionRiesgoTab({ formData, updateFormData, isView }: Cla
                 value={formData.tamanoEmpresa}
                 onValueChange={(value) => updateFormData('tamanoEmpresa', value)}
               >
-                <SelectTrigger className="border-[#E0E0E0] focus:border-[#2E5C91]">
+                <SelectTrigger className="border-[#E0E0E0] focus:border-[color:var(--theme-secondary)]">
                   <SelectValue placeholder="Seleccione..." />
                 </SelectTrigger>
                 <SelectContent>
@@ -222,7 +222,7 @@ export function ClasificacionRiesgoTab({ formData, updateFormData, isView }: Cla
                 type="number"
                 value={formData.numeroEmpleados || ''}
                 onChange={(e) => updateFormData('numeroEmpleados', parseInt(e.target.value) || 0)}
-                className="border-[#E0E0E0] focus:border-[#2E5C91]"
+                className="border-[#E0E0E0] focus:border-[color:var(--theme-secondary)]"
               />
             )}
           </div>
@@ -239,7 +239,7 @@ export function ClasificacionRiesgoTab({ formData, updateFormData, isView }: Cla
                 type="number"
                 value={formData.numeroSucursales || ''}
                 onChange={(e) => updateFormData('numeroSucursales', parseInt(e.target.value) || 0)}
-                className="border-[#E0E0E0] focus:border-[#2E5C91]"
+                className="border-[#E0E0E0] focus:border-[color:var(--theme-secondary)]"
               />
             )}
           </div>

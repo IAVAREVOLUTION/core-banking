@@ -16,7 +16,7 @@ export function CreditoForm({ mode, onCancel }: CreditoFormProps) {
     { id: 'montos', label: 'Montos/Plazos' },
     { id: 'tasas', label: 'Tasas' },
     { id: 'amortizaciones', label: 'Amortizaciones' },
-    { id: 'expedientes', label: 'Expedientes Electrónicos' },
+    { id: 'expedientes', label: 'KM Digital' },
     { id: 'autorizacion', label: 'Autorización' },
     { id: 'garantias', label: 'Bienes' },
     { id: 'cargos', label: 'Cargos' },
@@ -38,7 +38,7 @@ export function CreditoForm({ mode, onCancel }: CreditoFormProps) {
             <span className="text-sm text-gray-700 font-normal">
               {mode === 'nuevo' ? 'Alta Crédito' : mode === 'editar' ? 'Editar Crédito' : 'Ver Crédito'}
             </span>
-            <button className="ml-2 p-1">
+            <button type="button" aria-label="Buscar" title="Buscar" className="ml-2 p-1">
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#999" strokeWidth="2">
                 <circle cx="7" cy="7" r="5"/>
                 <path d="M11 11l3 3"/>

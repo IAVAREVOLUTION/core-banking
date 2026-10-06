@@ -1,5 +1,5 @@
 import { useState, useEffect, forwardRef, useImperativeHandle } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 
 interface PeriodoDisponible {
   periodoId: number;

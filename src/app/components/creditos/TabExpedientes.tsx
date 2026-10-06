@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 
 interface Archivo {
   id: number;
@@ -219,12 +219,12 @@ export function TabExpedientes({
         <div>
           {/* ENCABEZADO CON TÍTULO Y BOTONES */}
           <div className="mb-3">
-            <h4 className="text-xs font-semibold text-gray-800 mb-2">Expediente electrónico</h4>
+            <h4 className="text-xs font-semibold text-gray-800 mb-2">KM Digital</h4>
             
             {/* BOTONES PRINCIPALES */}
             <div className="flex items-center gap-2 mb-2">
               <button
-                className="px-4 py-1 bg-[#5B9BD5] text-white rounded text-[10px] hover:bg-[#4A8BC5] disabled:opacity-50"
+                className="px-4 py-1 bg-[color:var(--theme-accent)] text-white rounded text-[10px] hover:bg-[color:var(--theme-accent-hover)] disabled:opacity-50"
                 onClick={() => setShowAdjuntarOptions(!showAdjuntarOptions)}
                 disabled={!camposEditables}
               >
@@ -404,7 +404,7 @@ export function TabExpedientes({
             onClick={(e) => e.stopPropagation()}
           >
             {/* Encabezado del modal */}
-            <div className="flex items-center justify-between px-4 py-2.5 bg-[#4A6FA5] text-white rounded-t-lg">
+            <div className="flex items-center justify-between px-4 py-2.5 bg-[color:var(--theme-primary)] text-white rounded-t-lg">
               <h3 className="text-sm font-semibold">Agregar Documento desde Web</h3>
               <button 
                 onClick={() => {
@@ -449,7 +449,7 @@ export function TabExpedientes({
                 Cancelar
               </button>
               <button
-                className="px-4 py-1.5 bg-[#5B9BD5] text-white rounded text-xs hover:bg-[#4A8BC5] font-medium"
+                className="px-4 py-1.5 bg-[color:var(--theme-accent)] text-white rounded text-xs hover:bg-[color:var(--theme-accent-hover)] font-medium"
                 onClick={guardarURL}
               >
                 Agregar

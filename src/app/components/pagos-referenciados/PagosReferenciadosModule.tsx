@@ -1,5 +1,6 @@
 import { useState, useRef, useMemo, useCallback, useEffect } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
+import { useOrdenTabla, coincideBusqueda } from '@/app/lib/ordenTabla';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-7e2d13d9`;
@@ -106,7 +107,6 @@ function resolverReferencia(ref: string, cuentas: CuentaDB[]): CuentaDB | undefi
 export function PagosReferenciadosModule() {
   const [pagos, setPagos]           = useState<PagoReferenciado[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
-  const [sortOrder, setSortOrder]   = useState<'desc' | 'asc'>('desc');
   const [filtroEstatus, setFiltroEstatus] = useState('Todos');
   const [currentPage, setCurrentPage] = useState(1);
   const [aplicando, setAplicando]   = useState(false);
@@ -243,29 +243,36 @@ export function PagosReferenciadosModule() {
   };
 
   // ── Filtrado y ordenamiento ──
-  const filtered = useMemo(() => {
+  const filteredSinOrden = useMemo(() => {
     let list = pagos;
     if (filtroEstatus === 'Identificados')    list = list.filter(p => p.identificado);
     if (filtroEstatus === 'No Identificados') list = list.filter(p => !p.identificado);
     if (filtroEstatus === 'Procesados')       list = list.filter(p => p.procesado);
     if (filtroEstatus === 'Pendientes')       list = list.filter(p => p.identificado && !p.procesado);
-    if (searchTerm) {
-      const s = searchTerm.toLowerCase();
-      list = list.filter(p =>
-        p.banco.toLowerCase().includes(s) ||
-        p.referencia.toLowerCase().includes(s) ||
-        p.cuenta.toLowerCase().includes(s) ||
-        (p.clienteNombre || '').toLowerCase().includes(s) ||
-        fmt(p.importe).includes(s)
-      );
-    }
-    return [...list].sort((a, b) => {
-      const pa = a.fecha.split('/'); const pb = b.fecha.split('/');
-      const da = new Date(+pa[2], +pa[1]-1, +pa[0]).getTime();
-      const db = new Date(+pb[2], +pb[1]-1, +pb[0]).getTime();
-      return sortOrder === 'desc' ? db - da : da - db;
-    });
-  }, [pagos, searchTerm, sortOrder, filtroEstatus]);
+    return list.filter(p => coincideBusqueda(searchTerm, [
+      p.banco, p.referencia, p.cuenta, p.noCuenta, p.clienteNombre, p.fecha, fmt(p.importe), p.descripcion,
+    ]));
+  }, [pagos, searchTerm, filtroEstatus]);
+
+  // Más recientes primero (fecha del pago; a igual fecha, el registro más nuevo).
+  const orden = useOrdenTabla(filteredSinOrden, {
+    id: 'pagos-referenciados',
+    columnas: {
+      banco: p => p.banco,
+      referencia: p => p.referencia,
+      cliente: p => p.clienteNombre || p.cuenta,
+      tipo: p => p.tipoCuenta,
+      fecha: p => p.fecha,
+      importe: p => p.importe,
+      saldo: p => p.saldoActual,
+      identificado: p => p.identificado,
+      procesado: p => p.procesado,
+    },
+    porDefecto: { campo: 'fecha', dir: 'desc' },
+    desempate: p => p.id,
+    alCambiar: () => setCurrentPage(1),
+  });
+  const filtered = orden.filas;
 
   const totalPages   = Math.max(1, Math.ceil(filtered.length / itemsPerPage));
   const paged        = filtered.slice((currentPage-1)*itemsPerPage, currentPage*itemsPerPage);
@@ -299,7 +306,7 @@ export function PagosReferenciadosModule() {
             <button
               onClick={handleAplicarCobranza}
               disabled={nSelec === 0 || aplicando}
-              className="flex items-center gap-1.5 px-4 py-1.5 bg-[#0099CC] text-white text-sm rounded hover:bg-[#0088BB] disabled:opacity-40 disabled:cursor-not-allowed"
+              className="flex items-center gap-1.5 px-4 py-1.5 bg-[color:var(--theme-action)] text-white text-sm rounded hover:bg-[color:var(--theme-action-hover)] disabled:opacity-40 disabled:cursor-not-allowed"
               style={{ fontWeight: 500 }}
             >
               {aplicando ? (
@@ -397,7 +404,7 @@ export function PagosReferenciadosModule() {
           <div className="flex items-center gap-4 text-sm text-gray-700">
             <div className="flex items-center gap-2">
               <span className="text-xs">Orden</span>
-              <select value={sortOrder} onChange={e => setSortOrder(e.target.value as 'desc' | 'asc')}
+              <select value={orden.dir} onChange={e => orden.fijar(orden.campo, e.target.value as 'desc' | 'asc')}
                 className="px-2 py-1 border border-gray-400 rounded text-xs bg-white">
                 <option value="desc">Descendente</option>
                 <option value="asc">Ascendente</option>
@@ -405,12 +412,12 @@ export function PagosReferenciadosModule() {
             </div>
             <span className="text-xs">Total: {filtered.length}</span>
             <div className="flex items-center gap-1">
-              <button onClick={() => setCurrentPage(p => Math.max(1, p-1))} disabled={currentPage === 1}
-                className="p-0.5 text-[#0099CC] disabled:opacity-40">
+              <button type="button" aria-label="Página anterior" title="Página anterior" onClick={() => setCurrentPage(p => Math.max(1, p-1))} disabled={currentPage === 1}
+                className="p-0.5 text-[color:var(--theme-action)] disabled:opacity-40">
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M10 3L5 8l5 5V3z"/></svg>
               </button>
-              <button onClick={() => setCurrentPage(p => Math.min(totalPages, p+1))} disabled={currentPage === totalPages}
-                className="p-0.5 text-[#0099CC] disabled:opacity-40">
+              <button type="button" aria-label="Página siguiente" title="Página siguiente" onClick={() => setCurrentPage(p => Math.min(totalPages, p+1))} disabled={currentPage === totalPages}
+                className="p-0.5 text-[color:var(--theme-action)] disabled:opacity-40">
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M6 3l5 5-5 5V3z"/></svg>
               </button>
             </div>
@@ -426,18 +433,18 @@ export function PagosReferenciadosModule() {
               <tr style={{ backgroundColor: '#D0D0D0' }} className="border-b border-gray-300">
                 <th className="px-2 py-2.5 w-8 border-r border-gray-300">
                   <input type="checkbox" checked={todosSelec} onChange={toggleSelectAll}
-                    className="w-3 h-3 accent-[#0099CC]" title="Seleccionar todos pendientes"/>
+                    className="w-3 h-3 accent-[color:var(--theme-action)]" title="Seleccionar todos pendientes"/>
                 </th>
-                <th className="px-3 py-2.5 text-left text-[10px] text-gray-700 border-r border-gray-300" style={{ fontWeight: 600 }}>BANCO</th>
-                <th className="px-3 py-2.5 text-left text-[10px] text-gray-700 border-r border-gray-300" style={{ fontWeight: 600 }}>REFERENCIA</th>
-                <th className="px-3 py-2.5 text-left text-[10px] text-gray-700 border-r border-gray-300" style={{ fontWeight: 600 }}>CLIENTE / CUENTA</th>
-                <th className="px-3 py-2.5 text-left text-[10px] text-gray-700 border-r border-gray-300" style={{ fontWeight: 600 }}>TIPO</th>
-                <th className="px-3 py-2.5 text-left text-[10px] text-gray-700 border-r border-gray-300" style={{ fontWeight: 600 }}>FECHA</th>
-                <th className="px-3 py-2.5 text-right text-[10px] text-gray-700 border-r border-gray-300" style={{ fontWeight: 600 }}>IMPORTE</th>
-                <th className="px-3 py-2.5 text-right text-[10px] text-gray-700 border-r border-gray-300" style={{ fontWeight: 600 }}>SALDO ACTUAL</th>
-                <th className="px-3 py-2.5 text-center text-[10px] text-gray-700 border-r border-gray-300" style={{ fontWeight: 600 }}>IDENTIFICADO</th>
+                <th className="px-3 py-2.5 text-left text-[10px] text-gray-700 border-r border-gray-300" {...orden.th('banco', { fontWeight: 600 })}>BANCO{orden.flecha('banco')}</th>
+                <th className="px-3 py-2.5 text-left text-[10px] text-gray-700 border-r border-gray-300" {...orden.th('referencia', { fontWeight: 600 })}>REFERENCIA{orden.flecha('referencia')}</th>
+                <th className="px-3 py-2.5 text-left text-[10px] text-gray-700 border-r border-gray-300" {...orden.th('cliente', { fontWeight: 600 })}>CLIENTE / CUENTA{orden.flecha('cliente')}</th>
+                <th className="px-3 py-2.5 text-left text-[10px] text-gray-700 border-r border-gray-300" {...orden.th('tipo', { fontWeight: 600 })}>TIPO{orden.flecha('tipo')}</th>
+                <th className="px-3 py-2.5 text-left text-[10px] text-gray-700 border-r border-gray-300" {...orden.th('fecha', { fontWeight: 600 })}>FECHA{orden.flecha('fecha')}</th>
+                <th className="px-3 py-2.5 text-right text-[10px] text-gray-700 border-r border-gray-300" {...orden.th('importe', { fontWeight: 600 })}>IMPORTE{orden.flecha('importe')}</th>
+                <th className="px-3 py-2.5 text-right text-[10px] text-gray-700 border-r border-gray-300" {...orden.th('saldo', { fontWeight: 600 })}>SALDO ACTUAL{orden.flecha('saldo')}</th>
+                <th className="px-3 py-2.5 text-center text-[10px] text-gray-700 border-r border-gray-300" {...orden.th('identificado', { fontWeight: 600 })}>IDENTIFICADO{orden.flecha('identificado')}</th>
                 <th className="px-3 py-2.5 text-center text-[10px] text-gray-700 border-r border-gray-300" style={{ fontWeight: 600 }}>MOVIMIENTO</th>
-                <th className="px-3 py-2.5 text-center text-[10px] text-gray-700" style={{ fontWeight: 600 }}>PROCESADO</th>
+                <th className="px-3 py-2.5 text-center text-[10px] text-gray-700" {...orden.th('procesado', { fontWeight: 600 })}>PROCESADO{orden.flecha('procesado')}</th>
               </tr>
             </thead>
             <tbody>
@@ -469,11 +476,11 @@ export function PagosReferenciadosModule() {
                     <td className="px-2 py-2 text-center border-r border-gray-200">
                       {canSel && (
                         <input type="checkbox" checked={esSel} onChange={() => toggleSelect(pago.id)}
-                          onClick={e => e.stopPropagation()} className="w-3 h-3 accent-[#0099CC]"/>
+                          onClick={e => e.stopPropagation()} className="w-3 h-3 accent-[color:var(--theme-action)]"/>
                       )}
                     </td>
                     <td className="px-3 py-2 border-r border-gray-200" style={{ fontWeight: 500 }}>{pago.banco}</td>
-                    <td className="px-3 py-2 border-r border-gray-200 text-[#0066CC] font-mono">{pago.referencia}</td>
+                    <td className="px-3 py-2 border-r border-gray-200 text-[color:var(--theme-link)] font-mono">{pago.referencia}</td>
                     <td className="px-3 py-2 border-r border-gray-200">
                       {pago.clienteNombre ? (
                         <div>
@@ -538,20 +545,20 @@ export function PagosReferenciadosModule() {
           {pagos.filter(p => p.procesado).length} procesados
         </div>
         <div className="flex items-center gap-3">
-          <button onClick={() => setCurrentPage(1)} disabled={currentPage === 1}
+          <button type="button" aria-label="Primera página" title="Primera página" onClick={() => setCurrentPage(1)} disabled={currentPage === 1}
             className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-40">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#666" strokeWidth="1.5"><path d="M11 3L3 8l8 5V3z"/></svg>
           </button>
-          <button onClick={() => setCurrentPage(p => Math.max(1, p-1))} disabled={currentPage === 1}
+          <button type="button" aria-label="Página anterior" title="Página anterior" onClick={() => setCurrentPage(p => Math.max(1, p-1))} disabled={currentPage === 1}
             className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-40">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#666" strokeWidth="1.5"><path d="M9 3L4 8l5 5V3z"/></svg>
           </button>
           <span className="text-sm text-gray-700">Página {currentPage} de {totalPages}</span>
-          <button onClick={() => setCurrentPage(p => Math.min(totalPages, p+1))} disabled={currentPage === totalPages}
+          <button type="button" aria-label="Página siguiente" title="Página siguiente" onClick={() => setCurrentPage(p => Math.min(totalPages, p+1))} disabled={currentPage === totalPages}
             className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-40">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#666" strokeWidth="1.5"><path d="M5 3l5 5-5 5V3z"/></svg>
           </button>
-          <button onClick={() => setCurrentPage(totalPages)} disabled={currentPage === totalPages}
+          <button type="button" aria-label="Última página" title="Última página" onClick={() => setCurrentPage(totalPages)} disabled={currentPage === totalPages}
             className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-40">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#666" strokeWidth="1.5"><path d="M3 3l8 5-8 5V3z"/></svg>
           </button>

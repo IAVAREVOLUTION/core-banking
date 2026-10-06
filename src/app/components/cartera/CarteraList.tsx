@@ -3,6 +3,7 @@
  * Diseño institucional idéntico a CasosCobranza
  */
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useOrdenTabla, coincideBusqueda } from '@/app/lib/ordenTabla';
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { CarteraForm, type CarteraCredito } from './CarteraForm';
 import { SolicitudesExtGestion } from './SolicitudesExtGestion';
@@ -271,7 +272,7 @@ function DashboardScreen({ rows, loading, error, refetch, onVer }: {
                   <tr><td colSpan={5} className="px-3 py-6 text-center text-gray-400">Sin registros</td></tr>
                 ) : recientes.map((c, idx) => (
                   <tr key={c.id} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                    <td className="px-3 py-2 text-[#0066CC] cursor-pointer hover:underline font-mono" onClick={() => onVer(c)}>{c.noSol}</td>
+                    <td className="px-3 py-2 text-[color:var(--theme-link)] cursor-pointer hover:underline font-mono" onClick={() => onVer(c)}>{c.noSol}</td>
                     <td className="px-3 py-2 text-gray-900">{c.cliente}</td>
                     <td className="px-3 py-2 text-gray-600">{c.lineaProducto}</td>
                     <td className="px-3 py-2 text-gray-700 text-right">{fmtMoney(c.montoAut)}</td>
@@ -373,32 +374,39 @@ function ListScreen({ rows, loading, error, refetch, onVer, onEditar }: {
 }) {
   const [search, setSearch]           = useState('');
   const [filtroEstatus, setFiltroEstatus] = useState('');
-  const [sortOrder, setSortOrder]     = useState<'desc' | 'asc'>('desc');
   const [page, setPage]               = useState(1);
   const PER_PAGE = 10;
 
   const filtered = useMemo(() => {
     let list = rows;
     if (filtroEstatus) list = list.filter(r => r.estatus === filtroEstatus);
-    if (search) {
-      const q = search.toLowerCase();
-      list = list.filter(r =>
-        r.noSol.toLowerCase().includes(q) ||
-        r.cliente.toLowerCase().includes(q) ||
-        r.productoNombre.toLowerCase().includes(q) ||
-        r.lineaProducto.toLowerCase().includes(q) ||
-        r.estatus.toLowerCase().includes(q)
-      );
-    }
-    return [...list].sort((a, b) => {
-      const da = new Date(a.fechaSol || 0).getTime();
-      const db = new Date(b.fechaSol || 0).getTime();
-      return sortOrder === 'desc' ? db - da : da - db;
-    });
-  }, [rows, search, filtroEstatus, sortOrder]);
+    return list.filter(r => coincideBusqueda(search, [
+      r.noSol, r.cliente, r.productoNombre, r.lineaProducto, r.moneda, r.estatus,
+    ]));
+  }, [rows, search, filtroEstatus]);
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PER_PAGE));
-  const pageRows   = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
+  // Más recientes primero (fecha de solicitud; a igual fecha, el número de solicitud).
+  const orden = useOrdenTabla(filtered, {
+    id: 'cartera-credito',
+    columnas: {
+      fecha: r => r.fechaSol,
+      noSol: r => r.noSol,
+      cliente: r => r.cliente,
+      producto: r => r.productoNombre,
+      linea: r => r.lineaProducto,
+      monto: r => r.montoAut,
+      tasa: r => r.tasa,
+      plazo: r => r.plazo,
+      moneda: r => r.moneda,
+      estatus: r => r.estatus,
+    },
+    porDefecto: { campo: 'fecha', dir: 'desc' },
+    desempate: r => r.noSol,
+    alCambiar: () => setPage(1),
+  });
+
+  const totalPages = Math.max(1, Math.ceil(orden.filas.length / PER_PAGE));
+  const pageRows   = orden.filas.slice((page - 1) * PER_PAGE, page * PER_PAGE);
 
   const statusClass = (estatus: string) => {
     if (estatus === 'Activa' || estatus === 'Autorizada') return 'text-green-700 bg-green-50 border-green-200';
@@ -516,7 +524,7 @@ function ListScreen({ rows, loading, error, refetch, onVer, onEditar }: {
           <div className="flex items-center gap-4 text-sm text-gray-700">
             <div className="flex items-center gap-2">
               <span>Orden</span>
-              <select value={sortOrder} onChange={e => { setSortOrder(e.target.value as 'desc' | 'asc'); setPage(1); }}
+              <select value={orden.dir} onChange={e => orden.fijar(orden.campo, e.target.value as 'desc' | 'asc')}
                 className="px-2 py-1 border border-gray-400 rounded text-sm bg-white pr-6 appearance-none">
                 <option value="desc">Descendente</option>
                 <option value="asc">Ascendente</option>
@@ -536,15 +544,15 @@ function ListScreen({ rows, loading, error, refetch, onVer, onEditar }: {
             <thead>
               <tr className="bg-gray-100 border-b border-gray-300">
                 <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700">Editar | Ver</th>
-                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700">NO. SOL.</th>
-                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700">CLIENTE</th>
-                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700">PRODUCTO</th>
-                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700">LÍNEA</th>
-                <th className="px-2 py-2.5 text-right font-medium text-xs text-gray-700">MONTO AUT.</th>
-                <th className="px-2 py-2.5 text-center font-medium text-xs text-gray-700">TASA</th>
-                <th className="px-2 py-2.5 text-center font-medium text-xs text-gray-700">PLAZO</th>
-                <th className="px-2 py-2.5 text-center font-medium text-xs text-gray-700">MONEDA</th>
-                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700">ESTATUS</th>
+                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700" {...orden.th('noSol')}>NO. SOL.{orden.flecha('noSol')}</th>
+                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700" {...orden.th('cliente')}>CLIENTE{orden.flecha('cliente')}</th>
+                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700" {...orden.th('producto')}>PRODUCTO{orden.flecha('producto')}</th>
+                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700" {...orden.th('linea')}>LÍNEA{orden.flecha('linea')}</th>
+                <th className="px-2 py-2.5 text-right font-medium text-xs text-gray-700" {...orden.th('monto')}>MONTO AUT.{orden.flecha('monto')}</th>
+                <th className="px-2 py-2.5 text-center font-medium text-xs text-gray-700" {...orden.th('tasa')}>TASA{orden.flecha('tasa')}</th>
+                <th className="px-2 py-2.5 text-center font-medium text-xs text-gray-700" {...orden.th('plazo')}>PLAZO{orden.flecha('plazo')}</th>
+                <th className="px-2 py-2.5 text-center font-medium text-xs text-gray-700" {...orden.th('moneda')}>MONEDA{orden.flecha('moneda')}</th>
+                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700" {...orden.th('estatus')}>ESTATUS{orden.flecha('estatus')}</th>
               </tr>
             </thead>
             <tbody>
@@ -567,11 +575,11 @@ function ListScreen({ rows, loading, error, refetch, onVer, onEditar }: {
                   onMouseLeave={e => (e.currentTarget.style.backgroundColor = idx % 2 === 1 ? '#EEEEEE' : '#FFFFFF')}
                 >
                   <td className="px-2 py-2.5 text-xs whitespace-nowrap">
-                    <a href="#" className="text-[#0066CC] hover:underline" onClick={e => { e.preventDefault(); onEditar(c); }}>Editar</a>
+                    <button type="button" className="enlace-accion text-[color:var(--theme-link)] hover:underline" onClick={() => { onEditar(c); }}>Editar</button>
                     <span className="text-gray-500"> | </span>
-                    <a href="#" className="text-[#0066CC] hover:underline" onClick={e => { e.preventDefault(); onVer(c); }}>Ver</a>
+                    <button type="button" className="enlace-accion text-[color:var(--theme-link)] hover:underline" onClick={() => { onVer(c); }}>Ver</button>
                   </td>
-                  <td className="px-2 py-2.5 text-xs font-mono text-[#0066CC] cursor-pointer hover:underline" onClick={() => onVer(c)}>{c.noSol}</td>
+                  <td className="px-2 py-2.5 text-xs font-mono text-[color:var(--theme-link)] cursor-pointer hover:underline" onClick={() => onVer(c)}>{c.noSol}</td>
                   <td className="px-2 py-2.5 text-xs text-gray-800 font-medium max-w-[160px] truncate" title={c.cliente}>{c.cliente}</td>
                   <td className="px-2 py-2.5 text-xs text-gray-700 max-w-[140px] truncate" title={c.productoNombre}>{c.productoNombre}</td>
                   <td className="px-2 py-2.5 text-xs text-gray-600">{c.lineaProducto}</td>
@@ -594,19 +602,19 @@ function ListScreen({ rows, loading, error, refetch, onVer, onEditar }: {
       {/* ── Paginación ── */}
       <div className="px-4 py-3 border-t border-gray-300">
         <div className="flex items-center justify-end gap-3">
-          <button className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-40" onClick={() => setPage(1)} disabled={page === 1}>
+          <button type="button" aria-label="Primera página" title="Primera página" className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-40" onClick={() => setPage(1)} disabled={page === 1}>
             <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#666" strokeWidth="1.5"><path d="M13 4L4 9l9 5V4z" /></svg>
           </button>
-          <button className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-40" onClick={() => setPage(p => p - 1)} disabled={page === 1}>
+          <button type="button" aria-label="Página anterior" title="Página anterior" className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-40" onClick={() => setPage(p => p - 1)} disabled={page === 1}>
             <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#666" strokeWidth="1.5"><path d="M9 4L4 9l5 5V4z" /></svg>
           </button>
           <div className="text-sm text-gray-700 min-w-[100px] text-center">
             Página {page} de {totalPages}
           </div>
-          <button className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-40" onClick={() => setPage(p => p + 1)} disabled={page === totalPages}>
+          <button type="button" aria-label="Página siguiente" title="Página siguiente" className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-40" onClick={() => setPage(p => p + 1)} disabled={page === totalPages}>
             <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#666" strokeWidth="1.5"><path d="M5 4l5 5-5 5V4z" /></svg>
           </button>
-          <button className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-40" onClick={() => setPage(totalPages)} disabled={page === totalPages}>
+          <button type="button" aria-label="Última página" title="Última página" className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-40" onClick={() => setPage(totalPages)} disabled={page === totalPages}>
             <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#666" strokeWidth="1.5"><path d="M4 4L13 9l-9 5V4z" /></svg>
           </button>
         </div>

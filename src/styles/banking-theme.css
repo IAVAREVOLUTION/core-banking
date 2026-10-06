@@ -1,6 +1,25 @@
 /* Variables CSS para el tema del sistema bancario */
 /* Estas variables son actualizadas dinámicamente por el ThemeContext */
 
+/* Valores por defecto (tema azul). ThemeContext los sobrescribe al elegir tema;
+   esto cubre el primer pintado y las pruebas. Los componentes usan
+   bg-[color:var(--theme-primary)] etc. en lugar del hexadecimal fijo, para
+   que el tema rojo/verde se aplique en todo el sistema. */
+:root {
+  --theme-primary: #4A6FA5;
+  --theme-primary-hover: #3A5A85;
+  --theme-primary-light: #E3EBF5;
+  --theme-secondary: #2E5C91;
+  --theme-secondary-hover: #1E4C81;
+  --theme-accent: #5B9BD5;
+  --theme-accent-hover: #4A8BC2;
+  --theme-action: #0099CC;
+  --theme-action-hover: #0088BB;
+  --theme-link: #0066CC;
+  --theme-tint: #D9E2F3;
+  --theme-tint-soft: #D6EAF8;
+}
+
 /* Clases de utilidad para elementos que usan el tema */
 .tab-active {
   background-color: var(--theme-secondary) !important;
@@ -217,4 +236,27 @@
 .row-selected-primary {
   background-color: var(--theme-primary);
   color: white;
+}
+/* ── Accesibilidad ──────────────────────────────────────────────────────────
+   Acciones de fila (Editar | Ver | Abrir…): son <button> para que funcionen con
+   teclado y lectores de pantalla, pero se ven como el enlace de antes. En
+   @layer components para que text-xs, font-mono, etc. sigan ganando. */
+@layer components {
+  .enlace-accion {
+    font: inherit;
+    line-height: inherit;
+    background: none;
+    border: 0;
+    padding: 0;
+    cursor: pointer;
+    text-align: inherit;
+  }
+}
+
+/* Foco visible sólo al navegar con teclado (el ratón no muestra el anillo). */
+@layer base {
+  :where(button, a[href], input, select, textarea, summary, [tabindex]:not([tabindex="-1"])):focus-visible {
+    outline: 2px solid #0066CC;
+    outline-offset: 2px;
+  }
 }

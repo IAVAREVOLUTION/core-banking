@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 import { Trash2 } from 'lucide-react';
+import { CampoMonto } from '@/app/components/ui/CampoMonto';
 
 interface KYCTabProps {
   formData: any;
@@ -309,7 +310,7 @@ export function KYCTab({ formData, updateFormData, isView, mode, clienteId }: KY
           <div className="flex items-center gap-2">
             <button
               onClick={handleNuevo}
-              className="px-4 py-1.5 bg-[#00B0F0] text-white text-xs font-medium rounded hover:bg-[#0095D9]"
+              className="px-4 py-1.5 bg-[color:var(--theme-action)] text-white text-xs font-medium rounded hover:bg-[color:var(--theme-action)]"
             >
               Nueva Cédula
             </button>
@@ -409,7 +410,7 @@ export function KYCTab({ formData, updateFormData, isView, mode, clienteId }: KY
               <h3 className="text-base font-medium text-white">
                 {editingId !== null ? 'Editar Registro KYC' : 'Nueva Cédula de Conocimiento del Cliente'}
               </h3>
-              <button
+              <button type="button" aria-label="Cerrar" title="Cerrar"
                 onClick={() => setShowModal(false)}
                 className="text-white hover:text-gray-200"
               >
@@ -442,8 +443,7 @@ export function KYCTab({ formData, updateFormData, isView, mode, clienteId }: KY
 
                     <div className="flex items-center gap-2">
                       <label className="text-xs w-40 text-gray-700">Ingreso Mensual *</label>
-                      <input
-                        type="text"
+                      <CampoMonto
                         value={kycData.ingresoMensual}
                         onChange={(e) => handleChange('ingresoMensual', e.target.value)}
                         placeholder="$0.00"

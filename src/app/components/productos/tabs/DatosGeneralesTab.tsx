@@ -48,7 +48,7 @@ export function DatosGeneralesTab({ formData, updateFormData, isView }: DatosGen
               value={formData.fechaRegistro?.split('T')[0] || ''}
               onChange={(e) => updateFormData('fechaRegistro', e.target.value)}
               disabled={isView}
-              className="border-[#E0E0E0] focus:border-[#2E5C91] h-6 text-xs flex-1 px-2 py-0"
+              className="border-[#E0E0E0] focus:border-[color:var(--theme-secondary)] h-6 text-xs flex-1 px-2 py-0"
             />
           </div>
 
@@ -61,7 +61,7 @@ export function DatosGeneralesTab({ formData, updateFormData, isView }: DatosGen
               value={formData.nombre || ''}
               onChange={(e) => updateFormData('nombre', e.target.value)}
               disabled={isView}
-              className="border-[#E0E0E0] focus:border-[#2E5C91] h-6 text-xs flex-1 px-2 py-0"
+              className="border-[#E0E0E0] focus:border-[color:var(--theme-secondary)] h-6 text-xs flex-1 px-2 py-0"
               placeholder="Nombre del producto"
             />
           </div>
@@ -75,7 +75,7 @@ export function DatosGeneralesTab({ formData, updateFormData, isView }: DatosGen
               value={formData.descripcion || ''}
               onChange={(e) => updateFormData('descripcion', e.target.value)}
               disabled={isView}
-              className="border-[#E0E0E0] focus:border-[#2E5C91] h-6 text-xs flex-1 px-2 py-0"
+              className="border-[#E0E0E0] focus:border-[color:var(--theme-secondary)] h-6 text-xs flex-1 px-2 py-0"
               placeholder="Descripción"
             />
           </div>
@@ -97,7 +97,7 @@ export function DatosGeneralesTab({ formData, updateFormData, isView }: DatosGen
               onValueChange={(value) => updateFormData('lineaProducto', value)}
               disabled={isView}
             >
-              <SelectTrigger className="border-[#E0E0E0] focus:border-[#2E5C91] h-6 text-xs flex-1">
+              <SelectTrigger className="border-[#E0E0E0] focus:border-[color:var(--theme-secondary)] h-6 text-xs flex-1">
                 <SelectValue placeholder="Seleccione..." />
               </SelectTrigger>
               <SelectContent>
@@ -117,7 +117,7 @@ export function DatosGeneralesTab({ formData, updateFormData, isView }: DatosGen
               onValueChange={(value) => updateFormData('sublineaProducto', value)}
               disabled={isView || !formData.lineaProducto}
             >
-              <SelectTrigger className="border-[#E0E0E0] focus:border-[#2E5C91] h-6 text-xs flex-1">
+              <SelectTrigger className="border-[#E0E0E0] focus:border-[color:var(--theme-secondary)] h-6 text-xs flex-1">
                 <SelectValue placeholder="Seleccione..." />
               </SelectTrigger>
               <SelectContent>
@@ -156,7 +156,7 @@ export function DatosGeneralesTab({ formData, updateFormData, isView }: DatosGen
               onValueChange={(value) => updateFormData('moneda', value)}
               disabled={isView}
             >
-              <SelectTrigger className="border-[#E0E0E0] focus:border-[#2E5C91] h-6 text-xs flex-1">
+              <SelectTrigger className="border-[#E0E0E0] focus:border-[color:var(--theme-secondary)] h-6 text-xs flex-1">
                 <SelectValue placeholder="Seleccione..." />
               </SelectTrigger>
               <SelectContent>
@@ -176,7 +176,7 @@ export function DatosGeneralesTab({ formData, updateFormData, isView }: DatosGen
               onValueChange={(value) => updateFormData('estatus', value)}
               disabled={isView}
             >
-              <SelectTrigger className="border-[#E0E0E0] focus:border-[#2E5C91] h-6 text-xs flex-1">
+              <SelectTrigger className="border-[#E0E0E0] focus:border-[color:var(--theme-secondary)] h-6 text-xs flex-1">
                 <SelectValue placeholder="Seleccione..." />
               </SelectTrigger>
               <SelectContent>
@@ -216,7 +216,7 @@ export function DatosGeneralesTab({ formData, updateFormData, isView }: DatosGen
               onValueChange={(value) => updateFormData('tipoTasa', value)}
               disabled={isView}
             >
-              <SelectTrigger className="border-[#E0E0E0] focus:border-[#2E5C91] h-6 text-xs flex-1">
+              <SelectTrigger className="border-[#E0E0E0] focus:border-[color:var(--theme-secondary)] h-6 text-xs flex-1">
                 <SelectValue placeholder="Seleccione..." />
               </SelectTrigger>
               <SelectContent>
@@ -235,7 +235,7 @@ export function DatosGeneralesTab({ formData, updateFormData, isView }: DatosGen
               onValueChange={(value) => updateFormData('baseCalculo', value)}
               disabled={isView}
             >
-              <SelectTrigger className="border-[#E0E0E0] focus:border-[#2E5C91] h-6 text-xs flex-1">
+              <SelectTrigger className="border-[#E0E0E0] focus:border-[color:var(--theme-secondary)] h-6 text-xs flex-1">
                 <SelectValue placeholder="Seleccione..." />
               </SelectTrigger>
               <SelectContent>
@@ -256,7 +256,7 @@ export function DatosGeneralesTab({ formData, updateFormData, isView }: DatosGen
               value={formData.cat || ''}
               onChange={(e) => updateFormData('cat', parseFloat(e.target.value) || 0)}
               disabled={isView}
-              className="border-[#E0E0E0] focus:border-[#2E5C91] h-6 text-xs flex-1 px-2 py-0"
+              className="border-[#E0E0E0] focus:border-[color:var(--theme-secondary)] h-6 text-xs flex-1 px-2 py-0"
               placeholder="0.00"
             />
           </div>
@@ -272,7 +272,7 @@ export function DatosGeneralesTab({ formData, updateFormData, isView }: DatosGen
               value={formData.saldoMinimoPromedio || ''}
               onChange={(e) => updateFormData('saldoMinimoPromedio', parseFloat(e.target.value) || 0)}
               disabled={isView}
-              className="border-[#E0E0E0] focus:border-[#2E5C91] h-6 text-xs flex-1 px-2 py-0"
+              className="border-[#E0E0E0] focus:border-[color:var(--theme-secondary)] h-6 text-xs flex-1 px-2 py-0"
               placeholder="0.00"
             />
           </div>
@@ -313,7 +313,7 @@ export function DatosGeneralesTab({ formData, updateFormData, isView }: DatosGen
                   value={formData.numeroVecesMoratorio || ''}
                   onChange={(e) => updateFormData('numeroVecesMoratorio', parseInt(e.target.value) || 0)}
                   disabled={isView}
-                  className="border-[#E0E0E0] focus:border-[#2E5C91] h-6 text-xs flex-1 px-2 py-0"
+                  className="border-[#E0E0E0] focus:border-[color:var(--theme-secondary)] h-6 text-xs flex-1 px-2 py-0"
                   placeholder="2"
                 />
               </div>
@@ -328,7 +328,7 @@ export function DatosGeneralesTab({ formData, updateFormData, isView }: DatosGen
                   value={formData.aplicaMoraAPartir || ''}
                   onChange={(e) => updateFormData('aplicaMoraAPartir', parseInt(e.target.value) || 0)}
                   disabled={isView}
-                  className="border-[#E0E0E0] focus:border-[#2E5C91] h-6 text-xs flex-1 px-2 py-0"
+                  className="border-[#E0E0E0] focus:border-[color:var(--theme-secondary)] h-6 text-xs flex-1 px-2 py-0"
                   placeholder="3"
                 />
               </div>

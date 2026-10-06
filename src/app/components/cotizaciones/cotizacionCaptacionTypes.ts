@@ -168,7 +168,7 @@ export function validarCotizacionCaptacion(c: CotizacionCaptacion): ValidacionRe
   const errors: string[] = [];
   const d = c.data;
 
-  if (!c.cliente_id) errors.push('Debe seleccionar un Prospecto/Cliente (cliente_id requerido).');
+  if (!c.cliente_id) errors.push('Debe seleccionar un Tipo Interlocutor/Cliente (cliente_id requerido).');
   if (!c.producto_id) errors.push('Debe seleccionar un Producto (producto_id requerido).');
   if (!d.cliente?.claveCliente) errors.push('Falta clave del cliente (data.cliente.claveCliente).');
   if (!d.producto?.claveProducto) errors.push('Falta clave del producto (data.producto.claveProducto).');
@@ -438,4 +438,13 @@ export function calcularFlujInversion(
   }
 
   return rows;
+}
+/**
+ * montoCotizado puede llegar como texto ("1250000", "$1,250,000.00") desde la BD.
+ * Usarlo directo en sumas concatena ("0" + "1000" = "01000"): normalizar siempre.
+ */
+export function montoANumero(v: unknown): number {
+  if (typeof v === 'number') return Number.isFinite(v) ? v : 0;
+  const n = Number(String(v ?? '').replace(/[$,\s]/g, ''));
+  return Number.isFinite(n) ? n : 0;
 }

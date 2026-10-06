@@ -10,7 +10,7 @@
  * Se persiste como `data.cobertura2oPiso` (array).
  */
 import { useState, useEffect, useRef, forwardRef, useImperativeHandle } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 import { useTabPersistence } from '@/app/hooks/useProductoPersistence';
 import type { CoberturaComisiones2oPiso } from '@/app/types/productoLineaCredito';
 
@@ -150,7 +150,7 @@ export const Cobertura2oPisoTab = forwardRef<{ getData: () => CoberturaComisione
             <div className="relative">
               <button
                 onClick={() => setShowMenu(!showMenu)}
-                className="px-3 py-1 bg-[#4A6FA5] text-white text-xs hover:bg-[#3E5C91] border border-[#3E5C91] rounded flex items-center gap-1"
+                className="px-3 py-1 bg-[color:var(--theme-primary)] text-white text-xs hover:bg-[color:var(--theme-secondary)] border border-[color:var(--theme-secondary)] rounded flex items-center gap-1"
               >
                 Menú
                 <svg width="10" height="6" viewBox="0 0 10 6" fill="white"><path d="M0 0l5 6 5-6z"/></svg>
@@ -456,7 +456,7 @@ function Cobertura2oPisoFormModal({ mode, item, onSave, onClose }: FormModalProp
           <form onSubmit={handleSubmit}>
             {/* Cobertura */}
             <div className="mb-5">
-              <div className="bg-[#E7E6E6] px-3 py-1.5 mb-4 border-l-4 border-[#2E5C91] rounded-r">
+              <div className="bg-[#E7E6E6] px-3 py-1.5 mb-4 border-l-4 border-[color:var(--theme-secondary)] rounded-r">
                 <span className="text-[11px] font-semibold text-gray-700 uppercase tracking-wide">Cobertura de la Garantía</span>
               </div>
               <div className="grid grid-cols-4 gap-x-4 gap-y-3">
@@ -470,7 +470,7 @@ function Cobertura2oPisoFormModal({ mode, item, onSave, onClose }: FormModalProp
 
             {/* Comisión */}
             <div className="mb-4">
-              <div className="bg-[#E7E6E6] px-3 py-1.5 mb-4 border-l-4 border-[#2E5C91] rounded-r">
+              <div className="bg-[#E7E6E6] px-3 py-1.5 mb-4 border-l-4 border-[color:var(--theme-secondary)] rounded-r">
                 <span className="text-[11px] font-semibold text-gray-700 uppercase tracking-wide">Comisión por Garantía Financiera</span>
               </div>
               <div className="grid grid-cols-4 gap-x-4 gap-y-3">

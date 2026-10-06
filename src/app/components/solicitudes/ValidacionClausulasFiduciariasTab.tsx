@@ -87,7 +87,7 @@ export function ValidacionClausulasFiduciariasTab({ mode, solicitudId, onChange 
 
   const claveEnPantalla = (v: string) => v.replace(/\D/g, '').slice(0, 18);
   const roClass = 'w-full px-2 py-1.5 text-xs bg-gray-100 border border-gray-200 rounded text-gray-600';
-  const inputClass = 'w-full px-2 py-1.5 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-[#4A6FA5]/30 focus:border-[#4A6FA5]';
+  const inputClass = 'w-full px-2 py-1.5 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-[color:var(--theme-primary)]/30 focus:border-[color:var(--theme-primary)]';
   const faltantes = faltantesValidacionClausulas(datos);
 
   return (

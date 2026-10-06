@@ -22,14 +22,12 @@ export interface Product {
   aplicaMoraAPartir?: number;
   saldoMinimoPromedio?: number;
   
-  // Campos específicos de Línea de Crédito
-  clave?: number;
+  // Campos específicos de Línea de Crédito (clave, tasaBase y montos: ver más abajo)
   claveEBS?: string;
   vddRowId?: string;
   tipoProducto?: string;
   opcionCompra?: string;
   porcentajeOpcionCompra?: number;
-  tasaBase?: number;
   calculo?: string;
   productoSegu?: string;
   referenciaCliente?: string;
@@ -40,8 +38,6 @@ export interface Product {
   nombreEquipoAnalista?: string;
   nombreEquipoAnalistaMesa?: string;
   tipoLinea?: string;
-  montoMinimo?: number;
-  montoMaximo?: number;
   permiteSobregiros?: boolean;
   tipoSobregiro?: string;
   montoPorcentajeSobregiro?: number;
@@ -311,7 +307,7 @@ export const TIPO_PLANTILLA_CATALOGO: TipoPlantillaOption[] = [
     label: 'Carta Oferta',
     descripcion: 'Propuesta comercial formal con la estructura bursátil y la cotización de comisiones de la Oportunidad',
     icon: '📨',
-    color: '#0099CC',
+    color: 'var(--theme-action)',
   },
   {
     // REQ-14 — plantilla que consume la Formalización Legal de la Solicitud GPO

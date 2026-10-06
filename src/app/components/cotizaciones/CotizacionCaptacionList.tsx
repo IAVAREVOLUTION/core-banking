@@ -10,8 +10,9 @@
  *   Plazo Cumplir Monto
  */
 import { useState, useRef } from 'react';
-import { toast } from 'sonner';
-import type { CotizacionCaptacion } from './cotizacionCaptacionTypes';
+import { toast } from '@/app/lib/notificaciones';
+import { useOrdenTabla, coincideBusqueda } from '@/app/lib/ordenTabla';
+import { montoANumero, type CotizacionCaptacion } from './cotizacionCaptacionTypes';
 
 interface Props {
   cotizaciones: CotizacionCaptacion[];
@@ -52,7 +53,6 @@ const renderEstatus = (estatus: string) => {
 
 export function CotizacionCaptacionList({ cotizaciones, onNew, onEdit, onView, loading, warning, backendStatus, fetchMethod, onRefresh, onSeedTest, dbRowCount, onCrearSolicitud }: Props) {
   const [searchTerm, setSearchTerm] = useState('');
-  const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
   const [currentPage, setCurrentPage] = useState(1);
   const [showDiag, setShowDiag] = useState(false);
   const [seedStatus, setSeedStatus] = useState<string | null>(null);
@@ -81,33 +81,41 @@ export function CotizacionCaptacionList({ cotizaciones, onNew, onEdit, onView, l
     }
   };
 
-  const filtered = cotizaciones
-    .filter(c => {
-      const s = searchTerm.toLowerCase();
-      return (
-        c.no_cotiza.toLowerCase().includes(s) ||
-        (c.data.usuario || '').toLowerCase().includes(s) ||
-        (c.data.producto?.nombreProducto || '').toLowerCase().includes(s) ||
-        (c.data.cliente?.nombreCompleto || '').toLowerCase().includes(s) ||
-        c.estatus_cotiza.toLowerCase().includes(s)
-      );
-    })
-    .sort((a, b) => {
-      const dA = new Date(a.fecha_cotiza).getTime();
-      const dB = new Date(b.fecha_cotiza).getTime();
-      return sortOrder === 'desc' ? dB - dA : dA - dB;
-    });
+  const filtered = cotizaciones.filter(c => coincideBusqueda(searchTerm, [
+    c.no_cotiza, formatDateDisplay(c.fecha_cotiza), c.data.usuario, c.data.producto?.nombreProducto,
+    c.data.cliente?.nombreCompleto, c.estatus_cotiza, c.data.periodoCumplirMontoMinimo,
+  ]));
+
+  // Más recientes primero (fecha de cotización; a igual fecha, el folio).
+  const orden = useOrdenTabla(filtered, {
+    id: 'cotizaciones-captacion',
+    columnas: {
+      id: c => c.no_cotiza,
+      fecha: c => c.fecha_cotiza,
+      usuario: c => c.data.usuario,
+      producto: c => c.data.producto?.nombreProducto,
+      monto: c => c.data.montoCotizado,
+      tasa: c => c.data.tasaMinInteres,
+      interes: c => c.data.interesGeneradoPeriodo,
+      periodo: c => c.data.periodoCumplirMontoMinimo || c.data.frecuenciaCapitalizacion,
+      plazo: c => c.data.plazoCumplirMontoMinimo,
+      estatus: c => c.estatus_cotiza,
+    },
+    porDefecto: { campo: 'fecha', dir: 'desc' },
+    desempate: c => c.no_cotiza,
+    alCambiar: () => setCurrentPage(1),
+  });
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / itemsPerPage));
   const startIdx = (currentPage - 1) * itemsPerPage;
-  const currentItems = filtered.slice(startIdx, startIdx + itemsPerPage);
+  const currentItems = orden.filas.slice(startIdx, startIdx + itemsPerPage);
 
   const goPrev = () => { if (currentPage > 1) setCurrentPage(currentPage - 1); };
   const goNext = () => { if (currentPage < totalPages) setCurrentPage(currentPage + 1); };
   const goFirst = () => setCurrentPage(1);
   const goLast = () => setCurrentPage(totalPages);
   const handleSearchChange = (v: string) => { setSearchTerm(v); setCurrentPage(1); };
-  const handleSortChange = (v: 'desc' | 'asc') => { setSortOrder(v); setCurrentPage(1); };
+  const handleSortChange = (v: 'desc' | 'asc') => orden.fijar(orden.campo, v);
 
   const [seedError, setSeedError] = useState<string | null>(null);
 
@@ -150,7 +158,7 @@ export function CotizacionCaptacionList({ cotizaciones, onNew, onEdit, onView, l
               <path d="M16 13H8M16 17H8M10 9H8" />
             </svg>
             <h2 className="text-lg font-normal text-gray-800">Lista de Cotizaciones — Captación</h2>
-            <button className="p-1 ml-2">
+            <button type="button" aria-label="Buscar" title="Buscar" className="p-1 ml-2">
               <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#999" strokeWidth="2">
                 <circle cx="8" cy="8" r="6" /><path d="M13 13l3 3" />
               </svg>
@@ -223,7 +231,7 @@ export function CotizacionCaptacionList({ cotizaciones, onNew, onEdit, onView, l
             <div className="flex items-center gap-2">
               <span>Orden Rápido</span>
               <div className="relative">
-                <select value={sortOrder} onChange={(e) => handleSortChange(e.target.value as any)} className="px-2 py-1 border border-gray-400 rounded text-sm bg-white pr-6 appearance-none">
+                <select value={orden.dir} onChange={(e) => handleSortChange(e.target.value as any)} className="px-2 py-1 border border-gray-400 rounded text-sm bg-white pr-6 appearance-none">
                   <option value="desc">Descendente</option>
                   <option value="asc">Ascendente</option>
                 </select>
@@ -235,10 +243,10 @@ export function CotizacionCaptacionList({ cotizaciones, onNew, onEdit, onView, l
                 <select className="px-2 py-1 border border-gray-400 rounded text-sm bg-white pr-6 appearance-none"><option>Admin - Anterior</option></select>
                 <svg className="absolute right-1 top-1/2 -translate-y-1/2 pointer-events-none" width="10" height="10" viewBox="0 0 10 10" fill="var(--theme-secondary)"><path d="M5 7l-3-3h6z" /></svg>
               </div>
-              <button className="p-0.5 text-secondary-theme disabled:opacity-40" onClick={goPrev} disabled={currentPage === 1}>
+              <button type="button" aria-label="Página anterior" title="Página anterior" className="p-0.5 text-secondary-theme disabled:opacity-40" onClick={goPrev} disabled={currentPage === 1}>
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M10 3L5 8l5 5V3z" /></svg>
               </button>
-              <button className="p-0.5 text-secondary-theme disabled:opacity-40" onClick={goNext} disabled={currentPage === totalPages}>
+              <button type="button" aria-label="Página siguiente" title="Página siguiente" className="p-0.5 text-secondary-theme disabled:opacity-40" onClick={goNext} disabled={currentPage === totalPages}>
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M6 3l5 5-5 5V3z" /></svg>
               </button>
             </div>
@@ -254,16 +262,16 @@ export function CotizacionCaptacionList({ cotizaciones, onNew, onEdit, onView, l
             <thead>
               <tr className="bg-gray-100 border-b border-gray-300">
                 <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700 whitespace-nowrap">Editar | Ver</th>
-                <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700 whitespace-nowrap">ID COTIZA</th>
-                <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700 whitespace-nowrap">FECHA Y HORA</th>
-                <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700 whitespace-nowrap">USUARIO</th>
-                <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700 whitespace-nowrap">PRODUCTO</th>
-                <th className="px-3 py-2.5 text-right font-normal text-xs text-gray-700 whitespace-nowrap">MONTO COTIZADO</th>
-                <th className="px-3 py-2.5 text-center font-normal text-xs text-gray-700 whitespace-nowrap">TASA MIN INTERÉS</th>
-                <th className="px-3 py-2.5 text-right font-normal text-xs text-gray-700 whitespace-nowrap">INTERÉS GENERADO</th>
-                <th className="px-3 py-2.5 text-center font-normal text-xs text-gray-700 whitespace-nowrap">PERIODO</th>
-                <th className="px-3 py-2.5 text-center font-normal text-xs text-gray-700 whitespace-nowrap">PLAZO CUMPLIR MONTO</th>
-                <th className="px-3 py-2.5 text-center font-normal text-xs text-gray-700 whitespace-nowrap">ESTATUS</th>
+                <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700 whitespace-nowrap" {...orden.th('id')}>ID COTIZA{orden.flecha('id')}</th>
+                <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700 whitespace-nowrap" {...orden.th('fecha')}>FECHA Y HORA{orden.flecha('fecha')}</th>
+                <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700 whitespace-nowrap" {...orden.th('usuario')}>USUARIO{orden.flecha('usuario')}</th>
+                <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700 whitespace-nowrap" {...orden.th('producto')}>PRODUCTO{orden.flecha('producto')}</th>
+                <th className="px-3 py-2.5 text-right font-normal text-xs text-gray-700 whitespace-nowrap" {...orden.th('monto')}>MONTO COTIZADO{orden.flecha('monto')}</th>
+                <th className="px-3 py-2.5 text-center font-normal text-xs text-gray-700 whitespace-nowrap" {...orden.th('tasa')}>TASA MIN INTERÉS{orden.flecha('tasa')}</th>
+                <th className="px-3 py-2.5 text-right font-normal text-xs text-gray-700 whitespace-nowrap" {...orden.th('interes')}>INTERÉS GENERADO{orden.flecha('interes')}</th>
+                <th className="px-3 py-2.5 text-center font-normal text-xs text-gray-700 whitespace-nowrap" {...orden.th('periodo')}>PERIODO{orden.flecha('periodo')}</th>
+                <th className="px-3 py-2.5 text-center font-normal text-xs text-gray-700 whitespace-nowrap" {...orden.th('plazo')}>PLAZO CUMPLIR MONTO{orden.flecha('plazo')}</th>
+                <th className="px-3 py-2.5 text-center font-normal text-xs text-gray-700 whitespace-nowrap" {...orden.th('estatus')}>ESTATUS{orden.flecha('estatus')}</th>
               </tr>
             </thead>
             <tbody>
@@ -278,15 +286,15 @@ export function CotizacionCaptacionList({ cotizaciones, onNew, onEdit, onView, l
                   onMouseLeave={(e) => e.currentTarget.style.backgroundColor = index % 2 === 1 ? '#EEEEEE' : '#FFFFFF'}
                 >
                   <td className="px-3 py-2.5 text-xs whitespace-nowrap">
-                    <a href="#" className="text-[#0066CC] hover:underline" onClick={(e) => { e.preventDefault(); onEdit(c); }}>Editar</a>
+                    <button type="button" className="enlace-accion text-[color:var(--theme-link)] hover:underline" onClick={() => { onEdit(c); }}>Editar</button>
                     <span className="text-gray-700"> | </span>
-                    <a href="#" className="text-[#0066CC] hover:underline" onClick={(e) => { e.preventDefault(); onView(c); }}>Ver</a>
+                    <button type="button" className="enlace-accion text-[color:var(--theme-link)] hover:underline" onClick={() => { onView(c); }}>Ver</button>
                   </td>
                   <td className="px-3 py-2.5 text-xs text-gray-700 whitespace-nowrap">{c.no_cotiza}</td>
                   <td className="px-3 py-2.5 text-xs text-gray-700 whitespace-nowrap">{formatDateDisplay(c.fecha_cotiza)}</td>
                   <td className="px-3 py-2.5 text-xs text-gray-700 whitespace-nowrap">{c.data.usuario || '—'}</td>
                   <td className="px-3 py-2.5 text-xs text-gray-700">{c.data.producto?.nombreProducto || '—'}</td>
-                  <td className="px-3 py-2.5 text-xs text-gray-700 text-right whitespace-nowrap">{formatMoney(c.data.montoCotizado || 0)}</td>
+                  <td className="px-3 py-2.5 text-xs text-gray-700 text-right whitespace-nowrap">{formatMoney(montoANumero(c.data.montoCotizado))}</td>
                   <td className="px-3 py-2.5 text-xs text-gray-700 text-center">{c.data.tasaMinInteres != null ? `${c.data.tasaMinInteres}%` : '—'}</td>
                   <td className="px-3 py-2.5 text-xs text-gray-700 text-right whitespace-nowrap">{c.data.interesGeneradoPeriodo != null ? formatMoney(c.data.interesGeneradoPeriodo) : '—'}</td>
                   <td className="px-3 py-2.5 text-xs text-gray-700 text-center">{c.data.periodoCumplirMontoMinimo || c.data.frecuenciaCapitalizacion || '—'}</td>
@@ -302,17 +310,17 @@ export function CotizacionCaptacionList({ cotizaciones, onNew, onEdit, onView, l
       {/* ═══ Paginación ═══ */}
       <div className="px-4 py-3 border-t border-gray-300">
         <div className="flex items-center justify-end gap-3">
-          <button className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-40 disabled:cursor-not-allowed" onClick={goFirst} disabled={currentPage === 1}>
+          <button type="button" aria-label="Primera página" title="Primera página" className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-40 disabled:cursor-not-allowed" onClick={goFirst} disabled={currentPage === 1}>
             <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#666" strokeWidth="1.5"><path d="M13 4L4 9l9 5V4z" /></svg>
           </button>
-          <button className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-40 disabled:cursor-not-allowed" onClick={goPrev} disabled={currentPage === 1}>
+          <button type="button" aria-label="Página anterior" title="Página anterior" className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-40 disabled:cursor-not-allowed" onClick={goPrev} disabled={currentPage === 1}>
             <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#666" strokeWidth="1.5"><path d="M9 4L4 9l5 5V4z" /></svg>
           </button>
           <div className="text-sm text-gray-700 min-w-[100px] text-center">Página {currentPage} de {totalPages}</div>
-          <button className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-40 disabled:cursor-not-allowed" onClick={goNext} disabled={currentPage === totalPages}>
+          <button type="button" aria-label="Página siguiente" title="Página siguiente" className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-40 disabled:cursor-not-allowed" onClick={goNext} disabled={currentPage === totalPages}>
             <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#666" strokeWidth="1.5"><path d="M5 4l5 5-5 5V4z" /></svg>
           </button>
-          <button className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-40 disabled:cursor-not-allowed" onClick={goLast} disabled={currentPage === totalPages}>
+          <button type="button" aria-label="Última página" title="Última página" className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-40 disabled:cursor-not-allowed" onClick={goLast} disabled={currentPage === totalPages}>
             <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#666" strokeWidth="1.5"><path d="M4 4L13 9l-9 5V4z" /></svg>
           </button>
         </div>

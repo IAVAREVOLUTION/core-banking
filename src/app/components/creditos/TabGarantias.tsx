@@ -79,7 +79,7 @@ export function TabGarantias({ mode, camposEditables }: TabGarantiasProps) {
           <button 
             onClick={handleNew}
             disabled={isViewMode}
-            className="px-4 py-1.5 bg-[#5B9BD5] text-white text-xs font-normal rounded hover:bg-[#4A8BC2] disabled:bg-gray-400 disabled:cursor-not-allowed"
+            className="px-4 py-1.5 bg-[color:var(--theme-accent)] text-white text-xs font-normal rounded hover:bg-[color:var(--theme-accent-hover)] disabled:bg-gray-400 disabled:cursor-not-allowed"
           >
             Nuevo
           </button>
@@ -151,7 +151,7 @@ export function TabGarantias({ mode, camposEditables }: TabGarantiasProps) {
 
         {/* Sección Expedientes Electrónicos */}
         <div className="mt-4">
-          <h3 className="text-xs font-semibold text-gray-800 mb-2 uppercase">Expedientes Electrónicos</h3>
+          <h3 className="text-xs font-semibold text-gray-800 mb-2 uppercase">KM Digital</h3>
           <div className="overflow-x-auto">
             <table className="w-full border-collapse text-xs">
               <thead>
@@ -242,7 +242,7 @@ function FormModal({ onClose }: FormModalProps) {
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
       <div className="bg-white shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-hidden flex flex-col border-2 border-gray-400" onClick={(e) => e.stopPropagation()}>
         {/* Header */}
-        <div className="bg-[#2E5C91] px-4 py-2.5 border-b-2 border-gray-400 flex items-center justify-between">
+        <div className="bg-[color:var(--theme-secondary)] px-4 py-2.5 border-b-2 border-gray-400 flex items-center justify-between">
           <h3 className="text-sm font-medium text-white">Nuevo Bien</h3>
           <button 
             onClick={onClose}
@@ -255,7 +255,7 @@ function FormModal({ onClose }: FormModalProps) {
         {/* Form */}
         <div className="px-6 py-4 overflow-auto bg-white">
           <div className="mb-4">
-            <div className="bg-[#E7E6E6] px-3 py-1.5 mb-3 border-l-4 border-[#2E5C91]">
+            <div className="bg-[#E7E6E6] px-3 py-1.5 mb-3 border-l-4 border-[color:var(--theme-secondary)]">
               <span className="text-xs font-medium text-gray-800">INFORMACIÓN DEL BIEN</span>
             </div>
 
@@ -358,7 +358,7 @@ function FormModal({ onClose }: FormModalProps) {
             </button>
             <button
               type="submit"
-              className="px-4 py-1.5 bg-[#4A6FA5] text-white text-xs hover:bg-[#3E5C91] border border-[#3E5C91]"
+              className="px-4 py-1.5 bg-[color:var(--theme-primary)] text-white text-xs hover:bg-[color:var(--theme-secondary)] border border-[color:var(--theme-secondary)]"
             >
               Guardar
             </button>

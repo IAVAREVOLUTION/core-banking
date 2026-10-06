@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { GeneracionContableTab } from './GeneracionContableTab';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
+import { useOrdenTabla, coincideBusqueda } from '@/app/lib/ordenTabla';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 import { INSTITUCION_RAZON_SOCIAL } from '../solicitudes/solicitudCreditoStore';
 // REQ-19 — el sub_tipo se importa de donde se ESCRIBE (Banca 2º Piso lo manda al
@@ -492,10 +493,8 @@ function AvisoForm({ aviso: inicial, mode, onBack, onPagado }: {
               {TABS.map(tab => (
                 <button key={tab.id} onClick={() => setActiveTab(tab.id)}
                   className={`px-3 py-2 text-[10px] whitespace-nowrap border-r border-gray-500/30 ${
-                    activeTab === tab.id ? 'bg-secondary-theme text-white font-medium' : 'text-white/90'
+                    activeTab === tab.id ? 'bg-secondary-theme text-white font-medium' : 'text-white/90 hover:bg-[color:var(--theme-primary-hover)]'
                   }`}
-                  onMouseEnter={e => { if (activeTab !== tab.id) e.currentTarget.style.backgroundColor = 'var(--theme-primary-hover)'; }}
-                  onMouseLeave={e => { if (activeTab !== tab.id) e.currentTarget.style.backgroundColor = ''; }}
                 >
                   {tab.label}
                 </button>
@@ -574,7 +573,6 @@ function AvisosVencimientoPanel({ subTipoFijo, titulo }: { subTipoFijo?: string;
   const [loading,       setLoading]      = useState(false);
   const [filterEstatus, setFilterEstatus]= useState('');
   const [searchTerm,    setSearchTerm]   = useState('');
-  const [sortOrder,     setSortOrder]    = useState<'desc' | 'asc'>('desc');
   const [currentPage,   setCurrentPage]  = useState(1);
   const ITEMS_PER_PAGE = 10;
   const tableRef  = useRef<HTMLDivElement>(null);
@@ -603,24 +601,32 @@ function AvisosVencimientoPanel({ subTipoFijo, titulo }: { subTipoFijo?: string;
 
   useEffect(() => { cargar(); }, []);
 
-  const filtered = useMemo(() => {
-    let list = rows;
-    if (filterEstatus) list = list.filter(r => r.estatus === filterEstatus);
-    if (searchTerm) {
-      const q = searchTerm.toLowerCase();
-      list = list.filter(r =>
-        (r.no_docto   || '').toLowerCase().includes(q) ||
-        (r.cliente    || '').toLowerCase().includes(q) ||
-        (r.referencia || '').toLowerCase().includes(q) ||
-        (r.gobierno   || '').toLowerCase().includes(q)
-      );
-    }
-    return [...list].sort((a, b) =>
-      sortOrder === 'desc'
-        ? (b.fecha_compromiso || '').localeCompare(a.fecha_compromiso || '')
-        : (a.fecha_compromiso || '').localeCompare(b.fecha_compromiso || '')
-    );
-  }, [rows, filterEstatus, searchTerm, sortOrder]);
+  const filtrados = useMemo(() => rows.filter(r =>
+    (!filterEstatus || r.estatus === filterEstatus) &&
+    coincideBusqueda(searchTerm, [
+      r.no_docto, fmtDate(r.fecha_compromiso), r.tipo || r.sub_tipo, r.gobierno, r.cliente, r.referencia, r.moneda, r.estatus,
+    ])), [rows, filterEstatus, searchTerm]);
+
+  // Más recientes primero (fecha compromiso; a igual fecha, el documento).
+  // Exportar e imprimir usan el mismo orden que la tabla.
+  const orden = useOrdenTabla(filtrados, {
+    id: `cobranza-${subTipoFijo || 'todas'}`,
+    columnas: {
+      docto: r => r.no_docto,
+      fecha: r => r.fecha_compromiso,
+      tipo: r => r.tipo || r.sub_tipo,
+      gobierno: r => r.gobierno,
+      cliente: r => r.cliente,
+      referencia: r => r.referencia,
+      monto: r => r.monto_transaccion,
+      moneda: r => r.moneda,
+      estatus: r => r.estatus,
+    },
+    porDefecto: { campo: 'fecha', dir: 'desc' },
+    desempate: r => r.no_docto,
+    alCambiar: () => setCurrentPage(1),
+  });
+  const filtered = orden.filas;
 
   const totalPages   = Math.max(1, Math.ceil(filtered.length / ITEMS_PER_PAGE));
   const currentItems = filtered.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
@@ -825,7 +831,7 @@ function AvisosVencimientoPanel({ subTipoFijo, titulo }: { subTipoFijo?: string;
           <div className="flex items-center gap-4 text-sm text-gray-700">
             <div className="flex items-center gap-2">
               <span>Orden</span>
-              <select value={sortOrder} onChange={e => { setSortOrder(e.target.value as 'desc' | 'asc'); setCurrentPage(1); }}
+              <select value={orden.dir} onChange={e => orden.fijar(orden.campo, e.target.value as 'desc' | 'asc')}
                 className="px-2 py-1 border border-gray-400 rounded text-sm bg-white pr-6 appearance-none">
                 <option value="desc">Descendente</option>
                 <option value="asc">Ascendente</option>
@@ -843,17 +849,17 @@ function AvisosVencimientoPanel({ subTipoFijo, titulo }: { subTipoFijo?: string;
             <thead>
               <tr className="bg-gray-100 border-b border-gray-300">
                 <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700">Editar | Ver</th>
-                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700">NO. DOCUMENTO</th>
-                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700">F. COMPROMISO</th>
-                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700">TIPO</th>
+                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700" {...orden.th('docto')}>NO. DOCUMENTO{orden.flecha('docto')}</th>
+                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700" {...orden.th('fecha')}>F. COMPROMISO{orden.flecha('fecha')}</th>
+                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700" {...orden.th('tipo')}>TIPO{orden.flecha('tipo')}</th>
                 {muestraGobierno && (
-                  <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700">INST. GOBIERNO</th>
+                  <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700" {...orden.th('gobierno')}>INST. GOBIERNO{orden.flecha('gobierno')}</th>
                 )}
-                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700">CLIENTE</th>
-                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700">REFERENCIA</th>
-                <th className="px-2 py-2.5 text-right font-medium text-xs text-gray-700">MONTO TRANSACCIÓN</th>
-                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700">MONEDA</th>
-                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700">ESTATUS</th>
+                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700" {...orden.th('cliente')}>CLIENTE{orden.flecha('cliente')}</th>
+                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700" {...orden.th('referencia')}>REFERENCIA{orden.flecha('referencia')}</th>
+                <th className="px-2 py-2.5 text-right font-medium text-xs text-gray-700" {...orden.th('monto')}>MONTO TRANSACCIÓN{orden.flecha('monto')}</th>
+                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700" {...orden.th('moneda')}>MONEDA{orden.flecha('moneda')}</th>
+                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700" {...orden.th('estatus')}>ESTATUS{orden.flecha('estatus')}</th>
               </tr>
             </thead>
             <tbody>
@@ -878,13 +884,13 @@ function AvisosVencimientoPanel({ subTipoFijo, titulo }: { subTipoFijo?: string;
                   onMouseLeave={e => (e.currentTarget.style.backgroundColor = idx % 2 === 1 ? '#EEEEEE' : '#FFFFFF')}
                 >
                   <td className="px-2 py-2.5 text-xs whitespace-nowrap">
-                    <a href="#" className="text-[#0066CC] hover:underline"
-                      onClick={e => { e.preventDefault(); setView({ type: 'form', mode: 'editar', aviso: r }); }}>Editar</a>
+                    <button type="button" className="enlace-accion text-[color:var(--theme-link)] hover:underline"
+                      onClick={() => { setView({ type: 'form', mode: 'editar', aviso: r }); }}>Editar</button>
                     <span className="text-gray-500"> | </span>
-                    <a href="#" className="text-[#0066CC] hover:underline"
-                      onClick={e => { e.preventDefault(); setView({ type: 'form', mode: 'ver', aviso: r }); }}>Ver</a>
+                    <button type="button" className="enlace-accion text-[color:var(--theme-link)] hover:underline"
+                      onClick={() => { setView({ type: 'form', mode: 'ver', aviso: r }); }}>Ver</button>
                   </td>
-                  <td className="px-2 py-2.5 text-xs font-mono text-[#0066CC]">{r.no_docto || '—'}</td>
+                  <td className="px-2 py-2.5 text-xs font-mono text-[color:var(--theme-link)]">{r.no_docto || '—'}</td>
                   <td className="px-2 py-2.5 text-xs text-gray-700 whitespace-nowrap">{fmtDate(r.fecha_compromiso)}</td>
                   {/* TIPO es el tipo de cuenta (Por Cobrar / Por Pagar); el
                       sub_tipo ya lo define la pestaña y sólo sirve de respaldo. */}
@@ -911,22 +917,22 @@ function AvisosVencimientoPanel({ subTipoFijo, titulo }: { subTipoFijo?: string;
       {/* ── Pagination ── */}
       <div className="px-4 py-3 border-t border-gray-300">
         <div className="flex items-center justify-end gap-3">
-          <button className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-40"
+          <button type="button" aria-label="Primera página" title="Primera página" className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-40"
             onClick={() => setCurrentPage(1)} disabled={currentPage === 1}>
             <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#666" strokeWidth="1.5"><path d="M13 4L4 9l9 5V4z"/></svg>
           </button>
-          <button className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-40"
+          <button type="button" aria-label="Página anterior" title="Página anterior" className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-40"
             onClick={() => setCurrentPage(p => p - 1)} disabled={currentPage === 1}>
             <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#666" strokeWidth="1.5"><path d="M9 4L4 9l5 5V4z"/></svg>
           </button>
           <div className="text-sm text-gray-700 min-w-[100px] text-center">
             Página {currentPage} de {totalPages}
           </div>
-          <button className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-40"
+          <button type="button" aria-label="Página siguiente" title="Página siguiente" className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-40"
             onClick={() => setCurrentPage(p => p + 1)} disabled={currentPage === totalPages}>
             <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#666" strokeWidth="1.5"><path d="M5 4l5 5-5 5V4z"/></svg>
           </button>
-          <button className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-40"
+          <button type="button" aria-label="Última página" title="Última página" className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-40"
             onClick={() => setCurrentPage(totalPages)} disabled={currentPage === totalPages}>
             <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#666" strokeWidth="1.5"><path d="M4 4L13 9l-9 5V4z"/></svg>
           </button>

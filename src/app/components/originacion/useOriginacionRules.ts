@@ -1,5 +1,5 @@
 import { useCallback } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 import {
   ejecutarReglasFase,
   OriginacionContext,

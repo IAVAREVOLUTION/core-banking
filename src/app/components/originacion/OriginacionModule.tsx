@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
+import { useOrdenTabla, coincideBusqueda } from '@/app/lib/ordenTabla';
 import { BarChart, Bar, PieChart, Pie, Cell, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { DatePicker } from '../clientes/DatePicker';
 import {
@@ -16,7 +17,7 @@ import {
   CAT_ESTATUS_SC, CAT_ESTATUS_CLIENTE, CAT_ESTATUS_LISTA_NEGRA,
   getOriginaciones, seedOriginacionFromSolicitudItem,
 } from './originacionStore';
-import { useSolicitudesDB, updateFaseSolicitudDB } from '../../hooks/useSolicitudesDB';
+import { useSolicitudesDB, updateFaseSolicitudDB, asegurarDetalleSolicitud } from '../../hooks/useSolicitudesDB';
 import { useProductosCatalogoDB } from '../../hooks/useProductosCatalogoDB';
 // ExpedientesSection reemplazado por ExpedienteElectronicoTab (shared)
 import {
@@ -46,10 +47,13 @@ import {
   loadFromSavedStore as loadSolSaved,
   saveToSession as saveSolSession,
   saveToSavedStore as saveSolSaved,
+  documentosVigentes,
   type DocumentoCargado,
 } from '../solicitudes/solicitudCreditoStore';
 import { SolicitudBaseForm } from '../solicitudes/SolicitudBaseForm';
+import { getUsuarioSesion } from '../../lib/sesion';
 import { buildFormDataFromListItem, preloadSubtabsFromDBData } from '../solicitudes/SolicitudCreditoList';
+import { CampoMonto } from '@/app/components/ui/CampoMonto';
 
 // ── Helper: parsear fecha "DD/MM/YYYY HH:MM" → Date (compartido con useFaseValidation) ──
 function parseFechaStr(fecha: string): Date {
@@ -163,11 +167,18 @@ export function OriginacionModule() {
   const goToList = () => { setView({ type: 'list' }); };
 
   // Antes de abrir el form, sembrar datos reales desde DB si no están en el store de Originación
-  const seedAndOpen = useCallback((i: OriginacionListItem, mode: 'editar' | 'ver') => {
+  const seedAndOpen = useCallback(async (i: OriginacionListItem, mode: 'editar' | 'ver') => {
     const solItem = (solicitudesDB as Record<string, any>[]).find(
       s => s.id === i.id || s._dbId === i.id || s.noSol === i.noSolicitud,
     );
     if (solItem) {
+      // El listado ligero sólo trae un resumen: sembrar con él dejaría vacíos los subtabs.
+      try {
+        await asegurarDetalleSolicitud(solItem);
+      } catch (err: any) {
+        toast.error('No se pudo cargar la Solicitud', { description: err?.message || String(err) });
+        return;
+      }
       // ── Sembrar namespace sol_credito_ (para SolicitudBaseForm / SolicitudCreditoForm) ──
       const solFormData = buildFormDataFromListItem(solItem as any);
       saveSolSession(i.id, 'form', solFormData);
@@ -218,6 +229,8 @@ export function OriginacionModule() {
     const dbId: string | undefined = solItem._dbId || (typeof solItem.id === 'string' ? solItem.id : undefined);
     if (!dbId) return;
     try {
+      // _data se usa como base del merge al guardar: debe ser el JSONB completo.
+      await asegurarDetalleSolicitud(solItem);
       // Construir SolicitudFormData mínimo con los estatus actualizados
       const d = solItem._data || {};
       const hdr = d.solicitud?.header || {};
@@ -462,7 +475,7 @@ function OriginacionDashboard({ items, onGoToList }: {
             </table>
           </div>
           <div className="px-4 py-3 border-t border-gray-300 flex justify-end">
-            <button onClick={onGoToList} className="text-xs text-[#0066CC] hover:underline">Ver todas las originaciones →</button>
+            <button onClick={onGoToList} className="text-xs text-[color:var(--theme-link)] hover:underline">Ver todas las originaciones →</button>
           </div>
         </div>
 
@@ -555,7 +568,6 @@ function OriginacionList({ items, onEditar, onVer }: {
   const [searchTerm, setSearchTerm] = useState('');
   const [fEstatus, setFEstatus] = useState('');
   const [fSubEstatus, setFSubEstatus] = useState('');
-  const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 8;
   const tableRef = useRef<HTMLDivElement>(null);
@@ -566,22 +578,33 @@ function OriginacionList({ items, onEditar, onVer }: {
   const handleExportPDF = () => { toast.success('Exportando a PDF', { description: 'El archivo PDF se está descargando...', duration: 3000 }); };
   const handlePrint = () => { toast.success('Imprimiendo', { description: 'Enviando documento a la impresora...', duration: 3000 }); };
 
-  const filtered = items.filter(i => {
-    if (fEstatus && i.estatus !== fEstatus) return false;
-    if (fSubEstatus && i.subEstatus !== fSubEstatus) return false;
-    if (searchTerm) {
-      const s = searchTerm.toLowerCase();
-      return i.noSolicitud.toLowerCase().includes(s) || i.noOriginacion.toLowerCase().includes(s) || i.cliente.toLowerCase().includes(s) || i.noCliente.toLowerCase().includes(s) || i.sucursal.toLowerCase().includes(s) || i.responsable.toLowerCase().includes(s);
-    }
-    return true;
-  }).sort((a, b) => {
-    const da = parseDate(a.fechaSolicitud).getTime();
-    const db = parseDate(b.fechaSolicitud).getTime();
-    return sortOrder === 'desc' ? db - da : da - db;
+  const filtered = items.filter(i =>
+    (!fEstatus || i.estatus === fEstatus) &&
+    (!fSubEstatus || i.subEstatus === fSubEstatus) &&
+    coincideBusqueda(searchTerm, [
+      i.noSolicitud, i.noOriginacion, i.cliente, i.noCliente, i.estatus, i.subEstatus,
+      i.fechaSolicitud, i.sucursal, i.responsable,
+    ]));
+
+  // Más recientes primero (fecha de solicitud; a igual fecha, el número de solicitud).
+  const orden = useOrdenTabla(filtered, {
+    id: 'originacion',
+    columnas: {
+      noSol: i => i.noSolicitud,
+      cliente: i => i.cliente,
+      estatus: i => i.estatus,
+      subEstatus: i => i.subEstatus,
+      fecha: i => parseDate(i.fechaSolicitud),
+      monto: i => i.montoSolicitado,
+      responsable: i => i.responsable,
+    },
+    porDefecto: { campo: 'fecha', dir: 'desc' },
+    desempate: i => i.noSolicitud,
+    alCambiar: () => setCurrentPage(1),
   });
 
-  const totalPages = Math.ceil(filtered.length / itemsPerPage);
-  const paginated = filtered.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+  const totalPages = Math.ceil(orden.filas.length / itemsPerPage);
+  const paginated = orden.filas.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
   return (
     <div className="bg-white min-h-screen">
@@ -591,7 +614,7 @@ function OriginacionList({ items, onEditar, onVer }: {
           <div className="flex items-center gap-3">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#666" strokeWidth="1.5"><path d="M6 2h8l4 4v11a1 1 0 01-1 1H3a1 1 0 01-1-1V3a1 1 0 011-1z"/><path d="M14 2v4h4"/><path d="M6 10h8M6 13h5"/></svg>
             <h2 className="text-lg text-gray-800">Originación</h2>
-            <button className="p-1 ml-2"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#999" strokeWidth="2"><circle cx="8" cy="8" r="6"/><path d="M13 13l3 3"/></svg></button>
+            <button type="button" aria-label="Buscar" title="Buscar" className="p-1 ml-2"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#999" strokeWidth="2"><circle cx="8" cy="8" r="6"/><path d="M13 13l3 3"/></svg></button>
           </div>
           <div className="flex items-center gap-4 text-sm text-gray-700">
             <span className="cursor-pointer hover:text-secondary-theme transition-colors" onClick={() => { if (tableRef.current) { tableRef.current.classList.add('animate-highlight'); setTimeout(() => tableRef.current?.classList.remove('animate-highlight'), 1000); } }}>Lista</span>
@@ -655,7 +678,7 @@ function OriginacionList({ items, onEditar, onVer }: {
             <div className="flex items-center gap-2">
               <span>Orden Rápido</span>
               <div className="relative">
-                <select value={sortOrder} onChange={e => { setSortOrder(e.target.value as 'desc' | 'asc'); setCurrentPage(1); }} className="px-2 py-1 border border-gray-400 rounded text-sm bg-white pr-6 appearance-none">
+                <select value={orden.dir} onChange={e => orden.fijar(orden.campo, e.target.value as 'desc' | 'asc')} className="px-2 py-1 border border-gray-400 rounded text-sm bg-white pr-6 appearance-none">
                   <option value="desc">Descendente</option>
                   <option value="asc">Ascendente</option>
                 </select>
@@ -682,13 +705,13 @@ function OriginacionList({ items, onEditar, onVer }: {
             <thead>
               <tr style={{ backgroundColor: '#D0D0D0' }} className="border-b border-gray-300">
                 <th className="px-3 py-2.5 text-left text-xs text-gray-700">Editar | Ver</th>
-                <th className="px-3 py-2.5 text-left text-xs text-gray-700">N° SOLICITUD</th>
-                <th className="px-3 py-2.5 text-left text-xs text-gray-700">CLIENTE</th>
-                <th className="px-3 py-2.5 text-left text-xs text-gray-700">ESTATUS</th>
-                <th className="px-3 py-2.5 text-left text-xs text-gray-700">SUB-ESTATUS</th>
-                <th className="px-3 py-2.5 text-left text-xs text-gray-700">FECHA</th>
-                <th className="px-3 py-2.5 text-left text-xs text-gray-700">MONTO</th>
-                <th className="px-3 py-2.5 text-left text-xs text-gray-700">RESPONSABLE</th>
+                <th className="px-3 py-2.5 text-left text-xs text-gray-700" {...orden.th('noSol')}>N° SOLICITUD{orden.flecha('noSol')}</th>
+                <th className="px-3 py-2.5 text-left text-xs text-gray-700" {...orden.th('cliente')}>CLIENTE{orden.flecha('cliente')}</th>
+                <th className="px-3 py-2.5 text-left text-xs text-gray-700" {...orden.th('estatus')}>ESTATUS{orden.flecha('estatus')}</th>
+                <th className="px-3 py-2.5 text-left text-xs text-gray-700" {...orden.th('subEstatus')}>SUB-ESTATUS{orden.flecha('subEstatus')}</th>
+                <th className="px-3 py-2.5 text-left text-xs text-gray-700" {...orden.th('fecha')}>FECHA{orden.flecha('fecha')}</th>
+                <th className="px-3 py-2.5 text-left text-xs text-gray-700" {...orden.th('monto')}>MONTO{orden.flecha('monto')}</th>
+                <th className="px-3 py-2.5 text-left text-xs text-gray-700" {...orden.th('responsable')}>RESPONSABLE{orden.flecha('responsable')}</th>
               </tr>
             </thead>
             <tbody>
@@ -700,9 +723,9 @@ function OriginacionList({ items, onEditar, onVer }: {
                   onMouseEnter={e => e.currentTarget.style.backgroundColor = '#E8F4F8'}
                   onMouseLeave={e => e.currentTarget.style.backgroundColor = idx % 2 === 1 ? '#EEEEEE' : '#FFFFFF'}>
                   <td className="px-3 py-2.5 text-xs">
-                    <a href="#" className="text-[#0066CC] hover:underline" onClick={e => { e.preventDefault(); onEditar(i); }}>Editar</a>
+                    <button type="button" className="enlace-accion text-[color:var(--theme-link)] hover:underline" onClick={() => { onEditar(i); }}>Editar</button>
                     <span className="text-gray-700"> | </span>
-                    <a href="#" className="text-[#0066CC] hover:underline" onClick={e => { e.preventDefault(); onVer(i); }}>Ver</a>
+                    <button type="button" className="enlace-accion text-[color:var(--theme-link)] hover:underline" onClick={() => { onVer(i); }}>Ver</button>
                   </td>
                   <td className="px-3 py-2.5 text-xs text-gray-700">{i.noSolicitud}</td>
                   <td className="px-3 py-2.5 text-xs text-gray-700">{i.cliente}</td>
@@ -794,6 +817,20 @@ function heredarCargosDeSolicitud(id: number | string): OriginacionCargo[] {
   return [...propios, ...heredados];
 }
 
+// REQ-03: sólo la última versión de cada documento cuenta para las reglas de fase.
+function aExpedientes(docs: DocumentoCargado[]) {
+  return documentosVigentes(docs).map(d => ({
+    id: d.id,
+    fechaHora: d.fecha,
+    usuario: d.usuario,
+    tipoDocumento: d.tipoDocumento,
+    archivo: d.archivo,
+    descripcion: d.nota || '',
+    estatus: d.estatus as string,
+    observaciones: '',
+  }));
+}
+
 function OriginacionForm({ mode, originacionId, onCancel, onSave, onActivarCuentaDB }: {
   mode: 'editar' | 'ver'; originacionId: number | string;
   onCancel: () => void; onSave: (d: OriginacionFormData) => void;
@@ -807,16 +844,7 @@ function OriginacionForm({ mode, originacionId, onCancel, onSave, onActivarCuent
     const solDocs = loadSolSession<DocumentoCargado[]>(originacionId, 'documentos')
       || loadSolSaved<DocumentoCargado[]>(originacionId, 'documentos');
     if (solDocs && solDocs.length > 0) {
-      return solDocs.map(d => ({
-        id: d.id,
-        fechaHora: d.fecha,
-        usuario: d.usuario,
-        tipoDocumento: d.tipoDocumento,
-        archivo: d.archivo,
-        descripcion: d.nota || '',
-        estatus: d.estatus,
-        observaciones: '',
-      }));
+      return aExpedientes(solDocs);
     }
     // Fallback: namespace originacion_
     return loadFromSession(originacionId, 'expedientes') || loadFromSavedStore(originacionId, 'expedientes') || [];
@@ -1053,7 +1081,7 @@ function OriginacionForm({ mode, originacionId, onCancel, onSave, onActivarCuent
     if (errors[f]) setErrors(p => { const n = { ...p }; delete n[f]; return n; });
   };
   const numSet = (f: keyof OriginacionFormData, v: string) => set(f, v.replace(/[^0-9.,-]/g, ''));
-  const curBlur = (f: keyof OriginacionFormData) => { const n = parseFloat(parseCurrency(fd[f])); if (!isNaN(n) && n >= 0) set(f, n.toFixed(2)); };
+  const curBlur = (f: keyof OriginacionFormData) => { const n = parseFloat(parseCurrency(String(fd[f] ?? ''))); if (!isNaN(n) && n >= 0) set(f, n.toFixed(2)); };
   const pctBlur = (f: keyof OriginacionFormData) => { const n = parseFloat((fd[f] || '').replace(/[^0-9.-]/g, '')); if (!isNaN(n)) set(f, Math.min(100, Math.max(0, n)).toFixed(4)); };
 
   const validate = () => {
@@ -1083,8 +1111,8 @@ function OriginacionForm({ mode, originacionId, onCancel, onSave, onActivarCuent
 
   const handleCancel = () => { clearSession(sid); onCancel(); };
 
-  const ic = (err = false, dis = false) => `w-full px-2 py-1 text-xs border rounded focus:outline-none ${err ? 'border-red-400' : 'border-gray-300'} ${dis || isRO ? 'bg-gray-100 text-gray-600' : 'bg-white focus:ring-2 focus:ring-[#4A6FA5]'}`;
-  const sc = (err = false) => `w-full px-2 py-1 text-xs border rounded focus:outline-none ${err ? 'border-red-400' : 'border-gray-300'} ${isRO ? 'bg-gray-100 text-gray-600' : 'bg-white focus:ring-2 focus:ring-[#4A6FA5]'}`;
+  const ic = (err = false, dis = false) => `w-full px-2 py-1 text-xs border rounded focus:outline-none ${err ? 'border-red-400' : 'border-gray-300'} ${dis || isRO ? 'bg-gray-100 text-gray-600' : 'bg-white focus:ring-2 focus:ring-[color:var(--theme-primary)]'}`;
+  const sc = (err = false) => `w-full px-2 py-1 text-xs border rounded focus:outline-none ${err ? 'border-red-400' : 'border-gray-300'} ${isRO ? 'bg-gray-100 text-gray-600' : 'bg-white focus:ring-2 focus:ring-[color:var(--theme-primary)]'}`;
   const Lbl = ({ children, req, error }: { children: string; req?: boolean; error?: string }) => (
     <label className={`block text-xs mb-1 ${error ? 'text-red-600' : 'text-gray-700'}`}>{children}{req && <span className="text-red-600 ml-0.5">*</span>}</label>
   );
@@ -1094,7 +1122,7 @@ function OriginacionForm({ mode, originacionId, onCancel, onSave, onActivarCuent
     { id: 'default',            label: 'Default' },
     { id: 'terminos',           label: 'Términos y Condiciones' },
     { id: 'simulacion',         label: 'Simulación' },
-    { id: 'expediente',         label: 'Expediente Electrónico' },
+    { id: 'expediente',         label: 'KM Digital' },
     { id: 'partesRelacionadas', label: 'Partes Relacionadas' },
     { id: 'garantias',          label: 'Garantías' },
     { id: 'comites',            label: 'Comités' },
@@ -1122,7 +1150,7 @@ function OriginacionForm({ mode, originacionId, onCancel, onSave, onActivarCuent
       </div>
       <div className="bg-white px-6 py-3 border-b border-gray-200 flex items-center gap-2">
         {!isRO && (<>
-          <button onClick={handleSave} className="px-5 py-1.5 bg-[#0099CC] text-white rounded text-sm hover:bg-[#0088BB]">Guardar</button>
+          <button onClick={handleSave} className="px-5 py-1.5 bg-[color:var(--theme-action)] text-white rounded text-sm hover:bg-[color:var(--theme-action-hover)]">Guardar</button>
           <button onClick={handleCancel} className="px-5 py-1.5 bg-white border border-gray-400 text-gray-700 rounded text-sm hover:bg-gray-50">Cancelar</button>
         </>)}
         {isRO && <button onClick={handleCancel} className="px-5 py-1.5 bg-white border border-gray-400 text-gray-700 rounded text-sm hover:bg-gray-50">Cerrar</button>}
@@ -1160,7 +1188,7 @@ function OriginacionForm({ mode, originacionId, onCancel, onSave, onActivarCuent
 
 
       <div className="px-6 py-6">
-        <div className="bg-[#D9E2F3] border-l-4 border-[#4A6FA5] px-4 py-2 mb-5"><h3 className="text-sm text-gray-800 uppercase">Información de Originación</h3></div>
+        <div className="bg-[color:var(--theme-tint)] border-l-4 border-[color:var(--theme-primary)] px-4 py-2 mb-5"><h3 className="text-sm text-gray-800 uppercase">Información de Originación</h3></div>
         <div className="grid grid-cols-3 gap-x-6 gap-y-3 mb-8">
           <div className="space-y-3">
             <div><Lbl req>N° Originación</Lbl><input type="text" value={fd.noOriginacion} disabled className={ic(false, true)} /></div>
@@ -1169,7 +1197,7 @@ function OriginacionForm({ mode, originacionId, onCancel, onSave, onActivarCuent
             <div><Lbl req error={errors.fechaSolicitud}>Fecha de Solicitud</Lbl><DatePicker value={fd.fechaSolicitud} onChange={v => set('fechaSolicitud', v)} disabled={isRO} placeholder="DD/MM/YYYY" className={`px-2 py-1 ${errors.fechaSolicitud ? 'border-red-400' : ''}`} />{errors.fechaSolicitud && <span className="text-[10px] text-red-500">{errors.fechaSolicitud}</span>}</div>
             <div><Lbl>Empresa Fondeadora</Lbl>{isRO ? <input type="text" value={fd.empresaFondeadora || '—'} disabled className={ic(false, true)} /> : <select value={fd.empresaFondeadora} onChange={e => set('empresaFondeadora', e.target.value)} className={sc()}><option value="">Seleccionar...</option>{CAT_EMPRESA_FONDEADORA.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}</select>}</div>
             <div><Lbl req error={errors.sucursal}>Sucursal</Lbl><select value={fd.sucursal} onChange={e => set('sucursal', e.target.value)} disabled={isRO} className={sc(!!errors.sucursal)}><option value="">Seleccionar...</option>{CAT_SUCURSAL.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}</select>{errors.sucursal && <span className="text-[10px] text-red-500">{errors.sucursal}</span>}</div>
-            <div><Lbl req error={errors.montoSolicitado}>Monto Solicitado</Lbl><div className="relative"><span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-600">$</span><input type="text" value={fd.montoSolicitado} onChange={e => numSet('montoSolicitado', e.target.value)} onBlur={() => curBlur('montoSolicitado')} disabled={isRO} placeholder="0.00" className={`${ic(!!errors.montoSolicitado)} pl-5`} /></div>{errors.montoSolicitado && <span className="text-[10px] text-red-500">{errors.montoSolicitado}</span>}</div>
+            <div><Lbl req error={errors.montoSolicitado}>Monto Solicitado</Lbl><div className="relative"><span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-600">$</span><CampoMonto value={fd.montoSolicitado} onChange={e => numSet('montoSolicitado', e.target.value)} onBlur={() => curBlur('montoSolicitado')} disabled={isRO} placeholder="0.00" className={`${ic(!!errors.montoSolicitado)} pl-5`} /></div>{errors.montoSolicitado && <span className="text-[10px] text-red-500">{errors.montoSolicitado}</span>}</div>
           </div>
           <div className="space-y-3">
             <div><Lbl req>Línea Producto</Lbl><input type="text" value={fd.lineaProducto} disabled className={ic(false, true)} /></div>
@@ -1184,7 +1212,7 @@ function OriginacionForm({ mode, originacionId, onCancel, onSave, onActivarCuent
             <div><Lbl req>Sub Estatus</Lbl><select value={fd.subEstatus} onChange={e => set('subEstatus', e.target.value)} disabled={isRO} className={sc()}>{CAT_SUB_ESTATUS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}</select></div>
             <div><Lbl>Responsable</Lbl><input type="text" value={fd.responsable} onChange={e => set('responsable', e.target.value)} disabled={isRO} className={ic()} placeholder="Nombre del responsable" /></div>
             <div><Lbl>Área</Lbl><select value={fd.area} onChange={e => set('area', e.target.value)} disabled={isRO} className={sc()}>{CAT_AREA.map(a => <option key={a.value} value={a.value}>{a.label}</option>)}</select></div>
-            <div><Lbl>Monto Autorizado</Lbl><div className="relative"><span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-600">$</span><input type="text" value={fd.montoAutorizado} onChange={e => numSet('montoAutorizado', e.target.value)} onBlur={() => curBlur('montoAutorizado')} disabled={isRO} placeholder="0.00" className={`${ic()} pl-5`} /></div></div>
+            <div><Lbl>Monto Autorizado</Lbl><div className="relative"><span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-600">$</span><CampoMonto value={fd.montoAutorizado} onChange={e => numSet('montoAutorizado', e.target.value)} onBlur={() => curBlur('montoAutorizado')} disabled={isRO} placeholder="0.00" className={`${ic()} pl-5`} /></div></div>
             <div><Lbl>Tasa Autorizada (%)</Lbl><input type="text" value={fd.tasaAutorizada} onChange={e => numSet('tasaAutorizada', e.target.value)} onBlur={() => pctBlur('tasaAutorizada')} disabled={isRO} placeholder="0.0000" className={ic()} /></div>
             <div><Lbl>Fecha Inicio</Lbl><DatePicker value={fd.fechaInicio} onChange={v => set('fechaInicio', v)} disabled={isRO} placeholder="DD/MM/YYYY" className="px-2 py-1" /></div>
             <div><Lbl>Fecha Fin</Lbl><DatePicker value={fd.fechaFin} onChange={v => set('fechaFin', v)} disabled={isRO} placeholder="DD/MM/YYYY" className="px-2 py-1" /></div>
@@ -1260,7 +1288,7 @@ function OriginacionForm({ mode, originacionId, onCancel, onSave, onActivarCuent
                             value={fd.estatus} 
                             onChange={e => set('estatus', e.target.value)} 
                             disabled={isRO} 
-                            className="w-full mt-1 px-2 py-1.5 text-xs border border-gray-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-[#4A6FA5] disabled:bg-gray-100"
+                            className="w-full mt-1 px-2 py-1.5 text-xs border border-gray-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-[color:var(--theme-primary)] disabled:bg-gray-100"
                           >
                             {CAT_ESTATUS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
                           </select>
@@ -1273,7 +1301,7 @@ function OriginacionForm({ mode, originacionId, onCancel, onSave, onActivarCuent
                             onChange={e => set('responsable', e.target.value)} 
                             disabled={isRO} 
                             placeholder="Nombre del responsable" 
-                            className="w-full mt-1 px-2 py-1.5 text-xs border border-gray-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-[#4A6FA5] disabled:bg-gray-100"
+                            className="w-full mt-1 px-2 py-1.5 text-xs border border-gray-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-[color:var(--theme-primary)] disabled:bg-gray-100"
                           />
                         </div>
                       </div>
@@ -1316,6 +1344,8 @@ function OriginacionForm({ mode, originacionId, onCancel, onSave, onActivarCuent
                 {sec.id === 'expediente' && (
                   <ExpedienteElectronicoTab
                     mode="ver"
+                    permitirVersiones={!isRO}
+                    onDocumentosChange={docs => { if (docs.length > 0) setExpedientes(aExpedientes(docs)); }}
                     solicitudId={sid}
                     faseIdActual={parseInt(getFaseIdFromSubEstatus(fd.subEstatus)) || 1}
                     productoId={fd.productoId || productoSeleccionado?.id || fd.producto}
@@ -1584,7 +1614,7 @@ function FaseActionBar({
   const puedeActivar = fase === 'Activación de Cuenta Financiera';
 
   return (<>
-    <div className="bg-[#EBF3FB] border border-[#4A6FA5] rounded px-4 py-3 mb-4">
+    <div className="bg-[#EBF3FB] border border-[color:var(--theme-primary)] rounded px-4 py-3 mb-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <span className="text-xs text-gray-700">
@@ -1625,7 +1655,7 @@ function FaseActionBar({
           {puedeSolicitarActivacion && (
             <button
               onClick={() => ejecutarAccion('solicitudActivacion')}
-              className="px-4 py-1.5 bg-[#2E5C91] text-white rounded text-xs hover:bg-[#1E4A75] flex items-center gap-1.5"
+              className="px-4 py-1.5 bg-[color:var(--theme-secondary)] text-white rounded text-xs hover:bg-[color:var(--theme-secondary-hover)] flex items-center gap-1.5"
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
               Solicitud Activación
@@ -1657,7 +1687,7 @@ function FaseActionBar({
       return (
         <div className="mb-4 border border-blue-200 rounded bg-blue-50 px-4 py-3">
           <p className="text-xs font-semibold text-blue-800 mb-2">
-            Documentos obligatorios — Expediente Electrónico ({tp})
+            Documentos obligatorios — KM Digital ({tp})
           </p>
           <ul className="space-y-1">
             {requeridos.map(doc => {
@@ -1754,7 +1784,7 @@ function ContratoModal({ contrato, lineaProducto, tipoProducto, noOriginacion, o
             <span className="text-sm font-semibold text-gray-800">Contrato / Pagaré — {noOriginacion}</span>
             <span className="px-2 py-0.5 text-[10px] bg-purple-100 text-purple-700 rounded">{lineaProducto} · {tipoProducto}</span>
           </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-700">
+          <button type="button" aria-label="Cerrar" title="Cerrar" onClick={onClose} className="text-gray-400 hover:text-gray-700">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
           </button>
         </div>
@@ -1867,12 +1897,12 @@ function ContratoModal({ contrato, lineaProducto, tipoProducto, noOriginacion, o
 }
 
 // ═══ INLINE SUBTAB SECTIONS ═══
-const ic0 = (isRO: boolean, dis = false) => `w-full px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none ${dis || isRO ? 'bg-gray-100 text-gray-600' : 'bg-white focus:ring-2 focus:ring-[#4A6FA5]'}`;
+const ic0 = (isRO: boolean, dis = false) => `w-full px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none ${dis || isRO ? 'bg-gray-100 text-gray-600' : 'bg-white focus:ring-2 focus:ring-[color:var(--theme-primary)]'}`;
 
 function DefaultSection({ fd, set, isRO }: { fd: OriginacionFormData; set: (f: keyof OriginacionFormData, v: string) => void; isRO: boolean }) {
   const badge = fd.estatusListaNegra === 'POSITIVO' ? 'bg-green-100 text-green-800' : fd.estatusListaNegra === 'NEGATIVO' ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800';
   return (<>
-    <div className="bg-[#D9E2F3] border-l-4 border-[#4A6FA5] px-3 py-1.5 mb-4"><span className="text-xs text-gray-800">DATOS DEL CLIENTE</span></div>
+    <div className="bg-[color:var(--theme-tint)] border-l-4 border-[color:var(--theme-primary)] px-3 py-1.5 mb-4"><span className="text-xs text-gray-800">DATOS DEL CLIENTE</span></div>
     <div className="grid grid-cols-2 gap-x-8 gap-y-3">
       <div><label className="block text-xs text-gray-700 mb-1">ESTATUS S.C</label><select value={fd.estatusSC} onChange={e => set('estatusSC', e.target.value)} disabled={isRO} className={ic0(isRO)}><option value="">Seleccionar...</option>{CAT_ESTATUS_SC.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}</select></div>
       <div className="row-span-3"><label className="block text-xs text-gray-700 mb-1">DIRECCIÓN PRINCIPAL</label><textarea value={fd.direccionPrincipal} onChange={e => set('direccionPrincipal', e.target.value)} disabled={isRO} className={`${ic0(isRO)} resize-none`} rows={5} maxLength={500} /></div>
@@ -1886,15 +1916,15 @@ function DefaultSection({ fd, set, isRO }: { fd: OriginacionFormData; set: (f: k
 function MontosSection({ fd, set, isRO }: { fd: OriginacionFormData; set: (f: keyof OriginacionFormData, v: string) => void; isRO: boolean }) {
   return (<div className="grid grid-cols-2 gap-x-8 gap-y-4">
     <div className="space-y-3">
-      <div className="bg-[#D9E2F3] border-l-4 border-[#4A6FA5] px-3 py-1.5"><span className="text-xs text-gray-800">PLAZOS</span></div>
+      <div className="bg-[color:var(--theme-tint)] border-l-4 border-[color:var(--theme-primary)] px-3 py-1.5"><span className="text-xs text-gray-800">PLAZOS</span></div>
       <div><label className="block text-xs text-gray-700 mb-1">PLAZO MÍNIMO</label><input type="text" value={fd.plazoMinimo} disabled className={ic0(isRO, true)} /></div>
       <div><label className="block text-xs text-gray-700 mb-1">PLAZO AUTORIZADO <span className="text-red-600">*</span></label><input type="text" value={fd.plazoAutorizadoMontos} onChange={e => set('plazoAutorizadoMontos', e.target.value.replace(/[^0-9.]/g, ''))} disabled={isRO} placeholder="0" className={ic0(isRO)} /></div>
       <div><label className="block text-xs text-gray-700 mb-1">PLAZO MÁXIMO</label><input type="text" value={fd.plazoMaximo} disabled className={ic0(isRO, true)} /></div>
     </div>
     <div className="space-y-3">
-      <div className="bg-[#D9E2F3] border-l-4 border-[#4A6FA5] px-3 py-1.5"><span className="text-xs text-gray-800">MONTOS</span></div>
+      <div className="bg-[color:var(--theme-tint)] border-l-4 border-[color:var(--theme-primary)] px-3 py-1.5"><span className="text-xs text-gray-800">MONTOS</span></div>
       <div><label className="block text-xs text-gray-700 mb-1">MONTO MÍNIMO</label><div className="relative"><span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-600">$</span><input type="text" value={fd.montoMinimo} disabled className={`${ic0(isRO, true)} pl-5`} /></div></div>
-      <div><label className="block text-xs text-gray-700 mb-1">MONTO AUTORIZADO <span className="text-red-600">*</span></label><div className="relative"><span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-600">$</span><input type="text" value={fd.montoAutorizadoMontos} onChange={e => set('montoAutorizadoMontos', e.target.value.replace(/[^0-9.,-]/g, ''))} disabled={isRO} placeholder="0.00" className={`${ic0(isRO)} pl-5`} /></div></div>
+      <div><label className="block text-xs text-gray-700 mb-1">MONTO AUTORIZADO <span className="text-red-600">*</span></label><div className="relative"><span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-600">$</span><CampoMonto value={fd.montoAutorizadoMontos} onChange={e => set('montoAutorizadoMontos', e.target.value.replace(/[^0-9.,-]/g, ''))} disabled={isRO} placeholder="0.00" className={`${ic0(isRO)} pl-5`} /></div></div>
       <div><label className="block text-xs text-gray-700 mb-1">MONTO MÁXIMO</label><div className="relative"><span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-600">$</span><input type="text" value={fd.montoMaximo} disabled className={`${ic0(isRO, true)} pl-5`} /></div></div>
     </div>
   </div>);
@@ -1902,7 +1932,7 @@ function MontosSection({ fd, set, isRO }: { fd: OriginacionFormData; set: (f: ke
 
 function TasasSection({ fd, set, isRO }: { fd: OriginacionFormData; set: (f: keyof OriginacionFormData, v: string) => void; isRO: boolean }) {
   return (<>
-    <div className="bg-[#D9E2F3] border-l-4 border-[#4A6FA5] px-3 py-1.5 mb-4"><span className="text-xs text-gray-800">TASAS DE INTERÉS</span></div>
+    <div className="bg-[color:var(--theme-tint)] border-l-4 border-[color:var(--theme-primary)] px-3 py-1.5 mb-4"><span className="text-xs text-gray-800">TASAS DE INTERÉS</span></div>
     <div className="grid grid-cols-2 gap-x-8 gap-y-4"><div className="space-y-3">
       <div><label className="block text-xs text-gray-700 mb-1">TASA MÍNIMA (%)</label><input type="text" value={fd.tasaMinima} disabled className={ic0(isRO, true)} /></div>
       <div><label className="block text-xs text-gray-700 mb-1">TASA AUTORIZADA (%) <span className="text-red-600">*</span></label><input type="text" value={fd.tasaAutorizadaTasas} onChange={e => set('tasaAutorizadaTasas', e.target.value.replace(/[^0-9.]/g, ''))} disabled={isRO} placeholder="0.0000" className={ic0(isRO)} /></div>
@@ -1931,7 +1961,7 @@ function CotizacionSection({ sid, mode, fd, isRO }: { sid: number; mode: string;
     setRows(nr); toast.success(`Cotización generada — ${plazo} pagos`);
   };
   return (<>
-    <div className="flex items-center justify-between mb-3"><div className="bg-[#D9E2F3] border-l-4 border-[#4A6FA5] px-3 py-1.5"><span className="text-xs text-gray-800">TABLA DE AMORTIZACIÓN</span></div>{!isRO && <button onClick={handleGen} className="px-4 py-1.5 bg-[#0099CC] text-white rounded text-xs hover:bg-[#0088BB]">Generar Cotización</button>}</div>
+    <div className="flex items-center justify-between mb-3"><div className="bg-[color:var(--theme-tint)] border-l-4 border-[color:var(--theme-primary)] px-3 py-1.5"><span className="text-xs text-gray-800">TABLA DE AMORTIZACIÓN</span></div>{!isRO && <button onClick={handleGen} className="px-4 py-1.5 bg-[color:var(--theme-action)] text-white rounded text-xs hover:bg-[color:var(--theme-action-hover)]">Generar Cotización</button>}</div>
     <div className="border border-gray-300 bg-white overflow-x-auto"><table className="w-full border-collapse min-w-[900px]"><thead><tr style={{ backgroundColor: '#D0D0D0' }} className="border-b border-gray-300"><th className="px-3 py-2 text-xs text-gray-700 text-center border-r border-gray-300 w-[60px]">N°</th><th className="px-3 py-2 text-xs text-gray-700 text-left border-r border-gray-300">Fecha</th><th className="px-3 py-2 text-xs text-gray-700 text-right border-r border-gray-300">Saldo Inicial</th><th className="px-3 py-2 text-xs text-gray-700 text-right border-r border-gray-300">Capital</th><th className="px-3 py-2 text-xs text-gray-700 text-right border-r border-gray-300">Interés</th><th className="px-3 py-2 text-xs text-gray-700 text-right border-r border-gray-300">IVA</th><th className="px-3 py-2 text-xs text-gray-700 text-right border-r border-gray-300">Pago Total</th><th className="px-3 py-2 text-xs text-gray-700 text-right">Saldo Final</th></tr></thead><tbody>
       {rows.length === 0 ? <tr><td colSpan={8} className="px-3 py-6 text-center text-xs text-gray-400">Sin tabla de amortización</td></tr>
       : rows.map(r => <tr key={r.id} className="border-b border-gray-200 hover:bg-gray-50"><td className="px-3 py-1.5 text-xs text-center border-r border-gray-200">{r.numeroPago}</td><td className="px-3 py-1.5 text-xs border-r border-gray-200">{r.fechaPago}</td><td className="px-3 py-1.5 text-xs text-right border-r border-gray-200">{formatCurrency(r.saldoInicial)}</td><td className="px-3 py-1.5 text-xs text-right border-r border-gray-200">{formatCurrency(r.capital)}</td><td className="px-3 py-1.5 text-xs text-right border-r border-gray-200">{formatCurrency(r.interes)}</td><td className="px-3 py-1.5 text-xs text-right border-r border-gray-200">{formatCurrency(r.iva)}</td><td className="px-3 py-1.5 text-xs text-right border-r border-gray-200">{formatCurrency(r.pagoTotal)}</td><td className="px-3 py-1.5 text-xs text-right">{formatCurrency(r.saldoFinal)}</td></tr>)}
@@ -1944,7 +1974,7 @@ function AutorizacionSection({ sid, mode, isRO }: { sid: number; mode: string; i
   useEffect(() => { if (!isRO) saveToSession(sid, 'autorizaciones', items); }, [items, sid, isRO]);
   const add = () => { const n = new Date(); setItems(p => [...p, { id: generateId(), fechaHora: `${n.getDate().toString().padStart(2,'0')}/${(n.getMonth()+1).toString().padStart(2,'0')}/${n.getFullYear()} ${n.getHours().toString().padStart(2,'0')}:${n.getMinutes().toString().padStart(2,'0')}`, usuario: '', area: '', descripcion: '', observaciones: '', estatus: 'Pendiente' }]); };
   return (<>
-    <div className="flex items-center justify-between mb-3"><div className="bg-[#D9E2F3] border-l-4 border-[#4A6FA5] px-3 py-1.5"><span className="text-xs text-gray-800">AUTORIZACIONES</span></div>{!isRO && <button onClick={add} className="px-4 py-1.5 bg-[#0099CC] text-white rounded text-xs hover:bg-[#0088BB]">Autorizar</button>}</div>
+    <div className="flex items-center justify-between mb-3"><div className="bg-[color:var(--theme-tint)] border-l-4 border-[color:var(--theme-primary)] px-3 py-1.5"><span className="text-xs text-gray-800">AUTORIZACIONES</span></div>{!isRO && <button onClick={add} className="px-4 py-1.5 bg-[color:var(--theme-action)] text-white rounded text-xs hover:bg-[color:var(--theme-action-hover)]">Autorizar</button>}</div>
     <div className="border border-gray-300 bg-white overflow-x-auto"><table className="w-full border-collapse min-w-[900px]"><thead><tr style={{ backgroundColor: '#D0D0D0' }} className="border-b border-gray-300"><th className="px-2 py-2 text-xs text-gray-700 text-left border-r border-gray-300">Fecha</th><th className="px-2 py-2 text-xs text-gray-700 text-left border-r border-gray-300">Usuario</th><th className="px-2 py-2 text-xs text-gray-700 text-left border-r border-gray-300">Área</th><th className="px-2 py-2 text-xs text-gray-700 text-left border-r border-gray-300">Descripción</th><th className="px-2 py-2 text-xs text-gray-700 text-left border-r border-gray-300">Observaciones</th><th className="px-2 py-2 text-xs text-gray-700 text-left">Estatus</th></tr></thead><tbody>
       {items.length === 0 ? <tr><td colSpan={6} className="px-3 py-6 text-center text-xs text-gray-400">Sin autorizaciones</td></tr>
       : items.map(a => <tr key={a.id} className="border-b border-gray-200 hover:bg-gray-50"><td className="px-2 py-1.5 text-xs border-r border-gray-200">{a.fechaHora}</td><td className="px-2 py-1.5 border-r border-gray-200"><input type="text" value={a.usuario} onChange={e => setItems(p => p.map(x => x.id === a.id ? {...x, usuario: e.target.value} : x))} disabled={isRO} className={`w-full px-1 py-0.5 text-xs border border-gray-300 rounded ${isRO ? 'bg-gray-100' : 'bg-white'}`} /></td><td className="px-2 py-1.5 border-r border-gray-200"><input type="text" value={a.area} onChange={e => setItems(p => p.map(x => x.id === a.id ? {...x, area: e.target.value} : x))} disabled={isRO} className={`w-full px-1 py-0.5 text-xs border border-gray-300 rounded ${isRO ? 'bg-gray-100' : 'bg-white'}`} /></td><td className="px-2 py-1.5 border-r border-gray-200"><input type="text" value={a.descripcion} onChange={e => setItems(p => p.map(x => x.id === a.id ? {...x, descripcion: e.target.value} : x))} disabled={isRO} className={`w-full px-1 py-0.5 text-xs border border-gray-300 rounded ${isRO ? 'bg-gray-100' : 'bg-white'}`} /></td><td className="px-2 py-1.5 border-r border-gray-200"><input type="text" value={a.observaciones} onChange={e => setItems(p => p.map(x => x.id === a.id ? {...x, observaciones: e.target.value} : x))} disabled={isRO} className={`w-full px-1 py-0.5 text-xs border border-gray-300 rounded ${isRO ? 'bg-gray-100' : 'bg-white'}`} /></td><td className="px-2 py-1.5"><select value={a.estatus} onChange={e => setItems(p => p.map(x => x.id === a.id ? {...x, estatus: e.target.value} : x))} disabled={isRO} className={`w-full px-1 py-0.5 text-xs border border-gray-300 rounded ${isRO ? 'bg-gray-100' : 'bg-white'}`}>{CAT_ESTATUS_AUTORIZACION.map(s => <option key={s} value={s}>{s}</option>)}</select></td></tr>)}
@@ -1957,10 +1987,10 @@ function GarantiasSection({ sid, mode, isRO }: { sid: number; mode: string; isRO
   useEffect(() => { if (!isRO) saveToSession(sid, 'garantias', items); }, [items, sid, isRO]);
   const add = () => setItems(p => [...p, { id: generateId(), tipo: '', subtipo: '', descripcion: '', valorNominal: 0, ubicacion: '', estatus: 'Vigente' }]);
   return (<>
-    <div className="flex items-center justify-between mb-3"><div className="bg-[#D9E2F3] border-l-4 border-[#4A6FA5] px-3 py-1.5"><span className="text-xs text-gray-800">GARANTÍAS</span></div>{!isRO && <button onClick={add} className="px-4 py-1.5 bg-[#0099CC] text-white rounded text-xs hover:bg-[#0088BB]">Nuevo</button>}</div>
+    <div className="flex items-center justify-between mb-3"><div className="bg-[color:var(--theme-tint)] border-l-4 border-[color:var(--theme-primary)] px-3 py-1.5"><span className="text-xs text-gray-800">GARANTÍAS</span></div>{!isRO && <button onClick={add} className="px-4 py-1.5 bg-[color:var(--theme-action)] text-white rounded text-xs hover:bg-[color:var(--theme-action-hover)]">Nuevo</button>}</div>
     <div className="border border-gray-300 bg-white overflow-x-auto"><table className="w-full border-collapse min-w-[800px]"><thead><tr style={{ backgroundColor: '#D0D0D0' }} className="border-b border-gray-300"><th className="px-2 py-2 text-xs text-gray-700 text-left border-r border-gray-300">Tipo</th><th className="px-2 py-2 text-xs text-gray-700 text-left border-r border-gray-300">Subtipo</th><th className="px-2 py-2 text-xs text-gray-700 text-left border-r border-gray-300">Descripción</th><th className="px-2 py-2 text-xs text-gray-700 text-right border-r border-gray-300">Valor Nominal</th><th className="px-2 py-2 text-xs text-gray-700 text-left border-r border-gray-300">Ubicación</th><th className="px-2 py-2 text-xs text-gray-700 text-left">Estatus</th></tr></thead><tbody>
       {items.length === 0 ? <tr><td colSpan={6} className="px-3 py-6 text-center text-xs text-gray-400">Sin garantías</td></tr>
-      : items.map(g => <tr key={g.id} className="border-b border-gray-200 hover:bg-gray-50"><td className="px-2 py-1.5 border-r border-gray-200"><select value={g.tipo} onChange={e => setItems(p => p.map(x => x.id === g.id ? {...x, tipo: e.target.value} : x))} disabled={isRO} className={`w-full px-1 py-0.5 text-xs border border-gray-300 rounded ${isRO ? 'bg-gray-100' : 'bg-white'}`}><option value="">Seleccione...</option>{CAT_TIPO_GARANTIA.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}</select></td><td className="px-2 py-1.5 border-r border-gray-200"><input type="text" value={g.subtipo} onChange={e => setItems(p => p.map(x => x.id === g.id ? {...x, subtipo: e.target.value} : x))} disabled={isRO} className={`w-full px-1 py-0.5 text-xs border border-gray-300 rounded ${isRO ? 'bg-gray-100' : 'bg-white'}`} /></td><td className="px-2 py-1.5 border-r border-gray-200"><input type="text" value={g.descripcion} onChange={e => setItems(p => p.map(x => x.id === g.id ? {...x, descripcion: e.target.value} : x))} disabled={isRO} className={`w-full px-1 py-0.5 text-xs border border-gray-300 rounded ${isRO ? 'bg-gray-100' : 'bg-white'}`} /></td><td className="px-2 py-1.5 border-r border-gray-200"><input type="number" step="0.01" min="0" value={g.valorNominal} onChange={e => setItems(p => p.map(x => x.id === g.id ? {...x, valorNominal: +e.target.value || 0} : x))} disabled={isRO} className={`w-full px-1 py-0.5 text-xs border border-gray-300 rounded text-right ${isRO ? 'bg-gray-100' : 'bg-white'}`} /></td><td className="px-2 py-1.5 border-r border-gray-200"><input type="text" value={g.ubicacion} onChange={e => setItems(p => p.map(x => x.id === g.id ? {...x, ubicacion: e.target.value} : x))} disabled={isRO} className={`w-full px-1 py-0.5 text-xs border border-gray-300 rounded ${isRO ? 'bg-gray-100' : 'bg-white'}`} /></td><td className="px-2 py-1.5"><select value={g.estatus} onChange={e => setItems(p => p.map(x => x.id === g.id ? {...x, estatus: e.target.value} : x))} disabled={isRO} className={`w-full px-1 py-0.5 text-xs border border-gray-300 rounded ${isRO ? 'bg-gray-100' : 'bg-white'}`}><option>Vigente</option><option>En trámite</option><option>Cancelada</option></select></td></tr>)}
+      : items.map(g => <tr key={g.id} className="border-b border-gray-200 hover:bg-gray-50"><td className="px-2 py-1.5 border-r border-gray-200"><select value={g.tipo} onChange={e => setItems(p => p.map(x => x.id === g.id ? {...x, tipo: e.target.value} : x))} disabled={isRO} className={`w-full px-1 py-0.5 text-xs border border-gray-300 rounded ${isRO ? 'bg-gray-100' : 'bg-white'}`}><option value="">Seleccione...</option>{CAT_TIPO_GARANTIA.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}</select></td><td className="px-2 py-1.5 border-r border-gray-200"><input type="text" value={g.subtipo} onChange={e => setItems(p => p.map(x => x.id === g.id ? {...x, subtipo: e.target.value} : x))} disabled={isRO} className={`w-full px-1 py-0.5 text-xs border border-gray-300 rounded ${isRO ? 'bg-gray-100' : 'bg-white'}`} /></td><td className="px-2 py-1.5 border-r border-gray-200"><input type="text" value={g.descripcion} onChange={e => setItems(p => p.map(x => x.id === g.id ? {...x, descripcion: e.target.value} : x))} disabled={isRO} className={`w-full px-1 py-0.5 text-xs border border-gray-300 rounded ${isRO ? 'bg-gray-100' : 'bg-white'}`} /></td><td className="px-2 py-1.5 border-r border-gray-200"><CampoMonto min="0" value={g.valorNominal} onChange={e => setItems(p => p.map(x => x.id === g.id ? {...x, valorNominal: +e.target.value || 0} : x))} disabled={isRO} className={`w-full px-1 py-0.5 text-xs border border-gray-300 rounded text-right ${isRO ? 'bg-gray-100' : 'bg-white'}`} /></td><td className="px-2 py-1.5 border-r border-gray-200"><input type="text" value={g.ubicacion} onChange={e => setItems(p => p.map(x => x.id === g.id ? {...x, ubicacion: e.target.value} : x))} disabled={isRO} className={`w-full px-1 py-0.5 text-xs border border-gray-300 rounded ${isRO ? 'bg-gray-100' : 'bg-white'}`} /></td><td className="px-2 py-1.5"><select value={g.estatus} onChange={e => setItems(p => p.map(x => x.id === g.id ? {...x, estatus: e.target.value} : x))} disabled={isRO} className={`w-full px-1 py-0.5 text-xs border border-gray-300 rounded ${isRO ? 'bg-gray-100' : 'bg-white'}`}><option>Vigente</option><option>En trámite</option><option>Cancelada</option></select></td></tr>)}
     </tbody></table></div>
   </>);
 }
@@ -1970,10 +2000,10 @@ function CargosSection({ sid, mode, isRO }: { sid: number; mode: string; isRO: b
   useEffect(() => { if (!isRO) saveToSession(sid, 'cargos', items); }, [items, sid, isRO]);
   const add = () => setItems(p => [...p, { id: generateId(), tipoCargo: '', descripcion: '', monto: 0, fechaCargo: '', estatus: 'Pendiente', notas: '' }]);
   return (<>
-    <div className="flex items-center justify-between mb-3"><div className="bg-[#D9E2F3] border-l-4 border-[#4A6FA5] px-3 py-1.5"><span className="text-xs text-gray-800">CARGOS</span></div>{!isRO && <button onClick={add} className="px-4 py-1.5 bg-[#0099CC] text-white rounded text-xs hover:bg-[#0088BB]">Nuevo</button>}</div>
+    <div className="flex items-center justify-between mb-3"><div className="bg-[color:var(--theme-tint)] border-l-4 border-[color:var(--theme-primary)] px-3 py-1.5"><span className="text-xs text-gray-800">CARGOS</span></div>{!isRO && <button onClick={add} className="px-4 py-1.5 bg-[color:var(--theme-action)] text-white rounded text-xs hover:bg-[color:var(--theme-action-hover)]">Nuevo</button>}</div>
     <div className="border border-gray-300 bg-white overflow-x-auto"><table className="w-full border-collapse min-w-[800px]"><thead><tr style={{ backgroundColor: '#D0D0D0' }} className="border-b border-gray-300"><th className="px-2 py-2 text-xs text-gray-700 text-left border-r border-gray-300">Tipo Cargo</th><th className="px-2 py-2 text-xs text-gray-700 text-left border-r border-gray-300">Descripción</th><th className="px-2 py-2 text-xs text-gray-700 text-right border-r border-gray-300">Monto</th><th className="px-2 py-2 text-xs text-gray-700 text-left border-r border-gray-300">Estatus</th><th className="px-2 py-2 text-xs text-gray-700 text-left">Notas</th></tr></thead><tbody>
       {items.length === 0 ? <tr><td colSpan={5} className="px-3 py-6 text-center text-xs text-gray-400">Sin cargos</td></tr>
-      : items.map(c => <tr key={c.id} className="border-b border-gray-200 hover:bg-gray-50"><td className="px-2 py-1.5 border-r border-gray-200"><select value={c.tipoCargo} onChange={e => setItems(p => p.map(x => x.id === c.id ? {...x, tipoCargo: e.target.value} : x))} disabled={isRO} className={`w-full px-1 py-0.5 text-xs border border-gray-300 rounded ${isRO ? 'bg-gray-100' : 'bg-white'}`}><option value="">Seleccione...</option>{CAT_TIPO_CARGO.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}</select></td><td className="px-2 py-1.5 border-r border-gray-200"><input type="text" value={c.descripcion} onChange={e => setItems(p => p.map(x => x.id === c.id ? {...x, descripcion: e.target.value} : x))} disabled={isRO} className={`w-full px-1 py-0.5 text-xs border border-gray-300 rounded ${isRO ? 'bg-gray-100' : 'bg-white'}`} /></td><td className="px-2 py-1.5 border-r border-gray-200"><input type="number" step="0.01" min="0" value={c.monto} onChange={e => setItems(p => p.map(x => x.id === c.id ? {...x, monto: +e.target.value || 0} : x))} disabled={isRO} className={`w-full px-1 py-0.5 text-xs border border-gray-300 rounded text-right ${isRO ? 'bg-gray-100' : 'bg-white'}`} /></td><td className="px-2 py-1.5 border-r border-gray-200"><select value={c.estatus} onChange={e => setItems(p => p.map(x => x.id === c.id ? {...x, estatus: e.target.value} : x))} disabled={isRO} className={`w-full px-1 py-0.5 text-xs border border-gray-300 rounded ${isRO ? 'bg-gray-100' : 'bg-white'}`}>{CAT_ESTATUS_CARGO.map(s => <option key={s} value={s}>{s}</option>)}</select></td><td className="px-2 py-1.5"><input type="text" value={c.notas} onChange={e => setItems(p => p.map(x => x.id === c.id ? {...x, notas: e.target.value} : x))} disabled={isRO} className={`w-full px-1 py-0.5 text-xs border border-gray-300 rounded ${isRO ? 'bg-gray-100' : 'bg-white'}`} /></td></tr>)}
+      : items.map(c => <tr key={c.id} className="border-b border-gray-200 hover:bg-gray-50"><td className="px-2 py-1.5 border-r border-gray-200"><select value={c.tipoCargo} onChange={e => setItems(p => p.map(x => x.id === c.id ? {...x, tipoCargo: e.target.value} : x))} disabled={isRO} className={`w-full px-1 py-0.5 text-xs border border-gray-300 rounded ${isRO ? 'bg-gray-100' : 'bg-white'}`}><option value="">Seleccione...</option>{CAT_TIPO_CARGO.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}</select></td><td className="px-2 py-1.5 border-r border-gray-200"><input type="text" value={c.descripcion} onChange={e => setItems(p => p.map(x => x.id === c.id ? {...x, descripcion: e.target.value} : x))} disabled={isRO} className={`w-full px-1 py-0.5 text-xs border border-gray-300 rounded ${isRO ? 'bg-gray-100' : 'bg-white'}`} /></td><td className="px-2 py-1.5 border-r border-gray-200"><CampoMonto min="0" value={c.monto} onChange={e => setItems(p => p.map(x => x.id === c.id ? {...x, monto: +e.target.value || 0} : x))} disabled={isRO} className={`w-full px-1 py-0.5 text-xs border border-gray-300 rounded text-right ${isRO ? 'bg-gray-100' : 'bg-white'}`} /></td><td className="px-2 py-1.5 border-r border-gray-200"><select value={c.estatus} onChange={e => setItems(p => p.map(x => x.id === c.id ? {...x, estatus: e.target.value} : x))} disabled={isRO} className={`w-full px-1 py-0.5 text-xs border border-gray-300 rounded ${isRO ? 'bg-gray-100' : 'bg-white'}`}>{CAT_ESTATUS_CARGO.map(s => <option key={s} value={s}>{s}</option>)}</select></td><td className="px-2 py-1.5"><input type="text" value={c.notas} onChange={e => setItems(p => p.map(x => x.id === c.id ? {...x, notas: e.target.value} : x))} disabled={isRO} className={`w-full px-1 py-0.5 text-xs border border-gray-300 rounded ${isRO ? 'bg-gray-100' : 'bg-white'}`} /></td></tr>)}
     </tbody></table></div>
   </>);
 }
@@ -1990,7 +2020,7 @@ function NotasSection({ notas, setNotas, isRO }: {
 
   const addNota = () => {
     if (!contenido.trim()) { toast.error('Escribe el contenido de la nota'); return; }
-    const nueva: NotaItem = { id: Date.now(), fechaCreacion: new Date(), usuario: 'Usuario', contenido: contenido.trim() };
+    const nueva: NotaItem = { id: Date.now(), fechaCreacion: new Date(), usuario: getUsuarioSesion(), contenido: contenido.trim() };
     setNotas(prev => [nueva, ...prev]);
     setContenido('');
     toast.success('Nota agregada', { description: 'La nota quedó registrada y permite regresar de fase en los próximos 30 min.' });
@@ -2012,7 +2042,7 @@ function NotasSection({ notas, setNotas, isRO }: {
 
   return (<>
     <div className="flex items-center justify-between mb-3">
-      <div className="bg-[#D9E2F3] border-l-4 border-[#4A6FA5] px-3 py-1.5 flex items-center gap-3">
+      <div className="bg-[color:var(--theme-tint)] border-l-4 border-[color:var(--theme-primary)] px-3 py-1.5 flex items-center gap-3">
         <span className="text-xs text-gray-800">NOTAS</span>
         {hayNotaReciente
           ? <span className="px-2 py-0.5 text-[10px] bg-green-100 text-green-700 rounded">✓ Nota reciente (≤30 min)</span>
@@ -2025,13 +2055,13 @@ function NotasSection({ notas, setNotas, isRO }: {
           value={contenido}
           onChange={e => setContenido(e.target.value)}
           placeholder="Escribe una nota (requerida para regresar de fase)..."
-          className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-[#4A6FA5] bg-white resize-none"
+          className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-[color:var(--theme-primary)] bg-white resize-none"
           rows={3}
           maxLength={1024}
         />
         <div className="flex items-center justify-between">
           <span className="text-[10px] text-gray-400">{contenido.length}/1024</span>
-          <button onClick={addNota} className="px-4 py-1.5 bg-[#0099CC] text-white rounded text-xs hover:bg-[#0088BB]">
+          <button onClick={addNota} className="px-4 py-1.5 bg-[color:var(--theme-action)] text-white rounded text-xs hover:bg-[color:var(--theme-action-hover)]">
             Agregar Nota
           </button>
         </div>
@@ -2066,7 +2096,7 @@ function NotasSection({ notas, setNotas, isRO }: {
                     </td>
                     {!isRO && (
                       <td className="px-2 py-1.5 text-center">
-                        <button onClick={() => deleteNota(n.id)} className="text-red-500 hover:text-red-700">
+                        <button type="button" aria-label="Eliminar" title="Eliminar" onClick={() => deleteNota(n.id)} className="text-red-500 hover:text-red-700">
                           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
                         </button>
                       </td>
@@ -2086,7 +2116,7 @@ function AvisosSection({ sid, mode, isRO }: { sid: number; mode: string; isRO: b
   useEffect(() => { if (!isRO) saveToSession(sid, 'avisos', items); }, [items, sid, isRO]);
   const add = () => { const n = new Date(); setItems(p => [...p, { id: generateId(), tipo: '', mensaje: '', fechaCreacion: `${n.getDate().toString().padStart(2,'0')}/${(n.getMonth()+1).toString().padStart(2,'0')}/${n.getFullYear()}`, fechaVencimiento: '', destinatario: '', estatus: 'Activo' }]); };
   return (<>
-    <div className="flex items-center justify-between mb-3"><div className="bg-[#D9E2F3] border-l-4 border-[#4A6FA5] px-3 py-1.5"><span className="text-xs text-gray-800">AVISOS</span></div>{!isRO && <button onClick={add} className="px-4 py-1.5 bg-[#0099CC] text-white rounded text-xs hover:bg-[#0088BB]">Nuevo</button>}</div>
+    <div className="flex items-center justify-between mb-3"><div className="bg-[color:var(--theme-tint)] border-l-4 border-[color:var(--theme-primary)] px-3 py-1.5"><span className="text-xs text-gray-800">AVISOS</span></div>{!isRO && <button onClick={add} className="px-4 py-1.5 bg-[color:var(--theme-action)] text-white rounded text-xs hover:bg-[color:var(--theme-action-hover)]">Nuevo</button>}</div>
     <div className="border border-gray-300 bg-white overflow-x-auto"><table className="w-full border-collapse min-w-[800px]"><thead><tr style={{ backgroundColor: '#D0D0D0' }} className="border-b border-gray-300"><th className="px-2 py-2 text-xs text-gray-700 text-left border-r border-gray-300">Tipo</th><th className="px-2 py-2 text-xs text-gray-700 text-left border-r border-gray-300">Mensaje</th><th className="px-2 py-2 text-xs text-gray-700 text-left border-r border-gray-300">Fecha Creación</th><th className="px-2 py-2 text-xs text-gray-700 text-left border-r border-gray-300">Destinatario</th><th className="px-2 py-2 text-xs text-gray-700 text-left">Estatus</th></tr></thead><tbody>
       {items.length === 0 ? <tr><td colSpan={5} className="px-3 py-6 text-center text-xs text-gray-400">Sin avisos</td></tr>
       : items.map(a => <tr key={a.id} className="border-b border-gray-200 hover:bg-gray-50"><td className="px-2 py-1.5 border-r border-gray-200"><select value={a.tipo} onChange={e => setItems(p => p.map(x => x.id === a.id ? {...x, tipo: e.target.value} : x))} disabled={isRO} className={`w-full px-1 py-0.5 text-xs border border-gray-300 rounded ${isRO ? 'bg-gray-100' : 'bg-white'}`}><option value="">Seleccione...</option>{CAT_TIPO_AVISO.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}</select></td><td className="px-2 py-1.5 border-r border-gray-200"><input type="text" value={a.mensaje} onChange={e => setItems(p => p.map(x => x.id === a.id ? {...x, mensaje: e.target.value} : x))} disabled={isRO} className={`w-full px-1 py-0.5 text-xs border border-gray-300 rounded ${isRO ? 'bg-gray-100' : 'bg-white'}`} /></td><td className="px-2 py-1.5 text-xs border-r border-gray-200">{a.fechaCreacion}</td><td className="px-2 py-1.5 border-r border-gray-200"><input type="text" value={a.destinatario} onChange={e => setItems(p => p.map(x => x.id === a.id ? {...x, destinatario: e.target.value} : x))} disabled={isRO} className={`w-full px-1 py-0.5 text-xs border border-gray-300 rounded ${isRO ? 'bg-gray-100' : 'bg-white'}`} /></td><td className="px-2 py-1.5"><select value={a.estatus} onChange={e => setItems(p => p.map(x => x.id === a.id ? {...x, estatus: e.target.value} : x))} disabled={isRO} className={`w-full px-1 py-0.5 text-xs border border-gray-300 rounded ${isRO ? 'bg-gray-100' : 'bg-white'}`}>{CAT_ESTATUS_AVISO.map(s => <option key={s} value={s}>{s}</option>)}</select></td></tr>)}

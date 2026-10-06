@@ -4,11 +4,10 @@ import {
   FileSpreadsheet, FileText, FileDown, Printer, AlertTriangle,
   FileCheck, Eye, Pencil, Brain, RefreshCw, Loader2, CloudOff, Cloud,
 } from 'lucide-react';
-import { toast } from 'sonner';
-import * as XLSX from 'xlsx';
-import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
+import { toast } from '@/app/lib/notificaciones';
+import { useOrdenTabla, coincideBusqueda } from '@/app/lib/ordenTabla';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
+import { cargarXLSX, cargarPDF } from '@/app/lib/librerias';
 
 // ═══════════════════════════════════════════════════════════════════
 // TIPOS — Estructura de J_CATALOGOS: { id: uuid, type: varchar, data: jsonb }
@@ -276,7 +275,8 @@ function useCatalogoDocumentosDB() {
 // DATOS SEMILLA — se insertan vía POST si la tabla J_CATALOGOS está vacía
 // El id lo genera la BD (uuid), aquí solo van los datos del JSONB
 // ═══════════════════════════════════════════════════════════════════
-const SEED_DATA: Omit<DocumentoCatalogo, 'id'>[] = [
+// Los documentos iniciales no definen elementos a verificar: se completan con [] al insertarlos.
+const SEED_DATA: Omit<DocumentoCatalogo, 'id' | 'elementosRequeridos'>[] = [
   {
     clave: 'DOC-INE', nombre: 'INE / Identificación Oficial',
     descripcion: 'Credencial para votar vigente emitida por el INE, con fotografía legible.',
@@ -375,10 +375,10 @@ export function CatalogoDocumentosSection() {
       console.log('[CatalogoDB] J_CATALOGOS vacía para type=Documento — insertando datos semilla...');
       (async () => {
         for (const seed of SEED_DATA) {
-          const item: DocumentoCatalogo = { ...seed, id: '' }; // id será generado por BD
+          const item: DocumentoCatalogo = { ...seed, elementosRequeridos: [], id: '' }; // id será generado por BD
           await db.create(item);
         }
-        toast.success('Catálogo inicializado', { description: `${SEED_DATA.length} documentos insertados en J_CATALOGOS.` });
+        toast.success('Catálogo inicializado', { description: `${SEED_DATA.length} documentos agregados al catálogo.` });
         db.fetchAll();
       })();
     }
@@ -395,18 +395,23 @@ export function CatalogoDocumentosSection() {
   });
 
   // ─── Filtrado ──────────────────────────────────────────────────
-  const filteredData = useMemo(() => {
-    return db.data.filter(item => {
-      const matchText = !filterText ||
-        item.clave.toLowerCase().includes(filterText.toLowerCase()) ||
-        item.nombre.toLowerCase().includes(filterText.toLowerCase()) ||
-        item.descripcion.toLowerCase().includes(filterText.toLowerCase());
-      const matchEstado = filterEstado === 'todos' ||
-        (filterEstado === 'activos' && item.activo) ||
-        (filterEstado === 'inactivos' && !item.activo);
-      return matchText && matchEstado;
-    });
-  }, [db.data, filterText, filterEstado]);
+  const filtradosData = useMemo(() => db.data.filter(item =>
+    (filterEstado === 'todos' || (filterEstado === 'activos' && item.activo) || (filterEstado === 'inactivos' && !item.activo)) &&
+    coincideBusqueda(filterText, [item.clave, item.nombre, item.descripcion])
+  ), [db.data, filterText, filterEstado]);
+
+  // Catálogo: orden natural por clave/código; cualquier encabezado ordena por su columna.
+  const orden = useOrdenTabla(filtradosData, {
+    id: 'catalogo-documentos',
+    columnas: {
+      clave: item => item.clave,
+      nombre: item => item.nombre,
+      descripcion: item => item.descripcion,
+      estado: item => (item.activo ? 'Activo' : 'Inactivo'),
+    },
+    porDefecto: { campo: 'clave', dir: 'asc' },
+  });
+  const filteredData = orden.filas;
 
   // ─── CRUD handlers ─────────────────────────────────────────────
   const handleNew = () => {
@@ -510,7 +515,7 @@ export function CatalogoDocumentosSection() {
           fechaModificacion: now,
         };
         await db.update(updated);
-        toast.success('Documento actualizado en BD', { description: `${updated.clave} guardado en J_CATALOGOS.` });
+        toast.success('Documento actualizado', { description: `${updated.clave} guardado en el catálogo.` });
       }
       // Invalidar todos los cachés del catálogo para que el Expediente tome los datos nuevos
       try {
@@ -541,12 +546,13 @@ export function CatalogoDocumentosSection() {
       setSelectedId(null);
       setDeleteTargetId(null);
       setShowDeleteModal(false);
-      toast.success('Documento eliminado de J_CATALOGOS');
+      toast.success('Documento eliminado del catálogo');
     }
   };
 
   // ─── Exports ───────────────────────────────────────────────────
-  const exportExcel = () => {
+  const exportExcel = async () => {
+    const XLSX = await cargarXLSX();
     const ws = XLSX.utils.json_to_sheet(db.data.map(d => ({
       ID: d.id,
       Clave: d.clave, Nombre: d.nombre, Descripción: d.descripcion,
@@ -559,7 +565,8 @@ export function CatalogoDocumentosSection() {
     toast.success('Exportado a Excel');
   };
 
-  const exportCSV = () => {
+  const exportCSV = async () => {
+    const XLSX = await cargarXLSX();
     const ws = XLSX.utils.json_to_sheet(db.data.map(d => ({
       ID: d.id,
       Clave: d.clave, Nombre: d.nombre, Descripción: d.descripcion,
@@ -572,12 +579,13 @@ export function CatalogoDocumentosSection() {
     toast.success('Exportado a CSV');
   };
 
-  const exportPDF = () => {
+  const exportPDF = async () => {
+    const { jsPDF, autoTable } = await cargarPDF();
     const doc = new jsPDF({ orientation: 'landscape' });
     doc.setFontSize(14);
     doc.text('Catálogo de Documentos del Sistema', 14, 15);
     doc.setFontSize(8);
-    doc.text(`Generado: ${new Date().toLocaleDateString('es-MX')} | Fuente: J_CATALOGOS`, 14, 21);
+    doc.text(`Generado: ${new Date().toLocaleDateString('es-MX')}`, 14, 21);
     autoTable(doc, {
       startY: 26,
       head: [['Clave', 'Nombre', 'Descripción', 'Prompt IA', 'Activo']],
@@ -608,8 +616,8 @@ export function CatalogoDocumentosSection() {
     return (
       <div className="p-6 bg-[#FAFBFC] min-h-[600px] flex items-center justify-center">
         <div className="flex flex-col items-center gap-3 text-gray-500">
-          <Loader2 size={32} className="animate-spin text-[#2E5C91]" />
-          <span className="text-sm">Cargando catálogo de documentos desde J_CATALOGOS...</span>
+          <Loader2 size={32} className="animate-spin text-[color:var(--theme-secondary)]" />
+          <span className="text-sm">Cargando catálogo de documentos...</span>
         </div>
       </div>
     );
@@ -623,7 +631,7 @@ export function CatalogoDocumentosSection() {
       <div className="p-6 bg-[#FAFBFC] min-h-[600px]">
         <div className="max-w-4xl mx-auto">
           {/* Header */}
-          <div className="bg-gradient-to-r from-[#2E5C91] to-[#4A6FA5] px-5 py-3 flex items-center justify-between">
+          <div className="bg-gradient-to-r from-[color:var(--theme-secondary)] to-[color:var(--theme-primary)] px-5 py-3 flex items-center justify-between">
             <div className="flex items-center gap-3">
               <FileCheck size={18} className="text-white/80" />
               <span className="text-sm font-semibold text-white tracking-wide uppercase">
@@ -646,7 +654,7 @@ export function CatalogoDocumentosSection() {
           {/* Body */}
           <div className="bg-white border-2 border-gray-400 border-t-0 p-6">
             {/* Sección: Datos del Documento */}
-            <div className="bg-[#E7E6E6] px-3 py-1.5 mb-5 border-l-4 border-[#2E5C91] rounded-r">
+            <div className="bg-[#E7E6E6] px-3 py-1.5 mb-5 border-l-4 border-[color:var(--theme-secondary)] rounded-r">
               <span className="text-[11px] font-semibold text-gray-700 uppercase tracking-wide">Datos del Documento</span>
             </div>
 
@@ -709,7 +717,7 @@ export function CatalogoDocumentosSection() {
             </div>
 
             {/* Sección: Prompt IA */}
-            <div className="bg-[#E7E6E6] px-3 py-1.5 mb-5 border-l-4 border-[#2E5C91] rounded-r">
+            <div className="bg-[#E7E6E6] px-3 py-1.5 mb-5 border-l-4 border-[color:var(--theme-secondary)] rounded-r">
               <span className="text-[11px] font-semibold text-gray-700 uppercase tracking-wide">
                 Prompt de Inteligencia Artificial
               </span>
@@ -720,7 +728,7 @@ export function CatalogoDocumentosSection() {
                 <Brain size={16} className="text-blue-600 mt-0.5 flex-shrink-0" />
                 <p className="text-[11px] text-blue-800 leading-relaxed">
                   Este campo define el prompt que se utilizará cuando el usuario adjunte documentos en la sección
-                  <strong> "Expediente Electrónico" </strong> de las Solicitudes. El sistema empleará este texto para
+                  <strong> "KM Digital" </strong> de las Solicitudes. El sistema empleará este texto para
                   validar, clasificar y procesar automáticamente los documentos adjuntados mediante IA.
                 </p>
               </div>
@@ -746,7 +754,7 @@ export function CatalogoDocumentosSection() {
             </div>
 
             {/* Elementos a Verificar */}
-            <div className="bg-[#E7E6E6] px-3 py-1.5 mb-4 border-l-4 border-[#2E5C91] rounded-r flex items-center justify-between">
+            <div className="bg-[#E7E6E6] px-3 py-1.5 mb-4 border-l-4 border-[color:var(--theme-secondary)] rounded-r flex items-center justify-between">
               <span className="text-[11px] font-semibold text-gray-700 uppercase tracking-wide">Elementos a Verificar por IA</span>
               {!isViewMode && (
                 <button
@@ -758,7 +766,7 @@ export function CatalogoDocumentosSection() {
                       { id: `elem-${Date.now()}`, elemento: '', obligatorio: true },
                     ],
                   }))}
-                  className="flex items-center gap-1 px-2 py-0.5 bg-[#2E5C91] text-white text-[10px] rounded hover:bg-[#1e4070]"
+                  className="flex items-center gap-1 px-2 py-0.5 bg-[color:var(--theme-secondary)] text-white text-[10px] rounded hover:bg-[color:var(--theme-secondary-hover)]"
                 >
                   <Plus size={11} /> Agregar elemento
                 </button>
@@ -798,7 +806,7 @@ export function CatalogoDocumentosSection() {
                                   ),
                                 }))}
                                 placeholder="Ej: Firma del titular, Fotografía, CURP visible..."
-                                className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-[#2E5C91]"
+                                className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-[color:var(--theme-secondary)]"
                               />
                             )}
                           </td>
@@ -813,7 +821,7 @@ export function CatalogoDocumentosSection() {
                                   i === idx ? { ...el, obligatorio: e.target.checked } : el
                                 ),
                               }))}
-                              className="w-3.5 h-3.5 accent-[#2E5C91]"
+                              className="w-3.5 h-3.5 accent-[color:var(--theme-secondary)]"
                               title={elem.obligatorio ? 'Obligatorio — su ausencia rechaza el documento' : 'Opcional — solo se registra si está presente'}
                             />
                             <span className={`ml-1.5 text-[10px] ${elem.obligatorio ? 'text-red-600 font-medium' : 'text-gray-400'}`}>
@@ -844,7 +852,7 @@ export function CatalogoDocumentosSection() {
             </div>
 
             {/* Estado */}
-            <div className="bg-[#E7E6E6] px-3 py-1.5 mb-5 border-l-4 border-[#2E5C91] rounded-r">
+            <div className="bg-[#E7E6E6] px-3 py-1.5 mb-5 border-l-4 border-[color:var(--theme-secondary)] rounded-r">
               <span className="text-[11px] font-semibold text-gray-700 uppercase tracking-wide">Estado</span>
             </div>
             <div className="flex items-center gap-3">
@@ -884,7 +892,7 @@ export function CatalogoDocumentosSection() {
   return (
     <div className="p-6 bg-[#FAFBFC] min-h-[600px]">
       {/* Header principal */}
-      <div className="bg-gradient-to-r from-[#2E5C91] to-[#4A6FA5] px-5 py-3 flex items-center justify-between">
+      <div className="bg-gradient-to-r from-[color:var(--theme-secondary)] to-[color:var(--theme-primary)] px-5 py-3 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <FileCheck size={18} className="text-white/80" />
           <span className="text-sm font-semibold text-white tracking-wide uppercase">
@@ -892,8 +900,8 @@ export function CatalogoDocumentosSection() {
           </span>
           {/* Indicador de sincronización */}
           {db.synced ? (
-            <span className="flex items-center gap-1 text-[10px] text-green-200" title="Sincronizado con J_CATALOGOS">
-              <Cloud size={11} /> J_CATALOGOS
+            <span className="flex items-center gap-1 text-[10px] text-green-200" title="Catálogo actualizado">
+              <Cloud size={11} /> Sincronizado
             </span>
           ) : (
             <span className="flex items-center gap-1 text-[10px] text-yellow-200" title="Datos locales — sin conexión a BD">
@@ -905,7 +913,7 @@ export function CatalogoDocumentosSection() {
           <button
             onClick={() => db.fetchAll()}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-white/20 text-white text-xs font-medium rounded-sm hover:bg-white/30 transition-colors"
-            title="Recargar desde J_CATALOGOS"
+            title="Recargar catálogo"
           >
             <RefreshCw size={13} />
           </button>
@@ -934,7 +942,7 @@ export function CatalogoDocumentosSection() {
         <div className="relative">
           <button
             onClick={() => setShowMenu(!showMenu)}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-[#4A6FA5] text-white text-xs hover:bg-[#3E5C91] border border-[#3E5C91] rounded-sm"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-[color:var(--theme-primary)] text-white text-xs hover:bg-[color:var(--theme-secondary)] border border-[color:var(--theme-secondary)] rounded-sm"
           >
             <Menu size={12} /> Menú
           </button>
@@ -998,17 +1006,17 @@ export function CatalogoDocumentosSection() {
         <div className="overflow-x-auto">
           <table className="w-full text-xs">
             <thead>
-              <tr className="bg-[#2E5C91]">
+              <tr className="bg-[color:var(--theme-secondary)]">
                 {deleteMode && (
                   <th className="text-center px-2 py-2.5 font-semibold text-white/90 text-[11px] uppercase tracking-wide w-12">
                     <Trash2 size={13} className="mx-auto text-white/70" />
                   </th>
                 )}
-                <th className="text-left px-3 py-2.5 font-semibold text-white/90 text-[11px] uppercase tracking-wide w-32">Clave</th>
-                <th className="text-left px-3 py-2.5 font-semibold text-white/90 text-[11px] uppercase tracking-wide">Nombre</th>
-                <th className="text-left px-3 py-2.5 font-semibold text-white/90 text-[11px] uppercase tracking-wide">Descripción</th>
+                <th className="text-left px-3 py-2.5 font-semibold text-white/90 text-[11px] uppercase tracking-wide w-32" {...orden.th('clave')}>Clave{orden.flecha('clave')}</th>
+                <th className="text-left px-3 py-2.5 font-semibold text-white/90 text-[11px] uppercase tracking-wide" {...orden.th('nombre')}>Nombre{orden.flecha('nombre')}</th>
+                <th className="text-left px-3 py-2.5 font-semibold text-white/90 text-[11px] uppercase tracking-wide" {...orden.th('descripcion')}>Descripción{orden.flecha('descripcion')}</th>
                 <th className="text-left px-3 py-2.5 font-semibold text-white/90 text-[11px] uppercase tracking-wide w-56">Prompt IA</th>
-                <th className="text-center px-2 py-2.5 font-semibold text-white/90 text-[11px] uppercase tracking-wide w-20">Estado</th>
+                <th className="text-center px-2 py-2.5 font-semibold text-white/90 text-[11px] uppercase tracking-wide w-20" {...orden.th('estado')}>Estado{orden.flecha('estado')}</th>
                 <th className="text-center px-2 py-2.5 font-semibold text-white/90 text-[11px] uppercase tracking-wide w-24">Acciones</th>
               </tr>
             </thead>
@@ -1019,7 +1027,7 @@ export function CatalogoDocumentosSection() {
                     <div className="flex flex-col items-center gap-2">
                       <FileCheck size={32} className="text-gray-300" />
                       <span className="font-medium text-gray-500">
-                        {db.data.length === 0 ? 'No hay documentos en J_CATALOGOS' : 'No se encontraron resultados'}
+                        {db.data.length === 0 ? 'No hay documentos en el catálogo' : 'No se encontraron resultados'}
                       </span>
                       {db.data.length === 0 && (
                         <span className="text-gray-400">Haga clic en "+ Nuevo" para agregar un tipo de documento</span>
@@ -1051,7 +1059,7 @@ export function CatalogoDocumentosSection() {
                       </td>
                     )}
                     <td className="px-3 py-2 border-b border-gray-200">
-                      <span className="font-mono font-semibold text-[#2E5C91] text-[11px]">{item.clave}</span>
+                      <span className="font-mono font-semibold text-[color:var(--theme-secondary)] text-[11px]">{item.clave}</span>
                     </td>
                     <td className="px-3 py-2 border-b border-gray-200 font-medium text-gray-800">{item.nombre}</td>
                     <td className="px-3 py-2 border-b border-gray-200 text-gray-600">
@@ -1125,7 +1133,7 @@ export function CatalogoDocumentosSection() {
       {showDeleteModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 backdrop-blur-sm">
           <div className="bg-white rounded-sm shadow-2xl w-[440px] mx-4 overflow-hidden border-2 border-gray-400">
-            <div className="bg-gradient-to-r from-[#2E5C91] to-[#4A6FA5] px-5 py-3">
+            <div className="bg-gradient-to-r from-[color:var(--theme-secondary)] to-[color:var(--theme-primary)] px-5 py-3">
               <h3 className="text-sm font-semibold text-white">Confirmar Eliminación</h3>
             </div>
             <div className="px-6 py-6 flex items-start gap-3">
@@ -1135,7 +1143,7 @@ export function CatalogoDocumentosSection() {
               <div>
                 <p className="text-sm font-medium text-gray-800 mb-1">¿Eliminar este documento del catálogo?</p>
                 <p className="text-xs text-gray-500">
-                  El registro será eliminado permanentemente de la tabla J_CATALOGOS. Los productos que lo referencien ya no lo mostrarán.
+                  El registro será eliminado permanentemente. Los productos que lo referencien ya no lo mostrarán.
                 </p>
               </div>
             </div>

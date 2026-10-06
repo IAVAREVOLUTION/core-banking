@@ -11,7 +11,7 @@
  *  7. Notas
  */
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 import { supabase } from '../../lib/supabaseClient';
 import {
@@ -24,7 +24,7 @@ import {
   calcularCargosArrendamiento, generarFacturaDesembolsoInicial,
   generarXMLProveedor, leerXMLProveedor,
   type DocumentoCargado, type RequisitoProducto, type FacturaArrendamiento,
-  esArrendamiento,
+  esArrendamiento, documentosVigentes, versionFromDB,
 } from './solicitudCreditoStore';
 import { TerminosCondicionesTab } from './TerminosCondicionesTab';
 import {
@@ -65,7 +65,7 @@ import { FasesSolicitudTab } from './tabs/FasesSolicitudTab';
 import { SeleccionarClienteModal } from './SeleccionarClienteModal';
 import { PartesRelacionadasTab } from './tabs/PartesRelacionadasTab';
 import { useProductosCatalogoDB, type ProductoCatalogo } from '../../hooks/useProductosCatalogoDB';
-import { useSolicitudesDB, fetchNextNoSol, updateFaseSolicitudDB, avanzarFaseSolicitudDB, regresarFaseSolicitudDB, formalizarContratoSolicitudDB, activarCuentaDB, actualizarEstatusSolicitudDB, crearCuentaDesdeSolicitudDB, actualizarDispersionDB, actualizarFacturasDB } from '../../hooks/useSolicitudesDB';
+import { useSolicitudesDB, fetchNextNoSol, updateFaseSolicitudDB, avanzarFaseSolicitudDB, regresarFaseSolicitudDB, formalizarContratoSolicitudDB, activarCuentaDB, actualizarEstatusSolicitudDB, crearCuentaDesdeSolicitudDB, actualizarDispersionDB, actualizarFacturasDB, asegurarDetalleSolicitud } from '../../hooks/useSolicitudesDB';
 import {
   validarDocumentosFase, validarDocumentosPorFase, validarNotaReciente, validarFormalizarContrato,
   validarContratosYPagares, validarFase4Envio, validarFase6, leerRequisitosProducto,
@@ -96,6 +96,8 @@ import { FlujoTrabajo } from '../originacion/FlujoTrabajo';
 import { SolicitudCargosTab } from './SolicitudCargosTab';
 import { FacturasArrendamientoTab } from './FacturasArrendamientoTab';
 import { ComitesTab } from '../shared/ComitesTab';
+import { CampoMonto } from '@/app/components/ui/CampoMonto';
+import { decidirFaseIA } from '@/app/lib/decisionFaseIA';
 
 // ═══════════════════════════════════════════════════════════════════
 // COMPUERTAS DEL BPM GPO — ancladas a la POSICIÓN de la fase
@@ -255,7 +257,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
     }
     const saved = loadFromSavedStore<SolicitudFormData>(storageId, 'form');
     if (saved) return { ...EMPTY_FORM, ...saved };
-    const mock = MOCK_FORMS[solicitudId ?? 1];
+    const mock = MOCK_FORMS[(solicitudId ?? 1) as number];
     return mock ? { ...EMPTY_FORM, ...mock } : { ...EMPTY_FORM };
   }, [mode, solicitudId, storageId, cotizacionData]);
 
@@ -312,7 +314,9 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
     if (!row) return;
 
     autoHidratado.current = true;
-    import('./SolicitudCreditoList')
+    // El listado ligero sólo trae un resumen: primero el JSONB completo.
+    asegurarDetalleSolicitud(row)
+      .then(() => import('./SolicitudCreditoList'))
       .then(({ buildFormDataFromListItem, preloadSubtabsFromDBData }) => {
         const hidratado = buildFormDataFromListItem(row as any);
         saveToSession(storageId, 'form', hidratado);
@@ -936,7 +940,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
       if (res.documentosCreados.length > 0) {
         if (res.registradosEnExpediente) {
           toast.success('Dictamen de Riesgo generado', {
-            description: `Semáforo ${resumen.semaforo} · DSCR ${resumen.promedio === null ? '—' : resumen.promedio.toFixed(2)} — adjuntado al Expediente Electrónico.`,
+            description: `Semáforo ${resumen.semaforo} · DSCR ${resumen.promedio === null ? '—' : resumen.promedio.toFixed(2)} — adjuntado al KM Digital.`,
             duration: 8000,
           });
         } else {
@@ -1099,14 +1103,16 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
             storagePath: d.storage_path || '',
             estatus: d.estatus || 'Pendiente',
             faseId: d.fase_id ?? d.faseId ?? null,
+            ...versionFromDB(d),
           } as any))
         : [];
-      const documentos: DocumentoCargado[] =
+      // REQ-03: sólo la última versión de cada documento cuenta para el avance.
+      const documentos: DocumentoCargado[] = documentosVigentes(
         (docsEnMemoria && docsEnMemoria.length > 0 ? docsEnMemoria : null) ||
         (docsSession && docsSession.length > 0 ? docsSession : null) ||
         (docsSaved && docsSaved.length > 0 ? docsSaved : null) ||
         (docsDeBD.length > 0 ? docsDeBD : null) ||
-        [];
+        []);
       console.warn(`[avanzarFase] origen de documentos → ref=${docsEnMemoria?.length ?? 'null'} session=${docsSession?.length ?? 'null'} saved=${docsSaved?.length ?? 'null'} bd=${docsDeBD.length} | usados=${documentos.length} | storageId=${String(storageId)}`);
       const rawData = productoSeleccionado?.rawData as Record<string, any> | undefined;
       const requisitosProducto = getRequisitosFromRawData(rawData);
@@ -1191,7 +1197,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
       // crea uno nuevo, se le agrega esta condición al avance existente.
       if (esGPOForm) {
         const nombreFaseActual = (faseNombre || '')
-          .toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+          .toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
         const saliendoDeAdmision = nombreFaseActual.includes('admision') || nombreFaseActual.includes('ecosistema');
         if (saliendoDeAdmision) {
           const est = estructura2oPisoRef.current || leerEstructura2oPiso(storageId);
@@ -1233,7 +1239,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
       // justamente el "impedir que el banco comprometa esa misma capacidad
       // en otros proyectos" del BPM.
       if (esGPOForm) {
-        const nf3 = (faseNombre || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+        const nf3 = (faseNombre || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
         const saliendoDeComitePrepago =
           seqActual === FASE_GPO_COMITE ||
           (nf3.includes('comite') && nf3.includes('prepago'));
@@ -1261,7 +1267,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
 
       // ── Actividad 7.1: Validación de Cláusulas Fiduciarias completa antes de salir de Fase 4 ──
       if (esGPOForm) {
-        const nf4 = (faseNombre || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+        const nf4 = (faseNombre || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
         const saliendoDeClausulasFiduciarias =
           seqActual === FASE_GPO_CLAUSULAS ||
           nf4.includes('clausulas fiduciarias') || nf4.includes('clausulas fiduciari');
@@ -1328,7 +1334,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
             if (resContrato.documentosCreados.length > 0) {
               if (resContrato.registradosEnExpediente) {
                 toast.success('Propuesta de Contrato GPO generada', {
-                  description: 'Adjuntada al Expediente Electrónico de la Solicitud.',
+                  description: 'Adjuntada al KM Digital de la Solicitud.',
                   duration: 8000,
                 });
               } else {
@@ -1498,7 +1504,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
       // aunque ya esté generada y pagada (paso 3b-bis, más abajo, es la
       // validación real para esa fase).
       const faseNombreNorm = (faseActualReal?.fase || formData.descripcionFase || '')
-        .toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+        .toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
       const tpNorm = (formData.tipoProducto || '').toLowerCase();
       // Puro y Financiero: misma fase de Recaudación, misma omisión de validación.
       const esArrPuro = esArrendamiento(formData.lineaProducto, formData.tipoProducto);
@@ -1728,22 +1734,30 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
           toast.dismiss(toastIA);
 
           if (resFaseIA?.ok) {
-            const resultadoFaseIA = await resFaseIA.json();
+            // Si los motivos vienen etiquetados (OK / ADVERTENCIA / RECHAZO), la
+            // decisión la aplica el sistema: sólo un RECHAZO impide avanzar.
+            const resultadoFaseIA = decidirFaseIA(await resFaseIA.json());
             setIaFaseDebug(prev => prev ? { ...prev, status: 'ok', httpStatus: resFaseIA!.status, resultado: resultadoFaseIA } : null);
 
             if (resultadoFaseIA.valido === false) {
+              const motivosRechazo = resultadoFaseIA.motivosOrdenados.length > 0
+                ? resultadoFaseIA.motivosOrdenados
+                : ((resultadoFaseIA.faltantes as string[] | undefined) || []);
               toast.error(`IA: Fase "${faseNombre}" no cumple criterios`, {
-                description: (resultadoFaseIA.motivos || resultadoFaseIA.faltantes || []).slice(0, 3).join(' · '),
+                description: motivosRechazo.slice(0, 3).join(' · '),
                 duration: 10000,
               });
               return;
             }
 
+            const advertencias = resultadoFaseIA.motivosOrdenados.filter((m: string) => /^\s*ADVERTENCIA\s*:/i.test(m));
             toast.success(`IA: Fase "${faseNombre}" validada`, {
-              description: resultadoFaseIA.motivos?.length > 0
-                ? resultadoFaseIA.motivos.slice(0, 2).join(' · ')
-                : 'Todos los criterios de la fase se cumplen.',
-              duration: 5000,
+              description: advertencias.length > 0
+                ? advertencias.slice(0, 2).join(' · ')
+                : resultadoFaseIA.motivosOrdenados.length > 0
+                  ? resultadoFaseIA.motivosOrdenados.slice(0, 2).join(' · ')
+                  : 'Todos los criterios de la fase se cumplen.',
+              duration: advertencias.length > 0 ? 8000 : 5000,
             });
           } else {
             const httpStatus = resFaseIA?.status ?? 0;
@@ -1911,7 +1925,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
         //
         // Se decide por lo que el producto DECLARA, no por el número de fase.
         const normFase = (v: unknown) =>
-          String(v ?? '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+          String(v ?? '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
         const declaraRecepcionActivo = fasesDelProducto.some(f => {
           const n = normFase(f.fase);
           return n.includes('recepcion') && n.includes('activo');
@@ -2140,12 +2154,12 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
             // recargar — avisar en vez de reportar un éxito que no ocurrió.
             if (resultBuro.registradosEnExpediente) {
               toast.success('Reporte de Buró generado', {
-                description: `Adjuntado automáticamente al Expediente Electrónico${resultBuro.subidosASupabase ? '' : ' (guardado local, sin conexión a Storage)'}.`,
+                description: `Adjuntado automáticamente al KM Digital${resultBuro.subidosASupabase ? '' : ' (guardado local, sin conexión a Storage)'}.`,
                 duration: 6000,
               });
             } else {
               toast.warning('Reporte de Buró generado, pero NO se guardó en base de datos', {
-                description: `${resultBuro.error || 'Error desconocido al persistir.'} El documento se perderá al recargar; genérelo de nuevo desde el Expediente Electrónico.`,
+                description: `${resultBuro.error || 'Error desconocido al persistir.'} El documento se perderá al recargar; genérelo de nuevo desde el KM Digital.`,
                 duration: 12000,
               });
             }
@@ -2203,7 +2217,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
           if (resComite.documentosCreados.length > 0) {
             if (resComite.registradosEnExpediente) {
               toast.success('Documentos del Comité generados', {
-                description: `${resComite.documentosCreados.join(' · ')} — adjuntados al Expediente Electrónico.`,
+                description: `${resComite.documentosCreados.join(' · ')} — adjuntados al KM Digital.`,
                 duration: 7000,
               });
             } else {
@@ -2751,7 +2765,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
     if (!(formData as any)._clienteId) return;
     obtenerDatosCliente().then(extra => {
       if (extra.gobierno) {
-        (setFormData as any)(prev => ({ ...prev, _gobierno: extra.gobierno }));
+        (setFormData as any)((prev: any) => ({ ...prev, _gobierno: extra.gobierno }));
       }
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -2808,7 +2822,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
       }
 
       // ── 3. Verificar duplicado en expediente ──
-      const docsPrevios = loadFromSession(storageId, 'documentos') ?? loadFromSavedStore(storageId, 'documentos') ?? [];
+      const docsPrevios = loadFromSession<any[]>(storageId, 'documentos') ?? loadFromSavedStore<any[]>(storageId, 'documentos') ?? [];
       const yaExiste = docsPrevios.some((d: any) => d.tipoDocumento === CLAVE_SOLICITUD_BASE || d.claveDocumento === CLAVE_SOLICITUD_BASE);
       if (yaExiste) {
         toast.info('Solicitud ya generada', {
@@ -2931,10 +2945,10 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
       const terminos: any = loadFromSession<any>(storageId, 'terminos') || loadFromSavedStore<any>(storageId, 'terminos') || {};
       const garantias: any[] = loadFromSession<any[]>(storageId, 'garantias') || loadFromSavedStore<any[]>(storageId, 'garantias') || [];
       const comites: any[] = loadFromSession<any[]>(storageId, 'comites') || loadFromSavedStore<any[]>(storageId, 'comites') || [];
-      const documentos: DocumentoCargado[] =
+      const documentos: DocumentoCargado[] = documentosVigentes(
         loadFromSession<DocumentoCargado[]>(storageId, 'documentos') ||
         loadFromSavedStore<DocumentoCargado[]>(storageId, 'documentos') ||
-        [];
+        []);
       const rawData = productoSeleccionado?.rawData as Record<string, any> | undefined;
       const requisitosProducto = getRequisitosFromRawData(rawData);
       const { requiereGarantia, requiereComite } = leerRequisitosProducto(rawData);
@@ -3077,7 +3091,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
       if (pagareUrl) descargar(pagareUrl, `Pagare_${formData.noSol}.pdf`);
 
       // Liberar blob URLs tras 2 minutos
-      setTimeout(() => { URL.revokeObjectURL(contratoUrl); URL.revokeObjectURL(pagareUrl); }, 120_000);
+      setTimeout(() => { URL.revokeObjectURL(contratoUrl); if (pagareUrl) URL.revokeObjectURL(pagareUrl); }, 120_000);
 
       // ── Intentar sincronizar con BD (no bloqueante) ──
       const dbId = storageId !== 'new' ? String(storageId) : null;
@@ -3562,7 +3576,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
 
   const handleFaseChange = (faseId: string) => {
     const fase = fasesDelProducto.find(f => f.faseId === faseId);
-    const nombreFase = fase?.fase || fase?.descripcion || '';
+    const nombreFase = fase?.fase || (fase as any)?.descripcion || '';
     const promptIAProducto = fase?.promptIA || '';
     let area = fase?.area || '';
     if (!area && nombreFase) {
@@ -3682,7 +3696,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
   const ic = (hasError = false, disabled = false) => {
     const base = 'w-full px-2 py-1.5 text-xs border rounded focus:outline-none';
     const bdr = hasError ? 'border-red-400' : 'border-gray-300';
-    const focus = !disabled && !isRO ? 'focus:ring-2 focus:ring-[#4A6FA5] focus:border-[#4A6FA5]' : '';
+    const focus = !disabled && !isRO ? 'focus:ring-2 focus:ring-[color:var(--theme-primary)] focus:border-[color:var(--theme-primary)]' : '';
     const bg = disabled || isRO ? 'bg-gray-100 text-gray-600' : 'bg-white text-gray-800';
     return `${base} ${bdr} ${focus} ${bg}`;
   };
@@ -3690,7 +3704,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
   const sc = (hasError = false) => {
     const base = 'w-full px-2 py-1.5 text-xs border rounded focus:outline-none';
     const bdr = hasError ? 'border-red-400' : 'border-gray-300';
-    const focus = !isRO ? 'focus:ring-2 focus:ring-[#4A6FA5]' : '';
+    const focus = !isRO ? 'focus:ring-2 focus:ring-[color:var(--theme-primary)]' : '';
     const bg = isRO ? 'bg-gray-100 text-gray-600' : 'bg-white text-gray-800';
     return `${base} ${bdr} ${focus} ${bg}`;
   };
@@ -3709,7 +3723,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
    */
   const GrupoHdr = ({ children }: { children: string }) => (
     <div className="col-span-3 flex items-center gap-2 pt-2 first:pt-0">
-      <span className="text-[10px] font-semibold tracking-wider text-[#4A6FA5] uppercase whitespace-nowrap">{children}</span>
+      <span className="text-[10px] font-semibold tracking-wider text-[color:var(--theme-primary)] uppercase whitespace-nowrap">{children}</span>
       <span className="flex-1 h-px bg-gray-200" />
     </div>
   );
@@ -3742,7 +3756,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
   const enFaseActivacion2oPiso = useMemo(() => {
     const seq = fasesDelProducto.find(f => String(f.faseId) === String(formData.faseId))?.seq;
     if (esGPOForm && seq === FASE_GPO_ACTIVACION) return true;
-    const nf = (formData.descripcionFase || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+    const nf = (formData.descripcionFase || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
     return (nf.includes('activacion') && nf.includes('piso')) || nf.includes('completada');
   }, [formData.descripcionFase, formData.faseId, fasesDelProducto, esGPOForm]);
   const isCreditoForm      = !isCaptacionForm && !isLineaCreditoForm;
@@ -3773,7 +3787,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
            :                      'Simulación',
     },
     ...(esArrendamientoPuro ? [{ id: 'facturas', label: 'Facturas' }] : []),
-    { id: 'expediente',        label: 'Expediente Electrónico' },
+    { id: 'expediente',        label: 'KM Digital' },
     { id: 'partesRelacionadas',label: 'Partes Relacionadas' },
     ...(!isCaptacionForm  ? [{ id: 'garantias', label: 'Bienes' }] : []),
     { id: 'comites',           label: 'Comités' },
@@ -3992,7 +4006,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
               {iaFaseDebug.resultado?._rateLimited && (
                 <span className="px-2 py-0.5 rounded-full bg-orange-600 text-white text-[10px] font-bold">⚠ SIN IA (rate limit)</span>
               )}
-              <button onClick={() => setShowIAFaseDebug(false)} className="text-violet-300 hover:text-white transition-colors ml-1">
+              <button type="button" aria-label="Cerrar" title="Cerrar" onClick={() => setShowIAFaseDebug(false)} className="text-violet-300 hover:text-white transition-colors ml-1">
                 <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M2 2l8 8M10 2l-8 8"/></svg>
               </button>
             </div>
@@ -4148,7 +4162,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
           </details>
         )}
 
-        <div className="bg-[#D9E2F3] border-l-4 border-[#4A6FA5] px-4 py-2 mb-5">
+        <div className="bg-[color:var(--theme-tint)] border-l-4 border-[color:var(--theme-primary)] px-4 py-2 mb-5">
           <h3 className="text-sm text-gray-800 uppercase">Datos Generales de la Solicitud</h3>
         </div>
 
@@ -4204,8 +4218,8 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
                 isRO
                   ? 'bg-gray-100 text-gray-600 cursor-not-allowed border-gray-200'
                   : errors.nombrePersona
-                    ? 'border-red-400 cursor-pointer hover:border-[#4A6FA5] hover:bg-blue-50/30'
-                    : 'border-gray-200 cursor-pointer hover:border-[#4A6FA5] hover:bg-blue-50/30'
+                    ? 'border-red-400 cursor-pointer hover:border-[color:var(--theme-primary)] hover:bg-blue-50/30'
+                    : 'border-gray-200 cursor-pointer hover:border-[color:var(--theme-primary)] hover:bg-blue-50/30'
               }`}
             >
               <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="#9CA3AF" strokeWidth="1.5" className="shrink-0">
@@ -4313,7 +4327,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
                 <button
                   type="button"
                   onClick={() => setShowMatrizModal(true)}
-                  className="text-[10px] text-[#0066CC] hover:underline"
+                  className="text-[10px] text-[color:var(--theme-link)] hover:underline"
                 >
                   Ver Matriz de Tasa Fija
                 </button>
@@ -4333,8 +4347,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
             <Lbl req error={errors.montoSolicitado}>Monto Autorizado</Lbl>
             <div className="relative">
               <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-500">$</span>
-              <input
-                type="text" inputMode="decimal"
+              <CampoMonto
                 value={formData.montoSolicitado}
                 onChange={e => handleNumeric('montoSolicitado', e.target.value)}
                 onBlur={() => handleCurrencyBlur('montoSolicitado')}
@@ -4392,7 +4405,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
             rows={3}
             placeholder="Descripción de la solicitud (máximo 1024 caracteres)..."
             className={`w-full px-2 py-1.5 text-xs border border-gray-300 rounded focus:outline-none resize-none ${
-              isRO ? 'bg-gray-100 text-gray-600' : 'bg-white text-gray-800 focus:ring-2 focus:ring-[#4A6FA5]'
+              isRO ? 'bg-gray-100 text-gray-600' : 'bg-white text-gray-800 focus:ring-2 focus:ring-[color:var(--theme-primary)]'
             }`}
           />
           <div className="text-right text-[10px] text-gray-400 mt-0.5">{(formData.descripcion || '').length}/1024</div>
@@ -4862,7 +4875,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
                 exista, se agrega aqui como boton real. */}
             <button
               onClick={() => setFormalizacionExitosaGPO(null)}
-              className="w-full px-4 py-2 rounded text-sm font-medium bg-[#2E5C91] text-white hover:bg-[#254A75]"
+              className="w-full px-4 py-2 rounded text-sm font-medium bg-[color:var(--theme-secondary)] text-white hover:bg-[color:var(--theme-secondary-hover)]"
             >
               Cerrar
             </button>
@@ -4884,7 +4897,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
           set('_rfc' as keyof SolicitudFormData, c.rfc || '');
           set('_curp' as keyof SolicitudFormData, c.curp || '');
           set('_gobierno' as keyof SolicitudFormData, c.gobierno || '');
-          (setFormData as any)(prev => ({
+          (setFormData as any)((prev: any) => ({
             ...prev,
             _domicilio: c.domicilio || '',
             _telefono: c.telefono || '',
@@ -4906,7 +4919,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
           <div className="relative bg-white rounded-lg shadow-2xl w-full max-w-3xl mx-4 max-h-[80vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
             <div className="modal-header-theme px-5 py-3 flex items-center justify-between">
               <span className="text-sm font-semibold tracking-wide uppercase">Matriz de Tasa Fija — {formData.nombreProducto}</span>
-              <button onClick={() => setShowMatrizModal(false)} className="text-white/80 hover:text-white">
+              <button type="button" aria-label="Cerrar" title="Cerrar" onClick={() => setShowMatrizModal(false)} className="text-white/80 hover:text-white">
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><path d="M2 2l12 12M14 2L2 14" /></svg>
               </button>
             </div>
@@ -4975,8 +4988,8 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
                             }}
                             className={`px-2.5 py-1 rounded text-[10px] font-medium ${
                               esSeleccionada
-                                ? 'bg-blue-100 text-[#0066CC] cursor-default'
-                                : 'bg-[#0099CC] text-white hover:bg-[#0088BB]'
+                                ? 'bg-blue-100 text-[color:var(--theme-link)] cursor-default'
+                                : 'bg-[color:var(--theme-action)] text-white hover:bg-[color:var(--theme-action-hover)]'
                             }`}
                           >
                             {esSeleccionada ? 'Seleccionada' : 'Seleccionar'}

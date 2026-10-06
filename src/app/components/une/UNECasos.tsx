@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 import {
   CasoUNE, TipoCaso, Canal, Prioridad, EstatusCaso,
   CAT_TIPO_CASO, CAT_CANAL, CAT_PRIORIDAD, CAT_ESTATUS,
@@ -132,7 +132,7 @@ export function UNECasos({ casos, onSave, onVerCaso }: Props) {
   };
 
   const ic = (err?: string) =>
-    `w-full px-2 py-1 text-xs border rounded focus:outline-none focus:ring-1 focus:ring-[#2E5C91] ${err ? 'border-red-400' : 'border-gray-300'}`;
+    `w-full px-2 py-1 text-xs border rounded focus:outline-none focus:ring-1 focus:ring-[color:var(--theme-secondary)] ${err ? 'border-red-400' : 'border-gray-300'}`;
 
   const motivos = form.tipo ? CAT_MOTIVOS[form.tipo as TipoCaso] : [];
 
@@ -143,7 +143,7 @@ export function UNECasos({ casos, onSave, onVerCaso }: Props) {
         <input
           type="text" placeholder="Buscar folio, cliente, descripción..."
           value={busqueda} onChange={e => setBusqueda(e.target.value)}
-          className="flex-1 min-w-[180px] px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-[#2E5C91]"
+          className="flex-1 min-w-[180px] px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-[color:var(--theme-secondary)]"
         />
         <select value={filtroTipo} onChange={e => setFiltroTipo(e.target.value)}
           className="px-2 py-1 text-xs border border-gray-300 rounded bg-white focus:outline-none">
@@ -161,7 +161,7 @@ export function UNECasos({ casos, onSave, onVerCaso }: Props) {
           {CAT_PRIORIDAD.map(p => <option key={p} value={p}>{p}</option>)}
         </select>
         <button onClick={() => setShowModal(true)}
-          className="px-4 py-1.5 bg-[#2E5C91] text-white text-xs rounded hover:bg-[#1d3f6b] flex items-center gap-1.5 whitespace-nowrap">
+          className="px-4 py-1.5 bg-[color:var(--theme-secondary)] text-white text-xs rounded hover:bg-[color:var(--theme-secondary-hover)] flex items-center gap-1.5 whitespace-nowrap">
           <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M5 1v8M1 5h8"/>
           </svg>
@@ -189,7 +189,7 @@ export function UNECasos({ casos, onSave, onVerCaso }: Props) {
                 <tr key={c.id} className="border-b border-gray-100 hover:bg-blue-50/30 cursor-pointer transition-colors"
                   style={{ backgroundColor: i % 2 === 0 ? '#fff' : '#fafafa' }}
                   onClick={() => onVerCaso(c.id)}>
-                  <td className="px-3 py-2 border-r border-gray-100 font-mono text-[#2E5C91] font-medium whitespace-nowrap">{c.folio}</td>
+                  <td className="px-3 py-2 border-r border-gray-100 font-mono text-[color:var(--theme-secondary)] font-medium whitespace-nowrap">{c.folio}</td>
                   <td className="px-3 py-2 border-r border-gray-100 text-gray-700 whitespace-nowrap">{c.clienteNombre}</td>
                   <td className="px-3 py-2 border-r border-gray-100">
                     <span className={`px-1.5 py-0.5 text-[9px] border ${tipoBadge(c.tipo)}`}>{c.tipo}</span>
@@ -217,7 +217,7 @@ export function UNECasos({ casos, onSave, onVerCaso }: Props) {
                   <td className="px-3 py-2 border-r border-gray-100 text-gray-600 whitespace-nowrap">{c.operadorAsignado}</td>
                   <td className="px-3 py-2 text-center">
                     <button onClick={e => { e.stopPropagation(); onVerCaso(c.id); }}
-                      className="text-[10px] text-[#2E5C91] hover:underline">Ver</button>
+                      className="text-[10px] text-[color:var(--theme-secondary)] hover:underline">Ver</button>
                   </td>
                 </tr>
               );
@@ -233,9 +233,9 @@ export function UNECasos({ casos, onSave, onVerCaso }: Props) {
           <div className="bg-white shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
 
             {/* Header */}
-            <div className="bg-[#2E5C91] px-5 py-3 flex items-center justify-between">
+            <div className="bg-[color:var(--theme-secondary)] px-5 py-3 flex items-center justify-between">
               <span className="text-sm font-medium text-white">Registrar nuevo caso UNE</span>
-              <button onClick={() => setShowModal(false)} className="text-white/80 hover:text-white">
+              <button type="button" aria-label="Cerrar" title="Cerrar" onClick={() => setShowModal(false)} className="text-white/80 hover:text-white">
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><path d="M2 2l12 12M14 2L2 14"/></svg>
               </button>
             </div>
@@ -244,7 +244,7 @@ export function UNECasos({ casos, onSave, onVerCaso }: Props) {
             <div className="p-5 overflow-y-auto flex-1">
 
               {/* Sección: Datos del caso */}
-              <div className="bg-gray-50 border-l-4 border-[#2E5C91] px-3 py-1.5 mb-3">
+              <div className="bg-gray-50 border-l-4 border-[color:var(--theme-secondary)] px-3 py-1.5 mb-3">
                 <span className="text-[10px] font-semibold text-gray-700 uppercase tracking-wide">Datos del caso</span>
               </div>
 
@@ -318,7 +318,7 @@ export function UNECasos({ casos, onSave, onVerCaso }: Props) {
               </div>
 
               {/* Sección: Asignación */}
-              <div className="bg-gray-50 border-l-4 border-[#2E5C91] px-3 py-1.5 mb-3">
+              <div className="bg-gray-50 border-l-4 border-[color:var(--theme-secondary)] px-3 py-1.5 mb-3">
                 <span className="text-[10px] font-semibold text-gray-700 uppercase tracking-wide">Asignación</span>
               </div>
               <div className="grid grid-cols-2 gap-x-5 gap-y-2.5">
@@ -356,7 +356,7 @@ export function UNECasos({ casos, onSave, onVerCaso }: Props) {
                 Cancelar
               </button>
               <button onClick={handleGuardar}
-                className="px-4 py-1.5 bg-[#2E5C91] text-white text-xs rounded hover:bg-[#1d3f6b]">
+                className="px-4 py-1.5 bg-[color:var(--theme-secondary)] text-white text-xs rounded hover:bg-[color:var(--theme-secondary-hover)]">
                 Registrar caso
               </button>
             </div>

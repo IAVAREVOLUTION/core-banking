@@ -1,5 +1,5 @@
 ﻿import { useState, useEffect } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 import {
   CoTitular, saveToSession, loadFromSession, generateId,
   MOCK_COTITULARES, CATALOGO_PARENTESCO, CATALOGO_BUSQUEDA_CLIENTES,
@@ -66,7 +66,7 @@ export function CoTitularesTab({ mode, accountId }: CoTitularesTabProps) {
 
   return (
     <div className="bg-white">
-      <div className="bg-[#D9E2F3] border-l-4 border-[#4A6FA5] px-3 py-2 mb-3 flex items-center justify-between">
+      <div className="bg-[color:var(--theme-tint)] border-l-4 border-[color:var(--theme-primary)] px-3 py-2 mb-3 flex items-center justify-between">
         <span className="text-sm font-medium text-gray-800">CO-TITULARES</span>
         {!isReadOnly && (
           <div className="flex items-center gap-2">
@@ -132,7 +132,7 @@ export function CoTitularesTab({ mode, accountId }: CoTitularesTabProps) {
       {showModal && (
         <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50">
           <div className="bg-white rounded shadow-xl w-[850px] max-h-[550px] flex flex-col">
-            <div className="bg-[#4A6FA5] text-white px-4 py-3 flex items-center justify-between rounded-t">
+            <div className="bg-[color:var(--theme-primary)] text-white px-4 py-3 flex items-center justify-between rounded-t">
               <h3 className="text-sm font-medium">Buscar Cliente - Co-titular</h3>
               <button onClick={() => setShowModal(false)} className="text-white/80 hover:text-white text-xl leading-none">&times;</button>
             </div>

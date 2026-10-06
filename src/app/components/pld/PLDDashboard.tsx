@@ -29,14 +29,14 @@ export function PLDDashboard() {
       <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-300">
         {loading ? (
           <div className="flex items-center gap-2 text-xs text-gray-500 py-1">
-            <svg className="animate-spin h-4 w-4 text-[#4A6FA5]" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="6" cy="6" r="5" strokeOpacity="0.25"/><path d="M6 1a5 5 0 0 1 5 5" strokeLinecap="round"/></svg>
+            <svg className="animate-spin h-4 w-4 text-[color:var(--theme-primary)]" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="6" cy="6" r="5" strokeOpacity="0.25"/><path d="M6 1a5 5 0 0 1 5 5" strokeLinecap="round"/></svg>
             Cargando datos PLD...
           </div>
         ) : (
           <div className="grid grid-cols-4 gap-3">
             {[
               { label: 'Alertas Activas',      value: s.alertasActivas,      sub: 'Requieren atención',                          color: '#D32F2F' },
-              { label: 'Clientes Calificados', value: s.calTotal,            sub: `${s.calAlto} riesgo alto`,                    color: '#0066CC' },
+              { label: 'Clientes Calificados', value: s.calTotal,            sub: `${s.calAlto} riesgo alto`,                    color: 'var(--theme-link)' },
               { label: 'Alertas Internas',     value: s.internasTotal,       sub: `${s.internasPendientes} pendientes`,           color: '#5C3D9B' },
               { label: 'Reportes CNBV Pend.',  value: s.reportesPendientes,  sub: 'Por enviar',                                  color: '#0E7B1F' },
             ].map(k => (
@@ -80,7 +80,7 @@ export function PLDDashboard() {
                       style={{ backgroundColor: idx % 2 === 1 ? '#EEEEEE' : '#FFFFFF' }}
                       onMouseEnter={e => { e.currentTarget.style.backgroundColor = '#E8F4F8'; }}
                       onMouseLeave={e => { e.currentTarget.style.backgroundColor = idx % 2 === 1 ? '#EEEEEE' : '#FFFFFF'; }}>
-                      <td className="px-3 py-2 text-[#0066CC] border-r border-gray-200" style={{ fontWeight: 500 }}>{a.noAlerta}</td>
+                      <td className="px-3 py-2 text-[color:var(--theme-link)] border-r border-gray-200" style={{ fontWeight: 500 }}>{a.noAlerta}</td>
                       <td className="px-3 py-2 max-w-[160px] truncate border-r border-gray-200">{a.cliente}</td>
                       <td className="px-3 py-2 border-r border-gray-200">
                         <span className={`inline-block px-1.5 py-0.5 text-[9px] ${tipeCls(a.tipoAlerta)}`} style={{ fontWeight: 500 }}>{a.tipoAlerta}</span>

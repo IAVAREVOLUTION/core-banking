@@ -101,7 +101,7 @@ export function PLDHome({ onNavigate }: PLDHomeProps) {
   return (
     <div className="flex flex-col h-full bg-[#F0F2F5]">
       {/* Header del módulo */}
-      <div className="bg-[#1E3A5F] px-4 py-2 flex items-center justify-between flex-shrink-0">
+      <div className="bg-[color:var(--theme-secondary-hover)] px-4 py-2 flex items-center justify-between flex-shrink-0">
         <div className="flex items-center gap-2">
           <div className="w-6 h-6 rounded bg-white/10 flex items-center justify-center">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
@@ -132,7 +132,7 @@ export function PLDHome({ onNavigate }: PLDHomeProps) {
                 onClick={() => setTabActivo(tab.id)}
                 className={`relative flex items-center gap-1.5 px-3 py-2.5 text-[11px] whitespace-nowrap transition-all border-b-2 ${
                   isActive
-                    ? 'border-[#1E3A5F] text-[#1E3A5F] bg-blue-50/50'
+                    ? 'border-[color:var(--theme-secondary-hover)] text-[color:var(--theme-secondary-hover)] bg-blue-50/50'
                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
                 }`}
                 style={{ fontWeight: isActive ? 600 : 400 }}

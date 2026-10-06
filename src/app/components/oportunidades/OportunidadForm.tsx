@@ -13,7 +13,7 @@
  * así que persiste sobre el mismo registro de J_COTIZACIONES.
  */
 import { useState, useMemo, useEffect, useRef } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 import type { CotizacionCredito, BitacoraEstatusOportunidad, ArchivoAdjuntoOportunidad, SolicitudLOSRef, BitacoraCierreComercial } from '../cotizaciones/cotizacionCreditoTypes';
 import { generarCartaOferta, subirCartaOferta, CartaOfertaError, subirDocumentoAceptacion, esPDFValido, DocumentoAceptacionError } from './cartaOfertaPDF';
 import { CAT_ESTATUS_OPORTUNIDAD, CAT_ESTATUS_OPORTUNIDAD_CIERRE, ESTATUS_OPORTUNIDAD_GANADA, ESTATUS_OPORTUNIDAD_PERDIDA } from '../cotizaciones/cotizacionCreditoTypes';
@@ -27,6 +27,7 @@ import type { SolicitudFormData, TerminosCondiciones as TerminosCondicionesLOS }
 import { syncToJClientes } from '../../hooks/useSyncJClientes';
 import { fechasCobroComision } from '../../lib/fechasComisionGPO';
 import { SeleccionarClienteModal } from '../solicitudes/SeleccionarClienteModal';
+import { CampoMonto } from '@/app/components/ui/CampoMonto';
 
 type FormMode = 'create' | 'edit' | 'view';
 type TabId = 'default' | 'solicitudes' | 'adjuntos' | 'cierre';
@@ -664,7 +665,7 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
           // J_CLIENTES; el usuario no debe perder el cierre ya logrado.
           console.error('[OportunidadForm] Cerrada-Ganada: no se pudo convertir el Prospecto a Cliente:', errCliente);
           toast.warning('Oportunidad Ganada, pero no se pudo activar el Cliente', {
-            description: 'Revise el registro del Prospecto manualmente.',
+            description: 'Revise el registro del Tipo Interlocutor manualmente.',
           });
         }
       }
@@ -961,7 +962,7 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
       setCartaEnVisor({ url: generada.dataUri, nombre: generada.nombreArchivo });
 
       if (subida.enStorage) {
-        toast.success('Carta Oferta generada', { description: 'Se adjuntó a la Oportunidad y se guardó en la pestaña Archivos Adjuntos.' });
+        toast.success('Carta Oferta generada', { description: 'Se adjuntó a la Oportunidad y se guardó en la pestaña KM Digital.' });
       } else {
         toast.warning('Carta Oferta generada, pero no se subió a Storage', {
           description: 'Queda disponible en esta sesión. Revise permisos del bucket.',
@@ -1075,7 +1076,7 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
               className={`px-5 py-1.5 rounded text-xs font-normal transition-colors border ${
                 generandoCarta
                   ? 'bg-gray-200 text-gray-500 border-gray-300 cursor-not-allowed'
-                  : 'bg-white text-[#0099CC] border-[#0099CC] hover:bg-[#E8F6FB]'
+                  : 'bg-white text-[color:var(--theme-action)] border-[color:var(--theme-action)] hover:bg-[#E8F6FB]'
               }`}
             >
               {generandoCarta ? 'Generando…' : 'Generar Carta Oferta'}
@@ -1145,7 +1146,7 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
                   className={`px-4 py-2 text-[11px] whitespace-nowrap border-r border-gray-500/30 transition-colors ${
-                    activeTab === tab.id ? 'bg-secondary-theme text-white font-medium' : 'text-white/90 hover:bg-[#5A7FB5]'
+                    activeTab === tab.id ? 'bg-secondary-theme text-white font-medium' : 'text-white/90 hover:bg-[color:var(--theme-primary)]'
                   }`}
                 >
                   {tab.label}
@@ -1217,7 +1218,7 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
                             checked={plazosSeleccionados.includes(p)}
                             onChange={() => togglePlazoProducto(p)}
                             disabled={isView}
-                            className="w-3 h-3 accent-[#0099CC]"
+                            className="w-3 h-3 accent-[color:var(--theme-action)]"
                           />
                           {p}
                         </label>
@@ -1232,9 +1233,7 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
                 {/* Monto Emisión — base del cálculo de CA-06 */}
                 <div className="flex flex-col">
                   <label className="text-[10px] text-gray-600 mb-0.5">MONTO EMISIÓN</label>
-                  <input
-                    type="text"
-                    inputMode="decimal"
+                  <CampoMonto
                     value={data.montoEmision ?? ''}
                     disabled={isView}
                     onChange={e => { const c = limpiarDecimal(e.target.value); if (c !== null) setData({ montoEmision: c }); }}
@@ -1316,9 +1315,7 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
                 {/* ── Heredado del Lead (HU-CRM-03 CA-05) ── */}
                 <div className="flex flex-col">
                   <label className="text-[10px] text-gray-600 mb-0.5">MONTO INVERSIÓN</label>
-                  <input
-                    type="text"
-                    inputMode="decimal"
+                  <CampoMonto
                     value={data.montoInversion ?? ''}
                     disabled={isView}
                     onChange={e => { const c = limpiarDecimal(e.target.value); if (c !== null) setData({ montoInversion: c }); }}
@@ -1619,13 +1616,13 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#15803D" strokeWidth="2" className="shrink-0">
                       <path d="M22 11.08V12a10 10 0 11-5.93-9.14" /><polyline points="22 4 12 14.01 9 11.01" />
                     </svg>
-                    <a
-                      href="#"
-                      className="text-[#0066CC] hover:underline font-mono"
-                      onClick={e => { e.preventDefault(); setCartaEnVisor({ url: documentoAceptacion.url, nombre: documentoAceptacion.nombre }); }}
+                    <button
+                      type="button"
+                      className="enlace-accion text-[color:var(--theme-link)] hover:underline font-mono"
+                      onClick={() => { setCartaEnVisor({ url: documentoAceptacion.url, nombre: documentoAceptacion.nombre }); }}
                     >
                       {documentoAceptacion.nombre}
-                    </a>
+                    </button>
                     <span className="text-gray-500">
                       {documentoAceptacion.tamanoKB} KB · {new Date(documentoAceptacion.fecha).toLocaleString('es-MX')}
                     </span>
@@ -1638,7 +1635,7 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
                           type="button"
                           onClick={abrirSelectorFirmada}
                           disabled={subiendoAceptacion}
-                          className="text-[#0066CC] hover:underline disabled:opacity-60"
+                          className="text-[color:var(--theme-link)] hover:underline disabled:opacity-60"
                         >
                           {subiendoAceptacion ? 'Subiendo…' : 'Reemplazar'}
                         </button>
@@ -1762,12 +1759,12 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
                        Carta Oferta generada — no tiene sentido "firmar" algo
                        que aún no se emitió. */
                     <div className="flex items-center gap-2 px-2 py-1.5 bg-gray-50 border border-gray-200 rounded-lg">
-                      <span className="w-4 h-4 flex items-center justify-center rounded-full bg-[#0099CC] text-white text-[9px] font-bold shrink-0">1</span>
+                      <span className="w-4 h-4 flex items-center justify-center rounded-full bg-[color:var(--theme-action)] text-white text-[9px] font-bold shrink-0">1</span>
                       <button
                         onClick={handleGenerarCartaOferta}
                         disabled={generandoCarta}
                         className={`px-4 py-1.5 rounded text-xs font-medium whitespace-nowrap ${
-                          generandoCarta ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'bg-[#0099CC] text-white hover:bg-[#0088BB]'
+                          generandoCarta ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'bg-[color:var(--theme-action)] text-white hover:bg-[color:var(--theme-action-hover)]'
                         }`}
                       >
                         {generandoCarta ? 'Generando…' : 'Generar Carta Oferta'}
@@ -1829,13 +1826,13 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
                         [...archivosAdjuntos].reverse().map((a, i) => (
                           <tr key={a.id} className="border-b border-gray-200" style={{ backgroundColor: i % 2 === 1 ? '#F9F9F9' : '#FFFFFF' }}>
                             <td className="px-3 py-2">
-                              <a
-                                href="#"
-                                className="text-[#0066CC] hover:underline"
-                                onClick={e => { e.preventDefault(); setCartaEnVisor({ url: a.url, nombre: a.nombre }); }}
+                              <button
+                                type="button"
+                                className="enlace-accion text-[color:var(--theme-link)] hover:underline"
+                                onClick={() => { setCartaEnVisor({ url: a.url, nombre: a.nombre }); }}
                               >
                                 Ver
-                              </a>
+                              </button>
                             </td>
                             <td className="px-3 py-2 text-gray-700 font-mono text-[10px] break-all">{a.nombre}</td>
                             <td className="px-3 py-2">
@@ -1865,13 +1862,13 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
             <div>
               {/* ── Solicitud en Originación (LOS) — un único botón de alta ── */}
               <div className="p-4">
-                <div className={`rounded-lg border p-4 ${solicitudLOSRef ? 'border-green-200 bg-green-50' : 'border-[#0099CC]/40 bg-[#F0F9FC]'}`}>
+                <div className={`rounded-lg border p-4 ${solicitudLOSRef ? 'border-green-200 bg-green-50' : 'border-[color:var(--theme-action)]/40 bg-[#F0F9FC]'}`}>
                   <div className="flex items-center justify-between gap-3">
                     <span className="text-xs font-semibold text-gray-800 uppercase tracking-wide">Solicitud de Originación</span>
                     {!isView && !solicitudLOSRef && (
                       <button
                         onClick={handleNuevaSolicitud}
-                        className="px-4 py-1.5 bg-[#0099CC] text-white rounded text-xs hover:bg-[#0088BB] font-medium whitespace-nowrap"
+                        className="px-4 py-1.5 bg-[color:var(--theme-action)] text-white rounded text-xs hover:bg-[color:var(--theme-action-hover)] font-medium whitespace-nowrap"
                       >
                         + Nueva Solicitud
                       </button>
@@ -1896,7 +1893,7 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
                             mode: 'editar',
                             volverAOportunidadId: form.id,
                           })}
-                          className="px-4 py-1.5 bg-[#0099CC] text-white rounded text-xs hover:bg-[#0088BB] font-medium whitespace-nowrap"
+                          className="px-4 py-1.5 bg-[color:var(--theme-action)] text-white rounded text-xs hover:bg-[color:var(--theme-action-hover)] font-medium whitespace-nowrap"
                         >
                           Abrir Solicitud
                         </button>
@@ -1917,7 +1914,7 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
 
                   {errorSolicitudesLOS && (
                     <div className="mb-3 px-3 py-2 bg-red-50 border border-red-200 rounded text-[11px] text-red-700">
-                      No se pudo consultar J_CUENTAS_CORP_CLIENTES: {errorSolicitudesLOS}
+                      No se pudieron consultar las solicitudes: {errorSolicitudesLOS}
                     </div>
                   )}
 
@@ -1939,7 +1936,7 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
                         {solicitudesDeLaOportunidad.length === 0 ? (
                           <tr>
                             <td colSpan={onNavigateToSolicitud ? 8 : 7} className="px-3 py-8 text-center text-gray-400">
-                              {cargandoSolicitudesLOS ? 'Consultando J_CUENTAS_CORP_CLIENTES…' : 'Sin solicitudes asociadas a esta Oportunidad.'}
+                              {cargandoSolicitudesLOS ? 'Consultando solicitudes…' : 'Sin solicitudes asociadas a esta Oportunidad.'}
                             </td>
                           </tr>
                         ) : solicitudesDeLaOportunidad.map((sol, i) => {
@@ -1957,7 +1954,7 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
                             >
                               {!!onNavigateToSolicitud && (
                                 <td className="px-3 py-2 whitespace-nowrap">
-                                  <a href="#" className="text-[#0066CC] hover:underline" onClick={e => { e.preventDefault(); abrir(); }}>Abrir</a>
+                                  <button type="button" className="enlace-accion text-[color:var(--theme-link)] hover:underline" onClick={() => { abrir(); }}>Abrir</button>
                                 </td>
                               )}
                               <td className="px-3 py-2 text-gray-700 font-mono">{sol.noSol || '—'}</td>
@@ -2029,7 +2026,7 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
                     {subiendoAceptacion ? 'Subiendo…' : (documentoAceptacion ? 'Actualizar firmada' : 'Subir firmada')}
                   </button>
                 )}
-                <button
+                <button type="button" aria-label="Cerrar" title="Cerrar"
                   onClick={() => setCartaEnVisor(null)}
                   className="text-white/80 hover:text-white hover:bg-white/20 rounded-full w-6 h-6 flex items-center justify-center"
                 >
@@ -2120,7 +2117,7 @@ function CorpFinModal({ item, monedaDefault, onSave, onClose }: CorpFinModalProp
           <span className="text-sm font-semibold tracking-wide uppercase">
             {item ? 'Editar Solicitud Corporativa' : 'Nueva Solicitud Corporativa'}
           </span>
-          <button onClick={onClose} className="text-white/80 hover:text-white hover:bg-white/20 rounded-full w-6 h-6 flex items-center justify-center">
+          <button type="button" aria-label="Cerrar" title="Cerrar" onClick={onClose} className="text-white/80 hover:text-white hover:bg-white/20 rounded-full w-6 h-6 flex items-center justify-center">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M18 6L6 18" /><path d="M6 6l12 12" /></svg>
           </button>
         </div>
@@ -2136,9 +2133,7 @@ function CorpFinModal({ item, monedaDefault, onSave, onClose }: CorpFinModalProp
             </div>
             <div>
               <label className="block text-[11px] font-semibold text-gray-600 uppercase mb-1.5">Monto <span className="text-red-500">*</span></label>
-              <input
-                type="text"
-                inputMode="decimal"
+              <CampoMonto
                 value={f.monto}
                 onChange={e => { const c = limpiarDecimal(e.target.value); if (c !== null) set('monto', c); }}
                 className={`${inputCls} text-right font-mono`}

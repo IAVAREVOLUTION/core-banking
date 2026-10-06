@@ -145,7 +145,7 @@ export function ProductForm({
               <path d="M4 9h16M9 4v16" stroke="currentColor" strokeWidth="1.5"/>
             </svg>
             <h2 className="text-lg font-normal text-gray-800">Alta Producto Crédito</h2>
-            <button className="p-1 ml-2">
+            <button type="button" aria-label="Buscar" title="Buscar" className="p-1 ml-2">
               <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#999" strokeWidth="2">
                 <circle cx="8" cy="8" r="6"/>
                 <path d="M13 13l3 3"/>
@@ -490,19 +490,9 @@ export function ProductForm({
                   className={`px-4 py-2.5 text-xs whitespace-nowrap transition-colors border-r border-gray-500/30 ${
                     activeTab === tab.id
                       ? 'bg-secondary-theme text-white font-medium'
-                      : 'text-white/90'
+                      : 'text-white/90 hover:bg-[color:var(--theme-primary-hover)]'
                   }`}
                   style={activeTab !== tab.id ? { transition: 'background-color 0.2s' } : {}}
-                  onMouseEnter={(e) => {
-                    if (activeTab !== tab.id) {
-                      e.currentTarget.style.backgroundColor = 'var(--theme-primary-hover)';
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (activeTab !== tab.id) {
-                      e.currentTarget.style.backgroundColor = '';
-                    }
-                  }}
                 >
                   {tab.label}
                 </button>

@@ -3,7 +3,7 @@
  * Lista con Autorizar / Rechazar (con comentario obligatorio) y ejecución de lógica de negocio
  */
 import { useState, useEffect } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 import { useAllSolicitudesExt, actualizarSolicitudExt, fmtDate } from '../../hooks/useCarteraDB';
 
 const ESTATUS_COLOR: Record<string, string> = {
@@ -122,7 +122,7 @@ export function SolicitudesExtGestion({ usuario = 'Sistema' }: Props) {
         <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
           <table className="w-full text-xs">
             <thead>
-              <tr className="bg-[#2E5C91] text-white">
+              <tr className="bg-[color:var(--theme-secondary)] text-white">
                 <th className="px-3 py-2.5 text-left font-medium">Tipo</th>
                 <th className="px-3 py-2.5 text-left font-medium">Clave</th>
                 <th className="px-3 py-2.5 text-left font-medium">Fecha</th>
@@ -137,7 +137,7 @@ export function SolicitudesExtGestion({ usuario = 'Sistema' }: Props) {
             <tbody>
               {loading ? (
                 <tr><td colSpan={9} className="px-3 py-12 text-center text-gray-400">
-                  <svg className="animate-spin h-6 w-6 mx-auto mb-2 text-[#4A6FA5]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10" strokeOpacity="0.25"/><path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round"/></svg>
+                  <svg className="animate-spin h-6 w-6 mx-auto mb-2 text-[color:var(--theme-primary)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10" strokeOpacity="0.25"/><path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round"/></svg>
                   Cargando solicitudes...
                 </td></tr>
               ) : filtered.length === 0 ? (
@@ -218,7 +218,7 @@ export function SolicitudesExtGestion({ usuario = 'Sistema' }: Props) {
                 <h4 className="text-sm font-bold text-red-800">Rechazar Solicitud</h4>
                 <p className="text-[11px] text-red-600 mt-0.5">{modalRechazo.tipo}</p>
               </div>
-              <button onClick={() => setModalRechazo(null)} className="text-red-400 hover:text-red-600">
+              <button type="button" aria-label="Cerrar" title="Cerrar" onClick={() => setModalRechazo(null)} className="text-red-400 hover:text-red-600">
                 <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 3l8 8M11 3l-8 8"/></svg>
               </button>
             </div>

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 import { Prospecto } from './ProspectosList';
 import { FileText, Zap, Download, Copy, FileCode } from 'lucide-react';
 import { ExpedientesElectronicos, uploadPendingExpedientes } from './ExpedientesElectronicos';
@@ -11,6 +11,13 @@ import { CampoInstitucionGobierno } from '../ui/CatalogoInstitucionGobierno';
 import type { InstitucionGobiernoSeleccion } from '../ui/CatalogoInstitucionGobierno';
 import { useCatalogoClasificaciones } from '../../hooks/useCatalogoClasificaciones';
 import { currentUser } from '../../data/mockData';
+import { consultarBuroSimulado, validarDatosConsulta, reporteBuroAXml } from '@/app/lib/buroSimulado';
+import type { ReporteBuro, AutorizacionBuro, DatosConsultaBuro } from '@/app/lib/buroSimulado';
+import { ReporteBuroVista } from '../shared/ReporteBuroVista';
+import { LISTAS_PLD, validarDatosPLD, verificarListasPLDConLatencia, estatusGeneralPLD } from '@/app/lib/pldSimulado';
+import type { RegistroPLD, ResolucionPLD } from '@/app/lib/pldSimulado';
+import { getUsuarioSesion } from '@/app/lib/sesion';
+import { CampoMonto } from '@/app/components/ui/CampoMonto';
 
 // ═══════════════════════════════════════════════════════════════════
 // PERSONERÍA JURÍDICA — qué juego de campos aplica
@@ -116,7 +123,6 @@ interface ProspectoFormProps {
   onSave: (prospectoData: any) => void;
   onBack: () => void;
   /** ID consecutivo legible: "PROS-001", "PROS-002", etc. */
-  nextId?: string;
   /** HU-CRM-03 CA-06 — Calificar Lead: abre la Oportunidad heredando el Perfil. */
   onCalificarLead?: (leadData: any) => void;
 }
@@ -128,6 +134,10 @@ interface ConsultaSIC {
   tipoConsulta: string;
   estatus: string;
   xmlResultado: string;
+  /** Consulta realizada con el simulador de Buró (ver lib/buroSimulado). */
+  folio?: string;
+  score?: number | null;
+  reporte?: ReporteBuro;
 }
 
 /**
@@ -138,7 +148,7 @@ interface ConsultaSIC {
 const etiquetaTipoConsultaSIC = (codigo: string): string =>
   (codigo || '').trim().toUpperCase() === 'BURO' ? 'Buró de Crédito' : codigo;
 
-export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, nextId, onCalificarLead }: ProspectoFormProps) {
+export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, onCalificarLead }: ProspectoFormProps) {
   const isView = mode === 'view';
   const isCreate = mode === 'create';
 
@@ -205,8 +215,13 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
   });
 
   const [showNuevoModal, setShowNuevoModal] = useState(false);
-  const [nuevoTipoConsulta, setNuevoTipoConsulta] = useState('');
-  const [nuevoEstatus, setNuevoEstatus] = useState('');
+  // Consulta a Buró: autorización del cliente y progreso de la consulta
+  const [autMedio, setAutMedio] = useState<AutorizacionBuro['medio']>('Firma autógrafa');
+  const [autFecha, setAutFecha] = useState('');
+  const [autAceptada, setAutAceptada] = useState(false);
+  const [pasoBuro, setPasoBuro] = useState<string | null>(null);
+  /** Fila sin reporte (registros anteriores) que se completará con la consulta. */
+  const [consultaARellenar, setConsultaARellenar] = useState<number | null>(null);
   const [showPdfSicModal, setShowPdfSicModal] = useState(false);
   const [consultaSeleccionada, setConsultaSeleccionada] = useState<any>(null);
   const [showXmlModal, setShowXmlModal] = useState(false);
@@ -222,9 +237,11 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
     return [];
   });
   const [showListaNegraModal, setShowListaNegraModal] = useState(false);
-  const [nuevoNombreLista, setNuevoNombreLista] = useState('');
-  const [nuevoTipoLista, setNuevoTipoLista] = useState('');
-  const [nuevoEstatusListaNegra, setNuevoEstatusListaNegra] = useState('');
+  // Verificación PLD: progreso, detalle y resolución de coincidencias
+  const [pasoPLD, setPasoPLD] = useState<string | null>(null);
+  const [pldAResolver, setPldAResolver] = useState<RegistroPLD | null>(null);
+  const [pldDecision, setPldDecision] = useState<ResolucionPLD['decision']>('Descartada (homonimia)');
+  const [pldJustificacion, setPldJustificacion] = useState('');
 
   // Estado para Expedientes Electrónicos — SOLO desde prospecto (nodo hijo de J_CLIENTES) o vacío
   const [expedientesElectronicos, setExpedientesElectronicos] = useState<any[]>(() => {
@@ -271,9 +288,9 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
       if (persistedData) {
         return persistedData;
       }
-      // Si no hay datos persistidos, crear nuevo con ID autogenerado (formato PROS-XXX)
+      // REQ-01: el ID lo asigna la BD al guardar (J_CONSECUTIVOS, 10 dígitos)
       return {
-        idProspecto: nextId || '',
+        idProspecto: '',
         tipo: '',
         nombre: '',
         apellidoPaterno: '',
@@ -369,7 +386,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
       const tipoSync = prospecto?.subtipo || prospecto?.tipo || '';
       const esMoralSync = esPersoneriaMoral(tipoSync);
       const fallbackNombres = esMoralSync ? [] : (prospecto.nombre?.split(' ') || []);
-      setFormData(prev => {
+      setFormData((prev: any) => {
         // Solo actualizar si el ID es diferente (evita sobrescribir ediciones del usuario)
         const expectedId = prospecto.idProspecto || `PROS-${String(prospecto.id).padStart(3, '0')}`;
         if (prev.idProspecto !== expectedId) {
@@ -441,7 +458,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
 
     // Listas Negras
     if (Array.isArray(prospecto.listasNegras) && prospecto.listasNegras.length > 0) {
-      setListasNegras(prev => {
+      setListasNegras((prev: any) => {
         if (prev.length === 0 || (prev.length > 0 && prev[0]?.id !== prospecto.listasNegras![0]?.id)) {
           return prospecto.listasNegras!;
         }
@@ -579,7 +596,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
 
   const handleChange = (field: string, value: string) => {
     if (!isView) {
-      setFormData(prev => ({ ...prev, [field]: value }));
+      setFormData((prev: any) => ({ ...prev, [field]: value }));
     }
   };
 
@@ -688,8 +705,9 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
           // `nombre`, el mismo campo sirve para los dos tipos y ningún
           // consumidor necesita lógica especial por tipo de persona.
           nombre: esPersoneriaMoral(formData.tipo) ? (formData.denominacionRazonSocial || '') : formData.nombre,
-          apellidoPaterno: formData.apellidoPaterno,
-          apellidoMaterno: formData.apellidoMaterno,
+          // Persona Moral no tiene apellidos: no reenviar los que quedaron de la personería física
+          apellidoPaterno: esPersoneriaMoral(formData.tipo) ? '' : formData.apellidoPaterno,
+          apellidoMaterno: esPersoneriaMoral(formData.tipo) ? '' : formData.apellidoMaterno,
           denominacionRazonSocial: formData.denominacionRazonSocial,
           telefono: formData.telefono,
           fechaNacimiento: formData.fechaNacimiento,
@@ -760,7 +778,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
             tipoFormulario: formData.tipo,
             estatus: formData.estatus,
             data: cleanedDataJson,
-            label: 'Prospecto',
+            label: 'Tipo Interlocutor',
             existingId: null,
           });
 
@@ -778,7 +796,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
               tipoFormulario: formData.tipo,
               estatus: formData.estatus,
               data: cleanedDataJson,
-              label: 'Prospecto (expedientes)',
+              label: 'Tipo Interlocutor (expedientes)',
               existingId: newUuid,
             });
           }
@@ -792,7 +810,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
             tipoFormulario: formData.tipo,
             estatus: formData.estatus,
             data: cleanedDataJson,
-            label: 'Prospecto',
+            label: 'Tipo Interlocutor',
             existingId: existingDbUuid,
           });
         }
@@ -801,7 +819,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
       onSave(prospectoPayload);
       } catch (err) {
         console.error('[ProspectoForm] Error inesperado al guardar:', err);
-        toast.error('Error inesperado al guardar prospecto', { description: String(err) });
+        toast.error('Error inesperado al guardar tipo interlocutor', { description: String(err) });
       } finally {
         setSaving(false);
       }
@@ -816,7 +834,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
     const dbUuid = prospecto?.dbUuid;
     if (!dbUuid) {
       toast.error('No se puede activar', {
-        description: 'El prospecto no tiene un ID valido en J_CLIENTES. Guarde primero.',
+        description: 'Guarde primero el tipo interlocutor.',
         duration: 5000,
       });
       return;
@@ -956,7 +974,6 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
 
   const [calificando, setCalificando] = useState(false);
   // Mientras el campo está enfocado se edita el número crudo; al salir se formatea
-  const [montoInversionFocus, setMontoInversionFocus] = useState(false);
 
   const handleCalificarLead = async () => {
     // Defensa en profundidad: el botón ya está deshabilitado en estos casos.
@@ -1016,7 +1033,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
         existingId: dbUuid,
       });
 
-      setFormData(prev => ({
+      setFormData((prev: any) => ({
         ...prev,
         estatusProspecto: 'Calificado',
         estatus: 'En proceso',
@@ -1065,7 +1082,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
     { id: 'general', label: 'Datos Básicos' },
     { id: 'perfil', label: 'Datos Complementarios' },
     { id: 'direcciones', label: 'Domicilio Fiscal (SEPOMEX)' },
-    { id: 'expedientes', label: 'Expediente Digital (KM)' },
+    { id: 'expedientes', label: 'KM Digital' },
     { id: 'sic', label: 'Consulta Buró de Crédito' },
     { id: 'listas-negras', label: 'Verificación PLD / Listas de Negocio' },
   ];
@@ -1141,131 +1158,116 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
     setShowDireccionModal(false);
   };
 
-  // Funciones para manejar SIC
-  const handleNuevo = () => {
-    setShowNuevoModal(true);
-    setNuevoTipoConsulta('');
-    setNuevoEstatus('');
+  // ── Consulta a Buró de Crédito (simulada; ver lib/buroSimulado) ──
+  const datosParaBuro = (): DatosConsultaBuro => {
+    const pm = esPersoneriaMoral(formData.tipo);
+    return {
+      tipoPersona: pm ? 'PM' : 'PF',
+      rfc: (formData.rfc || '').trim().toUpperCase(),
+      nombre: formData.nombre,
+      apellidoPaterno: formData.apellidoPaterno,
+      apellidoMaterno: formData.apellidoMaterno,
+      razonSocial: formData.denominacionRazonSocial,
+      curp: formData.curp,
+      fechaNacimiento: formData.fechaNacimiento,
+      direccion: formData.direccion || (() => {
+        const d = direcciones?.find((x: any) => x.principal) || direcciones?.[0];
+        return d ? [d.calle, d.numeroExterior, d.colonia, d.codigoPostal && `C.P. ${d.codigoPostal}`].filter(Boolean).join(' ') : '';
+      })(),
+    };
   };
 
-  const handleGuardarNuevo = () => {
-    if (!nuevoTipoConsulta || !nuevoEstatus) {
-      alert('Tipo de Consulta y Estatus son obligatorios');
+  const abrirConsultaBuro = (rellenarId: number | null = null) => {
+    setConsultaARellenar(rellenarId);
+    setAutMedio('Firma autógrafa');
+    setAutFecha(new Date().toISOString().slice(0, 10));
+    setAutAceptada(false);
+    setPasoBuro(null);
+    setShowNuevoModal(true);
+  };
+  const handleNuevo = () => abrirConsultaBuro(null);
+
+  const handleGuardarNuevo = async () => {
+    if (pasoBuro) return;
+    const datos = datosParaBuro();
+    const faltan = validarDatosConsulta(datos);
+    if (faltan.length) {
+      toast.error('Datos incompletos para consultar Buró', { description: `Complete: ${faltan.join(', ')}.`, duration: 8000 });
+      return;
+    }
+    if (!autAceptada || !autFecha) {
+      toast.error('Falta la autorización del cliente', { description: 'La consulta a Buró requiere la autorización expresa y firmada del consultado.' });
+      return;
+    }
+    if (autFecha > new Date().toISOString().slice(0, 10)) {
+      toast.error('Fecha de autorización inválida', { description: 'La autorización no puede tener fecha futura.' });
       return;
     }
 
-    // Generar XML SIC automáticamente
-    const xmlGenerado = `<?xml version="1.0" encoding="UTF-8"?>
-<ConsultaSIC>
-  <Encabezado>
-    <FechaConsulta>${new Date().toISOString()}</FechaConsulta>
-    <TipoConsulta>${nuevoTipoConsulta}</TipoConsulta>
-    <Folio>SIC-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}</Folio>
-    <Version>2.0</Version>
-  </Encabezado>
-  <DatosConsultado>
-    <Nombre>${formData.nombres} ${formData.apellidoPaterno} ${formData.apellidoMaterno}</Nombre>
-    <RFC>${formData.rfc || 'N/A'}</RFC>
-    <CURP>${formData.curp || 'N/A'}</CURP>
-    <FechaNacimiento>${formData.fechaNacimiento || 'N/A'}</FechaNacimiento>
-  </DatosConsultado>
-  <Resultado>
-    <Score>720</Score>
-    <Clasificacion>Bueno</Clasificacion>
-    <CuentasActivas>5</CuentasActivas>
-    <SaldoTotal>284500.00</SaldoTotal>
-    <CreditosCerrados>8</CreditosCerrados>
-    <Estatus>${nuevoEstatus}</Estatus>
-  </Resultado>
-  <Creditos>
-    <Credito>
-      <Acreedor>BANCO SANTANDER</Acreedor>
-      <Tipo>Tarjeta de Crédito</Tipo>
-      <Saldo>45200.00</Saldo>
-      <Estatus>AL CORRIENTE</Estatus>
-      <MOP>01</MOP>
-    </Credito>
-    <Credito>
-      <Acreedor>BBVA BANCOMER</Acreedor>
-      <Tipo>Crédito Automotriz</Tipo>
-      <Saldo>185300.00</Saldo>
-      <Estatus>AL CORRIENTE</Estatus>
-      <MOP>01</MOP>
-    </Credito>
-    <Credito>
-      <Acreedor>LIVERPOOL</Acreedor>
-      <Tipo>Tarjeta de Crédito</Tipo>
-      <Saldo>12500.00</Saldo>
-      <Estatus>AL CORRIENTE</Estatus>
-      <MOP>01</MOP>
-    </Credito>
-  </Creditos>
-  <Consultas>
-    <TotalConsultas>8</TotalConsultas>
-    <UltimaConsulta>
-      <Fecha>${new Date().toLocaleDateString('es-MX')}</Fecha>
-      <Otorgante>BANCO AZTECA</Otorgante>
-      <TipoCredito>Tarjeta de Crédito</TipoCredito>
-    </UltimaConsulta>
-  </Consultas>
-</ConsultaSIC>`;
+    let reporte: ReporteBuro;
+    try {
+      reporte = await consultarBuroSimulado(datos, { medio: autMedio, fecha: autFecha }, setPasoBuro);
+    } catch (err) {
+      console.error('[Buró] Error en la consulta simulada:', err);
+      toast.error('No se pudo completar la consulta a Buró', { description: 'Intente de nuevo en unos momentos.' });
+      setPasoBuro(null);
+      return;
+    }
 
-    const nuevaConsulta: ConsultaSIC = {
-      id: Date.now(), // ID único basado en timestamp (evita colisiones)
-      fechaHora: new Date().toLocaleString('es-MX', {
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit'
+    const registro: ConsultaSIC = {
+      id: consultaARellenar ?? Date.now(),
+      fechaHora: new Date(reporte.fechaConsulta).toLocaleString('es-MX', {
+        day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit',
       }),
-      usuario: currentUser.name || 'Usuario Actual',
-      tipoConsulta: nuevoTipoConsulta,
-      estatus: nuevoEstatus,
-      xmlResultado: xmlGenerado
+      usuario: getUsuarioSesion(),
+      tipoConsulta: 'BURO',
+      estatus: reporte.resultado,
+      // El XML completo se regenera del reporte al verlo (el guardado recorta este campo).
+      xmlResultado: `[Reporte Buró · folio ${reporte.folio}]`,
+      folio: reporte.folio,
+      score: reporte.score.valor,
+      reporte,
     };
-
-    const allConsultas = [...consultas, nuevaConsulta];
+    const allConsultas = consultaARellenar !== null
+      ? consultas.map(c => (c.id === consultaARellenar ? registro : c))
+      : [...consultas, registro];
     setConsultas(allConsultas);
     setShowNuevoModal(false);
+    setPasoBuro(null);
+    setConsultaARellenar(null);
 
-    // ── Auto-sync: derivar estatusSIC del estatus de la ultima consulta ──
-    // Regla CORE: si la consulta mas reciente es "NEGATIVO", el prospecto es apto para activacion.
-    const ultimaConsulta = allConsultas[allConsultas.length - 1];
-    const estatusSICDerivado = ultimaConsulta.estatus.toUpperCase().includes('NEGATIVO')
-      ? 'NEGATIVO'
-      : ultimaConsulta.estatus.toUpperCase().includes('POSITIVO')
-        ? 'POSITIVO'
-        : ultimaConsulta.estatus;
-    setFormData(prev => ({ ...prev, estatusSIC: estatusSICDerivado }));
-  };
+    // ── Auto-sync: el estatus SIC del interlocutor es el de la consulta más reciente ──
+    // Regla CORE: NEGATIVO (sin registros negativos) permite la activación.
+    setFormData((prev: any) => ({ ...prev, estatusSIC: reporte.resultado }));
 
-  const handleConsultar = (id: number) => {
-    const updatedConsultas = consultas.map(c => 
-      c.id === id 
-        ? { ...c, estatus: 'NEGATIVO', xmlResultado: '+7XMLRESULTADOSC...' } 
-        : c
-    );
-    setConsultas(updatedConsultas);
-
-    // Auto-sync: derivar estatusSIC de la consulta procesada
-    const consultaProcesada = updatedConsultas.find(c => c.id === id);
-    if (consultaProcesada) {
-      const estatusSICDerivado = consultaProcesada.estatus.toUpperCase().includes('NEGATIVO')
-        ? 'NEGATIVO'
-        : consultaProcesada.estatus.toUpperCase().includes('POSITIVO')
-          ? 'POSITIVO'
-          : consultaProcesada.estatus;
-      setFormData(prev => ({ ...prev, estatusSIC: estatusSICDerivado }));
+    const score = reporte.score.valor === null ? 'score no calculable' : `${reporte.score.nombre} ${reporte.score.valor}`;
+    if (reporte.resultado === 'NEGATIVO') {
+      toast.success('Consulta a Buró completada', { description: `Folio ${reporte.folio} · ${score} · Sin registros negativos.` });
+    } else {
+      toast.warning('Consulta a Buró con registros negativos', { description: `Folio ${reporte.folio} · ${score} · ${reporte.motivoResultado}.`, duration: 8000 });
     }
   };
 
+  /** Registros anteriores sin reporte: completar con una consulta real al simulador. */
+  const handleConsultar = (id: number) => {
+    const c = consultas.find(x => x.id === id);
+    if (c?.reporte) {
+      toast.info('Consulta ya realizada', { description: `Folio ${c.folio}. Para una nueva consulta use el botón Nuevo.` });
+      return;
+    }
+    abrirConsultaBuro(id);
+  };
+
   const handleVerPdfSic = (consulta: any) => {
-    // ── Validar campos obligatorios antes de generar el PDF ──
+    if (consulta?.reporte) {
+      setConsultaSeleccionada(consulta);
+      setShowPdfSicModal(true);
+      return;
+    }
+    // ── Registros anteriores: validar campos obligatorios antes de generar el PDF ──
     const errores: string[] = [];
     const nombreCompleto = `${formData.nombre || ''} ${formData.apellidoPaterno || ''} ${formData.apellidoMaterno || ''}`.trim();
-    if (!nombreCompleto) errores.push('Nombre completo del prospecto');
+    if (!nombreCompleto) errores.push('Nombre completo del tipo interlocutor');
     if (!formData.rfc || formData.rfc.trim() === '') errores.push('RFC');
     if (!formData.curp || formData.curp.trim() === '') errores.push('CURP');
     if (!formData.fechaNacimiento || formData.fechaNacimiento.trim() === '') errores.push('Fecha de nacimiento');
@@ -1274,7 +1276,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
 
     if (errores.length > 0) {
       toast.error('Datos incompletos para generar el reporte', {
-        description: `Los siguientes campos obligatorios están vacíos: ${errores.join(', ')}. Complete los datos del prospecto antes de generar el reporte SIC.`,
+        description: `Los siguientes campos obligatorios están vacíos: ${errores.join(', ')}. Complete los datos del tipo interlocutor antes de generar el reporte SIC.`,
         duration: 8000,
       });
       return;
@@ -1308,77 +1310,78 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
     URL.revokeObjectURL(url);
   };
 
-  // Funciones para manejar Listas Negras
-  const handleNuevoListaNegra = () => {
-    setShowListaNegraModal(true);
-    setNuevoNombreLista('');
-    setNuevoTipoLista('');
-    setNuevoEstatusListaNegra('');
+  // ── Verificación PLD / Listas de Negocio (ver lib/pldSimulado) ──
+  const datosParaPLD = () => {
+    const pm = esPersoneriaMoral(formData.tipo);
+    return {
+      tipoPersona: (pm ? 'PM' : 'PF') as 'PM' | 'PF',
+      rfc: (formData.rfc || '').trim().toUpperCase(),
+      nombre: pm
+        ? (formData.denominacionRazonSocial || '').trim()
+        : [formData.nombre, formData.apellidoPaterno, formData.apellidoMaterno].filter(Boolean).join(' ').trim(),
+    };
   };
 
-  const handleGuardarListaNegra = () => {
-    if (!nuevoNombreLista || !nuevoTipoLista || !nuevoEstatusListaNegra) {
-      alert('Nombre lista, Tipo lista y Estatus son obligatorios');
+  const aplicarEstatusPLD = (registros: RegistroPLD[]) => {
+    const general = estatusGeneralPLD(registros);
+    if (general) setFormData((prev: any) => ({ ...prev, estatusListaNegra: general }));
+    return general;
+  };
+
+  const handleNuevoListaNegra = () => {
+    setPasoPLD(null);
+    setShowListaNegraModal(true);
+  };
+
+  const handleGuardarListaNegra = async () => {
+    if (pasoPLD) return;
+    const datos = datosParaPLD();
+    const faltan = validarDatosPLD(datos);
+    if (faltan.length) {
+      toast.error('Datos incompletos para la verificación PLD', { description: `Complete: ${faltan.join(', ')}.` });
       return;
     }
-
-    const nuevaListaNegra = {
-      id: Date.now(), // ID único basado en timestamp (evita colisiones)
-      fechaHora: new Date().toLocaleString('es-MX', {
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit'
-      }),
-      usuario: currentUser.name || 'Usuario Actual',
-      nombreLista: nuevoNombreLista,
-      tipoLista: nuevoTipoLista,
-      estatus: nuevoEstatusListaNegra
-    };
-
-    const allListas = [...listasNegras, nuevaListaNegra];
-    setListasNegras(allListas);
+    const nuevos = await verificarListasPLDConLatencia(datos, getUsuarioSesion(), setPasoPLD);
+    const todos = [...(listasNegras as RegistroPLD[]), ...nuevos];
+    setListasNegras(todos);
     setShowListaNegraModal(false);
-
-    // ── Auto-sync: derivar estatusListaNegra del estatus del ultimo registro ──
-    // Regla CORE: si el registro mas reciente es "NEGATIVO", el prospecto es apto.
-    const ultimaLista = allListas[allListas.length - 1];
-    const estatusLNDerivado = ultimaLista.estatus.toUpperCase().includes('NEGATIVO')
-      ? 'NEGATIVO'
-      : ultimaLista.estatus.toUpperCase().includes('POSITIVO')
-        ? 'POSITIVO'
-        : ultimaLista.estatus;
-    setFormData(prev => ({ ...prev, estatusListaNegra: estatusLNDerivado }));
-  };
-
-  const handleCambiarEstatusListaNegra = (id: number, nuevoEstatus: string) => {
-    const updatedListas = listasNegras.map(lista => 
-      lista.id === id ? { ...lista, estatus: nuevoEstatus } : lista
-    );
-    setListasNegras(updatedListas);
-
-    // Auto-sync: recalcular estatusListaNegra basado en el ultimo registro modificado
-    const ultimaLista = updatedListas[updatedListas.length - 1];
-    if (ultimaLista) {
-      const estatusLNDerivado = ultimaLista.estatus.toUpperCase().includes('NEGATIVO')
-        ? 'NEGATIVO'
-        : ultimaLista.estatus.toUpperCase().includes('POSITIVO')
-          ? 'POSITIVO'
-          : ultimaLista.estatus;
-      setFormData(prev => ({ ...prev, estatusListaNegra: estatusLNDerivado }));
+    setPasoPLD(null);
+    const general = aplicarEstatusPLD(todos);
+    const hallazgos = nuevos.filter(r => r.estatus !== 'NEGATIVO');
+    if (general === 'NEGATIVO') {
+      toast.success('Verificación PLD sin coincidencias', { description: `Folio ${nuevos[0]?.folio} · ${nuevos.length} listas revisadas.` });
+    } else if (general === 'EN REVISIÓN') {
+      toast.warning('Coincidencia parcial en listas', { description: `${hallazgos.map(h => h.nombreLista).join(', ')}. Un analista debe resolverla.`, duration: 8000 });
+    } else {
+      toast.error('Coincidencia confirmada en listas', { description: `${hallazgos.map(h => h.nombreLista).join(', ')}. No se puede activar.`, duration: 10000 });
     }
   };
 
-  // Consultar Lista Negra — simula consulta y asigna resultado NEGATIVO
-  const handleConsultarListaNegra = (id: number) => {
-    const updatedListas = listasNegras.map((lista: any) =>
-      lista.id === id ? { ...lista, estatus: 'NEGATIVO' } : lista
-    );
-    setListasNegras(updatedListas);
-    setFormData(prev => ({ ...prev, estatusListaNegra: 'NEGATIVO' }));
-    toast.success(`Verificación PLD #${id} consultada — Resultado: NEGATIVO`);
+  const abrirResolucionPLD = (r: RegistroPLD) => {
+    setPldAResolver(r);
+    setPldDecision('Descartada (homonimia)');
+    setPldJustificacion('');
+  };
+
+  const handleResolverPLD = () => {
+    if (!pldAResolver) return;
+    if (pldJustificacion.trim().length < 20) {
+      toast.error('Justificación insuficiente', { description: 'Describa en al menos 20 caracteres por qué se descarta o confirma la coincidencia.' });
+      return;
+    }
+    const resolucion: ResolucionPLD = {
+      decision: pldDecision,
+      justificacion: pldJustificacion.trim(),
+      usuario: getUsuarioSesion(),
+      fecha: new Date().toLocaleString('es-MX', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+    };
+    const actualizados = (listasNegras as RegistroPLD[]).map(r => (r.id === pldAResolver.id
+      ? { ...r, estatus: pldDecision === 'Confirmada' ? 'POSITIVO' : 'NEGATIVO', resolucion }
+      : r));
+    setListasNegras(actualizados);
+    setPldAResolver(null);
+    const general = aplicarEstatusPLD(actualizados);
+    toast.success(`Coincidencia ${pldDecision === 'Confirmada' ? 'confirmada' : 'descartada'}`, { description: `Estatus de listas de negocio: ${general}.` });
   };
 
   // Función para calcular tabla de amortización
@@ -1542,7 +1545,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
             <h2 className="text-lg font-normal text-gray-800">
               {isCreate ? 'Alta de Cliente Potencial' : isView ? 'Ver Cliente Potencial' : 'Editar Cliente Potencial'}
             </h2>
-            <button className="p-1 ml-2">
+            <button type="button" aria-label="Buscar" title="Buscar" className="p-1 ml-2">
               <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#999" strokeWidth="2">
                 <circle cx="8" cy="8" r="6"/>
                 <path d="M13 13l3 3"/>
@@ -1559,7 +1562,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
             <button 
               onClick={handleSubmit}
               disabled={saving}
-              className={`px-5 py-1.5 bg-[#0099CC] text-white rounded text-sm hover:bg-[#0088BB] font-medium flex items-center gap-1.5 ${saving ? 'opacity-60 cursor-wait' : ''}`}
+              className={`px-5 py-1.5 bg-[color:var(--theme-action)] text-white rounded text-sm hover:bg-[color:var(--theme-action-hover)] font-medium flex items-center gap-1.5 ${saving ? 'opacity-60 cursor-wait' : ''}`}
             >
               {saving ? (
                 <>
@@ -1624,6 +1627,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
                   <input
                     type="text"
                     value={formData.idProspecto}
+                    placeholder="Se asigna al guardar"
                     disabled
                     className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded bg-gray-100 text-gray-600"
                   />
@@ -1878,19 +1882,9 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
                   className={`px-4 py-2.5 text-xs whitespace-nowrap transition-colors ${
                     activeTab === tab.id
                       ? 'bg-secondary-theme text-white font-medium'
-                      : 'text-white/90'
+                      : 'text-white/90 hover:bg-[color:var(--theme-primary-hover)]'
                   }`}
                   style={activeTab !== tab.id ? { transition: 'background-color 0.2s' } : {}}
-                  onMouseEnter={(e) => {
-                    if (activeTab !== tab.id) {
-                      e.currentTarget.style.backgroundColor = 'var(--theme-primary-hover)';
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (activeTab !== tab.id) {
-                      e.currentTarget.style.backgroundColor = '';
-                    }
-                  }}
                 >
                   {tab.label}
                 </button>
@@ -2170,24 +2164,12 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
                   ) : (
                     <div className="relative flex-1">
                       <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">$</span>
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        value={
-                          montoInversionFocus
-                            ? ((formData as any).montoInversion ?? '0.00')
-                            : formatMiles((formData as any).montoInversion)
-                        }
-                        onFocus={() => setMontoInversionFocus(true)}
-                        onChange={(e) => {
-                          const limpio = e.target.value.replace(/[^0-9.]/g, '');
-                          if (limpio.split('.').length > 2) return;
-                          handleChange('montoInversion' as any, limpio);
-                        }}
+                      <CampoMonto
+                        value={(formData as any).montoInversion}
+                        onChange={(e) => handleChange('montoInversion' as any, e.target.value)}
                         onBlur={(e) => {
-                          const n = parseFloat(e.target.value.replace(/,/g, ''));
+                          const n = parseFloat(e.target.value);
                           handleChange('montoInversion' as any, isNaN(n) ? '0.00' : n.toFixed(2));
-                          setMontoInversionFocus(false);
                         }}
                         className="w-full pl-5 pr-2 py-1 text-xs border border-gray-300 rounded text-right font-mono"
                       />
@@ -2245,7 +2227,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
                     title={motivoNoCalificable || 'Calificar el Lead y convertirlo en Oportunidad'}
                     className={`px-5 py-1.5 rounded text-xs font-medium transition-colors ${
                       puedeCalificar && !calificando
-                        ? 'bg-[#0099CC] text-white hover:bg-[#0088BB]'
+                        ? 'bg-[color:var(--theme-action)] text-white hover:bg-[color:var(--theme-action-hover)]'
                         : 'bg-gray-300 text-gray-500 cursor-not-allowed'
                     }`}
                   >
@@ -2266,7 +2248,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
                   <div className="flex items-center gap-2">
                     <button
                       onClick={handleNuevaDireccion}
-                      className="px-4 py-1 bg-[#0099CC] text-white rounded text-xs hover:bg-[#0088BB]"
+                      className="px-4 py-1 bg-[color:var(--theme-action)] text-white rounded text-xs hover:bg-[color:var(--theme-action-hover)]"
                     >
                       Nuevo
                     </button>
@@ -2344,7 +2326,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
                           </td>
                           {!isView && (
                             <td className="px-2 py-2 text-center">
-                              <button
+                              <button type="button" aria-label="Editar dirección" title="Editar dirección"
                                 onClick={() => handleEditDireccion(dir)}
                                 className="text-gray-600 hover:text-gray-800"
                               >
@@ -2442,7 +2424,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
               <div className="border border-gray-300 overflow-x-auto bg-white">
                 <table className="w-full text-xs border-collapse">
                   <thead>
-                    <tr className="bg-[#5B7DA4] text-white">
+                    <tr className="bg-[color:var(--theme-primary)] text-white">
                       <th className="px-4 py-2.5 text-center font-medium border-r border-white">No. PAGO</th>
                       <th className="px-4 py-2.5 text-center font-medium border-r border-white">SALDO CAPITAL</th>
                       <th className="px-4 py-2.5 text-center font-medium border-r border-white">INTERÉS</th>
@@ -2522,6 +2504,8 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
                       <th className="px-3 py-2 text-left font-medium text-xs text-gray-800 border-r border-gray-300">Fecha y hora del registro</th>
                       <th className="px-3 py-2 text-left font-medium text-xs text-gray-800 border-r border-gray-300">Usuario que registró</th>
                       <th className="px-3 py-2 text-left font-medium text-xs text-gray-800 border-r border-gray-300">Tipo de Consulta *</th>
+                      <th className="px-3 py-2 text-left font-medium text-xs text-gray-800 border-r border-gray-300">Folio</th>
+                      <th className="px-3 py-2 text-center font-medium text-xs text-gray-800 border-r border-gray-300">Score</th>
                       <th className="px-3 py-2 text-left font-medium text-xs text-gray-800 border-r border-gray-300">Estatus *</th>
                       <th className="px-3 py-2 text-center font-medium text-xs text-gray-800 border-r border-gray-300 w-20">Consultar</th>
                       <th className="px-3 py-2 text-center font-medium text-xs text-gray-800 border-r border-gray-300 w-20">PDF SIC</th>
@@ -2531,8 +2515,8 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
                   <tbody className="bg-white">
                     {consultas.length === 0 && (
                       <tr>
-                        <td colSpan={7} className="px-3 py-8 text-center text-gray-400 text-xs">
-                          No hay consultas SIC registradas para este prospecto
+                        <td colSpan={9} className="px-3 py-8 text-center text-gray-400 text-xs">
+                          No hay consultas SIC registradas para este tipo interlocutor
                         </td>
                       </tr>
                     )}
@@ -2548,22 +2532,28 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
                             className="w-full px-1 py-0.5 text-xs border-0 bg-transparent"
                           />
                         </td>
-                        <td className="px-3 py-2 border-r border-gray-300">
-                          <input 
-                            type="text" 
-                            value={consulta.estatus}
-                            readOnly
-                            className="w-full px-1 py-0.5 text-xs border-0 bg-transparent"
-                          />
+                        <td className="px-3 py-2 text-xs text-gray-700 border-r border-gray-300 font-mono">{consulta.folio || '—'}</td>
+                        <td className="px-3 py-2 text-xs text-center border-r border-gray-300 font-semibold">
+                          {consulta.reporte ? (consulta.score ?? 'N/D') : '—'}
+                        </td>
+                        <td className="px-3 py-2 border-r border-gray-300 text-xs" title={consulta.reporte?.motivoResultado}>
+                          <span className={consulta.estatus === 'NEGATIVO' ? 'text-green-700 font-semibold' : consulta.estatus === 'POSITIVO' ? 'text-red-600 font-semibold' : 'text-gray-700'}>
+                            {consulta.estatus}
+                          </span>
+                          {consulta.reporte && (
+                            <span className="block text-[10px] text-gray-500">
+                              {consulta.estatus === 'NEGATIVO' ? 'Sin registros negativos' : 'Con registros negativos'}
+                            </span>
+                          )}
                         </td>
                         <td className="px-3 py-2 border-r border-gray-300 text-center">
-                          <button 
+                          <button
                             onClick={() => handleConsultar(consulta.id)}
-                            className="inline-flex items-center justify-center p-1 hover:bg-gray-100 rounded"
-                            title="Consultar"
-                            disabled={isView}
+                            className="inline-flex items-center justify-center p-1 hover:bg-gray-100 rounded disabled:hover:bg-transparent"
+                            title={consulta.reporte ? `Consulta realizada · folio ${consulta.folio}` : 'Consultar Buró'}
+                            disabled={isView || !!consulta.reporte}
                           >
-                            <Zap className={`w-4 h-4 ${isView ? 'text-gray-400' : 'text-yellow-600'}`} />
+                            <Zap className={`w-4 h-4 ${isView || consulta.reporte ? 'text-gray-400' : 'text-yellow-600'}`} />
                           </button>
                         </td>
                         <td className="px-3 py-2 border-r border-gray-300 text-center">
@@ -2577,12 +2567,12 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
                         </td>
                         <td className="px-3 py-2 text-center">
                           <button 
-                            onClick={() => handleVerXml(consulta.xmlResultado)}
+                            onClick={() => handleVerXml(consulta.reporte ? reporteBuroAXml(consulta.reporte) : consulta.xmlResultado)}
                             className="inline-flex items-center justify-center p-1 hover:bg-gray-100 rounded"
                             title="Ver XML SIC"
-                            disabled={!consulta.xmlResultado}
+                            disabled={!consulta.reporte && !consulta.xmlResultado}
                           >
-                            <FileCode className={`w-4 h-4 ${consulta.xmlResultado ? 'text-green-600' : 'text-gray-400'}`} />
+                            <FileCode className={`w-4 h-4 ${consulta.reporte || consulta.xmlResultado ? 'text-green-600' : 'text-gray-400'}`} />
                           </button>
                         </td>
                       </tr>
@@ -2614,67 +2604,74 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
                 )}
               </div>
 
-              {/* Tabla de listas negras — estilo SIC */}
-              <div className="border border-gray-300">
+              {/* Tabla de verificaciones PLD — una fila por lista revisada */}
+              <div className="border border-gray-300 overflow-x-auto">
                 <table className="w-full text-xs">
                   <thead>
                     <tr className="bg-[#E7E6E6] border-b border-gray-400">
-                      <th className="px-3 py-2 text-left font-medium text-xs text-gray-800 border-r border-gray-300">Fecha y hora del registro</th>
-                      <th className="px-3 py-2 text-left font-medium text-xs text-gray-800 border-r border-gray-300">Usuario que registró</th>
-                      <th className="px-3 py-2 text-left font-medium text-xs text-gray-800 border-r border-gray-300">Nombre lista *</th>
-                      <th className="px-3 py-2 text-left font-medium text-xs text-gray-800 border-r border-gray-300">Tipo lista *</th>
-                      <th className="px-3 py-2 text-left font-medium text-xs text-gray-800 border-r border-gray-300">Estatus *</th>
-                      <th className="px-3 py-2 text-center font-medium text-xs text-gray-800 w-20">Consultar</th>
+                      <th className="px-3 py-2 text-left font-medium text-xs text-gray-800 border-r border-gray-300">Fecha y hora</th>
+                      <th className="px-3 py-2 text-left font-medium text-xs text-gray-800 border-r border-gray-300">Usuario</th>
+                      <th className="px-3 py-2 text-left font-medium text-xs text-gray-800 border-r border-gray-300">Folio</th>
+                      <th className="px-3 py-2 text-left font-medium text-xs text-gray-800 border-r border-gray-300">Lista</th>
+                      <th className="px-3 py-2 text-left font-medium text-xs text-gray-800 border-r border-gray-300">Tipo</th>
+                      <th className="px-3 py-2 text-left font-medium text-xs text-gray-800 border-r border-gray-300">Coincidencia</th>
+                      <th className="px-3 py-2 text-left font-medium text-xs text-gray-800 border-r border-gray-300">Estatus</th>
+                      <th className="px-3 py-2 text-center font-medium text-xs text-gray-800 w-24">Acción</th>
                     </tr>
                   </thead>
                   <tbody className="bg-white">
                     {listasNegras.length === 0 && (
                       <tr>
-                        <td colSpan={6} className="px-3 py-8 text-center text-gray-400 text-xs">
-                          No hay registros de Listas de Negocio para este Cliente Potencial
+                        <td colSpan={8} className="px-3 py-8 text-center text-gray-400 text-xs">
+                          No hay verificaciones PLD para este Cliente Potencial
                         </td>
                       </tr>
                     )}
-                    {listasNegras.map((lista) => (
-                      <tr key={lista.id} className="border-b border-gray-300">
-                        <td className="px-3 py-2 text-xs text-gray-700 border-r border-gray-300">{lista.fechaHora}</td>
-                        <td className="px-3 py-2 text-xs text-gray-700 border-r border-gray-300">{lista.usuario}</td>
-                        <td className="px-3 py-2 border-r border-gray-300">
-                          <input 
-                            type="text" 
-                            value={lista.nombreLista}
-                            readOnly
-                            className="w-full px-1 py-0.5 text-xs border-0 bg-transparent"
-                          />
-                        </td>
-                        <td className="px-3 py-2 border-r border-gray-300">
-                          <input 
-                            type="text" 
-                            value={lista.tipoLista}
-                            readOnly
-                            className="w-full px-1 py-0.5 text-xs border-0 bg-transparent"
-                          />
-                        </td>
-                        <td className="px-3 py-2 border-r border-gray-300">
-                          <input 
-                            type="text" 
-                            value={lista.estatus}
-                            readOnly
-                            className="w-full px-1 py-0.5 text-xs border-0 bg-transparent"
-                          />
-                        </td>
-                        <td className="px-3 py-2 text-center">
-                          <button 
-                            onClick={() => handleConsultarListaNegra(lista.id)}
-                            className="inline-flex items-center justify-center p-1 hover:bg-gray-100 rounded"
-                            title="Consultar — resultado NEGATIVO"
-                            disabled={isView}
-                          >
-                            <Zap className={`w-4 h-4 ${isView ? 'text-gray-400' : 'text-yellow-600'}`} />
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
+                    {[...(listasNegras as RegistroPLD[])].reverse().map((lista, i, arr) => {
+                      const nuevoFolio = i === 0 || arr[i - 1].folio !== lista.folio;
+                      const est = (lista.estatus || '').toUpperCase();
+                      const color = est === 'NEGATIVO' ? 'text-green-700' : est === 'POSITIVO' ? 'text-red-600' : 'text-amber-600';
+                      return (
+                        <tr key={lista.id} className={`border-b border-gray-200 ${nuevoFolio && i > 0 ? 'border-t-2 border-t-gray-300' : ''} ${est === 'COINCIDENCIA' ? 'bg-amber-50/60' : est === 'POSITIVO' ? 'bg-red-50/60' : ''}`}>
+                          <td className="px-3 py-2 text-xs text-gray-700 border-r border-gray-200 whitespace-nowrap">{nuevoFolio ? lista.fechaHora : ''}</td>
+                          <td className="px-3 py-2 text-xs text-gray-700 border-r border-gray-200">{nuevoFolio ? lista.usuario : ''}</td>
+                          <td className="px-3 py-2 text-xs text-gray-700 border-r border-gray-200 font-mono whitespace-nowrap">{nuevoFolio ? (lista.folio || '—') : ''}</td>
+                          <td className="px-3 py-2 text-xs text-gray-800 border-r border-gray-200">
+                            {lista.nombreLista}
+                            {lista.severidad && <span className="block text-[10px] text-gray-500">Si coincide: {lista.severidad}</span>}
+                          </td>
+                          <td className="px-3 py-2 text-xs text-gray-700 border-r border-gray-200">{lista.tipoLista}</td>
+                          <td className="px-3 py-2 text-xs text-gray-700 border-r border-gray-200">
+                            {lista.coincidencia ? (
+                              <span title={`${lista.coincidencia.motivo} · Ref. ${lista.coincidencia.referencia}`}>
+                                <span className="font-medium">{lista.coincidencia.nombreEnLista}</span>
+                                <span className="block text-[10px] text-gray-500">Similitud {lista.coincidencia.similitud}% · {lista.coincidencia.motivo}</span>
+                              </span>
+                            ) : <span className="text-gray-400">Sin coincidencias</span>}
+                          </td>
+                          <td className={`px-3 py-2 text-xs font-semibold border-r border-gray-200 ${color}`}>
+                            {lista.estatus}
+                            {lista.resolucion && (
+                              <span className="block text-[10px] font-normal text-gray-500" title={lista.resolucion.justificacion}>
+                                {lista.resolucion.decision} · {lista.resolucion.usuario}
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2 text-center">
+                            {est === 'COINCIDENCIA' && !isView ? (
+                              <button type="button" onClick={() => abrirResolucionPLD(lista)}
+                                className="px-2 py-1 text-[11px] font-medium rounded border border-amber-400 text-amber-700 hover:bg-amber-50">
+                                Resolver
+                              </button>
+                            ) : lista.coincidencia ? (
+                              <button type="button" onClick={() => abrirResolucionPLD(lista)} className="enlace-accion text-[color:var(--theme-link)] hover:underline text-[11px]">
+                                Detalle
+                              </button>
+                            ) : <span className="text-gray-300">—</span>}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -2701,17 +2698,21 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
       )}
 
       {/* Modal de Nueva Consulta SIC */}
-      {showNuevoModal && (
+      {showNuevoModal && (() => {
+        const datos = datosParaBuro();
+        const faltan = validarDatosConsulta(datos);
+        const pm = datos.tipoPersona === 'PM';
+        const nombre = pm ? datos.razonSocial : [datos.nombre, datos.apellidoPaterno, datos.apellidoMaterno].filter(Boolean).join(' ');
+        const consultando = !!pasoBuro;
+        return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="bg-white rounded shadow-xl w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col">
-            {/* Header institucional */}
             <div className="bg-primary-theme px-6 py-4 flex items-center justify-between">
-              <h3 className="text-base font-medium text-white">
-                Nueva Consulta SIC
-              </h3>
-              <button
-                onClick={() => setShowNuevoModal(false)}
-                className="text-white hover:text-gray-200"
+              <h3 className="text-base font-medium text-white">Consulta a Buró de Crédito</h3>
+              <button type="button" aria-label="Cerrar" title="Cerrar"
+                onClick={() => !consultando && setShowNuevoModal(false)}
+                disabled={consultando}
+                className="text-white hover:text-gray-200 disabled:opacity-50"
               >
                 <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
                   <path d="M10 8.586L2.929 1.515 1.515 2.929 8.586 10l-7.071 7.071 1.414 1.414L10 11.414l7.071 7.071 1.414-1.414L11.414 10l7.071-7.071-1.414-1.414L10 8.586z"/>
@@ -2719,69 +2720,85 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
               </button>
             </div>
 
-            {/* Contenido del formulario */}
-            <div className="flex-1 overflow-y-auto p-6">
-              {/* Título de sección con estilo institucional */}
-              <div className="bg-gray-100 border-l-4 border-primary-theme px-4 py-2 mb-4">
-                <h4 className="text-sm font-semibold text-gray-800">INFORMACIÓN DE CONSULTA BURÓ DE CRÉDITO (SIC)</h4>
+            <div className="flex-1 overflow-y-auto p-6 space-y-5 text-sm">
+              {/* Producto */}
+              <div>
+                <div className="bg-gray-100 border-l-4 border-primary-theme px-4 py-2 mb-3">
+                  <h4 className="text-sm font-semibold text-gray-800">PRODUCTO</h4>
+                </div>
+                <p className="text-gray-800">
+                  {pm ? 'Reporte de Crédito Empresarial + Score PyME' : 'Reporte de Crédito Especial + BC Score'}
+                  <span className="ml-2 text-xs text-gray-500">({pm ? 'Persona Moral' : 'Persona Física'}, según la personería jurídica)</span>
+                </p>
               </div>
 
-              {/* Formulario */}
-              <div className="space-y-4">
-                {/* TIPO DE CONSULTA y ESTATUS en la misma fila */}
+              {/* Datos que se enviarán */}
+              <div>
+                <div className="bg-gray-100 border-l-4 border-primary-theme px-4 py-2 mb-3">
+                  <h4 className="text-sm font-semibold text-gray-800">DATOS DEL CONSULTADO</h4>
+                </div>
+                <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-xs">
+                  <div><span className="text-gray-500">{pm ? 'Razón social' : 'Nombre'}:</span> <span className="font-medium">{nombre || '—'}</span></div>
+                  <div><span className="text-gray-500">RFC:</span> <span className="font-medium font-mono">{datos.rfc || '—'}</span></div>
+                  {!pm && <div><span className="text-gray-500">Fecha de nacimiento:</span> <span className="font-medium">{datos.fechaNacimiento || '—'}</span></div>}
+                  {!pm && <div><span className="text-gray-500">CURP:</span> <span className="font-medium font-mono">{datos.curp || '—'}</span></div>}
+                  <div className="col-span-2"><span className="text-gray-500">Domicilio:</span> <span className="font-medium">{datos.direccion || '—'}</span></div>
+                </div>
+                {faltan.length > 0 && (
+                  <div className="mt-3 px-3 py-2 bg-red-50 border border-red-200 rounded text-xs text-red-700">
+                    Para consultar complete en el formulario: <strong>{faltan.join(', ')}</strong>.
+                  </div>
+                )}
+              </div>
+
+              {/* Autorización */}
+              <div>
+                <div className="bg-gray-100 border-l-4 border-primary-theme px-4 py-2 mb-3">
+                  <h4 className="text-sm font-semibold text-gray-800">AUTORIZACIÓN DEL CONSULTADO</h4>
+                </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">
-                      Tipo de Consulta <span className="text-red-600">*</span>
-                    </label>
-                    <select
-                      value={nuevoTipoConsulta}
-                      onChange={(e) => setNuevoTipoConsulta(e.target.value)}
-                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-primary-theme"
-                    >
-                      <option value="">Seleccionar...</option>
-                      <option>BURO</option>
-                      <option>OTRO</option>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">Medio de autorización <span className="text-red-600">*</span></label>
+                    <select value={autMedio} onChange={e => setAutMedio(e.target.value as AutorizacionBuro['medio'])} disabled={consultando}
+                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-primary-theme">
+                      <option>Firma autógrafa</option>
+                      <option>Firma electrónica avanzada</option>
+                      <option>NIP</option>
                     </select>
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">
-                      Estatus <span className="text-red-600">*</span>
-                    </label>
-                    <select
-                      value={nuevoEstatus}
-                      onChange={(e) => setNuevoEstatus(e.target.value)}
-                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-primary-theme"
-                    >
-                      <option value="">Seleccionar...</option>
-                      <option value="NEGATIVO">NEGATIVO (Sin registros negativos)</option>
-                      <option value="POSITIVO">POSITIVO (Con registros negativos)</option>
-                      <option value="Pendiente">Pendiente</option>
-                      <option value="En revision">En revision</option>
-                    </select>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">Fecha de firma <span className="text-red-600">*</span></label>
+                    <input type="date" value={autFecha} max={new Date().toISOString().slice(0, 10)} onChange={e => setAutFecha(e.target.value)} disabled={consultando}
+                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-primary-theme" />
                   </div>
                 </div>
+                <label className="mt-3 flex items-start gap-2 text-xs text-gray-700">
+                  <input type="checkbox" checked={autAceptada} onChange={e => setAutAceptada(e.target.checked)} disabled={consultando} className="mt-0.5 w-4 h-4" />
+                  <span>Confirmo que el consultado autorizó expresamente esta consulta a la Sociedad de Información Crediticia y que la autorización firmada está integrada al expediente (KM Digital).</span>
+                </label>
               </div>
             </div>
 
-            {/* Footer con botones */}
-            <div className="border-t border-gray-200 px-6 py-4 bg-gray-50 flex items-center justify-end gap-2">
-              <button
-                onClick={() => setShowNuevoModal(false)}
-                className="px-5 py-2 text-sm bg-gray-500 text-white rounded hover:bg-gray-600 font-medium"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={handleGuardarNuevo}
-                className="px-5 py-2 text-sm btn-primary-theme rounded hover:bg-primary-hover-theme font-medium"
-              >
-                Guardar
-              </button>
+            <div className="border-t border-gray-200 px-6 py-4 bg-gray-50 flex items-center justify-between gap-2">
+              <span className="text-xs text-gray-600 flex items-center gap-2 min-h-[1rem]">
+                {consultando && <span className="inline-block w-3.5 h-3.5 border-2 border-gray-300 border-t-[color:var(--theme-primary)] rounded-full animate-spin" />}
+                {pasoBuro}
+              </span>
+              <div className="flex items-center gap-2">
+                <button type="button" onClick={() => setShowNuevoModal(false)} disabled={consultando}
+                  className="px-5 py-2 text-sm bg-gray-500 text-white rounded hover:bg-gray-600 font-medium disabled:opacity-50">
+                  Cancelar
+                </button>
+                <button type="button" onClick={handleGuardarNuevo} disabled={consultando || faltan.length > 0 || !autAceptada || !autFecha}
+                  className="px-5 py-2 text-sm btn-primary-theme rounded hover:bg-primary-hover-theme font-medium disabled:opacity-50 disabled:cursor-not-allowed">
+                  {consultando ? 'Consultando…' : 'Consultar Buró'}
+                </button>
+              </div>
             </div>
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {/* Modal para visualizar XML SIC */}
       {showXmlModal && (
@@ -2795,7 +2812,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
                   Visualizador de XML SIC
                 </h3>
               </div>
-              <button
+              <button type="button" aria-label="Cerrar" title="Cerrar"
                 onClick={() => setShowXmlModal(false)}
                 className="text-white hover:text-gray-200"
               >
@@ -2871,102 +2888,166 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
         </div>
       )}
 
-      {/* Modal de Nueva Lista Negra */}
-      {showListaNegraModal && (
+      {/* Modal — Nueva verificación PLD */}
+      {showListaNegraModal && (() => {
+        const datos = datosParaPLD();
+        const faltan = validarDatosPLD(datos);
+        const listas = LISTAS_PLD.filter(l => !(l.soloPF && datos.tipoPersona === 'PM'));
+        const verificando = !!pasoPLD;
+        return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="bg-white rounded shadow-xl w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col">
-            {/* Header institucional */}
             <div className="bg-primary-theme px-6 py-4 flex items-center justify-between">
-              <h3 className="text-base font-medium text-white">
-                Nueva Verificación PLD
-              </h3>
-              <button
-                onClick={() => setShowListaNegraModal(false)}
-                className="text-white hover:text-gray-200"
-              >
+              <h3 className="text-base font-medium text-white">Verificación PLD / Listas de Negocio</h3>
+              <button type="button" aria-label="Cerrar" title="Cerrar" disabled={verificando}
+                onClick={() => setShowListaNegraModal(false)} className="text-white hover:text-gray-200 disabled:opacity-50">
                 <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
                   <path d="M10 8.586L2.929 1.515 1.515 2.929 8.586 10l-7.071 7.071 1.414 1.414L10 11.414l7.071 7.071 1.414-1.414L11.414 10l7.071-7.071-1.414-1.414L10 8.586z"/>
                 </svg>
               </button>
             </div>
-
-            {/* Contenido del formulario */}
-            <div className="flex-1 overflow-y-auto p-6">
-              {/* Título de sección con estilo institucional */}
-              <div className="bg-gray-100 border-l-4 border-primary-theme px-4 py-2 mb-4">
-                <h4 className="text-sm font-semibold text-gray-800">INFORMACIÓN DE VERIFICACIÓN PLD</h4>
+            <div className="flex-1 overflow-y-auto p-6 space-y-5">
+              <div>
+                <div className="bg-gray-100 border-l-4 border-primary-theme px-4 py-2 mb-3">
+                  <h4 className="text-sm font-semibold text-gray-800">DATOS A VERIFICAR</h4>
+                </div>
+                <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-xs">
+                  <div><span className="text-gray-500">{datos.tipoPersona === 'PM' ? 'Razón social' : 'Nombre'}:</span> <span className="font-medium">{datos.nombre || '—'}</span></div>
+                  <div><span className="text-gray-500">RFC:</span> <span className="font-medium font-mono">{datos.rfc || '—'}</span></div>
+                </div>
+                {faltan.length > 0 && (
+                  <div className="mt-3 px-3 py-2 bg-red-50 border border-red-200 rounded text-xs text-red-700">
+                    Para verificar complete en el formulario: <strong>{faltan.join(', ')}</strong>.
+                  </div>
+                )}
               </div>
-
-              {/* Formulario */}
-              <div className="space-y-4">
-                {/* NOMBRE LISTA y TIPO LISTA en la misma fila */}
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">
-                      Nombre Lista <span className="text-red-600">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      value={nuevoNombreLista}
-                      onChange={(e) => setNuevoNombreLista(e.target.value)}
-                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-primary-theme"
-                      placeholder="Seleccionar..."
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">
-                      Tipo Lista <span className="text-red-600">*</span>
-                    </label>
-                    <select
-                      value={nuevoTipoLista}
-                      onChange={(e) => setNuevoTipoLista(e.target.value)}
-                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-primary-theme"
-                    >
-                      <option value="">Seleccionar...</option>
-                      <option>Externa</option>
-                      <option>Interna</option>
-                    </select>
-                  </div>
+              <div>
+                <div className="bg-gray-100 border-l-4 border-primary-theme px-4 py-2 mb-3">
+                  <h4 className="text-sm font-semibold text-gray-800">LISTAS QUE SE REVISARÁN ({listas.length})</h4>
                 </div>
-
-                {/* ESTATUS */}
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">
-                    Estatus <span className="text-red-600">*</span>
-                  </label>
-                  <select
-                    value={nuevoEstatusListaNegra}
-                    onChange={(e) => setNuevoEstatusListaNegra(e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-primary-theme"
-                  >
-                    <option value="">Seleccionar...</option>
-                    <option value="NEGATIVO">NEGATIVO (No aparece en listas)</option>
-                    <option value="POSITIVO">POSITIVO (Aparece en listas)</option>
-                    <option value="Pendiente">Pendiente</option>
-                    <option value="En revision">En revision</option>
-                  </select>
-                </div>
+                <table className="w-full text-xs border border-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-2 py-1.5 text-left font-medium text-gray-700">Lista</th>
+                      <th className="px-2 py-1.5 text-left font-medium text-gray-700">Fuente</th>
+                      <th className="px-2 py-1.5 text-left font-medium text-gray-700">Tipo</th>
+                      <th className="px-2 py-1.5 text-left font-medium text-gray-700">Si coincide</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {listas.map(l => (
+                      <tr key={l.clave} className="border-t border-gray-100">
+                        <td className="px-2 py-1.5 text-gray-800">{l.nombre}</td>
+                        <td className="px-2 py-1.5 text-gray-600">{l.fuente}</td>
+                        <td className="px-2 py-1.5 text-gray-600">{l.tipo}</td>
+                        <td className={`px-2 py-1.5 ${l.severidad === 'Bloqueo' ? 'text-red-600' : 'text-amber-600'}`}>{l.severidad}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {datos.tipoPersona === 'PM' && (
+                  <p className="mt-2 text-[11px] text-gray-500">La lista PEP aplica a personas físicas; para personas morales se revisan accionistas y representantes en su propio registro.</p>
+                )}
               </div>
             </div>
-
-            {/* Footer con botones */}
-            <div className="border-t border-gray-200 px-6 py-4 bg-gray-50 flex items-center justify-end gap-2">
-              <button
-                onClick={() => setShowListaNegraModal(false)}
-                className="px-5 py-2 text-sm bg-gray-500 text-white rounded hover:bg-gray-600 font-medium"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={handleGuardarListaNegra}
-                className="px-5 py-2 text-sm btn-primary-theme rounded hover:bg-primary-hover-theme font-medium"
-              >
-                Guardar
-              </button>
+            <div className="border-t border-gray-200 px-6 py-4 bg-gray-50 flex items-center justify-between gap-2">
+              <span className="text-xs text-gray-600 flex items-center gap-2 min-h-[1rem]">
+                {verificando && <span className="inline-block w-3.5 h-3.5 border-2 border-gray-300 border-t-[color:var(--theme-primary)] rounded-full animate-spin" />}
+                {pasoPLD}
+              </span>
+              <div className="flex items-center gap-2">
+                <button type="button" onClick={() => setShowListaNegraModal(false)} disabled={verificando}
+                  className="px-5 py-2 text-sm bg-gray-500 text-white rounded hover:bg-gray-600 font-medium disabled:opacity-50">Cancelar</button>
+                <button type="button" onClick={handleGuardarListaNegra} disabled={verificando || faltan.length > 0}
+                  className="px-5 py-2 text-sm btn-primary-theme rounded hover:bg-primary-hover-theme font-medium disabled:opacity-50 disabled:cursor-not-allowed">
+                  {verificando ? 'Verificando…' : 'Verificar listas'}
+                </button>
+              </div>
             </div>
           </div>
         </div>
-      )}
+        );
+      })()}
+
+      {/* Modal — Detalle / resolución de coincidencia PLD */}
+      {pldAResolver && pldAResolver.coincidencia && (() => {
+        const r = pldAResolver;
+        const c = r.coincidencia!;
+        const pendiente = (r.estatus || '').toUpperCase() === 'COINCIDENCIA' && !isView;
+        const datos = datosParaPLD();
+        return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded shadow-xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
+            <div className="bg-primary-theme px-6 py-4 flex items-center justify-between">
+              <h3 className="text-base font-medium text-white">{pendiente ? 'Resolver coincidencia' : 'Detalle de coincidencia'}</h3>
+              <button type="button" aria-label="Cerrar" title="Cerrar" onClick={() => setPldAResolver(null)} className="text-white hover:text-gray-200">
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
+                  <path d="M10 8.586L2.929 1.515 1.515 2.929 8.586 10l-7.071 7.071 1.414 1.414L10 11.414l7.071 7.071 1.414-1.414L11.414 10l7.071-7.071-1.414-1.414L10 8.586z"/>
+                </svg>
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-6 space-y-4 text-xs">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="border border-gray-200 rounded p-3">
+                  <p className="text-[10px] uppercase text-gray-500 mb-1">Interlocutor</p>
+                  <p className="font-semibold text-gray-800">{datos.nombre.toUpperCase()}</p>
+                  <p className="font-mono text-gray-600">{datos.rfc}</p>
+                </div>
+                <div className="border border-amber-300 bg-amber-50 rounded p-3">
+                  <p className="text-[10px] uppercase text-amber-700 mb-1">Registro en lista · similitud {c.similitud}%</p>
+                  <p className="font-semibold text-gray-800">{c.nombreEnLista}</p>
+                  <p className="text-gray-600">Ref. {c.referencia}</p>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-x-6 gap-y-1.5">
+                <div><span className="text-gray-500">Lista:</span> {r.nombreLista}</div>
+                <div><span className="text-gray-500">Si se confirma:</span> <span className={r.severidad === 'Bloqueo' ? 'text-red-600 font-medium' : 'text-amber-600 font-medium'}>{r.severidad}</span></div>
+                <div><span className="text-gray-500">Motivo:</span> {c.motivo}</div>
+                <div><span className="text-gray-500">Publicación:</span> {c.fechaPublicacion.split('-').reverse().join('/')}</div>
+                <div><span className="text-gray-500">Folio:</span> <span className="font-mono">{r.folio}</span></div>
+                <div><span className="text-gray-500">Estatus:</span> <strong>{r.estatus}</strong></div>
+              </div>
+              {r.resolucion && (
+                <div className="border-l-4 border-gray-400 bg-gray-50 px-3 py-2">
+                  <p className="font-semibold">{r.resolucion.decision} — {r.resolucion.usuario}, {r.resolucion.fecha}</p>
+                  <p className="text-gray-600 mt-0.5">{r.resolucion.justificacion}</p>
+                </div>
+              )}
+              {pendiente && (
+                <div className="space-y-3 pt-1">
+                  <div className="flex gap-6">
+                    {(['Descartada (homonimia)', 'Confirmada'] as const).map(d => (
+                      <label key={d} className="flex items-center gap-1.5 text-xs text-gray-700">
+                        <input type="radio" name="decision-pld" checked={pldDecision === d} onChange={() => setPldDecision(d)} />
+                        {d === 'Confirmada' ? 'Confirmar coincidencia' : 'Descartar (homonimia)'}
+                      </label>
+                    ))}
+                  </div>
+                  <label className="block">
+                    <span className="block text-xs font-medium text-gray-700 mb-1">Justificación <span className="text-red-600">*</span></span>
+                    <textarea value={pldJustificacion} onChange={e => setPldJustificacion(e.target.value)} rows={3}
+                      placeholder="Ej. La fecha de nacimiento y el RFC del registro en lista no corresponden al interlocutor."
+                      className="w-full px-3 py-2 text-xs border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-primary-theme" />
+                    <span className="text-[10px] text-gray-500">{pldJustificacion.trim().length}/20 caracteres mínimo</span>
+                  </label>
+                </div>
+              )}
+            </div>
+            <div className="border-t border-gray-200 px-6 py-3 bg-gray-50 flex justify-end gap-2">
+              <button type="button" onClick={() => setPldAResolver(null)} className="px-4 py-1.5 text-sm bg-gray-500 text-white rounded hover:bg-gray-600">
+                {pendiente ? 'Cancelar' : 'Cerrar'}
+              </button>
+              {pendiente && (
+                <button type="button" onClick={handleResolverPLD} disabled={pldJustificacion.trim().length < 20}
+                  className="px-4 py-1.5 text-sm btn-primary-theme rounded hover:bg-primary-hover-theme disabled:opacity-50">
+                  Guardar resolución
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+        );
+      })()}
 
       {/* Modal de Nueva Cotizaci ón/Amortización */}
       {showCotizacionModal && (
@@ -2977,7 +3058,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
               <h3 className="text-base font-medium text-white">
                 Nueva Cotización
               </h3>
-              <button
+              <button type="button" aria-label="Cerrar" title="Cerrar"
                 onClick={() => setShowCotizacionModal(false)}
                 className="text-white hover:text-gray-200"
               >
@@ -3018,8 +3099,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
                   <label className="block text-xs font-medium text-gray-700 mb-1.5">
                     Monto Solicitado <span className="text-red-600">*</span>
                   </label>
-                  <input
-                    type="text"
+                  <CampoMonto
                     value={nuevaCotizacion.montoSolicitado}
                     onChange={(e) => handleChangeCotizacion('montoSolicitado', e.target.value)}
                     placeholder="$0.00"
@@ -3114,10 +3194,10 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
               <div>
                 <h3 className="text-base font-medium text-gray-800">REPORTE SIC - BURÓ DE CRÉDITO</h3>
                 <p className="text-xs text-gray-600 mt-1">
-                  Consulta del {consultaSeleccionada.fechaHora} - {consultaSeleccionada.tipoConsulta}
+                  Consulta del {consultaSeleccionada.fechaHora} - {etiquetaTipoConsultaSIC(consultaSeleccionada.tipoConsulta)}{consultaSeleccionada.folio ? ` · Folio ${consultaSeleccionada.folio}` : ''}
                 </p>
               </div>
-              <button
+              <button type="button" aria-label="Cerrar" title="Cerrar"
                 onClick={() => setShowPdfSicModal(false)}
                 className="text-gray-500 hover:text-gray-700"
               >
@@ -3130,6 +3210,9 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
             {/* PDF Viewer - Reporte SIC con datos del prospecto */}
             <div className="flex-1 overflow-auto p-6 bg-white">
               <div className="max-w-4xl mx-auto bg-white border border-gray-300 shadow-lg p-8">
+                {consultaSeleccionada.reporte ? (
+                  <ReporteBuroVista reporte={consultaSeleccionada.reporte} usuario={consultaSeleccionada.usuario} />
+                ) : (<>
                 {/* Header del Reporte */}
                 <div className="border-b-2 border-gray-800 pb-4 mb-6">
                   <div className="flex items-start justify-between">
@@ -3356,6 +3439,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
                     </>
                   );
                 })()}
+                </>)}
               </div>
             </div>
 
@@ -3476,7 +3560,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
                 const categorias = [
                   { titulo: 'Campos Generales vacios', items: errDatosGen, icon: '\u{1F4CB}', bgColor: 'bg-orange-50', borderColor: 'border-orange-200', titleColor: 'text-orange-800', dotColor: 'bg-orange-400', textColor: 'text-orange-700', hint: 'Complete estos campos en la pestana Datos Basicos del formulario y presione Guardar.' },
                   { titulo: 'Campos de Datos Basicos vacios', items: errDefault, icon: '\u{1F4DD}', bgColor: 'bg-orange-50', borderColor: 'border-orange-200', titleColor: 'text-orange-800', dotColor: 'bg-orange-400', textColor: 'text-orange-700', hint: 'Verifique la pestana Datos Basicos \u2014 el campo Personeria Juridica es obligatorio.' },
-                  { titulo: 'SubTabs incompletas', items: errSubTabs, icon: '\u{1F4D1}', bgColor: 'bg-amber-50', borderColor: 'border-amber-200', titleColor: 'text-amber-800', dotColor: 'bg-amber-400', textColor: 'text-amber-700', hint: 'Agregue al menos un registro en cada SubTab requerida (Domicilio Fiscal, Expediente Digital, Buro de Credito, Listas de Negocio).' },
+                  { titulo: 'SubTabs incompletas', items: errSubTabs, icon: '\u{1F4D1}', bgColor: 'bg-amber-50', borderColor: 'border-amber-200', titleColor: 'text-amber-800', dotColor: 'bg-amber-400', textColor: 'text-amber-700', hint: 'Agregue al menos un registro en cada SubTab requerida (Domicilio Fiscal, KM Digital, Buro de Credito, Listas de Negocio).' },
                   { titulo: 'Validacion Buro de Credito (SIC)', items: errSIC, icon: '\u{1F512}', bgColor: 'bg-red-50', borderColor: 'border-red-200', titleColor: 'text-red-800', dotColor: 'bg-red-400', textColor: 'text-red-700', hint: 'Cambie el estatus de Buro de Credito a "NEGATIVO" en la pestana Consulta Buro de Credito y Guarde antes de activar.' },
                   { titulo: 'Validacion PLD / Listas de Negocio', items: errLN, icon: '\u{1F6AB}', bgColor: 'bg-red-50', borderColor: 'border-red-200', titleColor: 'text-red-800', dotColor: 'bg-red-400', textColor: 'text-red-700', hint: 'Cambie el estatus de Listas de Negocio a "NEGATIVO" en la pestana Verificacion PLD / Listas de Negocio y Guarde antes de activar.' },
                   { titulo: 'Otros errores', items: errOtros, icon: '\u{26A0}\u{FE0F}', bgColor: 'bg-gray-50', borderColor: 'border-gray-200', titleColor: 'text-gray-800', dotColor: 'bg-gray-400', textColor: 'text-red-700', hint: '' },

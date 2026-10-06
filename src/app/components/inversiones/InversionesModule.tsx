@@ -4,7 +4,7 @@ import { InversionForm } from './InversionForm';
 import { InversionesHome } from './InversionesHome';
 import type { Inversion, InversionCompleta } from '@/types/inversion';
 import * as store from './inversionesStore';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 
 type ViewMode = 'home' | 'list' | 'form';
 type FormMode = 'nuevo' | 'editar' | 'ver';

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { DatePicker } from '@/app/components/ui/DatePicker';
+import { CampoMonto } from '@/app/components/ui/CampoMonto';
 
 interface CotizacionesSectionProps {
   solicitudId?: number;
@@ -211,7 +212,7 @@ export function CotizacionesSection({ solicitudId }: CotizacionesSectionProps) {
         <span className="text-xs font-normal text-gray-800">AMORTIZACIÓN</span>
         <button 
           onClick={() => setShowCotizacionModal(true)}
-          className="px-4 py-1 bg-[#5B9BD5] text-white rounded text-xs hover:bg-[#4A8BC5] font-medium"
+          className="px-4 py-1 bg-[color:var(--theme-accent)] text-white rounded text-xs hover:bg-[color:var(--theme-accent-hover)] font-medium"
         >
           Nuevo
         </button>
@@ -226,7 +227,7 @@ export function CotizacionesSection({ solicitudId }: CotizacionesSectionProps) {
       <div className="border border-gray-300 overflow-x-auto bg-white">
         <table className="w-full text-xs border-collapse">
           <thead>
-            <tr className="bg-[#5B7DA4] text-white">
+            <tr className="bg-[color:var(--theme-primary)] text-white">
               <th className="px-4 py-2.5 text-center font-medium border-r border-white">No. PAGO</th>
               <th className="px-4 py-2.5 text-center font-medium border-r border-white">SALDO CAPITAL</th>
               <th className="px-4 py-2.5 text-center font-medium border-r border-white">INTERÉS</th>
@@ -279,7 +280,7 @@ export function CotizacionesSection({ solicitudId }: CotizacionesSectionProps) {
             <div className="px-6 py-3 border-b border-gray-200 flex items-center gap-2">
               <button
                 onClick={handleGuardarCotizacion}
-                className="px-5 py-1.5 bg-[#0099CC] text-white rounded text-sm hover:bg-[#0088BB] font-medium"
+                className="px-5 py-1.5 bg-[color:var(--theme-action)] text-white rounded text-sm hover:bg-[color:var(--theme-action-hover)] font-medium"
               >
                 Guardar
               </button>
@@ -317,8 +318,7 @@ export function CotizacionesSection({ solicitudId }: CotizacionesSectionProps) {
                 <label className="text-xs w-32 flex-shrink-0 text-gray-700 font-medium">
                   MONTO SOLICITADO <span className="text-red-600">*</span>
                 </label>
-                <input
-                  type="text"
+                <CampoMonto
                   value={nuevaCotizacion.montoSolicitado}
                   onChange={(e) => handleChangeCotizacion('montoSolicitado', e.target.value)}
                   placeholder="$0.00"

@@ -1,9 +1,12 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 import { Zap } from 'lucide-react';
 import { Cliente } from './ClientesList';
 import { ExpedientesElectronicos } from './ExpedientesElectronicos';
 import { SIC } from './SIC';
+import { VerificacionPLDPanel } from '../shared/VerificacionPLDPanel';
+import type { RegistroPLD } from '@/app/lib/pldSimulado';
+import type { DatosConsultaBuro } from '@/app/lib/buroSimulado';
 import { KYCTab } from './tabs';
 import { PerfilTransaccional } from './PerfilTransaccional';
 import { ArchivosAdjuntos } from './ArchivosAdjuntos';
@@ -43,6 +46,8 @@ import {
   useClienteSubtabList,
   clearAllClienteData 
 } from '@/app/hooks/useClientePersistence';
+import { CampoMonto } from '@/app/components/ui/CampoMonto';
+import { nombrePersona, esPersonaMoral } from '@/app/lib/nombrePersona';
 
 type FormMode = 'nuevo' | 'editar' | 'ver';
 
@@ -192,7 +197,6 @@ export function AltaClienteDefault({ onBack, onSave, mode, cliente, onNavigateTo
   const [camposEditables, setCamposEditables] = useState(true);
   const [mostrarGuardar, setMostrarGuardar] = useState(true);
   const [showDireccionModal, setShowDireccionModal] = useState(false);
-  const [showListaNegraModal, setShowListaNegraModal] = useState(false);
   // ID de dirección en edición (null = modo nuevo)
   const [editingDireccionId, setEditingDireccionId] = useState<number | null>(null);
   // Diagnóstico: rastrear fuente de datos de direcciones
@@ -215,11 +219,6 @@ export function AltaClienteDefault({ onBack, onSave, mode, cliente, onNavigateTo
   const [showSubtabDiag, setShowSubtabDiag] = useState<Record<string, boolean>>({});
   // Raw JSONB data del cliente — se pasa a ExpedientesElectronicos para detectar archivos como constanciaResidencia
   const [clienteRawData, setClienteRawData] = useState<Record<string, any>>({});
-  const [listaNegraForm, setListaNegraForm] = useState({
-    nombreLista: '',
-    tipoLista: '',
-    estatus: ''
-  });
   
   // Estado para el formulario de nueva dirección
   const [nuevaDireccionForm, setNuevaDireccionForm] = useState({
@@ -323,7 +322,7 @@ export function AltaClienteDefault({ onBack, onSave, mode, cliente, onNavigateTo
   const getInitialFormData = (): FormData => {
     // Valores por defecto para MODO NUEVO
     const defaultNewClientData: FormData = {
-      idCliente: String(Date.now() + Math.floor(Math.random() * 1000)),
+      idCliente: '', // REQ-01: lo asigna la BD al guardar (J_CONSECUTIVOS)
       personalidad: 'Física',
       nombre: '',
       apellidoPaterno: '',
@@ -469,7 +468,7 @@ export function AltaClienteDefault({ onBack, onSave, mode, cliente, onNavigateTo
   const { cuentas: _todasCuentas } = useCuentasAhorroDB();
   useEffect(() => {
     if (!clienteId || !_todasCuentas.length) return;
-    const norm = (s: string) => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
+    const norm = (s: string) => (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
     const cuentaEje = _todasCuentas.find(c =>
       c.clienteId === clienteId &&
       c.ctaEjeChec &&
@@ -979,7 +978,7 @@ export function AltaClienteDefault({ onBack, onSave, mode, cliente, onNavigateTo
     
     // Establecer valores iniciales limpios con ID automático
     setFormData({
-      idCliente: String(Date.now() + Math.floor(Math.random() * 1000)),
+      idCliente: '', // REQ-01: lo asigna la BD al guardar (J_CONSECUTIVOS)
       personalidad: 'Física',
       nombre: '',
       apellidoPaterno: '',
@@ -1146,76 +1145,6 @@ export function AltaClienteDefault({ onBack, onSave, mode, cliente, onNavigateTo
     }
   }, [formData.fechaNacimiento]);
 
-  // Funciones para Listas Negras
-  const handleToggleSeleccionListaNegra = (id: number) => {
-    if (!Array.isArray(listasNegras)) return;
-    setListasNegras(listasNegras.map(item => 
-      item.id === id ? { ...item, seleccionada: !item.seleccionada } : item
-    ));
-  };
-
-  const handleSeleccionarTodasListasNegras = (checked: boolean) => {
-    if (!Array.isArray(listasNegras)) return;
-    setListasNegras(listasNegras.map(item => ({ ...item, seleccionada: checked })));
-  };
-
-  const handleEliminarListasNegrasSeleccionadas = () => {
-    if (!Array.isArray(listasNegras)) return;
-    const seleccionadas = listasNegras.filter(item => item.seleccionada);
-    if (seleccionadas.length === 0) return;
-    setListasNegras(listasNegras.filter(item => !item.seleccionada));
-    toast.success(`${seleccionadas.length} registro(s) eliminado(s) exitosamente`);
-  };
-
-  const handleNuevaListaNegra = () => {
-    setListaNegraForm({ nombreLista: '', tipoLista: '', estatus: '' });
-    setShowListaNegraModal(true);
-  };
-
-  const handleGuardarListaNegra = () => {
-    // Validaciones obligatorias — idéntico a Prospectos (§8)
-    if (!listaNegraForm.nombreLista || !listaNegraForm.tipoLista || !listaNegraForm.estatus) {
-      alert('Nombre lista, Tipo lista y Estatus son obligatorios');
-      return;
-    }
-    const now = new Date();
-    const fechaHora = now.toLocaleString('es-MX', {
-      day: '2-digit', month: '2-digit', year: 'numeric',
-      hour: '2-digit', minute: '2-digit', second: '2-digit'
-    });
-    // ID basado en timestamp (spec §3 — evita colisiones, idéntico a Prospectos)
-    const newId = Date.now();
-    // Validar no duplicados (mismo ID)
-    if (Array.isArray(listasNegras) && listasNegras.some(l => l.id === newId)) {
-      alert('Error: ID duplicado. Intente nuevamente.');
-      return;
-    }
-    // Objeto JSON COMPLETO — idéntico a Prospectos (§3)
-    const nuevoItem = {
-      id: newId,
-      fechaHora: fechaHora,
-      usuario: 'Usuario Actual',
-      nombreLista: listaNegraForm.nombreLista,
-      tipoLista: listaNegraForm.tipoLista,
-      estatus: listaNegraForm.estatus,
-      seleccionada: false
-    };
-    const allListas = [...(Array.isArray(listasNegras) ? listasNegras : []), nuevoItem];
-    setListasNegras(allListas);
-    setShowListaNegraModal(false);
-    toast.success('Registro de Lista Negra creado correctamente');
-  };
-
-  // Consultar Lista Negra — simula consulta y asigna resultado NEGATIVO
-  const handleConsultarListaNegra = (id: number) => {
-    if (!Array.isArray(listasNegras)) return;
-    const updatedListas = listasNegras.map((lista: any) =>
-      lista.id === id ? { ...lista, resultado: 'NEGATIVO', estatus: 'NEGATIVO' } : lista
-    );
-    setListasNegras(updatedListas);
-    toast.success(`Lista Negra #${id} consultada — Resultado: NEGATIVO`);
-  };
-
   // Funciones para Personas Relacionadas — ahora delegadas al componente PersonasRelacionadas.tsx
 
   // Funciones para Direcciones
@@ -1317,9 +1246,32 @@ export function AltaClienteDefault({ onBack, onSave, mode, cliente, onNavigateTo
     toast.success('Dirección actualizada correctamente');
   };
 
-  // Variables computadas con validación de arrays
-  const todasListasNegrasSeleccionadas = Array.isArray(listasNegras) && listasNegras.length > 0 && listasNegras.every(item => item.seleccionada);
-  const algunaListaNegraSeleccionada = Array.isArray(listasNegras) && listasNegras.some(item => item.seleccionada);
+  // ── Datos de la persona para Buró y verificación PLD ──
+  const esMoral = normalizePersonalidad(formData.personalidad) === 'Moral';
+  const domicilioPersona = (() => {
+    if (formData.direccion) return formData.direccion;
+    const d = (Array.isArray(direcciones) && (direcciones.find((x: any) => x.principal) || direcciones[0])) || null;
+    if (d) return [d.calle, d.numeroExterior, d.colonia, d.codigoPostal && `C.P. ${d.codigoPostal}`].filter(Boolean).join(' ');
+    return [formData.direccionCalle, formData.direccionNumeroExterior, formData.direccionColonia, formData.direccionCodigoPostal && `C.P. ${formData.direccionCodigoPostal}`].filter(Boolean).join(' ');
+  })();
+  const datosBuroPersona: DatosConsultaBuro = {
+    tipoPersona: esMoral ? 'PM' : 'PF',
+    rfc: (formData.rfc || '').trim().toUpperCase(),
+    nombre: formData.nombre,
+    apellidoPaterno: formData.apellidoPaterno,
+    apellidoMaterno: formData.apellidoMaterno,
+    razonSocial: formData.razonSocial,
+    curp: formData.curp,
+    fechaNacimiento: formData.fechaNacimiento,
+    direccion: domicilioPersona,
+  };
+  const datosPLDPersona = {
+    tipoPersona: datosBuroPersona.tipoPersona,
+    rfc: datosBuroPersona.rfc,
+    nombre: esMoral
+      ? (formData.razonSocial || '').trim()
+      : [formData.nombre, formData.apellidoPaterno, formData.apellidoMaterno].filter(Boolean).join(' ').trim(),
+  };
 
   // todasPersonasSeleccionadas / algunaPersonaSeleccionada — ahora en PersonasRelacionadas.tsx
 
@@ -1506,7 +1458,7 @@ export function AltaClienteDefault({ onBack, onSave, mode, cliente, onNavigateTo
         .map(({ seleccionada, ...rest }: any) => ({
           ...rest,
           // spec §4: Asegurar que nombreCompleto siempre exista
-          nombreCompleto: rest.nombreCompleto || rest.nombreCliente || [rest.nombre, rest.apellidoPaterno, rest.apellidoMaterno].filter(Boolean).join(' ') || '',
+          nombreCompleto: (esPersonaMoral(rest) ? nombrePersona(rest) : '') || rest.nombreCompleto || rest.nombreCliente || nombrePersona(rest) || '',
           estatusCliente: rest.estatusCliente || rest.estatus || '',
         }));
 
@@ -1595,7 +1547,7 @@ export function AltaClienteDefault({ onBack, onSave, mode, cliente, onNavigateTo
       });
 
       if (!returnedId) {
-        toast.error('Error al guardar cliente en J_CLIENTES');
+        toast.error('No se pudo guardar la persona');
         setSaving(false);
         return;
       }
@@ -1672,7 +1624,7 @@ export function AltaClienteDefault({ onBack, onSave, mode, cliente, onNavigateTo
     { id: 'default', label: 'Default' },
     { id: 'personas-relacionadas', label: 'Personas Relacionadas' },
     { id: 'direcciones', label: 'Direcciones' },
-    { id: 'expedientes', label: 'Expedientes Electrónicos' },
+    { id: 'expedientes', label: 'KM Digital' },
     { id: 'sic', label: 'SIC' },
     { id: 'listas-negras', label: 'Listas Negras' },
     { id: 'kyc', label: 'KYC' },
@@ -1687,7 +1639,7 @@ export function AltaClienteDefault({ onBack, onSave, mode, cliente, onNavigateTo
     { id: 'movimientos', label: 'Movimientos' },
     { id: 'avisos', label: 'Avisos' },
     { id: 'auditoria', label: 'Auditoría' },
-    { id: 'archivos-adjuntos', label: 'Archivos Adjuntos' },
+    { id: 'archivos-adjuntos', label: 'KM Digital' },
     { id: 'convenios', label: 'Convenios' },
     { id: 'cobranza-normal', label: 'Cobranza Normal' },
     { id: 'cobranza-acumulativa', label: 'Cobranza Acumulativa' },
@@ -1707,7 +1659,7 @@ export function AltaClienteDefault({ onBack, onSave, mode, cliente, onNavigateTo
               <path d="M3 18c0-3.5 3-6 7-6s7 2.5 7 6"/>
             </svg>
             <span className="text-sm text-gray-700 font-normal">Alta de Interlocutor Comercial</span>
-            <button className="ml-2 p-1">
+            <button type="button" aria-label="Buscar" title="Buscar" className="ml-2 p-1">
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#999" strokeWidth="2">
                 <circle cx="7" cy="7" r="5"/>
                 <path d="M11 11l3 3"/>
@@ -1767,6 +1719,7 @@ export function AltaClienteDefault({ onBack, onSave, mode, cliente, onNavigateTo
                   <input 
                     type="text" 
                     value={formData.idCliente || ''}
+                    placeholder="Se asigna al guardar"
                     disabled
                     className="px-2 py-1 text-xs border border-gray-300 rounded bg-gray-100 text-gray-600"
                   />
@@ -2467,21 +2420,11 @@ export function AltaClienteDefault({ onBack, onSave, mode, cliente, onNavigateTo
                   className={`px-3 py-2 text-[10px] whitespace-nowrap border-r border-gray-500/30 ${
                     activeTab === tab.id
                       ? 'bg-secondary-theme text-white font-medium'
-                      : 'text-white/90'
+                      : 'text-white/90 hover:bg-[color:var(--theme-primary-hover)]'
                   }`}
                   style={activeTab !== tab.id ? {
                     transition: 'background-color 0.2s'
                   } : {}}
-                  onMouseEnter={(e) => {
-                    if (activeTab !== tab.id) {
-                      e.currentTarget.style.backgroundColor = 'var(--theme-primary-hover)';
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (activeTab !== tab.id) {
-                      e.currentTarget.style.backgroundColor = '';
-                    }
-                  }}
                 >
                   {tab.label}
                 </button>
@@ -2801,8 +2744,7 @@ export function AltaClienteDefault({ onBack, onSave, mode, cliente, onNavigateTo
                         {!camposEditables ? (
                           <div className="px-2 py-1 text-xs text-gray-700">{formData.otrosIngresos}</div>
                         ) : (
-                          <input 
-                            type="text" 
+                          <CampoMonto 
                             value={formData.otrosIngresos}
                             onChange={(e) => handleChange('otrosIngresos', e.target.value)}
                             className="px-2 py-1 text-xs border border-gray-300 rounded"
@@ -3016,12 +2958,10 @@ export function AltaClienteDefault({ onBack, onSave, mode, cliente, onNavigateTo
                         {!camposEditables ? (
                           <div className="px-2 py-1 text-xs text-gray-700">{formData.minimoLiquidez}</div>
                         ) : (
-                          <input 
-                            type="number" 
+                          <CampoMonto 
                             value={formData.minimoLiquidez}
                             onChange={(e) => handleChange('minimoLiquidez', e.target.value)}
                             min="0"
-                            step="0.01"
                             className="px-2 py-1 text-xs border border-gray-300 rounded"
                           />
                         )}
@@ -3077,196 +3017,17 @@ export function AltaClienteDefault({ onBack, onSave, mode, cliente, onNavigateTo
               )}
 
               {activeTab === 'sic' && (
-                <SIC isView={isView} clienteId={clienteId} mode={mode} diagData={subtabsDiag?.sic || null} diagKeys={subtabsDiag?.rawKeys || []} diagUuid={subtabsDiag?.dbUuid || ''} />
+                <SIC isView={isView} clienteId={clienteId} datos={datosBuroPersona} onResultado={r => setFormData(prev => ({ ...prev, estatusSIC: r }))} />
               )}
 
               {activeTab === 'listas-negras' && (
-                <div>
-
-                  {/* Título con estilo institucional y botones */}
-                  <div className="bg-blue-50 border-l-4 border-primary-theme px-3 py-2 mb-3 flex items-center justify-between">
-                    <span className="text-sm font-medium text-gray-800">LISTAS NEGRAS</span>
-                    {!isView && (
-                      <div className="flex items-center gap-2">
-                        <button 
-                          onClick={handleNuevaListaNegra}
-                          className="px-4 py-1.5 btn-accent-theme rounded text-xs hover:bg-accent-hover-theme font-medium"
-                        >
-                          Nuevo
-                        </button>
-                        <button 
-                          onClick={handleEliminarListasNegrasSeleccionadas}
-                          disabled={!algunaListaNegraSeleccionada}
-                          className="px-4 py-1.5 btn-accent-theme rounded text-xs hover:bg-accent-hover-theme font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          Eliminar
-                        </button>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Tabla de listas negras — estilo SIC (idéntico a Prospecto) */}
-                  <div className="border border-gray-300">
-                    <table className="w-full text-xs">
-                      <thead>
-                        <tr className="bg-[#E7E6E6] border-b border-gray-400">
-                          <th className="px-3 py-2 text-left font-medium text-xs text-gray-800 border-r border-gray-300">Fecha y hora del registro</th>
-                          <th className="px-3 py-2 text-left font-medium text-xs text-gray-800 border-r border-gray-300">Usuario que registró</th>
-                          <th className="px-3 py-2 text-left font-medium text-xs text-gray-800 border-r border-gray-300">Nombre lista *</th>
-                          <th className="px-3 py-2 text-left font-medium text-xs text-gray-800 border-r border-gray-300">Tipo lista *</th>
-                          <th className="px-3 py-2 text-left font-medium text-xs text-gray-800 border-r border-gray-300">Estatus *</th>
-                          <th className="px-3 py-2 text-center font-medium text-xs text-gray-800 w-20">Consultar</th>
-                        </tr>
-                      </thead>
-                      <tbody className="bg-white">
-                        {Array.isArray(listasNegras) && listasNegras.map((lista) => (
-                          <tr key={lista.id} className="border-b border-gray-300">
-                            <td className="px-3 py-2 text-xs text-gray-700 border-r border-gray-300">{lista.fechaHora || lista.fecha || ''}</td>
-                            <td className="px-3 py-2 text-xs text-gray-700 border-r border-gray-300">{lista.usuario || ''}</td>
-                            <td className="px-3 py-2 border-r border-gray-300">
-                              <input 
-                                type="text" 
-                                value={lista.nombreLista}
-                                readOnly
-                                className="w-full px-1 py-0.5 text-xs border-0 bg-transparent"
-                              />
-                            </td>
-                            <td className="px-3 py-2 border-r border-gray-300">
-                              <input 
-                                type="text" 
-                                value={lista.tipoLista}
-                                readOnly
-                                className="w-full px-1 py-0.5 text-xs border-0 bg-transparent"
-                              />
-                            </td>
-                            <td className="px-3 py-2 border-r border-gray-300">
-                              <input 
-                                type="text" 
-                                value={lista.estatus}
-                                readOnly
-                                className="w-full px-1 py-0.5 text-xs border-0 bg-transparent"
-                              />
-                            </td>
-                            <td className="px-3 py-2 text-center">
-                              <button 
-                                onClick={() => handleConsultarListaNegra(lista.id)}
-                                className="inline-flex items-center justify-center p-1 hover:bg-gray-100 rounded"
-                                title="Consultar — resultado NEGATIVO"
-                                disabled={isView}
-                              >
-                                <Zap className={`w-4 h-4 ${isView ? 'text-gray-400' : 'text-yellow-600'}`} />
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
-                        {(!Array.isArray(listasNegras) || listasNegras.length === 0) && (
-                          <tr>
-                            <td colSpan={6} className="px-4 py-6 text-center text-xs text-gray-500 italic">
-                              No hay registros en listas negras.{!isView && ' Haga clic en "Nuevo" para agregar un registro.'}
-                            </td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-
-                  {/* Modal de Nueva Lista Negra (idéntico a Prospecto) */}
-                  {showListaNegraModal && (
-                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-                      <div className="bg-white rounded shadow-xl w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col">
-                        {/* Header institucional */}
-                        <div className="bg-primary-theme px-6 py-4 flex items-center justify-between">
-                          <h3 className="text-base font-medium text-white">
-                            Nueva Lista Negra
-                          </h3>
-                          <button
-                            onClick={() => setShowListaNegraModal(false)}
-                            className="text-white hover:text-gray-200"
-                          >
-                            <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
-                              <path d="M10 8.586L2.929 1.515 1.515 2.929 8.586 10l-7.071 7.071 1.414 1.414L10 11.414l7.071 7.071 1.414-1.414L11.414 10l7.071-7.071-1.414-1.414L10 8.586z"/>
-                            </svg>
-                          </button>
-                        </div>
-
-                        {/* Contenido del formulario */}
-                        <div className="flex-1 overflow-y-auto p-6">
-                          {/* Título de sección con estilo institucional */}
-                          <div className="bg-gray-100 border-l-4 border-primary-theme px-4 py-2 mb-4">
-                            <h4 className="text-sm font-semibold text-gray-800">INFORMACIÓN DE LISTA NEGRA</h4>
-                          </div>
-
-                          {/* Formulario */}
-                          <div className="space-y-4">
-                            {/* NOMBRE LISTA y TIPO LISTA en la misma fila */}
-                            <div className="grid grid-cols-2 gap-4">
-                              <div>
-                                <label className="block text-xs font-medium text-gray-700 mb-1">
-                                  Nombre Lista <span className="text-red-600">*</span>
-                                </label>
-                                <input
-                                  type="text"
-                                  value={listaNegraForm.nombreLista}
-                                  onChange={(e) => setListaNegraForm(prev => ({ ...prev, nombreLista: e.target.value }))}
-                                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-primary-theme"
-                                  placeholder="Seleccionar..."
-                                />
-                              </div>
-                              <div>
-                                <label className="block text-xs font-medium text-gray-700 mb-1">
-                                  Tipo Lista <span className="text-red-600">*</span>
-                                </label>
-                                <select
-                                  value={listaNegraForm.tipoLista}
-                                  onChange={(e) => setListaNegraForm(prev => ({ ...prev, tipoLista: e.target.value }))}
-                                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-primary-theme"
-                                >
-                                  <option value="">Seleccionar...</option>
-                                  <option>Externa</option>
-                                  <option>Interna</option>
-                                </select>
-                              </div>
-                            </div>
-
-                            {/* ESTATUS — fila completa (idéntico a Prospectos) */}
-                            <div>
-                              <label className="block text-xs font-medium text-gray-700 mb-1">
-                                Estatus <span className="text-red-600">*</span>
-                              </label>
-                              <select
-                                value={listaNegraForm.estatus}
-                                onChange={(e) => setListaNegraForm(prev => ({ ...prev, estatus: e.target.value }))}
-                                className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-primary-theme"
-                              >
-                                <option value="">Seleccionar...</option>
-                                <option value="NEGATIVO">NEGATIVO (No aparece en listas)</option>
-                                <option value="POSITIVO">POSITIVO (Aparece en listas)</option>
-                                <option value="Pendiente">Pendiente</option>
-                                <option value="En revision">En revision</option>
-                              </select>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Footer con botones */}
-                        <div className="border-t border-gray-200 px-6 py-4 bg-gray-50 flex items-center justify-end gap-2">
-                          <button
-                            onClick={() => setShowListaNegraModal(false)}
-                            className="px-5 py-2 text-sm bg-gray-500 text-white rounded hover:bg-gray-600 font-medium"
-                          >
-                            Cancelar
-                          </button>
-                          <button
-                            onClick={handleGuardarListaNegra}
-                            className="px-5 py-2 text-sm btn-primary-theme rounded hover:bg-primary-hover-theme font-medium"
-                          >
-                            Guardar
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
+                <VerificacionPLDPanel
+                  registros={Array.isArray(listasNegras) ? (listasNegras as RegistroPLD[]) : []}
+                  onChange={setListasNegras}
+                  datos={datosPLDPersona}
+                  isView={isView}
+                  onEstatus={e => setFormData(prev => ({ ...prev, estatusListaNegra: e }))}
+                />
               )}
 
               {activeTab === 'personas-relacionadas' && (
@@ -3426,7 +3187,8 @@ export function AltaClienteDefault({ onBack, onSave, mode, cliente, onNavigateTo
                   formData={formData}
                   updateFormData={updateFormData}
                   isView={isView}
-                  mode={mode}
+                  // KYCTab espera el modo en inglés; con 'nuevo' no arrancaba vacía en altas.
+                  mode={mode === 'nuevo' ? 'create' : mode === 'editar' ? 'edit' : 'view'}
                   clienteId={clienteId}
                 />
               )}

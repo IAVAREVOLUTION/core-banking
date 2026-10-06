@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 import {
   type FacturaArrendamiento, type EstatusFactura, ESTATUS_FACTURA_LIQUIDADA,
   loadFromSession, loadFromSavedStore, saveToSession, saveToSavedStore, formatCurrency,
@@ -230,7 +230,7 @@ export function FacturasArrendamientoTab({
             <button
               onClick={() => handleGenerar('inicial')}
               disabled={facturaInicialGenerada || generando !== null}
-              className="px-3.5 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all duration-200 shadow-sm bg-[#4A6FA5] text-white hover:bg-[#3A5A8A] disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-3.5 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all duration-200 shadow-sm bg-[color:var(--theme-primary)] text-white hover:bg-[color:var(--theme-primary-hover)] disabled:opacity-50 disabled:cursor-not-allowed"
               title={facturaInicialGenerada ? 'La Factura de Pago Inicial ya fue generada' : 'Generar Factura de Pago Inicial'}
             >
               <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
@@ -293,7 +293,7 @@ export function FacturasArrendamientoTab({
                     </td>
                     <td className="px-3 py-2">
                       {f.xml ? (
-                        <button onClick={() => setXmlModal(f)} className="text-[11px] text-[#4A6FA5] hover:underline">
+                        <button onClick={() => setXmlModal(f)} className="text-[11px] text-[color:var(--theme-primary)] hover:underline">
                           Ver XML
                         </button>
                       ) : (
@@ -317,7 +317,7 @@ export function FacturasArrendamientoTab({
       {xmlModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setXmlModal(null)}>
           <div className="bg-white shadow-2xl max-w-2xl w-full max-h-[80vh] overflow-hidden flex flex-col border-2 border-gray-400" onClick={e => e.stopPropagation()}>
-            <div className="bg-[#2E5C91] px-4 py-2.5 border-b-2 border-gray-400 flex items-center justify-between">
+            <div className="bg-[color:var(--theme-secondary)] px-4 py-2.5 border-b-2 border-gray-400 flex items-center justify-between">
               <h3 className="text-sm font-medium text-white">CFDI — {xmlModal.noFactura}</h3>
               <button onClick={() => setXmlModal(null)} className="text-white hover:text-gray-300 font-bold text-lg leading-none">×</button>
             </div>
@@ -348,7 +348,7 @@ export function FacturasArrendamientoTab({
                   document.body.removeChild(a);
                   setTimeout(() => URL.revokeObjectURL(url), 30_000);
                 }}
-                className="px-4 py-1.5 bg-[#4A6FA5] text-white text-xs rounded hover:bg-[#3E5C91]"
+                className="px-4 py-1.5 bg-[color:var(--theme-primary)] text-white text-xs rounded hover:bg-[color:var(--theme-secondary)]"
               >
                 Descargar
               </button>

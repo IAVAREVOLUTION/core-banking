@@ -8,6 +8,9 @@
 export interface SolicitudFormData {
   // Header — siempre visible
   id: string;                      // PK automático
+  // Llegan en datos reales (banca móvil / Persona Moral) aunque no tengan campo propio en el formulario.
+  frecuencia?: string;
+  denominacionRazonSocial?: string;
   noSol: string;                   // BAN-DIGITAL-AAAAMMDD-999999
   cotizacionId: string;            // FK cotización (vacío si creación directa)
   lineaProducto: string;           // Crédito | Captación | Línea de Crédito
@@ -53,6 +56,10 @@ export interface SolicitudFormData {
 
 // Términos y Condiciones
 export interface TerminosCondiciones {
+  /** Plazo(s) elegidos en Estructura Bursátil de la Oportunidad (REQ-10). */
+  plazosProducto?: unknown;
+  /** Plazo de la emisión bursátil en años (REQ-10). */
+  plazoBonosAnios?: string | number;
   montoSolicitado: string;
   fechaPrimerPago: string;
   fechaPrimeraAportacion: string;
@@ -161,7 +168,8 @@ export interface DocumentoCargado {
   area: string;
   fase: string;
   faseId: number;
-  estatus: 'Pendiente' | 'Validado' | 'Rechazado';
+  // 'Pendiente Validación IA': documentos que genera el sistema (contrato, pagaré, kit legal…)
+  estatus: 'Pendiente' | 'Pendiente Validación IA' | 'Validado' | 'Rechazado';
   validadoIA: boolean;
   fileData?: string;
   /** URL firmada de Supabase Storage o blob URL local */
@@ -178,6 +186,77 @@ export interface DocumentoCargado {
   iaMotivos?: string[];
   /** Datos extraídos por IA */
   iaExtraido?: Record<string, string>;
+  /** REQ-03 — versión del documento ('1.0', '2.0'…). Ausente = '1.0' (registros previos). */
+  version?: string;
+  /** REQ-03 — "Fecha Actualización". Ausente = igual a `fecha` (fecha de creación). */
+  fechaActualizacion?: string;
+  /** REQ-03 — id del registro del que se clonó esta versión. */
+  versionDe?: number;
+  /** REQ-03 — id de la versión 1.0; agrupa todas las versiones de un mismo documento. */
+  versionRaiz?: number;
+  /** REQ-03 — versión clonada cuyo archivo aún no se ha reemplazado. */
+  archivoPendiente?: boolean;
+}
+
+// ── REQ-03: control de versiones del KM Digital ──────────────────────────────
+
+/** Fecha y hora local 'DD/MM/YYYY HH:MM:SS'. */
+export function fechaHoraActual(d: Date = new Date()): string {
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+}
+
+export const versionDoc = (d: DocumentoCargado): string => d.version || '1.0';
+export const raizVersion = (d: DocumentoCargado): number => d.versionRaiz ?? d.id;
+const numVersion = (d: DocumentoCargado): number => parseFloat(versionDoc(d)) || 1;
+
+/** Siguiente número de versión del documento al que pertenece `doc` ('2.0', '3.0'…). */
+export function siguienteVersion(docs: DocumentoCargado[], doc: DocumentoCargado): string {
+  const raiz = raizVersion(doc);
+  const max = docs.filter(d => raizVersion(d) === raiz).reduce((m, d) => Math.max(m, numVersion(d)), 0);
+  return `${Math.floor(max) + 1}.0`;
+}
+
+/**
+ * Lista "vigente" para validar fases y requisitos: de cada documento versionado
+ * sólo cuenta la versión más alta; las anteriores son historial. Si la versión
+ * vigente es un clon con el archivo aún sin reemplazar, se entrega sin archivo
+ * para que cuente como no cargado y obligue a actualizarlo antes de avanzar.
+ */
+export function documentosVigentes(docs: DocumentoCargado[]): DocumentoCargado[] {
+  const mejor = new Map<number, DocumentoCargado>();
+  for (const d of docs) {
+    const actual = mejor.get(raizVersion(d));
+    if (!actual || numVersion(d) > numVersion(actual)) mejor.set(raizVersion(d), d);
+  }
+  return docs
+    .filter(d => mejor.get(raizVersion(d)) === d)
+    .map(d => (d.archivoPendiente
+      ? { ...d, archivo: '', url: undefined, storagePath: undefined, fileData: undefined }
+      : d));
+}
+
+/** Campos de versión en snake_case para el JSONB de la solicitud. */
+export function versionToDB(d: DocumentoCargado) {
+  return {
+    version: versionDoc(d),
+    fecha_actualizacion: d.fechaActualizacion || d.fecha || null,
+    version_de: d.versionDe ?? null,
+    version_raiz: d.versionRaiz ?? null,
+    archivo_pendiente: d.archivoPendiente === true,
+  };
+}
+
+/** Inversa de versionToDB (acepta también camelCase). */
+export function versionFromDB(r: any): Pick<DocumentoCargado, 'version' | 'fechaActualizacion' | 'versionDe' | 'versionRaiz' | 'archivoPendiente'> {
+  const fecha = r?.fecha_creacion ?? r?.fecha ?? '';
+  return {
+    version: r?.version || '1.0',
+    fechaActualizacion: r?.fecha_actualizacion ?? r?.fechaActualizacion ?? fecha,
+    versionDe: r?.version_de ?? r?.versionDe ?? undefined,
+    versionRaiz: r?.version_raiz ?? r?.versionRaiz ?? undefined,
+    archivoPendiente: (r?.archivo_pendiente ?? r?.archivoPendiente) === true,
+  };
 }
 
 /**
@@ -432,7 +511,7 @@ export function loadFromSavedStore<T>(solId: SolId, subtab: string): T | null {
 
 /** Normaliza para comparar conceptos/componentes: sin acentos, sin espacios extra. */
 const _normCargo = (v: unknown) =>
-  String(v ?? '').trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  String(v ?? '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 
 /**
  * Marca como **Aplicado** los Cargos de la Solicitud que ya se procesaron
@@ -661,7 +740,7 @@ export const ESTATUS_FACTURA_LIQUIDADA: EstatusFactura[] = ['Pagada', 'Autorizad
 // ─────────────────────────────────────────────────────────────────────────────
 
 const _normProd = (s?: string) =>
-  (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 
 /** true si el producto es Arrendamiento — Puro o Financiero. */
 export function esArrendamiento(lineaProducto?: string, tipoProducto?: string): boolean {
@@ -1239,6 +1318,7 @@ export const MOCK_AUTORIZADORES: { usuario: string; puesto: string; area: string
 export const MOCK_FORMS: Record<number, SolicitudFormData> = {
   1: {
     id: '1',
+    noCliente: '', area: '', promptIAFase: '',
     noSol: 'BAN-DIGITAL-20230824-000001',
     cotizacionId: '',
     lineaProducto: 'Crédito',
@@ -1260,6 +1340,7 @@ export const MOCK_FORMS: Record<number, SolicitudFormData> = {
   },
   2: {
     id: '2',
+    noCliente: '', area: '', promptIAFase: '',
     noSol: 'BAN-DIGITAL-20230810-000001',
     cotizacionId: '',
     lineaProducto: 'Crédito',

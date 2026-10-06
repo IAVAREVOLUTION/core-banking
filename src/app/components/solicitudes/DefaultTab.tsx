@@ -40,7 +40,7 @@ export function DefaultTab({ mode, solicitudId }: Props) {
 
   const set = (f: keyof DefaultData, v: string) => { if (!isRO) setData(p => ({ ...p, [f]: v })); };
 
-  const ic = (disabled = false) => `w-full px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none ${disabled || isRO ? 'bg-gray-100 text-gray-600' : 'bg-white focus:ring-2 focus:ring-[#4A6FA5]'}`;
+  const ic = (disabled = false) => `w-full px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none ${disabled || isRO ? 'bg-gray-100 text-gray-600' : 'bg-white focus:ring-2 focus:ring-[color:var(--theme-primary)]'}`;
 
   // Color indicator for lista negra
   const listaNegraBadge = () => {
@@ -51,7 +51,7 @@ export function DefaultTab({ mode, solicitudId }: Props) {
 
   return (
     <div className="border border-gray-300 border-t-0 px-4 py-4 bg-gray-50">
-      <div className="bg-[#D9E2F3] border-l-4 border-[#4A6FA5] px-3 py-1.5 mb-4">
+      <div className="bg-[color:var(--theme-tint)] border-l-4 border-[color:var(--theme-primary)] px-3 py-1.5 mb-4">
         <span className="text-xs text-gray-800">DATOS DEL CLIENTE</span>
       </div>
       <div className="grid grid-cols-2 gap-x-8 gap-y-3">

@@ -1,5 +1,6 @@
 import { useState, useEffect, forwardRef, useImperativeHandle } from 'react';
 import { FormMode } from '../../../types/product';
+import { CampoMonto } from '@/app/components/ui/CampoMonto';
 
 interface TabuladorItem {
   id: number;
@@ -119,7 +120,7 @@ export const TabuladorProductosTab = forwardRef<{ getData: () => TabuladorItem[]
                 onClick={() => setShowNuevoForm(!showNuevoForm)}
                 className={`px-4 py-1 rounded text-xs font-medium ${
                   showNuevoForm
-                    ? 'bg-[#0099CC] text-white'
+                    ? 'bg-[color:var(--theme-action)] text-white'
                     : 'bg-white border border-gray-400 text-gray-700 hover:bg-gray-50'
                 }`}
               >
@@ -164,9 +165,7 @@ export const TabuladorProductosTab = forwardRef<{ getData: () => TabuladorItem[]
                 </div>
                 <div className="flex items-center gap-2">
                   <label className="text-xs w-32 flex-shrink-0 text-gray-700">Monto solicitado <span className="text-red-600">*</span></label>
-                  <input 
-                    type="number"
-                    step="0.01"
+                  <CampoMonto
                     value={nuevoItem.montoSolicitado || ''}
                     onChange={(e) => setNuevoItem({ ...nuevoItem, montoSolicitado: parseFloat(e.target.value) || 0 })}
                     className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded"
@@ -177,9 +176,7 @@ export const TabuladorProductosTab = forwardRef<{ getData: () => TabuladorItem[]
               <div className="grid grid-cols-3 gap-x-4">
                 <div className="flex items-center gap-2">
                   <label className="text-xs w-32 flex-shrink-0 text-gray-700">Monto total a pagar <span className="text-red-600">*</span></label>
-                  <input 
-                    type="number"
-                    step="0.01"
+                  <CampoMonto
                     value={nuevoItem.montoTotalPagar || ''}
                     onChange={(e) => setNuevoItem({ ...nuevoItem, montoTotalPagar: parseFloat(e.target.value) || 0 })}
                     className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded"
@@ -202,7 +199,7 @@ export const TabuladorProductosTab = forwardRef<{ getData: () => TabuladorItem[]
             <button
               onClick={handleNuevo}
               disabled={!nuevoItem.plazo || !nuevoItem.tasaInteres || !nuevoItem.montoSolicitado}
-              className="mt-3 px-4 py-1 bg-[#0099CC] text-white rounded text-xs hover:bg-[#0088BB] font-medium disabled:bg-gray-400 disabled:cursor-not-allowed"
+              className="mt-3 px-4 py-1 bg-[color:var(--theme-action)] text-white rounded text-xs hover:bg-[color:var(--theme-action-hover)] font-medium disabled:bg-gray-400 disabled:cursor-not-allowed"
             >
               Agregar
             </button>

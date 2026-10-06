@@ -7,6 +7,7 @@ import {
 } from './solicitudCreditoStore';
 import type { ProductoCatalogo } from '../../hooks/useProductosCatalogoDB';
 import { useProductosSeguros } from '../../hooks/useProductosSeguros';
+import { CampoMonto } from '@/app/components/ui/CampoMonto';
 
 // ── Tipos internos ──
 interface GarantiaProducto { tipo: string; subtipo?: string; aforo?: number | string; }
@@ -958,7 +959,7 @@ export function TerminosCondicionesTab({ mode, solicitudId, lineaProducto, tipoP
 
   const ic = (disabled = false, hasError = false) => {
     const base = 'w-full px-2 py-1.5 text-xs border rounded focus:outline-none';
-    const focus = !disabled && !isRO ? 'focus:ring-2 focus:ring-[#4A6FA5] focus:border-[#4A6FA5]' : '';
+    const focus = !disabled && !isRO ? 'focus:ring-2 focus:ring-[color:var(--theme-primary)] focus:border-[color:var(--theme-primary)]' : '';
     const bg = disabled || isRO ? 'bg-gray-100 text-gray-600' : 'bg-white text-gray-800';
     const border = hasError ? 'border-red-400' : 'border-gray-300';
     return `${base} ${border} ${focus} ${bg}`;
@@ -966,7 +967,7 @@ export function TerminosCondicionesTab({ mode, solicitudId, lineaProducto, tipoP
 
   const sc = () => {
     const base = 'w-full px-2 py-1.5 text-xs border rounded focus:outline-none border-gray-300';
-    const focus = !isRO ? 'focus:ring-2 focus:ring-[#4A6FA5]' : '';
+    const focus = !isRO ? 'focus:ring-2 focus:ring-[color:var(--theme-primary)]' : '';
     const bg = isRO ? 'bg-gray-100 text-gray-600' : 'bg-white text-gray-800';
     return `${base} ${focus} ${bg}`;
   };
@@ -1073,8 +1074,7 @@ export function TerminosCondicionesTab({ mode, solicitudId, lineaProducto, tipoP
             <label className="block text-xs text-gray-700 mb-1">Monto Autorizado <span className="text-red-500">*</span></label>
             <div className="relative">
               <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-500">$</span>
-              <input
-                type="text" inputMode="decimal"
+              <CampoMonto
                 value={data.montoSolicitado}
                 onChange={e => handleNumeric('montoSolicitado', e.target.value)}
                 onBlur={() => handleCurrencyBlur('montoSolicitado')}
@@ -1246,7 +1246,7 @@ export function TerminosCondicionesTab({ mode, solicitudId, lineaProducto, tipoP
       {/* ── Cotizador de Arrendamiento — sección propia, fuera del grid de 3 columnas ── */}
       {isArrendamientoPuro && (
         <div className="mt-4 pt-4 border-t border-gray-200">
-          <div className="bg-[#4A6FA5] text-white text-xs font-semibold uppercase tracking-wide px-3 py-1.5 rounded mb-3">
+          <div className="bg-[color:var(--theme-primary)] text-white text-xs font-semibold uppercase tracking-wide px-3 py-1.5 rounded mb-3">
             Parámetros de Arrendamiento
           </div>
           <div className="grid grid-cols-4 gap-x-6 gap-y-4">
@@ -1374,7 +1374,7 @@ export function TerminosCondicionesTab({ mode, solicitudId, lineaProducto, tipoP
                   }
                 }}
                 disabled={isRO}
-                className="w-3.5 h-3.5 accent-[#4A6FA5]"
+                className="w-3.5 h-3.5 accent-[color:var(--theme-primary)]"
               />
               Bien
             </label>
@@ -1418,7 +1418,7 @@ export function TerminosCondicionesTab({ mode, solicitudId, lineaProducto, tipoP
                             onClick={() => !isRO && !sinMonto && !afoInvalido && setGarantiaSeleccionada(sel ? null : g)}
                           >
                             <td className="px-2 py-1.5 text-center border-r border-gray-200">
-                              <input type="radio" checked={sel} readOnly disabled={afoInvalido || sinMonto} className="w-3 h-3 accent-[#4A6FA5]" />
+                              <input type="radio" checked={sel} readOnly disabled={afoInvalido || sinMonto} className="w-3 h-3 accent-[color:var(--theme-primary)]" />
                             </td>
                             <td className="px-3 py-1.5 border-r border-gray-200 font-medium text-gray-700">{g.tipo}</td>
                             <td className="px-3 py-1.5 border-r border-gray-200 text-gray-600">{g.subtipo || '—'}</td>
@@ -1496,7 +1496,7 @@ export function TerminosCondicionesTab({ mode, solicitudId, lineaProducto, tipoP
                   }
                 }}
                 disabled={isRO}
-                className="w-3.5 h-3.5 accent-[#4A6FA5]"
+                className="w-3.5 h-3.5 accent-[color:var(--theme-primary)]"
               />
               Seguro Financiado
             </label>
@@ -1510,7 +1510,7 @@ export function TerminosCondicionesTab({ mode, solicitudId, lineaProducto, tipoP
                 {loadingSeguros ? (
                   <p className="text-xs text-gray-400 py-1">Cargando seguros...</p>
                 ) : productosSeguros.length === 0 ? (
-                  <p className="text-xs text-amber-600 py-1">No hay productos de seguro configurados en J_PRODUCTOS</p>
+                  <p className="text-xs text-amber-600 py-1">No hay productos de seguro configurados</p>
                 ) : (
                   <select
                     value={seguroSeleccionadoId}
@@ -1574,7 +1574,7 @@ export function TerminosCondicionesTab({ mode, solicitudId, lineaProducto, tipoP
                                 </td>
                                 <td className="px-3 py-2 text-center">
                                   {sel ? (
-                                    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" className="inline-block text-[#4A6FA5]">
+                                    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" className="inline-block text-[color:var(--theme-primary)]">
                                       <circle cx="9" cy="9" r="8" stroke="#4A6FA5" strokeWidth="1.5"/>
                                       <path d="M5 9l3 3 5-5" stroke="#4A6FA5" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
                                     </svg>
@@ -1586,7 +1586,7 @@ export function TerminosCondicionesTab({ mode, solicitudId, lineaProducto, tipoP
                                         setData(prev => ({ ...prev, seguroMatrizFila: f }));
                                       }}
                                       disabled={isRO}
-                                      className="px-2 py-0.5 bg-[#4A6FA5] text-white text-[10px] rounded hover:bg-[#3E5C91] disabled:opacity-40"
+                                      className="px-2 py-0.5 bg-[color:var(--theme-primary)] text-white text-[10px] rounded hover:bg-[color:var(--theme-secondary)] disabled:opacity-40"
                                     >
                                       Sel.
                                     </button>

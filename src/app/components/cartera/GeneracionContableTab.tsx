@@ -16,7 +16,7 @@
  *       d. Si error (ej. sin configuración en motor) → muestra error.
  */
 import { useState, useEffect, useCallback } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-7e2d13d9`;
@@ -277,7 +277,7 @@ export function GeneracionContableTab({ solicitudId, credito, componentes }: Pro
               setFechaNuevo(new Date().toISOString().slice(0, 16));
               setShowModal(true);
             }}
-            className="px-3 py-1.5 text-xs font-medium rounded border border-[#4A6FA5] bg-[#4A6FA5] text-white hover:bg-[#3A5A8A] flex items-center gap-1.5"
+            className="px-3 py-1.5 text-xs font-medium rounded border border-[color:var(--theme-primary)] bg-[color:var(--theme-primary)] text-white hover:bg-[color:var(--theme-primary-hover)] flex items-center gap-1.5"
           >
             <svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
               <path d="M5.5 1v9M1 5.5h9"/>
@@ -291,7 +291,7 @@ export function GeneracionContableTab({ solicitudId, credito, componentes }: Pro
       <div className="border border-gray-200 rounded overflow-x-auto">
         <table className="w-full text-xs">
           <thead>
-            <tr className="bg-[#2E5C91] text-white">
+            <tr className="bg-[color:var(--theme-secondary)] text-white">
               <th className="px-3 py-2.5 text-left font-medium">Evento Contable</th>
               <th className="px-3 py-2.5 text-left font-medium">Fecha</th>
               <th className="px-3 py-2.5 text-center font-medium w-28">Estatus</th>
@@ -302,7 +302,7 @@ export function GeneracionContableTab({ solicitudId, credito, componentes }: Pro
             {loadingEventos ? (
               <tr>
                 <td colSpan={4} className="px-3 py-8 text-center text-gray-400">
-                  <svg className="animate-spin h-5 w-5 mx-auto mb-2 text-[#4A6FA5]" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2">
+                  <svg className="animate-spin h-5 w-5 mx-auto mb-2 text-[color:var(--theme-primary)]" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2">
                     <circle cx="6" cy="6" r="5" strokeOpacity="0.25"/><path d="M6 1a5 5 0 0 1 5 5" strokeLinecap="round"/>
                   </svg>
                   Cargando eventos...
@@ -337,7 +337,7 @@ export function GeneracionContableTab({ solicitudId, credito, componentes }: Pro
                     <button
                       onClick={() => setConfirmEv(ev)}
                       disabled={generando === ev.id}
-                      className="flex items-center gap-1 px-2.5 py-1 rounded text-[10px] font-medium bg-[#2E5C91] text-white hover:bg-[#24497A] disabled:opacity-50 mx-auto"
+                      className="flex items-center gap-1 px-2.5 py-1 rounded text-[10px] font-medium bg-[color:var(--theme-secondary)] text-white hover:bg-[color:var(--theme-secondary-hover)] disabled:opacity-50 mx-auto"
                     >
                       {generando === ev.id ? (
                         <svg className="animate-spin h-2.5 w-2.5" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2">
@@ -391,9 +391,9 @@ export function GeneracionContableTab({ solicitudId, credito, componentes }: Pro
             onClick={e => e.stopPropagation()}
           >
             {/* Header modal */}
-            <div className="flex items-center justify-between px-5 py-3.5 border-b border-gray-100 bg-[#2E5C91] rounded-t-xl shrink-0">
+            <div className="flex items-center justify-between px-5 py-3.5 border-b border-gray-100 bg-[color:var(--theme-secondary)] rounded-t-xl shrink-0">
               <h4 className="text-sm font-bold text-white">Nuevo Evento Contable</h4>
-              <button onClick={() => setShowModal(false)} disabled={guardando} className="text-white/70 hover:text-white">
+              <button type="button" aria-label="Cerrar" title="Cerrar" onClick={() => setShowModal(false)} disabled={guardando} className="text-white/70 hover:text-white">
                 <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2">
                   <path d="M3 3l8 8M11 3l-8 8"/>
                 </svg>
@@ -427,8 +427,8 @@ export function GeneracionContableTab({ solicitudId, credito, componentes }: Pro
                         onClick={() => setSelIdx(i)}
                         className={`w-full text-left px-3 py-2 rounded-lg border text-xs transition-all ${
                           selIdx === i
-                            ? 'border-[#4A6FA5] bg-[#4A6FA5] text-white'
-                            : 'border-gray-200 bg-white hover:border-[#4A6FA5]/40 text-gray-700'
+                            ? 'border-[color:var(--theme-primary)] bg-[color:var(--theme-primary)] text-white'
+                            : 'border-gray-200 bg-white hover:border-[color:var(--theme-primary)]/40 text-gray-700'
                         }`}
                       >
                         <span className={`font-mono text-[10px] mr-2 ${selIdx === i ? 'text-blue-200' : 'text-gray-400'}`}>
@@ -450,7 +450,7 @@ export function GeneracionContableTab({ solicitudId, credito, componentes }: Pro
                   type="datetime-local"
                   value={fechaNuevo}
                   onChange={e => setFechaNuevo(e.target.value)}
-                  className="w-full px-2.5 py-1.5 text-xs border border-gray-300 rounded focus:outline-none focus:border-[#4A6FA5]"
+                  className="w-full px-2.5 py-1.5 text-xs border border-gray-300 rounded focus:outline-none focus:border-[color:var(--theme-primary)]"
                 />
               </div>
 
@@ -494,7 +494,7 @@ export function GeneracionContableTab({ solicitudId, credito, componentes }: Pro
               <button
                 onClick={handleGuardar}
                 disabled={guardando || catalogo.length === 0}
-                className="px-5 py-1.5 text-xs bg-[#2E5C91] text-white rounded-lg hover:bg-[#245080] disabled:opacity-50 font-medium"
+                className="px-5 py-1.5 text-xs bg-[color:var(--theme-secondary)] text-white rounded-lg hover:bg-[color:var(--theme-secondary-hover)] disabled:opacity-50 font-medium"
               >
                 {guardando ? 'Guardando...' : 'Guardar'}
               </button>
@@ -513,9 +513,9 @@ export function GeneracionContableTab({ solicitudId, credito, componentes }: Pro
             className="bg-white rounded-xl shadow-2xl w-full max-w-md border border-gray-200"
             onClick={e => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between px-5 py-3.5 border-b border-gray-100 bg-[#2E5C91] rounded-t-xl">
+            <div className="flex items-center justify-between px-5 py-3.5 border-b border-gray-100 bg-[color:var(--theme-secondary)] rounded-t-xl">
               <h4 className="text-sm font-bold text-white">Confirmar Generación de Póliza</h4>
-              <button
+              <button type="button" aria-label="Cerrar" title="Cerrar"
                 onClick={() => setConfirmEv(null)}
                 disabled={!!generando}
                 className="text-white/70 hover:text-white disabled:opacity-40"
@@ -591,7 +591,7 @@ export function GeneracionContableTab({ solicitudId, credito, componentes }: Pro
               <button
                 onClick={() => handleGenerarPoliza(confirmEv)}
                 disabled={!!generando}
-                className="flex items-center gap-1.5 px-5 py-1.5 text-xs bg-[#2E5C91] text-white rounded hover:bg-[#245080] disabled:opacity-50 font-medium"
+                className="flex items-center gap-1.5 px-5 py-1.5 text-xs bg-[color:var(--theme-secondary)] text-white rounded hover:bg-[color:var(--theme-secondary-hover)] disabled:opacity-50 font-medium"
               >
                 {generando === confirmEv.id ? (
                   <>

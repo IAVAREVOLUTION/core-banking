@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
-import { toast } from 'sonner';
-import * as XLSX from 'xlsx';
+import { toast } from '@/app/lib/notificaciones';
 import { ChevronRight, ChevronDown } from 'lucide-react';
+import { cargarXLSX } from '@/app/lib/librerias';
 
 interface CobranzaAcumulativa {
   id: number;
@@ -114,7 +114,8 @@ export function CobranzaAcumulativa({ clienteId, mode, isView }: CobranzaAcumula
     toast.success(`Generando cobranza acumulativa para ${seleccionados.length} registro(s)`);
   };
 
-  const exportarExcel = () => {
+  const exportarExcel = async () => {
+    const XLSX = await cargarXLSX();
     const datosExportar = filteredData.map(({ expediente, dep, pag, rfc, noCobranza, nombreCompleto, claveDescuento, importeDescontar, periodoPagos, montoTotal }) => ({
       Expediente: expediente,
       Dep: dep,

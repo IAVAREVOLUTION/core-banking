@@ -18,7 +18,7 @@
  * ═══════════════════════════════════════════════════════════════════
  */
 import { useState, useEffect, useCallback } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 import { BeneficiariosTab } from './BeneficiariosTab';
 import { CoTitularesTab } from './CoTitularesTab';
 import { InteresesDiariosTab } from './InteresesDiariosTab';
@@ -39,6 +39,7 @@ import type { ProductoPickResult } from './ProductoPickerModal';
 import { useCuentasAhorroDB, getCuentaAhorroById } from '@/app/hooks/useCuentasAhorroDB';
 import type { InsertCuentaAhorroPayload, UpdateCuentaAhorroPayload, JCuentaAhorroRow } from '@/app/hooks/useCuentasAhorroDB';
 import { fromISODate, toISODate } from './cuentasAhorroStore';
+import { CampoMonto } from '@/app/components/ui/CampoMonto';
 
 // ═══════════════════════════════════════════════════════════════════
 // HELPER: Parsear valores MONEY de PostgreSQL
@@ -443,12 +444,12 @@ export function CuentasAhorroForm({ mode, accountId, onCancel, onSave }: Cuentas
     if (!dbForm.cliente_id) {
       e.cliente_id = 'Seleccione un cliente';
     } else if (!isValidUUID(dbForm.cliente_id)) {
-      e.cliente_id = 'UUID inválido — seleccione un cliente real de J_CLIENTES';
+      e.cliente_id = 'Seleccione un cliente registrado';
     }
     if (!dbForm.producto_id) {
       e.producto_id = 'Seleccione un producto';
     } else if (!isValidUUID(dbForm.producto_id)) {
-      e.producto_id = 'UUID inválido — el producto viene del catálogo local. Se requiere J_PRODUCTOS en la BD';
+      e.producto_id = 'Seleccione un producto registrado en el catálogo';
     }
     setErrors(e);
     if (Object.keys(e).length > 0) {
@@ -613,7 +614,7 @@ export function CuentasAhorroForm({ mode, accountId, onCancel, onSave }: Cuentas
   const inputCls = (hasError = false, disabled = false) => {
     const base = 'w-full px-2 py-1 text-xs border rounded focus:outline-none';
     const border = hasError ? 'border-red-400' : 'border-gray-300';
-    const focus = !disabled && !isRO ? 'focus:ring-2 focus:ring-[#4A6FA5] focus:border-[#4A6FA5]' : '';
+    const focus = !disabled && !isRO ? 'focus:ring-2 focus:ring-[color:var(--theme-primary)] focus:border-[color:var(--theme-primary)]' : '';
     const bg = disabled || isRO ? 'bg-gray-100 text-gray-600' : 'bg-white text-gray-800';
     return `${base} ${border} ${focus} ${bg}`;
   };
@@ -621,7 +622,7 @@ export function CuentasAhorroForm({ mode, accountId, onCancel, onSave }: Cuentas
   const selectCls = (hasError = false) => {
     const base = 'w-full px-2 py-1 text-xs border rounded focus:outline-none';
     const border = hasError ? 'border-red-400' : 'border-gray-300';
-    const focus = !isRO ? 'focus:ring-2 focus:ring-[#4A6FA5] focus:border-[#4A6FA5]' : '';
+    const focus = !isRO ? 'focus:ring-2 focus:ring-[color:var(--theme-primary)] focus:border-[color:var(--theme-primary)]' : '';
     const bg = isRO ? 'bg-gray-100 text-gray-600' : 'bg-white text-gray-800';
     return `${base} ${border} ${focus} ${bg}`;
   };
@@ -654,7 +655,7 @@ export function CuentasAhorroForm({ mode, accountId, onCancel, onSave }: Cuentas
   if (loadingRecord) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center bg-white">
-        <svg className="animate-spin h-8 w-8 text-[#4A6FA5] mb-3" viewBox="0 0 24 24" fill="none">
+        <svg className="animate-spin h-8 w-8 text-[color:var(--theme-primary)] mb-3" viewBox="0 0 24 24" fill="none">
           <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
           <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
         </svg>
@@ -717,7 +718,7 @@ export function CuentasAhorroForm({ mode, accountId, onCancel, onSave }: Cuentas
 
 
         {/* ── Sección: Información Principal ── */}
-        <div className="bg-[#D9E2F3] border-l-4 border-[#4A6FA5] px-4 py-2 mb-5">
+        <div className="bg-[color:var(--theme-tint)] border-l-4 border-[color:var(--theme-primary)] px-4 py-2 mb-5">
           <h3 className="text-sm text-gray-800 uppercase">Información Principal</h3>
         </div>
 
@@ -843,7 +844,7 @@ export function CuentasAhorroForm({ mode, accountId, onCancel, onSave }: Cuentas
                 checked={dbForm.cta_eje_chec}
                 onChange={e => setDb('cta_eje_chec', e.target.checked)}
                 disabled={isRO}
-                className="w-4 h-4 accent-[#4A6FA5]"
+                className="w-4 h-4 accent-[color:var(--theme-primary)]"
               />
               <label className="text-xs text-gray-700">Cuenta Eje / Chequera (cta_eje_chec)</label>
             </div>
@@ -883,7 +884,7 @@ export function CuentasAhorroForm({ mode, accountId, onCancel, onSave }: Cuentas
         </div>
 
         {/* ── Sección: Estatus ── */}
-        <div className="bg-[#D9E2F3] border-l-4 border-[#4A6FA5] px-4 py-2 mb-5">
+        <div className="bg-[color:var(--theme-tint)] border-l-4 border-[color:var(--theme-primary)] px-4 py-2 mb-5">
           <h3 className="text-sm text-gray-800 uppercase">
             Estatus {isNew ? '(automáticos)' : ''}
           </h3>
@@ -944,7 +945,7 @@ export function CuentasAhorroForm({ mode, accountId, onCancel, onSave }: Cuentas
         </div>
 
         {/* ── Sección: Montos ── */}
-        <div className="bg-[#D9E2F3] border-l-4 border-[#4A6FA5] px-4 py-2 mb-5">
+        <div className="bg-[color:var(--theme-tint)] border-l-4 border-[color:var(--theme-primary)] px-4 py-2 mb-5">
           <h3 className="text-sm text-gray-800 uppercase">Campos Monetarios</h3>
         </div>
 
@@ -954,8 +955,7 @@ export function CuentasAhorroForm({ mode, accountId, onCancel, onSave }: Cuentas
             {isNew ? (
               <input type="text" value="$0.00" disabled className={inputCls(false, true)} />
             ) : (
-              <input
-                type="text"
+              <CampoMonto
                 value={dbForm.saldo_actual}
                 onChange={e => handleDbNumeric('saldo_actual', e.target.value)}
                 onBlur={() => handleDbCurrencyBlur('saldo_actual')}
@@ -967,8 +967,7 @@ export function CuentasAhorroForm({ mode, accountId, onCancel, onSave }: Cuentas
           </div>
           <div>
             <Lbl>Monto Solicitado</Lbl>
-            <input
-              type="text"
+            <CampoMonto
               value={dbForm.monto_sol}
               onChange={e => handleDbNumeric('monto_sol', e.target.value)}
               onBlur={() => handleDbCurrencyBlur('monto_sol')}
@@ -979,8 +978,7 @@ export function CuentasAhorroForm({ mode, accountId, onCancel, onSave }: Cuentas
           </div>
           <div>
             <Lbl>Monto Autorizado</Lbl>
-            <input
-              type="text"
+            <CampoMonto
               value={dbForm.monto_aut}
               onChange={e => handleDbNumeric('monto_aut', e.target.value)}
               onBlur={() => handleDbCurrencyBlur('monto_aut')}
@@ -991,8 +989,7 @@ export function CuentasAhorroForm({ mode, accountId, onCancel, onSave }: Cuentas
           </div>
           <div>
             <Lbl>Monto Dispersado</Lbl>
-            <input
-              type="text"
+            <CampoMonto
               value={dbForm.monto_disp}
               onChange={e => handleDbNumeric('monto_disp', e.target.value)}
               onBlur={() => handleDbCurrencyBlur('monto_disp')}
@@ -1004,7 +1001,7 @@ export function CuentasAhorroForm({ mode, accountId, onCancel, onSave }: Cuentas
         </div>
 
         {/* ── Sección: Fechas Operativas ── */}
-        <div className="bg-[#D9E2F3] border-l-4 border-[#4A6FA5] px-4 py-2 mb-5">
+        <div className="bg-[color:var(--theme-tint)] border-l-4 border-[color:var(--theme-primary)] px-4 py-2 mb-5">
           <h3 className="text-sm text-gray-800 uppercase">Fechas Operativas</h3>
         </div>
 

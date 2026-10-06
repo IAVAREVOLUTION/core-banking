@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 import { useClienteSubtabList } from '@/app/hooks/useClientePersistence';
 import { useProductosCatalogoDB, type ProductoCatalogo } from '@/app/hooks/useProductosCatalogoDB';
+import { CampoMonto } from '@/app/components/ui/CampoMonto';
 
 interface PerfilTransaccionalProps {
   onBack: () => void;
@@ -251,7 +252,7 @@ export function PerfilTransaccional({ onBack, mode, clienteId }: PerfilTransacci
     }));
     setShowModalCatalogo(false);
     if (producto.source === 'db') {
-      toast.success(`Producto "${producto.nombreProducto}" seleccionado (fuente: J_PRODUCTOS)`);
+      toast.success(`Producto "${producto.nombreProducto}" seleccionado`);
     } else {
       toast.info(`Producto "${producto.nombreProducto}" seleccionado (datos locales)`);
     }
@@ -374,7 +375,7 @@ export function PerfilTransaccional({ onBack, mode, clienteId }: PerfilTransacci
               <h3 className="text-base font-medium text-white">
                 {editingId !== null ? 'Editar Perfil Transaccional' : 'Nuevo Perfil Transaccional'}
               </h3>
-              <button
+              <button type="button" aria-label="Cerrar" title="Cerrar"
                 onClick={() => setShowModal(false)}
                 className="text-white hover:text-gray-200"
               >
@@ -405,7 +406,7 @@ export function PerfilTransaccional({ onBack, mode, clienteId }: PerfilTransacci
                               : 'bg-gray-100 text-gray-500'
                         }`}>
                           {loadingProductos ? '... Cargando DB...' :
-                           backendStatus === 'connected' ? `J_PRODUCTOS (${catalogoProductos.length})` :
+                           backendStatus === 'connected' ? `Catálogo de productos (${catalogoProductos.length})` :
                            backendStatus === 'fallback' ? 'sessionStorage' : 'Datos locales'}
                         </span>
                       </label>
@@ -420,7 +421,7 @@ export function PerfilTransaccional({ onBack, mode, clienteId }: PerfilTransacci
                           readOnly
                           placeholder={
                             loadingProductos
-                              ? 'Cargando catálogo desde J_PRODUCTOS...'
+                              ? 'Cargando catálogo de productos...'
                               : 'Seleccione un producto del catálogo...'
                           }
                           className="flex-1 px-2 py-1.5 text-xs border border-gray-300 rounded bg-gray-50"
@@ -493,8 +494,7 @@ export function PerfilTransaccional({ onBack, mode, clienteId }: PerfilTransacci
                       <label className="block text-xs text-gray-700 mb-1 font-medium">
                         Monto Max. Retiros <span className="text-red-600">*</span>
                       </label>
-                      <input
-                        type="text"
+                      <CampoMonto
                         value={formData.montoMaxRetiros}
                         onChange={(e) => setFormData(prev => ({ ...prev, montoMaxRetiros: e.target.value }))}
                         placeholder="$0.00"
@@ -506,8 +506,7 @@ export function PerfilTransaccional({ onBack, mode, clienteId }: PerfilTransacci
                       <label className="block text-xs text-gray-700 mb-1 font-medium">
                         Monto Max. Depósitos <span className="text-red-600">*</span>
                       </label>
-                      <input
-                        type="text"
+                      <CampoMonto
                         value={formData.montoMaxDepositos}
                         onChange={(e) => setFormData(prev => ({ ...prev, montoMaxDepositos: e.target.value }))}
                         placeholder="$0.00"
@@ -601,9 +600,9 @@ export function PerfilTransaccional({ onBack, mode, clienteId }: PerfilTransacci
             {/* Header */}
             <div className="bg-primary-theme px-6 py-4 flex items-center justify-between">
               <h3 className="text-base font-medium text-white">
-                Catálogo de Productos — J_PRODUCTOS
+                Catálogo de Productos
               </h3>
-              <button
+              <button type="button" aria-label="Cerrar" title="Cerrar"
                 onClick={() => setShowModalCatalogo(false)}
                 className="text-white hover:text-gray-200"
               >
@@ -628,7 +627,7 @@ export function PerfilTransaccional({ onBack, mode, clienteId }: PerfilTransacci
                     backendStatus === 'fallback' ? 'bg-amber-500' : 'bg-gray-400'
                   }`} />
                   {backendStatus === 'connected'
-                    ? `${catalogoProductos.length} productos de J_PRODUCTOS (DB)`
+                    ? `${catalogoProductos.length} productos disponibles`
                     : backendStatus === 'fallback'
                       ? `${catalogoProductos.length} productos (sessionStorage)`
                       : `${catalogoProductos.length} productos (datos locales)`
@@ -672,7 +671,7 @@ export function PerfilTransaccional({ onBack, mode, clienteId }: PerfilTransacci
                 <div className="flex items-center justify-center py-12">
                   <div className="text-center">
                     <div className="inline-block w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mb-2" />
-                    <p className="text-xs text-gray-500">Cargando catálogo desde J_PRODUCTOS...</p>
+                    <p className="text-xs text-gray-500">Cargando catálogo...</p>
                   </div>
                 </div>
               ) : productosFiltrados.length === 0 ? (

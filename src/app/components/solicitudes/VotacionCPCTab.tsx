@@ -32,7 +32,7 @@
  *     ese documento y la decisión #5 (si esta la sustituye) sigue abierta.
  */
 import { useState, useEffect, useRef } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 import { loadFromSession, loadFromSavedStore, saveToSession } from './solicitudCreditoStore';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 
@@ -254,7 +254,7 @@ export function VotacionCPCTab({ mode, solicitudId, onChange }: Props) {
     }
   };
 
-  const inputClass = 'w-full px-2 py-1.5 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-[#4A6FA5]/30 focus:border-[#4A6FA5]';
+  const inputClass = 'w-full px-2 py-1.5 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-[color:var(--theme-primary)]/30 focus:border-[color:var(--theme-primary)]';
   const conteo = conteoVotosCPC(datos.votos);
   const dLen = comentarios.trim().length;
 
@@ -316,7 +316,7 @@ export function VotacionCPCTab({ mode, solicitudId, onChange }: Props) {
                     name="decisionCPC"
                     checked={decision === d.value}
                     onChange={() => setDecision(d.value)}
-                    className="w-3.5 h-3.5 accent-[#4A6FA5]"
+                    className="w-3.5 h-3.5 accent-[color:var(--theme-primary)]"
                   />
                   {d.label}
                 </label>

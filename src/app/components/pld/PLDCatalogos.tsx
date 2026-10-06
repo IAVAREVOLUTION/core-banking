@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 import * as store from './pldStore';
 
 type CatalogoTipo = 'actividadEconomica' | 'paises' | 'instrumentoMonetario' | 'tipoOperacion' | 'tipoAlerta';
@@ -70,7 +70,7 @@ export function PLDCatalogos({ onBack }: Props) {
             <h2 className="text-lg text-gray-800">Catálogos PLD</h2>
           </div>
           <div className="flex items-center gap-2">
-            <button onClick={() => { setShowNuevo(true); setEditIdx(null); setConfirmDelete(null); }} className="px-5 py-1.5 bg-[#0099CC] text-white text-sm rounded hover:bg-[#0088BB]" style={{ fontWeight: 500 }}>+ Nuevo</button>
+            <button onClick={() => { setShowNuevo(true); setEditIdx(null); setConfirmDelete(null); }} className="px-5 py-1.5 bg-[color:var(--theme-action)] text-white text-sm rounded hover:bg-[color:var(--theme-action-hover)]" style={{ fontWeight: 500 }}>+ Nuevo</button>
             <button onClick={onBack} className="px-4 py-1.5 bg-white border border-gray-400 text-gray-700 text-sm rounded hover:bg-gray-50">Volver</button>
           </div>
         </div>
@@ -89,7 +89,7 @@ export function PLDCatalogos({ onBack }: Props) {
                   key={k}
                   onClick={() => { setActivo(k); setEditIdx(null); setShowNuevo(false); setConfirmDelete(null); }}
                   className={`w-full text-left px-3 py-1.5 text-xs transition-colors ${
-                    activo === k ? 'bg-[#4A6FA5] text-white' : 'text-gray-700 hover:bg-[#E8F4F8]'
+                    activo === k ? 'bg-[color:var(--theme-primary)] text-white' : 'text-gray-700 hover:bg-[#E8F4F8]'
                   }`}
                 >
                   {TITULOS[k]}
@@ -117,7 +117,7 @@ export function PLDCatalogos({ onBack }: Props) {
                   autoFocus
                   onKeyDown={e => { if (e.key === 'Enter') handleAgregar(); if (e.key === 'Escape') { setShowNuevo(false); setNuevoItem(''); } }}
                 />
-                <button onClick={handleAgregar} className="px-3 py-1 bg-[#0099CC] text-white text-[10px] rounded hover:bg-[#0088BB]">Agregar</button>
+                <button onClick={handleAgregar} className="px-3 py-1 bg-[color:var(--theme-action)] text-white text-[10px] rounded hover:bg-[color:var(--theme-action-hover)]">Agregar</button>
                 <button onClick={() => { setShowNuevo(false); setNuevoItem(''); }} className="px-3 py-1 border border-gray-400 text-gray-700 text-[10px] rounded hover:bg-gray-50">Cancelar</button>
               </div>
             )}
@@ -137,7 +137,7 @@ export function PLDCatalogos({ onBack }: Props) {
                     <tr><td colSpan={4} className="px-4 py-8 text-center text-gray-400">Catálogo vacío. Clic en "+ Nuevo" para agregar.</td></tr>
                   ) : items.map((item, idx) => (
                     <tr key={idx} style={{ backgroundColor: idx % 2 === 1 ? '#EEEEEE' : '#FFFFFF' }}>
-                      <td className="px-3 py-1.5 border-r border-gray-200 text-[#0066CC]" style={{ fontWeight: 500 }}>{idx + 1}</td>
+                      <td className="px-3 py-1.5 border-r border-gray-200 text-[color:var(--theme-link)]" style={{ fontWeight: 500 }}>{idx + 1}</td>
                       <td className="px-3 py-1.5 border-r border-gray-200">
                         {editIdx === idx ? (
                           <div className="flex items-center gap-2">
@@ -149,7 +149,7 @@ export function PLDCatalogos({ onBack }: Props) {
                               autoFocus
                               onKeyDown={e => { if (e.key === 'Enter') handleEditSave(); if (e.key === 'Escape') { setEditIdx(null); setEditValue(''); } }}
                             />
-                            <button onClick={handleEditSave} className="px-2 py-0.5 bg-[#0099CC] text-white text-[9px] rounded hover:bg-[#0088BB]">OK</button>
+                            <button onClick={handleEditSave} className="px-2 py-0.5 bg-[color:var(--theme-action)] text-white text-[9px] rounded hover:bg-[color:var(--theme-action-hover)]">OK</button>
                             <button onClick={() => { setEditIdx(null); setEditValue(''); }} className="px-2 py-0.5 border border-gray-300 text-gray-600 text-[9px] rounded hover:bg-gray-50">&#x2715;</button>
                           </div>
                         ) : item}
@@ -166,7 +166,7 @@ export function PLDCatalogos({ onBack }: Props) {
                           </div>
                         ) : (
                           <>
-                            <span className="text-[#0066CC] cursor-pointer hover:underline text-[10px]" onClick={() => startEdit(idx)}>Editar</span>
+                            <span className="text-[color:var(--theme-link)] cursor-pointer hover:underline text-[10px]" onClick={() => startEdit(idx)}>Editar</span>
                             <span className="text-gray-400 mx-1">|</span>
                             <span className="text-red-600 cursor-pointer hover:underline text-[10px]" onClick={() => setConfirmDelete(idx)}>Eliminar</span>
                           </>

@@ -65,7 +65,7 @@ export function MotorContableTab({ value, onChange, readOnly = false }: Props) {
         {!readOnly && (
           <button
             onClick={openModal}
-            className="flex items-center gap-1 px-3 py-1 bg-[#2E5C91] text-white text-[10px] hover:bg-[#24497A] rounded font-medium transition-colors"
+            className="flex items-center gap-1 px-3 py-1 bg-[color:var(--theme-secondary)] text-white text-[10px] hover:bg-[color:var(--theme-secondary-hover)] rounded font-medium transition-colors"
           >
             <Plus size={11} /> Nuevo
           </button>
@@ -100,7 +100,7 @@ export function MotorContableTab({ value, onChange, readOnly = false }: Props) {
                   <td className="px-3 py-1.5 border-b border-gray-200 font-mono">{row.credito?.cuenta_gl ?? '—'}{row.credito?.nombre ? ` · ${row.credito.nombre}` : ''}</td>
                   {!readOnly && (
                     <td className="px-2 py-1.5 border-b border-gray-200 text-center">
-                      <button onClick={() => removeRow(i)} className="text-red-500 hover:text-red-700">
+                      <button aria-label="Eliminar" title="Eliminar" onClick={() => removeRow(i)} className="text-red-500 hover:text-red-700">
                         <Trash2 size={12} />
                       </button>
                     </td>
@@ -118,7 +118,7 @@ export function MotorContableTab({ value, onChange, readOnly = false }: Props) {
           <div className="bg-white rounded shadow-xl w-[480px] max-w-full">
             <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
               <span className="text-sm font-semibold text-gray-800">Nueva regla contable</span>
-              <button onClick={() => setModal(false)} className="text-gray-400 hover:text-gray-600"><X size={16} /></button>
+              <button aria-label="Cerrar" title="Cerrar" onClick={() => setModal(false)} className="text-gray-400 hover:text-gray-600"><X size={16} /></button>
             </div>
             <div className="px-4 py-4 space-y-3">
               {catLoading ? (
@@ -128,7 +128,7 @@ export function MotorContableTab({ value, onChange, readOnly = false }: Props) {
                   <div>
                     <label className="block text-xs font-medium text-gray-700 mb-1">Evento</label>
                     <select
-                      className="w-full text-xs border border-gray-300 rounded px-2 py-1.5 focus:outline-none focus:border-[#2E5C91]"
+                      className="w-full text-xs border border-gray-300 rounded px-2 py-1.5 focus:outline-none focus:border-[color:var(--theme-secondary)]"
                       value={form.evento?.id ?? ''}
                       onChange={e => setForm(f => ({ ...f, evento: catEventos.find(x => x.id === e.target.value) ?? null }))}
                     >
@@ -139,7 +139,7 @@ export function MotorContableTab({ value, onChange, readOnly = false }: Props) {
                   <div>
                     <label className="block text-xs font-medium text-gray-700 mb-1">Componente</label>
                     <select
-                      className="w-full text-xs border border-gray-300 rounded px-2 py-1.5 focus:outline-none focus:border-[#2E5C91]"
+                      className="w-full text-xs border border-gray-300 rounded px-2 py-1.5 focus:outline-none focus:border-[color:var(--theme-secondary)]"
                       value={form.componente?.id ?? ''}
                       onChange={e => setForm(f => ({ ...f, componente: catComponentes.find(x => x.id === e.target.value) ?? null }))}
                     >
@@ -150,7 +150,7 @@ export function MotorContableTab({ value, onChange, readOnly = false }: Props) {
                   <div>
                     <label className="block text-xs font-medium text-gray-700 mb-1">Débito</label>
                     <select
-                      className="w-full text-xs border border-gray-300 rounded px-2 py-1.5 focus:outline-none focus:border-[#2E5C91]"
+                      className="w-full text-xs border border-gray-300 rounded px-2 py-1.5 focus:outline-none focus:border-[color:var(--theme-secondary)]"
                       value={form.debito?.id ?? ''}
                       onChange={e => setForm(f => ({ ...f, debito: catCuentas.find(x => x.id === e.target.value) ?? null }))}
                     >
@@ -161,7 +161,7 @@ export function MotorContableTab({ value, onChange, readOnly = false }: Props) {
                   <div>
                     <label className="block text-xs font-medium text-gray-700 mb-1">Crédito</label>
                     <select
-                      className="w-full text-xs border border-gray-300 rounded px-2 py-1.5 focus:outline-none focus:border-[#2E5C91]"
+                      className="w-full text-xs border border-gray-300 rounded px-2 py-1.5 focus:outline-none focus:border-[color:var(--theme-secondary)]"
                       value={form.credito?.id ?? ''}
                       onChange={e => setForm(f => ({ ...f, credito: catCuentas.find(x => x.id === e.target.value) ?? null }))}
                     >
@@ -177,7 +177,7 @@ export function MotorContableTab({ value, onChange, readOnly = false }: Props) {
               <button
                 disabled={!canAdd}
                 onClick={addRow}
-                className="px-3 py-1.5 text-xs bg-[#2E5C91] text-white rounded hover:bg-[#24497A] disabled:opacity-40 disabled:cursor-not-allowed"
+                className="px-3 py-1.5 text-xs bg-[color:var(--theme-secondary)] text-white rounded hover:bg-[color:var(--theme-secondary-hover)] disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 Agregar
               </button>

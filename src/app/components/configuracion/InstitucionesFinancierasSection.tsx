@@ -16,10 +16,8 @@ import {
   X,
   AlertTriangle,
 } from 'lucide-react';
-import { toast } from 'sonner';
-import * as XLSX from 'xlsx';
-import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
+import { toast } from '@/app/lib/notificaciones';
+import { cargarXLSX, cargarPDF } from '@/app/lib/librerias';
 
 // ═══════════════════════════════════════════════════════════════════
 // TIPOS
@@ -569,7 +567,8 @@ function emptyInstitucion(): Omit<InstitucionFinanciera, 'id' | 'institucionNume
 // ═══════════════════════════════════════════════════════════════════
 // UTILIDADES EXPORTACIÓN
 // ═══════════════════════════════════════════════════════════════════
-function exportToExcel(data: InstitucionFinanciera[]) {
+async function exportToExcel(data: InstitucionFinanciera[]) {
+  const XLSX = await cargarXLSX();
   const rows = data.map((d) => ({
     'Institución #': d.institucionNumero,
     'Nombre': d.nombre,
@@ -592,7 +591,8 @@ function exportToExcel(data: InstitucionFinanciera[]) {
   toast.success('Exportado a Excel correctamente');
 }
 
-function exportToCSV(data: InstitucionFinanciera[]) {
+async function exportToCSV(data: InstitucionFinanciera[]) {
+  const XLSX = await cargarXLSX();
   const rows = data.map((d) => ({
     'Institución #': d.institucionNumero,
     'Nombre': d.nombre,
@@ -618,7 +618,8 @@ function exportToCSV(data: InstitucionFinanciera[]) {
   toast.success('Exportado a CSV correctamente');
 }
 
-function exportToPDF(data: InstitucionFinanciera[]) {
+async function exportToPDF(data: InstitucionFinanciera[]) {
+  const { jsPDF, autoTable } = await cargarPDF();
   const doc = new jsPDF({ orientation: 'landscape' });
   doc.setFontSize(14);
   doc.text('Instituciones Financieras', 14, 18);
@@ -1061,7 +1062,7 @@ function CreateModal({
             </span>
             <span className="text-white/60 text-xs ml-2">{nextNumber}</span>
           </div>
-          <button onClick={onCancel} className="text-white/80 hover:text-white p-0.5 rounded hover:bg-white/10">
+          <button aria-label="Cerrar" title="Cerrar" onClick={onCancel} className="text-white/80 hover:text-white p-0.5 rounded hover:bg-white/10">
             <X size={18} />
           </button>
         </div>
@@ -1128,7 +1129,7 @@ function CreateModal({
           </button>
           <button
             onClick={handleSave}
-            className="flex items-center gap-1.5 px-4 py-1.5 text-[11px] bg-[#0099CC] text-white rounded hover:bg-[#0088BB] transition-colors"
+            className="flex items-center gap-1.5 px-4 py-1.5 text-[11px] bg-[color:var(--theme-action)] text-white rounded hover:bg-[color:var(--theme-action-hover)] transition-colors"
             style={{ fontWeight: 500 }}
           >
             <Save size={12} />
@@ -1437,7 +1438,7 @@ export function InstitucionesFinancierasSection() {
                   autoFocus
                 />
                 {searchQuery && (
-                  <button
+                  <button aria-label="Cerrar" title="Cerrar"
                     onClick={() => setSearchQuery('')}
                     className="text-gray-400 hover:text-gray-600 p-0.5"
                   >
@@ -1716,7 +1717,7 @@ export function InstitucionesFinancierasSection() {
                 <div className="flex items-center gap-2 mt-4 pt-3 border-t border-gray-200">
                   <button
                     onClick={handleSaveForm}
-                    className="flex items-center gap-1.5 px-4 py-1.5 text-[11px] bg-[#0099CC] text-white rounded hover:bg-[#0088BB] transition-colors"
+                    className="flex items-center gap-1.5 px-4 py-1.5 text-[11px] bg-[color:var(--theme-action)] text-white rounded hover:bg-[color:var(--theme-action-hover)] transition-colors"
                     style={{ fontWeight: 500 }}
                   >
                     <Save size={12} />

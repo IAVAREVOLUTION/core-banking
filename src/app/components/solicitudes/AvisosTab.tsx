@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 import { DatePicker } from '@/app/components/ui/DatePicker';
 import { Aviso, saveToSession, loadFromSession, loadFromSavedStore, generateId, MOCK_AVISOS, CAT_TIPO_AVISO, CAT_ESTATUS_AVISO } from './solicitudCreditoStore';
 
@@ -43,7 +43,7 @@ export function AvisosTab({ mode, solicitudId }: Props) {
   return (
     <div className="border border-gray-300 border-t-0 px-4 py-4 bg-gray-50">
       <div className="flex items-center justify-between mb-3">
-        <div className="bg-[#D9E2F3] border-l-4 border-[#4A6FA5] px-3 py-1.5">
+        <div className="bg-[color:var(--theme-tint)] border-l-4 border-[color:var(--theme-primary)] px-3 py-1.5">
           <span className="text-xs text-gray-800">AVISOS</span>
         </div>
         {!isRO && (

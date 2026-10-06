@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
+import { CampoMonto } from '@/app/components/ui/CampoMonto';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-7e2d13d9`;
 const HDR = { 'Content-Type': 'application/json', Authorization: `Bearer ${publicAnonKey}` };
@@ -149,9 +150,9 @@ export function Movimientos({ mode, clienteId, saldoCuentaEje, onSaldoChange }: 
         </div>
         <div className="flex items-center gap-2">
           <span className="text-[11px] font-semibold text-gray-700">
-            Saldo: <span className="text-[#2E5C91]">{fmtMoney(saldoActual)}</span>
+            Saldo: <span className="text-[color:var(--theme-secondary)]">{fmtMoney(saldoActual)}</span>
           </span>
-          <button
+          <button type="button" aria-label="Actualizar" title="Actualizar"
             onClick={() => { if (cuentaEjeId) cargar(cuentaEjeId); else cargarCuentaEje(); }}
             className="text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1"
           >
@@ -162,7 +163,7 @@ export function Movimientos({ mode, clienteId, saldoCuentaEje, onSaldoChange }: 
           {!isView && (
             <button
               onClick={() => setShowModal(true)}
-              className="px-3 py-1 bg-primary-theme text-white text-xs hover:bg-[#3E5C91] border border-[#3E5C91]"
+              className="px-3 py-1 bg-primary-theme text-white text-xs hover:bg-[color:var(--theme-secondary)] border border-[color:var(--theme-secondary)]"
             >
               Nuevo
             </button>
@@ -174,7 +175,7 @@ export function Movimientos({ mode, clienteId, saldoCuentaEje, onSaldoChange }: 
       <div className="border border-gray-300">
         <table className="w-full text-xs border-collapse">
           <thead>
-            <tr className="border-b border-gray-400 bg-[#D9E2F3]">
+            <tr className="border-b border-gray-400 bg-[color:var(--theme-tint)]">
               <th className="px-3 py-2 text-left font-medium text-gray-800 border-r border-gray-300">Fecha y Hora</th>
               <th className="px-3 py-2 text-left font-medium text-gray-800 border-r border-gray-300">Tipo</th>
               <th className="px-3 py-2 text-left font-medium text-gray-800 border-r border-gray-300">Concepto</th>
@@ -188,7 +189,7 @@ export function Movimientos({ mode, clienteId, saldoCuentaEje, onSaldoChange }: 
             {loading ? (
               <tr>
                 <td colSpan={7} className="px-3 py-8 text-center text-xs text-gray-400">
-                  <svg className="animate-spin h-4 w-4 mx-auto mb-1 text-[#4A6FA5]" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2">
+                  <svg className="animate-spin h-4 w-4 mx-auto mb-1 text-[color:var(--theme-primary)]" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2">
                     <circle cx="6" cy="6" r="5" strokeOpacity="0.25"/><path d="M6 1a5 5 0 0 1 5 5" strokeLinecap="round"/>
                   </svg>
                   Cargando movimientos...
@@ -229,7 +230,7 @@ export function Movimientos({ mode, clienteId, saldoCuentaEje, onSaldoChange }: 
           <div className="bg-white rounded shadow-xl w-full max-w-md flex flex-col" onClick={e => e.stopPropagation()}>
             <div className="bg-primary-theme px-5 py-3.5 flex items-center justify-between rounded-t">
               <h3 className="text-sm font-medium text-white">Nuevo Movimiento</h3>
-              <button onClick={() => setShowModal(false)} className="text-white/70 hover:text-white">
+              <button type="button" aria-label="Cerrar" title="Cerrar" onClick={() => setShowModal(false)} className="text-white/70 hover:text-white">
                 <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 3l8 8M11 3l-8 8"/></svg>
               </button>
             </div>
@@ -238,7 +239,7 @@ export function Movimientos({ mode, clienteId, saldoCuentaEje, onSaldoChange }: 
               {/* Saldo actual */}
               <div className="bg-gray-50 border border-gray-200 rounded p-3 flex justify-between text-xs">
                 <span className="text-gray-500">Saldo actual cuenta eje</span>
-                <span className="font-semibold text-[#2E5C91]">{fmtMoney(saldoActual)}</span>
+                <span className="font-semibold text-[color:var(--theme-secondary)]">{fmtMoney(saldoActual)}</span>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -252,7 +253,7 @@ export function Movimientos({ mode, clienteId, saldoCuentaEje, onSaldoChange }: 
                 </div>
                 <div>
                   <label className="block text-[10px] font-medium text-gray-600 mb-1 uppercase tracking-wide">Monto *</label>
-                  <input type="text" value={monto} onChange={e => setMonto(e.target.value)}
+                  <CampoMonto value={monto} onChange={e => setMonto(e.target.value)}
                     placeholder="$ 0.00"
                     className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded" />
                 </div>

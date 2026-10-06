@@ -848,7 +848,7 @@ export function validarDocumentosPorFase(
 
     if (!docCargado) {
       faltantes.push(nombreDoc);
-      motivos.push(`"${nombreDoc}": no cargado en el expediente electrónico.`);
+      motivos.push(`"${nombreDoc}": no cargado en el KM Digital.`);
       continue;
     }
 

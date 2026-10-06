@@ -22,6 +22,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase, SUPABASE_URL } from '../lib/supabaseClient';
 import { publicAnonKey } from '/utils/supabase/info';
 import type { SolicitudFormData, SolicitudListItem } from '../components/solicitudes/solicitudCreditoStore';
+import { versionToDB } from '../components/solicitudes/solicitudCreditoStore';
 
 // ═══════════════════════════════════════════════════════════════════
 const DB_AVAILABLE = true;
@@ -572,6 +573,7 @@ function formToDBPayload(form: SolicitudFormData, allSubtabs?: Record<string, an
         tamano_kb: doc.tamanoKB || null,
         ia_motivos: doc.iaMotivos || null,
         ia_extraido: doc.iaExtraido || null,
+        ...versionToDB(doc),
       })),
     },
     garantias: garantias.map((g: any) => ({
@@ -779,8 +781,11 @@ function formToDBPayload(form: SolicitudFormData, allSubtabs?: Record<string, an
 // ═════════════════════════════════════án════════════════════════════
 async function tryEdgeFunction(): Promise<{ ok: boolean; rows: SolicitudDBRow[]; method: string; error?: string }> {
   try {
-    console.log('[SolicDB] Intento 1: Edge Function', `${API_BASE}/solicitudes-credito`);
-    const res = await fetch(`${API_BASE}/solicitudes-credito`, {
+    // vista=lista: JSONB reducido (~15x menos). El detalle completo se pide con
+    // asegurarDetalleSolicitud() antes de abrir/editar/guardar. Un servidor que
+    // aún no conozca el parámetro lo ignora y devuelve el listado completo.
+    console.log('[SolicDB] Intento 1: Edge Function', `${API_BASE}/solicitudes-credito?vista=lista`);
+    const res = await fetch(`${API_BASE}/solicitudes-credito?vista=lista`, {
       headers: { 'Authorization': `Bearer ${publicAnonKey}` },
     });
     const text = await res.text();
@@ -798,6 +803,54 @@ async function tryEdgeFunction(): Promise<{ ok: boolean; rows: SolicitudDBRow[];
     console.error('[SolicDB] Edge EXCEPCIÓN:', err);
     return { ok: false, rows: [], method: 'edge-function', error: err?.message || String(err) };
   }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// DETALLE: JSONB completo de una solicitud
+// ═══════════════════════════════════════════════════════════════════
+
+/** ¿El renglón trae sólo el JSONB reducido del listado ligero? */
+export function esResumen(item: any): boolean {
+  return !!(item?._data?._resumen || item?._resumen);
+}
+
+/**
+ * Fila completa (con JSONB íntegro) de una solicitud. Usa GET /:id y, si el
+ * servidor aún no tiene esa ruta, el listado completo (que sigue existiendo).
+ */
+export async function fetchSolicitudCompleta(id: string): Promise<SolicitudDBRow | null> {
+  const hdr = { 'Authorization': `Bearer ${publicAnonKey}` };
+  try {
+    const res = await fetch(`${API_BASE}/solicitudes-credito/${id}`, { headers: hdr });
+    if (res.ok) {
+      const json = await res.json();
+      if (json?.data && !Array.isArray(json.data)) return json.data as SolicitudDBRow;
+    }
+  } catch { /* fallback abajo */ }
+  try {
+    const res = await fetch(`${API_BASE}/solicitudes-credito`, { headers: hdr });
+    if (!res.ok) return null;
+    const json = await res.json();
+    const rows: SolicitudDBRow[] = json.data || [];
+    return rows.find(r => String(r.id) === String(id)) || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Garantiza que el renglón del listado traiga el JSONB completo. Si vino del
+ * listado ligero, descarga el detalle y lo copia sobre el MISMO objeto (así
+ * todos los que lo referencian quedan completos). Lanza error si no se puede:
+ * abrir o guardar con datos reducidos borraría subtabs en la BD.
+ */
+export async function asegurarDetalleSolicitud<T extends Record<string, any>>(item: T): Promise<T> {
+  if (!esResumen(item)) return item;
+  const id = String(item._dbId || item.id);
+  const row = await fetchSolicitudCompleta(id);
+  if (!row) throw new Error(`No se pudo cargar el detalle de la solicitud ${item.noSol || id}`);
+  Object.assign(item, mapRowToListItem(row));
+  return item;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -1361,7 +1414,7 @@ export async function crearCuentaDesdeSolicitudDB(params: {
   data?: Record<string, unknown>;
 }): Promise<{ ok: boolean; noCuenta?: string; cuentaId?: string; error?: string }> {
   const PRODUCTOS_CON_CUENTA = ['crédito', 'captacion', 'captación', 'aportacion', 'aportación', 'inversion', 'inversión', 'linea', 'línea'];
-  const lineaNorm = (params.lineaProducto || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  const lineaNorm = (params.lineaProducto || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   const debeCrear = PRODUCTOS_CON_CUENTA.some(p => lineaNorm.includes(p));
   if (!debeCrear) {
     console.log('[SolicDB] crearCuentaDesdeSolicitud — línea no genera cuenta:', params.lineaProducto);
@@ -1988,14 +2041,15 @@ export function useSolicitudesDB(active: boolean) {
       // producirá un objeto parcial (solo campos Core) que sobreescribirá datos de banca móvil.
       // Solución: recuperar data actual de la BD antes de construir el payload.
       let subtabsWithOriginal = allSubtabs;
-      if (!isNew && !(allSubtabs?._originalData) && existingDbId) {
-        console.warn('[SolicDB] SAVE — _originalData faltante en modo edición, recuperando de BD...');
+      // También si la base es el JSONB reducido del listado ligero: hacer merge
+      // contra él pisaría en BD todo lo que no viene en el resumen.
+      const originalReducido = !!allSubtabs?._originalData?._resumen;
+      if (!isNew && existingDbId && (!(allSubtabs?._originalData) || originalReducido)) {
+        console.warn('[SolicDB] SAVE — _originalData faltante o reducido en modo edición, recuperando de BD...');
         try {
-          const { data: row } = await supabase
-            .from('J_CUENTAS_CORP_CLIENTES')
-            .select('data')
-            .eq('id', existingDbId)
-            .single();
+          // (Antes leía J_CUENTAS_CORP_CLIENTES directo, que la llave anon no
+          // puede leer — 42501 — así que esta recuperación nunca funcionaba.)
+          const row = await fetchSolicitudCompleta(existingDbId);
           if (row?.data) {
             const fetchedData = typeof row.data === 'string' ? JSON.parse(row.data) : row.data;
             subtabsWithOriginal = { ...(allSubtabs || {}), _originalData: fetchedData };
@@ -2005,6 +2059,9 @@ export function useSolicitudesDB(active: boolean) {
           }
         } catch (fetchErr: any) {
           console.warn('[SolicDB] SAVE — no se pudo recuperar _originalData de BD:', fetchErr?.message);
+        }
+        if (subtabsWithOriginal?._originalData?._resumen) {
+          return { ok: false, error: 'No se pudo cargar la solicitud completa; no se guardó para no perder datos. Intente de nuevo.' };
         }
       }
 

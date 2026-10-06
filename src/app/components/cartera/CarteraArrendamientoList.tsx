@@ -15,7 +15,8 @@
  */
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
+import { useOrdenTabla, coincideBusqueda } from '@/app/lib/ordenTabla';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 import { crearFacturaArrendamientoCobranza, SUB_TIPO_ARRENDAMIENTO } from '../../hooks/useCarteraDB';
 import { esArrendamiento, ESTATUS_FACTURA_LIQUIDADA } from '../solicitudes/solicitudCreditoStore';
@@ -385,7 +386,7 @@ function DashboardArrendamiento({ rows, loading, error, refetch, onVer }: {
                 </td></tr>
               ) : recientes.map((c, idx) => (
                 <tr key={c.id} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                  <td className="px-3 py-2 text-[#0066CC] cursor-pointer hover:underline font-mono" onClick={() => onVer(c)}>{c.noSol}</td>
+                  <td className="px-3 py-2 text-[color:var(--theme-link)] cursor-pointer hover:underline font-mono" onClick={() => onVer(c)}>{c.noSol}</td>
                   <td className="px-3 py-2 text-gray-900">{c.cliente}</td>
                   <td className="px-3 py-2 text-gray-600">{c.productoNombre}</td>
                   <td className="px-3 py-2 text-gray-700 text-right">{fmtMoney(c.montoAutorizado)}</td>
@@ -410,31 +411,38 @@ function ListScreen({ rows, loading, error, refetch, onVer }: {
 }) {
   const [search, setSearch] = useState('');
   const [filtroCartera, setFiltroCartera] = useState('');
-  const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
   const [page, setPage] = useState(1);
   const PER_PAGE = 10;
 
   const filtered = useMemo(() => {
     let list = rows;
     if (filtroCartera) list = list.filter(r => r.estatusCartera === filtroCartera);
-    const q = search.trim().toLowerCase();
-    if (q) {
-      list = list.filter(r =>
-        r.noSol.toLowerCase().includes(q) ||
-        r.cliente.toLowerCase().includes(q) ||
-        r.productoNombre.toLowerCase().includes(q) ||
-        r.estatusCartera.toLowerCase().includes(q)
-      );
-    }
-    return [...list].sort((a, b) => {
-      const da = new Date(a.fechaSol || 0).getTime();
-      const db = new Date(b.fechaSol || 0).getTime();
-      return sortOrder === 'desc' ? db - da : da - db;
-    });
-  }, [rows, search, filtroCartera, sortOrder]);
+    return list.filter(r => coincideBusqueda(search, [r.noSol, r.cliente, r.productoNombre, r.estatusCartera]));
+  }, [rows, search, filtroCartera]);
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PER_PAGE));
-  const pageRows = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
+  // Más recientes primero (fecha de solicitud; a igual fecha, el número de solicitud).
+  const orden = useOrdenTabla(filtered, {
+    id: 'cartera-arrendamiento',
+    columnas: {
+      fecha: r => r.fechaSol,
+      noSol: r => r.noSol,
+      cliente: r => r.cliente,
+      producto: r => r.productoNombre,
+      monto: r => r.montoAutorizado,
+      enganche: r => r.montoEnganche,
+      residual: r => r.montoResidual,
+      plazo: r => r.plazo,
+      renta: r => r.rentaMensual,
+      pagadas: r => r.rentasPagadas,
+      cartera: r => r.estatusCartera,
+    },
+    porDefecto: { campo: 'fecha', dir: 'desc' },
+    desempate: r => r.noSol,
+    alCambiar: () => setPage(1),
+  });
+
+  const totalPages = Math.max(1, Math.ceil(orden.filas.length / PER_PAGE));
+  const pageRows = orden.filas.slice((page - 1) * PER_PAGE, page * PER_PAGE);
 
   const exportCSV = () => {
     const headers = ['No. Solicitud','Cliente','Producto','Monto Aut.','Enganche','Residual','Plazo','Renta','Rentas Pagadas','Cartera'];
@@ -597,7 +605,7 @@ function ListScreen({ rows, loading, error, refetch, onVer }: {
           <div className="flex items-center gap-4 text-sm text-gray-700">
             <div className="flex items-center gap-2">
               <span>Orden</span>
-              <select value={sortOrder} onChange={e => { setSortOrder(e.target.value as 'desc' | 'asc'); setPage(1); }}
+              <select value={orden.dir} onChange={e => orden.fijar(orden.campo, e.target.value as 'desc' | 'asc')}
                 className="px-2 py-1 border border-gray-400 rounded text-sm bg-white pr-6 appearance-none">
                 <option value="desc">Descendente</option>
                 <option value="asc">Ascendente</option>
@@ -617,16 +625,16 @@ function ListScreen({ rows, loading, error, refetch, onVer }: {
             <thead>
               <tr className="bg-gray-100 border-b border-gray-300">
                 <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700">Ver</th>
-                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700">NO. SOLICITUD</th>
-                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700">CLIENTE</th>
-                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700">PRODUCTO</th>
-                <th className="px-2 py-2.5 text-right font-medium text-xs text-gray-700">MONTO AUT.</th>
-                <th className="px-2 py-2.5 text-right font-medium text-xs text-gray-700">ENGANCHE</th>
-                <th className="px-2 py-2.5 text-right font-medium text-xs text-gray-700">RESIDUAL</th>
-                <th className="px-2 py-2.5 text-center font-medium text-xs text-gray-700">PLAZO</th>
-                <th className="px-2 py-2.5 text-right font-medium text-xs text-gray-700">RENTA</th>
-                <th className="px-2 py-2.5 text-center font-medium text-xs text-gray-700">RENTAS PAGADAS</th>
-                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700">CARTERA</th>
+                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700" {...orden.th('noSol')}>NO. SOLICITUD{orden.flecha('noSol')}</th>
+                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700" {...orden.th('cliente')}>CLIENTE{orden.flecha('cliente')}</th>
+                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700" {...orden.th('producto')}>PRODUCTO{orden.flecha('producto')}</th>
+                <th className="px-2 py-2.5 text-right font-medium text-xs text-gray-700" {...orden.th('monto')}>MONTO AUT.{orden.flecha('monto')}</th>
+                <th className="px-2 py-2.5 text-right font-medium text-xs text-gray-700" {...orden.th('enganche')}>ENGANCHE{orden.flecha('enganche')}</th>
+                <th className="px-2 py-2.5 text-right font-medium text-xs text-gray-700" {...orden.th('residual')}>RESIDUAL{orden.flecha('residual')}</th>
+                <th className="px-2 py-2.5 text-center font-medium text-xs text-gray-700" {...orden.th('plazo')}>PLAZO{orden.flecha('plazo')}</th>
+                <th className="px-2 py-2.5 text-right font-medium text-xs text-gray-700" {...orden.th('renta')}>RENTA{orden.flecha('renta')}</th>
+                <th className="px-2 py-2.5 text-center font-medium text-xs text-gray-700" {...orden.th('pagadas')}>RENTAS PAGADAS{orden.flecha('pagadas')}</th>
+                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700" {...orden.th('cartera')}>CARTERA{orden.flecha('cartera')}</th>
               </tr>
             </thead>
             <tbody>
@@ -649,9 +657,9 @@ function ListScreen({ rows, loading, error, refetch, onVer }: {
                   onMouseLeave={e => (e.currentTarget.style.backgroundColor = idx % 2 === 1 ? '#EEEEEE' : '#FFFFFF')}
                 >
                   <td className="px-2 py-2.5 text-xs whitespace-nowrap">
-                    <a href="#" className="text-[#0066CC] hover:underline" onClick={e => { e.preventDefault(); onVer(c); }}>Ver</a>
+                    <button type="button" className="enlace-accion text-[color:var(--theme-link)] hover:underline" onClick={() => { onVer(c); }}>Ver</button>
                   </td>
-                  <td className="px-2 py-2.5 text-xs font-mono text-[#0066CC] cursor-pointer hover:underline" onClick={() => onVer(c)}>{c.noSol}</td>
+                  <td className="px-2 py-2.5 text-xs font-mono text-[color:var(--theme-link)] cursor-pointer hover:underline" onClick={() => onVer(c)}>{c.noSol}</td>
                   <td className="px-2 py-2.5 text-xs text-gray-800 font-medium max-w-[160px] truncate" title={c.cliente}>{c.cliente}</td>
                   <td className="px-2 py-2.5 text-xs text-gray-700 max-w-[140px] truncate" title={c.productoNombre}>{c.productoNombre}</td>
                   <td className="px-2 py-2.5 text-xs text-gray-800 text-right font-mono">{fmtMoney(c.montoAutorizado)}</td>
@@ -685,19 +693,19 @@ function ListScreen({ rows, loading, error, refetch, onVer }: {
       {/* ── Paginación ── */}
       <div className="px-4 py-3 border-t border-gray-300">
         <div className="flex items-center justify-end gap-3">
-          <button className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-40" onClick={() => setPage(1)} disabled={page === 1}>
+          <button type="button" aria-label="Primera página" title="Primera página" className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-40" onClick={() => setPage(1)} disabled={page === 1}>
             <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#666" strokeWidth="1.5"><path d="M13 4L4 9l9 5V4z" /></svg>
           </button>
-          <button className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-40" onClick={() => setPage(p => p - 1)} disabled={page === 1}>
+          <button type="button" aria-label="Página anterior" title="Página anterior" className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-40" onClick={() => setPage(p => p - 1)} disabled={page === 1}>
             <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#666" strokeWidth="1.5"><path d="M9 4L4 9l5 5V4z" /></svg>
           </button>
           <div className="text-sm text-gray-700 min-w-[100px] text-center">
             Página {page} de {totalPages}
           </div>
-          <button className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-40" onClick={() => setPage(p => p + 1)} disabled={page === totalPages}>
+          <button type="button" aria-label="Página siguiente" title="Página siguiente" className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-40" onClick={() => setPage(p => p + 1)} disabled={page === totalPages}>
             <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#666" strokeWidth="1.5"><path d="M5 4l5 5-5 5V4z" /></svg>
           </button>
-          <button className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-40" onClick={() => setPage(totalPages)} disabled={page === totalPages}>
+          <button type="button" aria-label="Última página" title="Última página" className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-40" onClick={() => setPage(totalPages)} disabled={page === totalPages}>
             <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#666" strokeWidth="1.5"><path d="M4 4L13 9l-9 5V4z" /></svg>
           </button>
         </div>
@@ -1090,14 +1098,14 @@ function DetalleScreen({ contrato, onBack, onVerXML, onAvisoCreado }: {
       {showAvisoModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setShowAvisoModal(false)}>
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg border border-gray-200" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-5 py-3.5 border-b border-gray-100 bg-[#2E5C91] rounded-t-xl">
+            <div className="flex items-center justify-between px-5 py-3.5 border-b border-gray-100 bg-[color:var(--theme-secondary)] rounded-t-xl">
               <div>
                 <h4 className="text-sm font-bold text-white">Nuevo Aviso de Vencimiento</h4>
                 <p className="text-[11px] text-blue-200 mt-0.5">
                   {seleccion.size} renta{seleccion.size !== 1 ? 's' : ''} · {contrato.noSol}
                 </p>
               </div>
-              <button onClick={() => setShowAvisoModal(false)} className="text-white/70 hover:text-white">
+              <button type="button" aria-label="Cerrar" title="Cerrar" onClick={() => setShowAvisoModal(false)} className="text-white/70 hover:text-white">
                 <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 3l8 8M11 3l-8 8" /></svg>
               </button>
             </div>
@@ -1116,7 +1124,7 @@ function DetalleScreen({ contrato, onBack, onVerXML, onAvisoCreado }: {
                 ))}
                 <div className="col-span-2 flex justify-between text-xs font-bold border-t border-gray-200 pt-1.5 mt-0.5">
                   <span>Total a Cobrar</span>
-                  <span className="text-[#2E5C91]">{fmtMoney(totalesSeleccion.total)}</span>
+                  <span className="text-[color:var(--theme-secondary)]">{fmtMoney(totalesSeleccion.total)}</span>
                 </div>
               </div>
 
@@ -1157,7 +1165,7 @@ function DetalleScreen({ contrato, onBack, onVerXML, onAvisoCreado }: {
                 Cancelar
               </button>
               <button onClick={crearAviso} disabled={enviandoAviso}
-                className="px-5 py-1.5 text-xs bg-[#2E5C91] text-white rounded-lg hover:bg-[#245080] disabled:opacity-50 font-medium flex items-center gap-1.5">
+                className="px-5 py-1.5 text-xs bg-[color:var(--theme-secondary)] text-white rounded-lg hover:bg-[color:var(--theme-secondary-hover)] disabled:opacity-50 font-medium flex items-center gap-1.5">
                 {enviandoAviso ? 'Creando...' : 'Crear Aviso'}
               </button>
             </div>
@@ -1257,7 +1265,7 @@ export function CarteraArrendamientoList() {
           <div className="bg-white w-full max-w-3xl max-h-[85vh] flex flex-col">
             <div className="bg-primary-theme px-6 py-4 flex items-center justify-between">
               <h3 className="text-base text-white">CFDI — {xmlAbierto.noFactura}</h3>
-              <button onClick={() => setXmlAbierto(null)} className="text-white hover:text-gray-200">
+              <button type="button" aria-label="Cerrar" title="Cerrar" onClick={() => setXmlAbierto(null)} className="text-white hover:text-gray-200">
                 <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
                   <path d="M10 8.586L2.929 1.515 1.515 2.929 8.586 10l-7.071 7.071 1.414 1.414L10 11.414l7.071 7.071 1.414-1.414L11.414 10l7.071-7.071-1.414-1.414L10 8.586z" />
                 </svg>
@@ -1281,7 +1289,7 @@ export function CarteraArrendamientoList() {
               <button
                 onClick={() => descargarXML(xmlAbierto)}
                 className="px-4 py-1.5 rounded text-xs text-white"
-                style={{ backgroundColor: '#1E4C81' }}
+                style={{ backgroundColor: 'var(--theme-secondary-hover)' }}
               >
                 Descargar XML
               </button>

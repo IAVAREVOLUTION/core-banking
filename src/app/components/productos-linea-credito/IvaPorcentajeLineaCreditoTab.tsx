@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 import { IvaPorcentajeLineaCredito } from '@/app/types/productoLineaCredito';
 
 interface IvaPorcentajeLineaCreditoTabProps {
@@ -101,7 +101,7 @@ export function IvaPorcentajeLineaCreditoTab({ mode, ivaPorcentaje, onIvaPorcent
           <div className="relative">
             <button 
               onClick={() => setShowMenu(!showMenu)}
-              className="px-3 py-1 bg-primary-theme text-white text-xs hover:bg-[#3E5C91] border border-[#3E5C91] flex items-center gap-1"
+              className="px-3 py-1 bg-primary-theme text-white text-xs hover:bg-[color:var(--theme-secondary)] border border-[color:var(--theme-secondary)] flex items-center gap-1"
             >
               Menú
               <svg width="10" height="6" viewBox="0 0 10 6" fill="white">
@@ -118,9 +118,9 @@ export function IvaPorcentajeLineaCreditoTab({ mode, ivaPorcentaje, onIvaPorcent
             )}
           </div>
 
-          <button onClick={handleNew} disabled={isViewMode} className="px-3 py-1 bg-primary-theme text-white text-xs hover:bg-[#3E5C91] border border-[#3E5C91] disabled:bg-gray-400 disabled:cursor-not-allowed">Nuevo</button>
-          <button onClick={handleDelete} disabled={selectedRow === null || isViewMode} className="px-3 py-1 bg-primary-theme text-white text-xs hover:bg-[#3E5C91] border border-[#3E5C91] disabled:bg-gray-400 disabled:cursor-not-allowed">Eliminar</button>
-          <button onClick={handleConsulta} className="px-3 py-1 bg-primary-theme text-white text-xs hover:bg-[#3E5C91] border border-[#3E5C91]">Consulta</button>
+          <button onClick={handleNew} disabled={isViewMode} className="px-3 py-1 bg-primary-theme text-white text-xs hover:bg-[color:var(--theme-secondary)] border border-[color:var(--theme-secondary)] disabled:bg-gray-400 disabled:cursor-not-allowed">Nuevo</button>
+          <button onClick={handleDelete} disabled={selectedRow === null || isViewMode} className="px-3 py-1 bg-primary-theme text-white text-xs hover:bg-[color:var(--theme-secondary)] border border-[color:var(--theme-secondary)] disabled:bg-gray-400 disabled:cursor-not-allowed">Eliminar</button>
+          <button onClick={handleConsulta} className="px-3 py-1 bg-primary-theme text-white text-xs hover:bg-[color:var(--theme-secondary)] border border-[color:var(--theme-secondary)]">Consulta</button>
         </div>
 
         {showConsulta && (
@@ -173,7 +173,7 @@ export function IvaPorcentajeLineaCreditoTab({ mode, ivaPorcentaje, onIvaPorcent
                     key={item.id ?? `iva-${index}`}
                     onClick={() => setSelectedRow(item.id)}
                     onDoubleClick={() => handleRowDoubleClick(item)}
-                    className={`border-b border-gray-300 cursor-pointer transition-colors ${selectedRow === item.id ? 'bg-[#D6EAF8]' : index % 2 === 0 ? 'bg-white' : 'bg-[#F9F9F9]'}`}
+                    className={`border-b border-gray-300 cursor-pointer transition-colors ${selectedRow === item.id ? 'bg-[color:var(--theme-tint-soft)]' : index % 2 === 0 ? 'bg-white' : 'bg-[#F9F9F9]'}`}
                   >
                     <td className="px-3 py-2 text-xs text-gray-700 border-r border-gray-300 text-center">
                       <input 
@@ -250,7 +250,7 @@ function FormModal({ mode, item, onSave, onClose }: FormModalProps) {
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
       <div className="bg-white shadow-2xl max-w-lg w-full max-h-[90vh] overflow-hidden flex flex-col border-2 border-gray-400" onClick={(e) => e.stopPropagation()}>
-        <div className="bg-[#2E5C91] px-4 py-2.5 border-b-2 border-gray-400 flex items-center justify-between">
+        <div className="bg-[color:var(--theme-secondary)] px-4 py-2.5 border-b-2 border-gray-400 flex items-center justify-between">
           <h3 className="text-sm font-medium text-white">{mode === 'create' ? 'Nuevo IVA %' : mode === 'edit' ? 'Editar IVA %' : 'Ver IVA %'}</h3>
           <button onClick={onClose} className="text-white hover:text-gray-300 font-bold text-lg leading-none">×</button>
         </div>
@@ -258,7 +258,7 @@ function FormModal({ mode, item, onSave, onClose }: FormModalProps) {
         <div className="px-6 py-4 overflow-auto bg-white">
           <form onSubmit={handleSubmit}>
             <div className="mb-4">
-              <div className="bg-[#E7E6E6] px-3 py-1.5 mb-3 border-l-4 border-[#2E5C91]">
+              <div className="bg-[#E7E6E6] px-3 py-1.5 mb-3 border-l-4 border-[color:var(--theme-secondary)]">
                 <span className="text-xs font-medium text-gray-800">INFORMACIÓN DE IVA</span>
               </div>
 
@@ -292,7 +292,7 @@ function FormModal({ mode, item, onSave, onClose }: FormModalProps) {
             <div className="flex gap-2 justify-end pt-3 border-t border-gray-300">
               <button type="button" onClick={onClose} className="px-4 py-1.5 bg-gray-500 text-white text-xs hover:bg-gray-600">{isViewMode ? 'Cerrar' : 'Cancelar'}</button>
               {!isViewMode && (
-                <button type="submit" className="px-4 py-1.5 bg-primary-theme text-white text-xs hover:bg-[#3E5C91]">Guardar</button>
+                <button type="submit" className="px-4 py-1.5 bg-primary-theme text-white text-xs hover:bg-[color:var(--theme-secondary)]">Guardar</button>
               )}
             </div>
           </form>

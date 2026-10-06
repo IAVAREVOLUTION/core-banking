@@ -30,7 +30,7 @@ import logoSrc from '../../assets/7b6cb23c00b7817818c638af3eae0a416e1e9f57.png';
 import type { DocumentoCargado } from '../components/solicitudes/solicitudCreditoStore';
 import {
   loadFromSession, loadFromSavedStore, saveToSession, generateId, documentosParaSessionStorage,
-  INSTITUCION_RAZON_SOCIAL,
+  INSTITUCION_RAZON_SOCIAL, versionToDB,
 } from '../components/solicitudes/solicitudCreditoStore';
 import type { PlantillaInstitucional } from '../types/product';
 import type { Estructura2oPisoData } from '../components/solicitudes/EstructuraOperativa2oPisoTab';
@@ -116,6 +116,7 @@ async function persistirDocumentosEnBD(
     storage_bucket: (d as any).storageBucket || BUCKET_EXPEDIENTES,
     mime: d.mime || '',
     tamano_kb: d.tamanoKB ?? 0,
+    ...versionToDB(d),
   }));
 
   try {
@@ -1424,8 +1425,10 @@ export async function generarPagareDesdePlantilla(opts: AutoCrearOpts & {
     registradosEnExpediente: !error,
     error,
     validacionPlantillas: {
+      valido: !error,
       puedeGenerarDocumentos: !error,
       motivos: error ? [error] : [],
+      faltantes: [],
       plantillasDetectadas: [],
     } as ValidacionPlantillasResult,
   });
@@ -1504,8 +1507,10 @@ export async function generarPagareDesdePlantilla(opts: AutoCrearOpts & {
     registradosEnExpediente: persist.ok,
     error: persist.ok ? undefined : `Pagaré generado pero NO persistido en BD: ${persist.error}`,
     validacionPlantillas: {
+      valido: true,
       puedeGenerarDocumentos: true,
       motivos: [],
+      faltantes: [],
       plantillasDetectadas: [plantillaPagare.nombre],
     } as ValidacionPlantillasResult,
     documentoCreadoId: doc.id,

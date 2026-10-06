@@ -18,7 +18,8 @@
  */
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Search, X, Building2, AlertTriangle, Lock, CalendarDays } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
+import { montoANumero } from './cotizacionCaptacionTypes';
 import { format, parse, isValid } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { DayPicker } from 'react-day-picker';
@@ -41,6 +42,7 @@ import {
 } from './cotizacionCaptacionTypes';
 import { useClientesDB } from '../../hooks/useClientesDB';
 import { useProductosCaptacionDB } from '../../hooks/useProductosCaptacionDB';
+import { CampoMonto } from '@/app/components/ui/CampoMonto';
 
 type FormMode = 'create' | 'edit' | 'view';
 
@@ -206,7 +208,7 @@ export function CotizacionCaptacionForm({ mode, cotizacion, onSave, onBack, onCr
   // Usa periodosRegistros del producto; fallback a FRECUENCIAS si no están configurados
   const periodosDropdown = useMemo((): string[] => {
     const prod = productoPickerItems.find(p => p.id === form.producto_id);
-    if (prod?.periodosRegistros?.length > 0) {
+    if (prod?.periodosRegistros?.length) {
       return prod.periodosRegistros.map(p => p.descripcion).filter(Boolean);
     }
     return FRECUENCIAS.map(f => f.label);
@@ -228,7 +230,7 @@ export function CotizacionCaptacionForm({ mode, cotizacion, onSave, onBack, onCr
   // InteresesGenerados = MontoCotizado × (TasaInicial / 360) × FrecuenciaCapitalizaIntereses
   useEffect(() => {
     const interes = calcularIntereses(
-      data.montoCotizado,
+      montoANumero(data.montoCotizado),
       data.tasaMinInteres,
       data.frecuenciaCapitalizacion
     );
@@ -239,9 +241,9 @@ export function CotizacionCaptacionForm({ mode, cotizacion, onSave, onBack, onCr
 
   // ── Regenerar calendario — spec §7 ──
   const calendario = useMemo(() => {
-    if (data.plazoCumplirMontoMinimo > 0 && data.fechaPrimeraAportacion && data.montoCotizado > 0) {
+    if (data.plazoCumplirMontoMinimo > 0 && data.fechaPrimeraAportacion && montoANumero(data.montoCotizado) > 0) {
       return generarCalendario(
-        data.montoCotizado,
+        montoANumero(data.montoCotizado),
         data.plazoCumplirMontoMinimo,
         data.fechaPrimeraAportacion,
         data.frecuenciaCapitalizacion || data.periodoCumplirMontoMinimo
@@ -324,7 +326,7 @@ export function CotizacionCaptacionForm({ mode, cotizacion, onSave, onBack, onCr
       if (matrizTasaFija.length > 0 && selectedPlazoIdx < 0) {
         errors.push('Debe seleccionar un plazo de la Matriz de Tasa Fija');
       }
-      if (selectedPlazoIdx >= 0 && !matchedMatrizRow && data.montoCotizado > 0) {
+      if (selectedPlazoIdx >= 0 && !matchedMatrizRow && montoANumero(data.montoCotizado) > 0) {
         errors.push('El monto capturado no corresponde a un rango válido en la fila de la matriz seleccionada');
       }
     }
@@ -414,12 +416,14 @@ export function CotizacionCaptacionForm({ mode, cotizacion, onSave, onBack, onCr
   // Auto-calculate tasa from matriz when monto + plazo change — spec §6
   const matchedMatrizRow = useMemo(() => {
     if (!isInversion || matrizTasaFija.length === 0) return null;
-    const monto = data.montoCotizado;
+    const monto = montoANumero(data.montoCotizado);
     if (selectedPlazoIdx < 0 || selectedPlazoIdx >= matrizTasaFija.length) return null;
     const row = matrizTasaFija[selectedPlazoIdx];
     // Normalize: treat montoMaximo <= montoMinimo as "sin límite" (data entry error tolerance)
-    const effectiveMax = (row.montoMaximo > 0 && row.montoMaximo >= row.montoMinimo) ? row.montoMaximo : Infinity;
-    if (monto >= row.montoMinimo && monto <= effectiveMax) {
+    const minimo = montoANumero(row.montoMinimo);
+    const maximo = montoANumero(row.montoMaximo);
+    const effectiveMax = (maximo > 0 && maximo >= minimo) ? maximo : Infinity;
+    if (monto >= minimo && monto <= effectiveMax) {
       console.log('[Matriz Match] ✓ STRICT match tasaMinima:', row.tasaMinima);
       return row;
     }
@@ -647,15 +651,9 @@ export function CotizacionCaptacionForm({ mode, cotizacion, onSave, onBack, onCr
                   className={`px-3 py-2 text-[10px] whitespace-nowrap border-r border-gray-500/30 ${
                     activeTab === tab.id
                       ? 'bg-secondary-theme text-white font-medium'
-                      : 'text-white/90'
+                      : 'text-white/90 hover:bg-[color:var(--theme-primary-hover)]'
                   }`}
                   style={activeTab !== tab.id ? { transition: 'background-color 0.2s' } : {}}
-                  onMouseEnter={(e) => {
-                    if (activeTab !== tab.id) e.currentTarget.style.backgroundColor = 'var(--theme-primary-hover)';
-                  }}
-                  onMouseLeave={(e) => {
-                    if (activeTab !== tab.id) e.currentTarget.style.backgroundColor = '';
-                  }}
                 >
                   {tab.label}
                 </button>
@@ -669,7 +667,7 @@ export function CotizacionCaptacionForm({ mode, cotizacion, onSave, onBack, onCr
               {/* Sección: Prospecto / Cliente — spec §3.3 */}
               <div className="border-t border-gray-300">
                 <div className="border-l-4 border-primary-theme px-3 py-1.5">
-                  <span className="text-xs font-medium text-gray-800 uppercase">Prospecto / Cliente</span>
+                  <span className="text-xs font-medium text-gray-800 uppercase">Tipo Interlocutor / Cliente</span>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4">
                   <div className="flex flex-col">
@@ -788,7 +786,7 @@ export function CotizacionCaptacionForm({ mode, cotizacion, onSave, onBack, onCr
                     <div className="border border-gray-300 overflow-x-auto rounded">
                       <table className="w-full text-xs">
                         <thead>
-                          <tr className="bg-[#2E5C91] text-white">
+                          <tr className="bg-[color:var(--theme-secondary)] text-white">
                             <th className="px-3 py-2 text-left font-medium">Periodo</th>
                             <th className="px-3 py-2 text-right font-medium">Plazo Mín</th>
                             <th className="px-3 py-2 text-right font-medium">Plazo Máx</th>
@@ -845,10 +843,10 @@ export function CotizacionCaptacionForm({ mode, cotizacion, onSave, onBack, onCr
                         </span>
                       </div>
                     )}
-                    {isInversion && selectedPlazoIdx >= 0 && !matchedMatrizRow && data.montoCotizado > 0 && (
+                    {isInversion && selectedPlazoIdx >= 0 && !matchedMatrizRow && montoANumero(data.montoCotizado) > 0 && (
                       <div className="mt-2 bg-amber-50 border border-amber-200 rounded px-3 py-1.5">
                         <span className="text-[10px] text-amber-700">
-                          ⚠ El monto {formatMoney(data.montoCotizado)} no se encuentra dentro del rango de la fila seleccionada
+                          ⚠ El monto {formatMoney(montoANumero(data.montoCotizado))} no se encuentra dentro del rango de la fila seleccionada
                           ({formatMoney(matrizTasaFija[selectedPlazoIdx].montoMinimo)} – {matrizTasaFija[selectedPlazoIdx].montoMaximo > 0 ? formatMoney(matrizTasaFija[selectedPlazoIdx].montoMaximo) : '∞'}).
                           Ajuste el monto o seleccione otro plazo.
                         </span>
@@ -885,8 +883,7 @@ export function CotizacionCaptacionForm({ mode, cotizacion, onSave, onBack, onCr
                         Monto Cotizado <span className="text-red-500">*</span>
                         {data.producto.montoMinimo > 0 && <span className="text-gray-400 ml-1">(mín: {formatMoney(data.producto.montoMinimo)})</span>}
                       </label>
-                      <input
-                        type="number"
+                      <CampoMonto
                         value={data.montoCotizado || ''}
                         disabled={isView}
                         min={data.producto.montoMinimo || 0}
@@ -1273,7 +1270,7 @@ export function CotizacionCaptacionForm({ mode, cotizacion, onSave, onBack, onCr
                     <div className="border border-gray-300 overflow-x-auto">
                       <table className="w-full text-xs">
                         <thead>
-                          <tr className="bg-[#2E5C91] text-white">
+                          <tr className="bg-[color:var(--theme-secondary)] text-white">
                             <th className="px-3 py-2 text-center font-medium whitespace-nowrap">Período</th>
                             <th className="px-3 py-2 text-left font-medium whitespace-nowrap">Fecha de Inversión</th>
                             <th className="px-3 py-2 text-right font-medium whitespace-nowrap">Capital Inicial</th>
@@ -1431,10 +1428,10 @@ export function CotizacionCaptacionForm({ mode, cotizacion, onSave, onBack, onCr
             <div className="px-4 py-3 border-b border-gray-300 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Building2 className="w-5 h-5 text-gray-500" />
-                <h3 className="text-sm font-medium text-gray-800">Seleccionar Prospecto / Cliente</h3>
+                <h3 className="text-sm font-medium text-gray-800">Seleccionar Tipo Interlocutor / Cliente</h3>
                 <span className="text-[9px] text-gray-400 ml-2">Pick Map: cliente_id, data.cliente.claveCliente, data.cliente.nombreCompleto</span>
               </div>
-              <button onClick={() => setShowClienteModal(false)} className="p-1 hover:bg-gray-100 rounded">
+              <button aria-label="Cerrar" title="Cerrar" onClick={() => setShowClienteModal(false)} className="p-1 hover:bg-gray-100 rounded">
                 <X className="w-4 h-4 text-gray-500" />
               </button>
             </div>

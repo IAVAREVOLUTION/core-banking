@@ -54,14 +54,14 @@ export function ConfiguracionesTab({
       nombre: 'Periodos',
       descripcion: 'Configurar periodos de pago o capitalización',
       icon: Calendar,
-      color: '#2E5C91',
+      color: 'var(--theme-secondary)',
     },
     {
       id: 'matriz-tasa-fija' as SubmoduloType,
       nombre: 'Matriz Tasa Fija',
       descripcion: 'Definir tasas fijas por plazo y monto',
       icon: Percent,
-      color: '#4A76A8',
+      color: 'var(--theme-primary)',
     },
     {
       id: 'tasa-referencia' as SubmoduloType,
@@ -75,14 +75,14 @@ export function ConfiguracionesTab({
       nombre: 'Matriz Tasa Variable',
       descripcion: 'Puntos sobre tasa de referencia',
       icon: LineChart,
-      color: '#2E5C91',
+      color: 'var(--theme-secondary)',
     },
     {
       id: 'requisitos' as SubmoduloType,
       nombre: 'Requisitos',
       descripcion: 'Documentación y requisitos del producto',
       icon: FileCheck,
-      color: '#4A76A8',
+      color: 'var(--theme-primary)',
     },
     {
       id: 'cargos' as SubmoduloType,
@@ -96,7 +96,7 @@ export function ConfiguracionesTab({
       nombre: 'Comisiones',
       descripcion: 'Comisiones del producto',
       icon: Banknote,
-      color: '#2E5C91',
+      color: 'var(--theme-secondary)',
     },
   ];
 
@@ -224,7 +224,7 @@ export function ConfiguracionesTab({
               <button
                 key={submodulo.id}
                 onClick={() => setActiveSubmodulo(submodulo.id)}
-                className="bg-white border border-[#E0E0E0] rounded-lg p-4 hover:border-[#2E5C91] hover:shadow-md transition-all text-left group"
+                className="bg-white border border-[#E0E0E0] rounded-lg p-4 hover:border-[color:var(--theme-secondary)] hover:shadow-md transition-all text-left group"
               >
                 <div className="flex items-start gap-3">
                   <div
@@ -238,7 +238,7 @@ export function ConfiguracionesTab({
                     />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <h4 className="text-sm font-semibold text-[#3C3C3C] mb-1 group-hover:text-[#2E5C91] transition-colors">
+                    <h4 className="text-sm font-semibold text-[#3C3C3C] mb-1 group-hover:text-[color:var(--theme-secondary)] transition-colors">
                       {submodulo.nombre}
                     </h4>
                     <p className="text-xs text-[#9E9E9E] line-clamp-2">

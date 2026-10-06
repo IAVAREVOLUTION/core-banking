@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 import type { CalificacionData } from './pldStore';
 import { usePLDCalificaciones } from './usePLDData';
 import { usePLDClientes } from './usePLDClientes';
@@ -91,7 +91,7 @@ export function PLDCalificacionRiesgo({ onBack }: Props) {
             </div>
             <div className="flex items-center gap-4 text-sm text-gray-700">
               <span>Lista</span>
-              <span className="cursor-pointer hover:text-[#0066CC] transition-colors" onClick={() => { setShowClienteModal(true); setClienteSearch(''); }}>Nueva Calificación</span>
+              <span className="cursor-pointer hover:text-[color:var(--theme-link)] transition-colors" onClick={() => { setShowClienteModal(true); setClienteSearch(''); }}>Nueva Calificación</span>
             </div>
           </div>
         </div>
@@ -119,7 +119,7 @@ export function PLDCalificacionRiesgo({ onBack }: Props) {
                 <option value="">Riesgo: Todos</option>
                 <option>Bajo</option><option>Medio</option><option>Alto</option>
               </select>
-              {(filterRiesgo || searchTerm) && <button onClick={() => { setFilterRiesgo(''); setSearchTerm(''); }} className="text-xs text-[#0066CC] hover:underline">Limpiar</button>}
+              {(filterRiesgo || searchTerm) && <button onClick={() => { setFilterRiesgo(''); setSearchTerm(''); }} className="text-xs text-[color:var(--theme-link)] hover:underline">Limpiar</button>}
             </div>
             <input type="text" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Buscar por nombre, RFC, No. Cliente..." className="px-3 py-1 border border-gray-400 rounded text-sm w-72 transition-all" />
           </div>
@@ -167,11 +167,11 @@ export function PLDCalificacionRiesgo({ onBack }: Props) {
                     onMouseEnter={e => e.currentTarget.style.backgroundColor = '#E8F4F8'}
                     onMouseLeave={e => e.currentTarget.style.backgroundColor = idx % 2 === 1 ? '#EEEEEE' : '#FFFFFF'}>
                     <td className="px-3 py-2.5 text-xs whitespace-nowrap">
-                      <span className="text-[#0066CC] cursor-pointer hover:underline" onClick={() => handleOpenDetail(cal)}>Editar</span>
+                      <span className="text-[color:var(--theme-link)] cursor-pointer hover:underline" onClick={() => handleOpenDetail(cal)}>Editar</span>
                       <span className="text-gray-400 mx-1">|</span>
-                      <span className="text-[#0066CC] cursor-pointer hover:underline" onClick={() => handleOpenDetail(cal)}>Ver</span>
+                      <span className="text-[color:var(--theme-link)] cursor-pointer hover:underline" onClick={() => handleOpenDetail(cal)}>Ver</span>
                     </td>
-                    <td className="px-3 py-2.5 text-xs text-[#0066CC]" style={{ fontWeight: 500 }}>{cal.noCliente}</td>
+                    <td className="px-3 py-2.5 text-xs text-[color:var(--theme-link)]" style={{ fontWeight: 500 }}>{cal.noCliente}</td>
                     <td className="px-3 py-2.5 text-xs" style={{ fontWeight: 500 }}>{cal.nombreCliente}</td>
                     <td className="px-3 py-2.5 text-xs font-mono">{cal.clienteRFC||'—'}</td>
                     <td className="px-3 py-2.5 text-xs">{cal.clientePersonalidad||'—'}</td>
@@ -193,7 +193,7 @@ export function PLDCalificacionRiesgo({ onBack }: Props) {
         {showClienteModal && (
           <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center" onClick={() => setShowClienteModal(false)}>
             <div className="bg-white rounded shadow-xl w-[700px] max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
-              <div className="bg-[#4A6FA5] px-6 py-4 rounded-t flex items-center justify-between flex-shrink-0">
+              <div className="bg-[color:var(--theme-primary)] px-6 py-4 rounded-t flex items-center justify-between flex-shrink-0">
                 <h3 className="text-base text-white" style={{ fontWeight: 500 }}>Seleccionar Cliente para Calificación</h3>
                 <button onClick={() => setShowClienteModal(false)} className="text-white/80 hover:text-white text-xl leading-none">&times;</button>
               </div>
@@ -253,7 +253,7 @@ export function PLDCalificacionRiesgo({ onBack }: Props) {
       <div className="bg-white px-4 py-3 border-b border-gray-300">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <button onClick={() => { setView('list'); setSelectedData(null); }} className="text-gray-500 hover:text-gray-700">
+            <button type="button" aria-label="Regresar" title="Regresar" onClick={() => { setView('list'); setSelectedData(null); }} className="text-gray-500 hover:text-gray-700">
               <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M11 4L6 9l5 5"/></svg>
             </button>
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#666" strokeWidth="1.5"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
@@ -264,7 +264,7 @@ export function PLDCalificacionRiesgo({ onBack }: Props) {
           </div>
           <div className="flex items-center gap-2">
             <button onClick={handleCalcular} className="px-4 py-1.5 bg-white border border-gray-400 text-gray-700 text-sm rounded hover:bg-gray-50">Calcular Riesgo</button>
-            <button onClick={handleGuardar} className="px-5 py-1.5 bg-[#0099CC] text-white text-sm rounded hover:bg-[#0088BB]" style={{ fontWeight: 500 }}>Guardar</button>
+            <button onClick={handleGuardar} className="px-5 py-1.5 bg-[color:var(--theme-action)] text-white text-sm rounded hover:bg-[color:var(--theme-action-hover)]" style={{ fontWeight: 500 }}>Guardar</button>
             <button onClick={() => { setView('list'); setSelectedData(null); }} className="px-4 py-1.5 bg-white border border-gray-400 text-gray-700 text-sm rounded hover:bg-gray-50">Cancelar</button>
           </div>
         </div>
@@ -325,7 +325,7 @@ export function PLDCalificacionRiesgo({ onBack }: Props) {
                   <td className="px-3 py-2.5 text-xs" style={{ fontWeight: 700 }}>CALIFICACIÓN TOTAL</td>
                   <td className="px-3 py-2.5 text-xs text-center" style={{ fontWeight: 700 }}>100%</td>
                   <td />
-                  <td className="px-3 py-2.5 text-xs text-center text-[#0066CC]" style={{ fontWeight: 700 }}>{selectedData.calificacionTotal.toFixed(2)}</td>
+                  <td className="px-3 py-2.5 text-xs text-center text-[color:var(--theme-link)]" style={{ fontWeight: 700 }}>{selectedData.calificacionTotal.toFixed(2)}</td>
                 </tr>
               </tbody>
             </table>

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 
 export function TabuladorProductos() {
   const [selectedRow, setSelectedRow] = useState<number | null>(null);

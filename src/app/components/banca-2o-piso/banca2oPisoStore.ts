@@ -9,7 +9,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 import { fechasCobroComision } from '../../lib/fechasComisionGPO';
 import type { CarteraCredito } from '../cartera/CarteraForm';
-import { loadFromSession, loadFromSavedStore } from '../solicitudes/solicitudCreditoStore';
+import { loadFromSession, loadFromSavedStore, versionFromDB } from '../solicitudes/solicitudCreditoStore';
 import type { DocumentoCargado } from '../solicitudes/solicitudCreditoStore';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-7e2d13d9`;
@@ -83,6 +83,7 @@ function mapDocumentosExpediente(rawSolicitud: any, dataObj: any): DocumentoCarg
     tamanoKB:      d?.tamano_kb     ?? d?.tamanoKB      ?? undefined,
     iaMotivos:     d?.ia_motivos    ?? d?.iaMotivos     ?? undefined,
     iaExtraido:    d?.ia_extraido   ?? d?.iaExtraido    ?? undefined,
+    ...versionFromDB(d),
   }));
 }
 

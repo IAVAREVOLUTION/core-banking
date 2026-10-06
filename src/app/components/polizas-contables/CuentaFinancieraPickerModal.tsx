@@ -98,7 +98,7 @@ export function CuentaFinancieraPickerModal({ open, onClose, onSelect }: Props) 
               <rect x="2" y="2" width="14" height="14" rx="2"/>
               <path d="M2 6h14M6 2v14"/>
             </svg>
-            <h3 className="text-sm text-gray-800">Seleccionar Cuenta Financiera — J_CUENTAS_CORP_CLIENTES</h3>
+            <h3 className="text-sm text-gray-800">Seleccionar Cuenta Financiera</h3>
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">&times;</button>
         </div>
@@ -110,7 +110,7 @@ export function CuentaFinancieraPickerModal({ open, onClose, onSelect }: Props) 
             value={search}
             onChange={e => setSearch(e.target.value)}
             placeholder="Buscar por id, no. cuenta, no. sol, tipo producto, estatus..."
-            className="w-full px-3 py-1.5 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-[#4A6FA5] focus:border-[#4A6FA5] focus:outline-none"
+            className="w-full px-3 py-1.5 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-[color:var(--theme-primary)] focus:border-[color:var(--theme-primary)] focus:outline-none"
             autoFocus
           />
           <div className="flex justify-end mt-1">
@@ -124,7 +124,7 @@ export function CuentaFinancieraPickerModal({ open, onClose, onSelect }: Props) 
         <div className="flex-1 overflow-auto">
           {loading ? (
             <div className="flex items-center justify-center py-12 text-xs text-gray-500">
-              <svg className="animate-spin h-4 w-4 mr-2 text-[#4A6FA5]" viewBox="0 0 24 24" fill="none">
+              <svg className="animate-spin h-4 w-4 mr-2 text-[color:var(--theme-primary)]" viewBox="0 0 24 24" fill="none">
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
               </svg>
@@ -132,7 +132,7 @@ export function CuentaFinancieraPickerModal({ open, onClose, onSelect }: Props) 
             </div>
           ) : filtered.length === 0 ? (
             <div className="text-center py-12 text-xs text-gray-500">
-              {rows.length === 0 ? 'No se encontraron cuentas en J_CUENTAS_CORP_CLIENTES' : 'Sin resultados para la búsqueda'}
+              {rows.length === 0 ? 'No se encontraron cuentas' : 'Sin resultados para la búsqueda'}
             </div>
           ) : (
             <table className="w-full text-xs">

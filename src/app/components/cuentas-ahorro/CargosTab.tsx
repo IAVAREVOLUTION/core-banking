@@ -1,11 +1,12 @@
 ﻿import { useState, useEffect } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 import { DatePicker } from '@/app/components/ui/DatePicker';
 import {
   Cargo, saveToSession, loadFromSession, generateId,
   MOCK_CARGOS, fromISODate, toISODate,
   CATALOGO_PERIODICIDAD, CATALOGO_ESTATUS_CARGO,
 } from './cuentasAhorroStore';
+import { CampoMonto } from '@/app/components/ui/CampoMonto';
 
 interface CargosTabProps {
   mode: 'nuevo' | 'editar' | 'ver';
@@ -51,7 +52,7 @@ export function CargosTab({ mode, accountId }: CargosTabProps) {
 
   return (
     <div className="bg-white">
-      <div className="bg-[#D9E2F3] border-l-4 border-[#4A6FA5] px-3 py-2 mb-3 flex items-center justify-between">
+      <div className="bg-[color:var(--theme-tint)] border-l-4 border-[color:var(--theme-primary)] px-3 py-2 mb-3 flex items-center justify-between">
         <span className="text-sm text-gray-800">CARGOS</span>
         {!isReadOnly && (
           <div className="flex items-center gap-2">
@@ -91,7 +92,7 @@ export function CargosTab({ mode, accountId }: CargosTabProps) {
                   <input type="text" value={c.descripcion} disabled={isReadOnly} onChange={e => { e.stopPropagation(); update(idx, 'descripcion', e.target.value); }} onClick={e => e.stopPropagation()} className="w-full px-1 py-1 text-xs border border-gray-300 rounded bg-white" placeholder="Descripción..." />
                 </td>
                 <td className="px-2 py-1.5 border-r border-gray-300">
-                  <input type="number" step="0.01" min="0" value={c.monto} disabled={isReadOnly} onChange={e => { e.stopPropagation(); update(idx, 'monto', parseFloat(e.target.value) || 0); }} onClick={e => e.stopPropagation()} className="w-full px-1 py-1 text-xs border border-gray-300 rounded bg-white text-right" />
+                  <CampoMonto min="0" value={c.monto} disabled={isReadOnly} onChange={e => { e.stopPropagation(); update(idx, 'monto', parseFloat(e.target.value) || 0); }} onClick={e => e.stopPropagation()} className="w-full px-1 py-1 text-xs border border-gray-300 rounded bg-white text-right" />
                 </td>
                 <td className="px-2 py-1.5 border-r border-gray-300" onClick={e => e.stopPropagation()}>
                   <DatePicker value={fromISODate(c.fechaCargo)} onChange={v => updateDate(idx, 'fechaCargo', v)} disabled={isReadOnly} placeholder="dd/mm/aaaa" className="px-1 py-1" />

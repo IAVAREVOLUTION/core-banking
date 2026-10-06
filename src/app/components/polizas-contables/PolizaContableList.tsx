@@ -1,5 +1,6 @@
 import { useState, useRef, useMemo } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
+import { useOrdenTabla, coincideBusqueda } from '@/app/lib/ordenTabla';
 import type { PolizaContable } from './PolizasContablesModule';
 
 interface Props {
@@ -27,28 +28,34 @@ const STATUS_STYLE: Record<string, string> = {
 
 export function PolizaContableList({ polizas, onNew, onEdit, onView, loading, error, onRefetch }: Props) {
   const [search, setSearch] = useState('');
-  const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
   const [page, setPage] = useState(1);
   const [widths, setWidths] = useState(INIT_WIDTHS);
   const searchRef = useRef<HTMLInputElement>(null);
   const tableRef = useRef<HTMLDivElement>(null);
   const PER_PAGE = 8;
 
-  const filtered = useMemo(() => {
-    const q = search.toLowerCase();
-    return polizas
-      .filter(p =>
-        (p.event_code || '').toLowerCase().includes(q) ||
-        (p.data?.evento || '').toLowerCase().includes(q) ||
-        (p.status || '').toLowerCase().includes(q) ||
-        (p.currency || '').toLowerCase().includes(q)
-      )
-      .sort((a, b) => {
-        const da = new Date(a.created_at || a.journal_date).getTime();
-        const db = new Date(b.created_at || b.journal_date).getTime();
-        return sortOrder === 'desc' ? db - da : da - db;
-      });
-  }, [polizas, search, sortOrder]);
+  const filtrados = useMemo(() => polizas.filter(p => coincideBusqueda(search, [
+    p.event_code, p.data?.evento, p.status, p.currency, p.journal_date, p.total_debit, p.total_credit,
+  ])), [polizas, search]);
+
+  // Más recientes primero (fecha de creación; a igual fecha, la fecha contable).
+  const orden = useOrdenTabla(filtrados, {
+    id: 'polizas-contables',
+    columnas: {
+      journal_date: p => p.journal_date,
+      event_code: p => p.event_code,
+      currency: p => p.currency,
+      evento: p => p.data?.evento,
+      status: p => p.status,
+      total_debit: p => p.total_debit,
+      total_credit: p => p.total_credit,
+      created_at: p => p.created_at || p.journal_date,
+    },
+    porDefecto: { campo: 'created_at', dir: 'desc' },
+    desempate: p => p.journal_date,
+    alCambiar: () => setPage(1),
+  });
+  const filtered = orden.filas;
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PER_PAGE));
   const pg = Math.min(page, totalPages);
@@ -71,12 +78,17 @@ export function PolizaContableList({ polizas, onNew, onEdit, onView, loading, er
     document.addEventListener('mouseup', onUp);
   };
 
-  const Th = ({ col, label }: { col: string; label: string }) => (
-    <th className="relative px-3 py-2.5 text-left font-normal text-xs text-gray-700" style={{ width: `${widths[col as keyof typeof widths]}px` }}>
-      {label}
-      <div className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-[#0099CC] transition-colors" onMouseDown={e => startResize(e, col)} />
-    </th>
-  );
+  // Encabezado redimensionable; todas las columnas salvo acciones ordenan al hacer clic.
+  const Th = ({ col, label }: { col: string; label: string }) => {
+    const ancho = { width: `${widths[col as keyof typeof widths]}px` };
+    const ordenable = col !== 'actions';
+    return (
+      <th className="relative px-3 py-2.5 text-left font-normal text-xs text-gray-700" {...(ordenable ? orden.th(col, ancho) : { style: ancho })}>
+        {label}{ordenable && orden.flecha(col)}
+        <div className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-[color:var(--theme-action)] transition-colors" onClick={e => e.stopPropagation()} onMouseDown={e => startResize(e, col)} />
+      </th>
+    );
+  };
 
   return (
     <div className="bg-white min-h-screen">
@@ -91,8 +103,8 @@ export function PolizaContableList({ polizas, onNew, onEdit, onView, loading, er
             <h2 className="text-lg font-normal text-gray-800">Pólizas Contables</h2>
           </div>
           <div className="flex items-center gap-4 text-sm text-gray-700">
-            <span onClick={() => tableRef.current?.scrollIntoView({ behavior: 'smooth' })} className="cursor-pointer hover:text-[#0099CC]">Lista</span>
-            <span onClick={() => searchRef.current?.focus()} className="cursor-pointer hover:text-[#0099CC]">Buscar</span>
+            <span onClick={() => tableRef.current?.scrollIntoView({ behavior: 'smooth' })} className="cursor-pointer hover:text-[color:var(--theme-action)]">Lista</span>
+            <span onClick={() => searchRef.current?.focus()} className="cursor-pointer hover:text-[color:var(--theme-action)]">Buscar</span>
           </div>
         </div>
       </div>
@@ -107,7 +119,7 @@ export function PolizaContableList({ polizas, onNew, onEdit, onView, loading, er
             </select>
             <svg className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" width="12" height="12" viewBox="0 0 12 12" fill="#666"><path d="M6 8l-4-4h8z"/></svg>
           </div>
-          <button onClick={onNew} className="px-5 py-1.5 bg-[#0099CC] text-white rounded text-sm hover:bg-[#0088BB] font-medium">
+          <button onClick={onNew} className="px-5 py-1.5 bg-[color:var(--theme-action)] text-white rounded text-sm hover:bg-[color:var(--theme-action-hover)] font-medium">
             Nuevo
           </button>
           {onRefetch && (
@@ -158,7 +170,7 @@ export function PolizaContableList({ polizas, onNew, onEdit, onView, loading, er
             <div className="flex items-center gap-2">
               <span>Orden Rápido</span>
               <div className="relative">
-                <select value={sortOrder} onChange={e => { setSortOrder(e.target.value as 'desc' | 'asc'); setPage(1); }} className="px-2 py-1 border border-gray-400 rounded text-sm bg-white pr-6 appearance-none">
+                <select value={orden.dir} onChange={e => orden.fijar(orden.campo, e.target.value as 'desc' | 'asc')} className="px-2 py-1 border border-gray-400 rounded text-sm bg-white pr-6 appearance-none">
                   <option value="desc">Descendente</option>
                   <option value="asc">Ascendente</option>
                 </select>
@@ -172,7 +184,7 @@ export function PolizaContableList({ polizas, onNew, onEdit, onView, loading, er
                 { d: 'M6 3l5 5-5 5V3z', act: () => setPage(p => Math.min(totalPages, p + 1)), dis: pg === totalPages },
                 { d: 'M6 3l5 5-5 5V3z', act: () => setPage(totalPages), dis: pg === totalPages },
               ].map(({ d, act, dis }, i) => (
-                <button key={i} onClick={act} disabled={dis} className="p-0.5 text-[#0099CC] disabled:opacity-40">
+                <button aria-label={['Primera página','Página anterior','Página siguiente','Última página'][i]} title={['Primera página','Página anterior','Página siguiente','Última página'][i]} key={i} onClick={act} disabled={dis} className="p-0.5 text-[color:var(--theme-action)] disabled:opacity-40">
                   <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d={d}/></svg>
                 </button>
               ))}
@@ -188,7 +200,7 @@ export function PolizaContableList({ polizas, onNew, onEdit, onView, loading, er
             <circle cx="8" cy="8" r="6" stroke="#3B82F6" strokeWidth="2" opacity="0.3"/>
             <path d="M8 2a6 6 0 014.9 9.4" stroke="#3B82F6" strokeWidth="2" strokeLinecap="round"/>
           </svg>
-          Consultando J_GL_JOURNAL_ENCABEZADO...
+          Cargando...
         </div>
       )}
       {error && (
@@ -232,9 +244,9 @@ export function PolizaContableList({ polizas, onNew, onEdit, onView, loading, er
                     onMouseLeave={e => (e.currentTarget.style.backgroundColor = i % 2 === 1 ? '#EEEEEE' : '#FFFFFF')}
                   >
                     <td className="px-3 py-2.5 text-xs whitespace-nowrap" style={{ width: `${widths.actions}px` }}>
-                      <a href="#" onClick={e => { e.preventDefault(); onEdit(p); }} className="text-[#0066CC] hover:underline">Editar</a>
+                      <button type="button" onClick={() => { onEdit(p); }} className="enlace-accion text-[color:var(--theme-link)] hover:underline">Editar</button>
                       <span className="text-gray-400"> | </span>
-                      <a href="#" onClick={e => { e.preventDefault(); onView(p); }} className="text-[#0066CC] hover:underline">Ver</a>
+                      <button type="button" onClick={() => { onView(p); }} className="enlace-accion text-[color:var(--theme-link)] hover:underline">Ver</button>
                     </td>
                     <td className="px-3 py-2.5 text-xs text-gray-700" style={{ width: `${widths.journal_date}px` }}>{fmtDate(p.journal_date)}</td>
                     <td className="px-3 py-2.5 text-xs text-gray-700 font-mono overflow-hidden text-ellipsis whitespace-nowrap" style={{ width: `${widths.event_code}px` }}>{p.event_code || '—'}</td>

@@ -1,9 +1,10 @@
 import { useState, useMemo } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 import { DatePicker } from '@/app/components/ui/DatePicker';
 import type { AlertaPLD } from './pldStore';
 import { usePLDAlertas } from './usePLDData';
 import { usePLDClientes } from './usePLDClientes';
+import { CampoMonto } from '@/app/components/ui/CampoMonto';
 
 interface Props { onBack?: () => void; }
 
@@ -94,7 +95,7 @@ export function PLDAlertasPLD({ onBack }: Props) {
           </div>
           <div className="flex items-center gap-4 text-sm text-gray-700">
             <span>Lista</span>
-            <span className="cursor-pointer hover:text-[#0066CC] transition-colors" onClick={openNew}>Nueva Alerta</span>
+            <span className="cursor-pointer hover:text-[color:var(--theme-link)] transition-colors" onClick={openNew}>Nueva Alerta</span>
           </div>
         </div>
       </div>
@@ -148,10 +149,10 @@ export function PLDAlertasPLD({ onBack }: Props) {
           <div className="flex items-center gap-4 text-sm text-gray-700">
             <span className="font-medium">Total: {filtered.length}</span>
             <div className="flex items-center gap-1">
-              <button onClick={() => setPage(p => Math.max(1, p-1))} disabled={page===1} className="p-0.5 text-[#0066CC] disabled:opacity-40">
+              <button type="button" aria-label="Página anterior" title="Página anterior" onClick={() => setPage(p => Math.max(1, p-1))} disabled={page===1} className="p-0.5 text-[color:var(--theme-link)] disabled:opacity-40">
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M10 3L5 8l5 5V3z"/></svg>
               </button>
-              <button onClick={() => setPage(p => Math.min(totalPages, p+1))} disabled={page===totalPages} className="p-0.5 text-[#0066CC] disabled:opacity-40">
+              <button type="button" aria-label="Página siguiente" title="Página siguiente" onClick={() => setPage(p => Math.min(totalPages, p+1))} disabled={page===totalPages} className="p-0.5 text-[color:var(--theme-link)] disabled:opacity-40">
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M6 3l5 5-5 5V3z"/></svg>
               </button>
             </div>
@@ -185,11 +186,11 @@ export function PLDAlertasPLD({ onBack }: Props) {
                   onMouseEnter={e => e.currentTarget.style.backgroundColor = '#E8F4F8'}
                   onMouseLeave={e => e.currentTarget.style.backgroundColor = idx % 2 === 1 ? '#EEEEEE' : '#FFFFFF'}>
                   <td className="px-3 py-2.5 text-xs whitespace-nowrap">
-                    <span className="text-[#0066CC] cursor-pointer hover:underline" onClick={() => openEdit(a)}>Editar</span>
+                    <span className="text-[color:var(--theme-link)] cursor-pointer hover:underline" onClick={() => openEdit(a)}>Editar</span>
                     <span className="text-gray-400 mx-1">|</span>
-                    <span className="text-[#0066CC] cursor-pointer hover:underline" onClick={() => openView(a)}>Ver</span>
+                    <span className="text-[color:var(--theme-link)] cursor-pointer hover:underline" onClick={() => openView(a)}>Ver</span>
                   </td>
-                  <td className="px-3 py-2.5 text-xs text-[#0066CC]" style={{ fontWeight: 500 }}>{a.noAlerta}</td>
+                  <td className="px-3 py-2.5 text-xs text-[color:var(--theme-link)]" style={{ fontWeight: 500 }}>{a.noAlerta}</td>
                   <td className="px-3 py-2.5 text-xs">{a.fechaCreacion}</td>
                   <td className="px-3 py-2.5 text-xs max-w-[180px] truncate">{a.cliente}</td>
                   <td className="px-3 py-2.5 text-xs">
@@ -215,7 +216,7 @@ export function PLDAlertasPLD({ onBack }: Props) {
           <div className="flex items-center gap-1">
             <button onClick={() => setPage(1)} disabled={page===1} className="px-2 py-1 border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-40">&laquo;</button>
             <button onClick={() => setPage(p => Math.max(1,p-1))} disabled={page===1} className="px-2 py-1 border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-40">&lsaquo;</button>
-            <span className="px-3 py-1 bg-[#4A6FA5] text-white rounded">{page}</span>
+            <span className="px-3 py-1 bg-[color:var(--theme-primary)] text-white rounded">{page}</span>
             <button onClick={() => setPage(p => Math.min(totalPages,p+1))} disabled={page===totalPages} className="px-2 py-1 border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-40">&rsaquo;</button>
             <button onClick={() => setPage(totalPages)} disabled={page===totalPages} className="px-2 py-1 border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-40">&raquo;</button>
           </div>
@@ -228,7 +229,7 @@ export function PLDAlertasPLD({ onBack }: Props) {
           <div className="bg-white rounded shadow-xl w-[700px] max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
 
             {/* Modal header */}
-            <div className="bg-[#4A6FA5] px-6 py-4 rounded-t flex items-center justify-between flex-shrink-0">
+            <div className="bg-[color:var(--theme-primary)] px-6 py-4 rounded-t flex items-center justify-between flex-shrink-0">
               <h3 className="text-base text-white" style={{ fontWeight: 500 }}>
                 {modal === 'nuevo' ? 'Nueva Alerta PLD' : modal === 'editar' ? `Editar Alerta — ${current.noAlerta}` : `Detalle Alerta — ${current.noAlerta}`}
               </h3>
@@ -277,7 +278,7 @@ export function PLDAlertasPLD({ onBack }: Props) {
                   <div className="flex items-center gap-2">
                     <label className={labelCls}>MONTO</label>
                     {isView ? <div className={viewCls}>{current.monto}</div>
-                      : <input type="text" value={current.monto} onChange={e => setCurrent(c => ({ ...c, monto: e.target.value }))} className={inputCls} placeholder="$0.00" />}
+                      : <CampoMonto value={current.monto} onChange={e => setCurrent(c => ({ ...c, monto: e.target.value }))} className={inputCls} placeholder="$0.00" />}
                   </div>
                   <div className="flex items-center gap-2">
                     <label className={labelCls}>TIPO ALERTA</label>
@@ -335,7 +336,7 @@ export function PLDAlertasPLD({ onBack }: Props) {
               </div>
               <div className="flex items-center gap-2">
                 {!isView && (
-                  <button onClick={handleSave} className="px-5 py-1.5 bg-[#0099CC] text-white text-sm rounded hover:bg-[#0088BB]" style={{ fontWeight: 500 }}>
+                  <button onClick={handleSave} className="px-5 py-1.5 bg-[color:var(--theme-action)] text-white text-sm rounded hover:bg-[color:var(--theme-action-hover)]" style={{ fontWeight: 500 }}>
                     {modal === 'nuevo' ? 'Crear Alerta' : 'Guardar Cambios'}
                   </button>
                 )}

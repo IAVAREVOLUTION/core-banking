@@ -16,7 +16,7 @@
  * que se desvía en silencio.
  */
 import { useState, useMemo } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 import { useSolicitudesDB, fetchNextNoSol } from '../../hooks/useSolicitudesDB';
 import { useProductosLineaCreditoDB } from '../../hooks/useProductosLineaCreditoDB';
 import {
@@ -27,6 +27,7 @@ import {
   fmtMoneyExacto, parseMon, productosDisposicionDe, vincularDisposicion, lineaPadreDe,
   type LineaCreditoRow,
 } from './banca2oPisoStore';
+import { CampoMonto } from '@/app/components/ui/CampoMonto';
 
 /** CA-08 — dd/mm/aaaa de hoy, mismo formato que el modal de Personas. */
 function hoyDisplay(): string {
@@ -252,7 +253,7 @@ export function DisposicionesTab({
       <div className="border border-gray-200 rounded overflow-x-auto">
         <table className="w-full text-xs">
           <thead>
-            <tr className="bg-[#2E5C91] text-white">
+            <tr className="bg-[color:var(--theme-secondary)] text-white">
               <th className="px-2 py-2 text-left font-medium">No. Solicitud</th>
               <th className="px-2 py-2 text-left font-medium">Fecha</th>
               <th className="px-2 py-2 text-left font-medium">Producto</th>
@@ -350,7 +351,7 @@ export function DisposicionesTab({
 
                 {/* CA-11 — precargado con el saldo, editable (§Decisión 4) */}
                 <Campo label="Monto Solicitado *">
-                  <input type="text" value={montoSolicitado}
+                  <CampoMonto value={montoSolicitado}
                     onChange={e => setMontoSolicitado(e.target.value)}
                     className="w-full px-2 py-1.5 border border-gray-300 rounded text-right font-mono" />
                   <span className="text-[10px] text-gray-500">

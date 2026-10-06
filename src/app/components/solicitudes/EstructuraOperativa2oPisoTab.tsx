@@ -182,7 +182,7 @@ export function EstructuraOperativa2oPisoTab({
   };
 
   const roClass = 'w-full px-2 py-1.5 text-xs bg-gray-100 border border-gray-200 rounded text-gray-600';
-  const inputClass = 'w-full px-2 py-1.5 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-[#4A6FA5]/30 focus:border-[#4A6FA5]';
+  const inputClass = 'w-full px-2 py-1.5 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-[color:var(--theme-primary)]/30 focus:border-[color:var(--theme-primary)]';
 
   const faltantes = faltantesEstructura2oPiso(datos);
 
@@ -212,7 +212,7 @@ export function EstructuraOperativa2oPisoTab({
           {!isRO && (
             <button
               onClick={() => setModalAbierto(destino)}
-              className="px-3 py-1.5 bg-[#4A6FA5] text-white rounded text-xs hover:bg-[#3A5A8A] whitespace-nowrap"
+              className="px-3 py-1.5 bg-[color:var(--theme-primary)] text-white rounded text-xs hover:bg-[color:var(--theme-primary-hover)] whitespace-nowrap"
             >
               Buscar
             </button>
@@ -346,7 +346,7 @@ export function EstructuraOperativa2oPisoTab({
         return (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={cerrar}>
             <div className="bg-white rounded-2xl shadow-2xl max-w-xl w-full max-h-[80vh] overflow-hidden border border-gray-200/50 flex flex-col" onClick={e => e.stopPropagation()}>
-              <div className="flex items-center justify-between px-5 py-4 bg-gradient-to-r from-[#4A6FA5] to-[#607698]">
+              <div className="flex items-center justify-between px-5 py-4 bg-gradient-to-r from-[color:var(--theme-primary)] to-[#607698]">
                 <div>
                   <h3 className="text-sm font-bold text-white">
                     {modalAbierto === 'fiduciario' ? 'Institución Fiduciaria' : 'Representante Común de Tenedores'}
@@ -364,7 +364,7 @@ export function EstructuraOperativa2oPisoTab({
                   value={filtroModal}
                   onChange={e => setFiltroModal(e.target.value)}
                   placeholder="Buscar por nombre o RFC..."
-                  className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#4A6FA5]/30 focus:border-[#4A6FA5]"
+                  className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:ring-2 focus:ring-[color:var(--theme-primary)]/30 focus:border-[color:var(--theme-primary)]"
                 />
               </div>
 

@@ -1,5 +1,5 @@
 import { useState, useEffect, forwardRef, useImperativeHandle } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 import { useTabPersistence } from '@/app/hooks/useProductoPersistence';
 import { useComponentesContablesCatalogo } from '@/app/hooks/useComponentesContablesCatalogo';
 // REQ-21 — momento del ciclo en el que aplica cada cargo. Las opciones ya no
@@ -160,7 +160,7 @@ export const CargoTab = forwardRef<{ getData: () => Cargo[] }, CargoTabProps>(
             <div className="relative">
               <button 
                 onClick={() => setShowMenu(!showMenu)}
-                className="px-3 py-1 bg-[#4A6FA5] text-white text-xs hover:bg-[#3E5C91] border border-[#3E5C91] flex items-center gap-1"
+                className="px-3 py-1 bg-[color:var(--theme-primary)] text-white text-xs hover:bg-[color:var(--theme-secondary)] border border-[color:var(--theme-secondary)] flex items-center gap-1"
               >
                 Menú
                 <svg width="10" height="6" viewBox="0 0 10 6" fill="white">
@@ -177,9 +177,9 @@ export const CargoTab = forwardRef<{ getData: () => Cargo[] }, CargoTabProps>(
               )}
             </div>
 
-            <button onClick={handleNew} disabled={isViewMode} className="px-3 py-1 bg-[#4A6FA5] text-white text-xs hover:bg-[#3E5C91] border border-[#3E5C91] disabled:bg-gray-400 disabled:cursor-not-allowed">Nuevo</button>
-            <button onClick={handleDelete} disabled={selectedRow === null || isViewMode} className="px-3 py-1 bg-[#4A6FA5] text-white text-xs hover:bg-[#3E5C91] border border-[#3E5C91] disabled:bg-gray-400 disabled:cursor-not-allowed">Eliminar</button>
-            <button onClick={handleConsulta} className="px-3 py-1 bg-[#4A6FA5] text-white text-xs hover:bg-[#3E5C91] border border-[#3E5C91]">Consulta</button>
+            <button onClick={handleNew} disabled={isViewMode} className="px-3 py-1 bg-[color:var(--theme-primary)] text-white text-xs hover:bg-[color:var(--theme-secondary)] border border-[color:var(--theme-secondary)] disabled:bg-gray-400 disabled:cursor-not-allowed">Nuevo</button>
+            <button onClick={handleDelete} disabled={selectedRow === null || isViewMode} className="px-3 py-1 bg-[color:var(--theme-primary)] text-white text-xs hover:bg-[color:var(--theme-secondary)] border border-[color:var(--theme-secondary)] disabled:bg-gray-400 disabled:cursor-not-allowed">Eliminar</button>
+            <button onClick={handleConsulta} className="px-3 py-1 bg-[color:var(--theme-primary)] text-white text-xs hover:bg-[color:var(--theme-secondary)] border border-[color:var(--theme-secondary)]">Consulta</button>
           </div>
 
           {showConsulta && (
@@ -193,7 +193,7 @@ export const CargoTab = forwardRef<{ getData: () => Cargo[] }, CargoTabProps>(
           <div className="border border-gray-400 overflow-x-auto">
             <table className="w-full text-xs">
               <thead>
-                <tr className="bg-[#4A6FA5] text-white">
+                <tr className="bg-[color:var(--theme-primary)] text-white">
                   <th className="px-3 py-2 text-left font-medium text-xs border-r border-white/20 whitespace-nowrap">Línea Producto</th>
                   <th className="px-3 py-2 text-left font-medium text-xs border-r border-white/20 whitespace-nowrap">Sublínea</th>
                   <th className="px-3 py-2 text-left font-medium text-xs border-r border-white/20 whitespace-nowrap">Tipo de Cargo</th>
@@ -214,7 +214,7 @@ export const CargoTab = forwardRef<{ getData: () => Cargo[] }, CargoTabProps>(
                       key={item.id}
                       onClick={() => setSelectedRow(item.id)}
                       onDoubleClick={() => handleEdit(item)}
-                      className={`border-b border-gray-300 cursor-pointer transition-colors ${selectedRow === item.id ? 'bg-[#D6EAF8]' : index % 2 === 0 ? 'bg-white' : 'bg-[#F9F9F9]'}`}
+                      className={`border-b border-gray-300 cursor-pointer transition-colors ${selectedRow === item.id ? 'bg-[color:var(--theme-tint-soft)]' : index % 2 === 0 ? 'bg-white' : 'bg-[#F9F9F9]'}`}
                       onMouseEnter={(e) => {
                         if (selectedRow !== item.id) {
                           e.currentTarget.style.backgroundColor = '#E8F4F8';
@@ -336,7 +336,7 @@ function FormModal({ mode, item, productId, lineaProducto, sublinea, momentos, o
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
       <div className="bg-white shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-hidden flex flex-col border-2 border-gray-400" onClick={(e) => e.stopPropagation()}>
-        <div className="bg-[#2E5C91] px-4 py-2.5 border-b-2 border-gray-400 flex items-center justify-between">
+        <div className="bg-[color:var(--theme-secondary)] px-4 py-2.5 border-b-2 border-gray-400 flex items-center justify-between">
           <h3 className="text-sm font-medium text-white">{mode === 'create' ? 'Nuevo Cargo' : mode === 'edit' ? 'Editar Cargo' : 'Ver Cargo'}</h3>
           <button onClick={onClose} className="text-white hover:text-gray-300 font-bold text-lg leading-none">×</button>
         </div>
@@ -344,7 +344,7 @@ function FormModal({ mode, item, productId, lineaProducto, sublinea, momentos, o
         <div className="px-6 py-4 overflow-auto bg-white">
           <form onSubmit={handleSubmit}>
             <div className="mb-4">
-              <div className="bg-[#E7E6E6] px-3 py-1.5 mb-3 border-l-4 border-[#2E5C91]">
+              <div className="bg-[#E7E6E6] px-3 py-1.5 mb-3 border-l-4 border-[color:var(--theme-secondary)]">
                 <span className="text-xs font-medium text-gray-800">INFORMACIÓN DE CARGO</span>
               </div>
 
@@ -480,7 +480,7 @@ function FormModal({ mode, item, productId, lineaProducto, sublinea, momentos, o
             <div className="flex gap-2 justify-end pt-3 border-t border-gray-300">
               <button type="button" onClick={onClose} className="px-4 py-1.5 bg-gray-500 text-white text-xs hover:bg-gray-600">{isViewMode ? 'Cerrar' : 'Cancelar'}</button>
               {!isViewMode && (
-                <button type="submit" className="px-4 py-1.5 bg-[#4A6FA5] text-white text-xs hover:bg-[#3E5C91]">Guardar</button>
+                <button type="submit" className="px-4 py-1.5 bg-[color:var(--theme-primary)] text-white text-xs hover:bg-[color:var(--theme-secondary)]">Guardar</button>
               )}
             </div>
           </form>

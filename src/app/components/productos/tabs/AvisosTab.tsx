@@ -64,7 +64,7 @@ export function AvisosTab({ mode, productId }: AvisosTabProps) {
       <div className="border border-gray-300 shadow-sm">
         <div className="overflow-x-auto">
           <table className="w-full text-xs border-collapse">
-            <thead className="bg-[#4A6FA5] text-white">
+            <thead className="bg-[color:var(--theme-primary)] text-white">
               <tr>
                 <th className="text-left px-3 py-2.5 font-medium border-r border-white/20 whitespace-nowrap">Fecha de emisión</th>
                 <th className="text-left px-3 py-2.5 font-medium border-r border-white/20 whitespace-nowrap">Número de referencia</th>

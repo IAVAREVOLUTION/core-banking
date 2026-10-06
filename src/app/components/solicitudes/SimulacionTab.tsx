@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 import {
   SimulacionRow, TerminosCondiciones, EMPTY_TERMINOS,
   saveToSession, loadFromSession, loadFromSavedStore,
@@ -198,7 +198,7 @@ function sumarDias(fechaIso: string, dias: number): string {
 export function SimulacionTab({ mode, solicitudId, lineaProducto, tipoProducto, calendarioAportaciones, simulacionInicial, montoAutorizado, montoSolicitadoHeader, plazoHeader, tasaHeader, fechaInicioHeader, frecuenciaHeader, onFechaFinChange }: Props) {
   const isRO = mode === 'ver';
   const isCap = esCaptacion(lineaProducto, tipoProducto);
-  const _tpRaw = (tipoProducto || lineaProducto || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  const _tpRaw = (tipoProducto || lineaProducto || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   const isInversion = isCap && _tpRaw.includes('invers');
   // Puro y Financiero comparten TODA la maquinaria de calendario (estado,
   // persistencia en `simulacion_arrendamiento` → `calendario_arrendamiento`,
@@ -761,7 +761,7 @@ export function SimulacionTab({ mode, solicitudId, lineaProducto, tipoProducto, 
               <div className="border border-gray-300 overflow-x-auto">
                 <table className="w-full text-xs">
                   <thead>
-                    <tr className="bg-[#2E5C91] text-white">
+                    <tr className="bg-[color:var(--theme-secondary)] text-white">
                       <th className="px-3 py-2.5 text-center font-medium whitespace-nowrap">Período</th>
                       <th className="px-3 py-2.5 text-left font-medium whitespace-nowrap">Fecha</th>
                       <th className="px-3 py-2.5 text-right font-medium whitespace-nowrap">Capital Inicial</th>
@@ -1084,7 +1084,7 @@ export function SimulacionTab({ mode, solicitudId, lineaProducto, tipoProducto, 
         <>
           <div className="border border-gray-300 overflow-auto max-h-[400px]">
             <table className="w-full text-xs">
-              <thead className="bg-[#2E5C91] text-white sticky top-0">
+              <thead className="bg-[color:var(--theme-secondary)] text-white sticky top-0">
                 <tr>
                   <th className="px-2 py-2 text-left font-medium">Fecha</th>
                   <th className="px-2 py-2 text-right font-medium">Comisión del Periodo</th>
@@ -1125,7 +1125,7 @@ export function SimulacionTab({ mode, solicitudId, lineaProducto, tipoProducto, 
         <>
           <div className="border border-gray-300 overflow-auto max-h-[400px]">
             <table className="w-full text-xs">
-              <thead className="bg-[#2E5C91] text-white sticky top-0">
+              <thead className="bg-[color:var(--theme-secondary)] text-white sticky top-0">
                 <tr>
                   <th className="px-2 py-2 text-left font-medium">N° Pago</th>
                   <th className="px-2 py-2 text-left font-medium">Fecha</th>

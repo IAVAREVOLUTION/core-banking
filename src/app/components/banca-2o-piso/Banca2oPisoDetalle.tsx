@@ -11,7 +11,7 @@
  * sistema todavía no tiene modelo de datos para ella (§Decisión #1 de la HU).
  */
 import { useState } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 import { DefaultTab } from '../cartera/DefaultTab';
 import { SolicitudesExtTab } from '../cartera/SolicitudesExtTab';
 import { ExpedienteElectronicoTab } from '../solicitudes/ExpedienteElectronicoTab';
@@ -28,7 +28,7 @@ import { loadFromSession, loadFromSavedStore } from '../solicitudes/solicitudCre
 const TABS = [
   { id: 'default', label: 'Default' },
   { id: 'terminos', label: 'Términos y Condiciones' },
-  { id: 'expediente', label: 'Expediente Electrónico' },
+  { id: 'expediente', label: 'KM Digital' },
   { id: 'cargos', label: 'Cargos' },
   { id: 'solicitudes-ext', label: 'Solicitudes Extraordinarias' },
   { id: 'disposiciones', label: 'Disposiciones' },
@@ -276,7 +276,7 @@ function SubEstatusLinea({ row, onCambio }: { row: LineaCreditoRow; onCambio?: (
             value={valor}
             disabled={guardando}
             onChange={e => handleChange(e.target.value as SubEstatus2oPiso)}
-            className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-[#4A6FA5] disabled:bg-gray-100"
+            className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-[color:var(--theme-primary)] disabled:bg-gray-100"
           >
             {SUB_ESTATUS_2O_PISO.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
@@ -465,7 +465,7 @@ function TerminosLineaCreditoTab({ row }: { row: LineaCreditoRow }) {
 function Bloque({ titulo, filas }: { titulo: string; filas: Array<[string, string]> }) {
   return (
     <div className="border border-gray-300">
-      <div className="bg-[#4A6FA5] text-white px-3 py-1.5 text-xs font-medium">{titulo}</div>
+      <div className="bg-[color:var(--theme-primary)] text-white px-3 py-1.5 text-xs font-medium">{titulo}</div>
       <table className="w-full text-xs">
         <tbody className="divide-y divide-gray-200">
           {filas.map(([label, valor]) => (

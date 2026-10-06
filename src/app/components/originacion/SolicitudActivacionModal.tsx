@@ -6,7 +6,7 @@
  * directamente en el formulario de alta con los campos pre-rellenados.
  */
 import { useState, useEffect } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 import { SolicitudActivacionList } from '../solicitudes-activacion/SolicitudActivacionList';
 import {
   type SolicitudActivacionFormData,

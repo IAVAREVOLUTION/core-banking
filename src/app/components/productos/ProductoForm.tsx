@@ -12,7 +12,7 @@ import {
 } from '../../data/mockData';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 import { ProductoFormDefaultTab } from './ProductoFormDefaultTab';
 import { AvisosTab } from './tabs/AvisosTab';
 import { CaptacionTab } from './tabs/CaptacionTab';
@@ -103,6 +103,9 @@ export function ProductoForm({
 }: ProductoFormProps) {
   const isView = mode === 'view';
   const isCreate = mode === 'create';
+  // Varias pestañas (IVA, Jerarquía, Comité, Periodicidad, Exento IVA, Checklist)
+  // esperan el modo en español; con 'view' quedaban editables en modo Ver.
+  const modoPestana = ({ view: 'ver', edit: 'editar', create: 'nuevo' } as const)[mode];
 
   // CRITICAL: Stable productId constant - same pattern as Captación's `productoId || 0`
   // Must NOT depend on formData state to avoid circular dependencies with tab storageKeys
@@ -245,7 +248,7 @@ export function ProductoForm({
       updateFields({
         [field]: value,
         sublineaProducto: '',
-      });
+      } as Partial<Product>);
       const line = lineProducts.find((l) => l.name === value);
       setSelectedLineId(line?.id || null);
     } else {
@@ -674,11 +677,11 @@ export function ProductoForm({
               </span>
             )}
             {!isCreate && product?.dbUuid && (
-              <span className="text-[10px] text-gray-400 font-mono bg-gray-50 px-2 py-0.5 rounded" title="UUID en J_PRODUCTOS">
+              <span className="text-[10px] text-gray-400 font-mono bg-gray-50 px-2 py-0.5 rounded" title="Identificador del producto">
                 {product.dbUuid}
               </span>
             )}
-            <button className="p-1 ml-2">
+            <button type="button" aria-label="Buscar" title="Buscar" className="p-1 ml-2">
               <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#999" strokeWidth="2">
                 <circle cx="8" cy="8" r="6"/>
                 <path d="M13 13l3 3"/>
@@ -695,7 +698,7 @@ export function ProductoForm({
             <button
               onClick={handleSubmit}
               disabled={isSaving}
-              className="px-5 py-1.5 bg-[#0099CC] text-white rounded text-sm hover:bg-[#0088BB] font-medium disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-1.5"
+              className="px-5 py-1.5 bg-[color:var(--theme-action)] text-white rounded text-sm hover:bg-[color:var(--theme-action-hover)] font-medium disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-1.5"
             >
               {isSaving && (
                 <svg className="animate-spin" width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="7" cy="7" r="5" strokeDasharray="20" strokeDashoffset="10" /></svg>
@@ -727,12 +730,12 @@ export function ProductoForm({
         <div className="bg-white border border-gray-300">
           {/* Datos Producto - Siempre visible */}
           <div className="px-5 pt-5 pb-4 border-b border-gray-200 bg-gradient-to-b from-gray-50/60 to-white">
-            <div className="flex items-center gap-2.5 bg-[#D9E2F3] px-4 py-2 mb-4 rounded border-l-4 border-[#4A6FA5] shadow-sm">
+            <div className="flex items-center gap-2.5 bg-[color:var(--theme-tint)] px-4 py-2 mb-4 rounded border-l-4 border-[color:var(--theme-primary)] shadow-sm">
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#4A6FA5" strokeWidth="1.5">
                 <rect x="2" y="2" width="12" height="12" rx="2" />
                 <path d="M5 6h6M5 8.5h4M5 11h5" />
               </svg>
-              <span className="text-sm font-semibold text-[#2E5C91] tracking-wide uppercase">
+              <span className="text-sm font-semibold text-[color:var(--theme-secondary)] tracking-wide uppercase">
                 Datos del Producto
               </span>
             </div>
@@ -757,7 +760,7 @@ export function ProductoForm({
                   className={`px-4 py-2.5 text-xs whitespace-nowrap border-r border-gray-500/30 transition-all ${
                     activeTab === tab.id
                       ? 'bg-secondary-theme text-white font-medium'
-                      : 'bg-primary-theme text-white/90 hover:bg-[#5A7FB5]'
+                      : 'bg-primary-theme text-white/90 hover:bg-[color:var(--theme-primary)]'
                   }`}
                 >
                   {tab.label}
@@ -1115,7 +1118,7 @@ export function ProductoForm({
 
             {activeTab === 'iva-porcentaje' && (
               <div>
-                <IvaTab mode={mode} productId={productId} />
+                <IvaTab mode={modoPestana} />
               </div>
             )}
 
@@ -1131,7 +1134,7 @@ export function ProductoForm({
 
             {activeTab === 'jerarquia-productos' && (
               <div>
-                <JerarquiaProductosTab mode={mode} productId={productId} />
+                <JerarquiaProductosTab mode={modoPestana} />
               </div>
             )}
 
@@ -1145,13 +1148,13 @@ export function ProductoForm({
 
             {activeTab === 'comites-credito' && (
               <div>
-                <ComiteCreditoTab mode={mode} productId={productId} />
+                <ComiteCreditoTab mode={modoPestana} />
               </div>
             )}
 
             {activeTab === 'periodicidad' && (
               <div>
-                <PeriodicidadTab key={`periodicidad-tab`} mode={mode} productId={productId} />
+                <PeriodicidadTab key={`periodicidad-tab`} mode={modoPestana} productId={productId} />
               </div>
             )}
 
@@ -1165,13 +1168,13 @@ export function ProductoForm({
 
             {activeTab === 'exento-iva' && (
               <div>
-                <ExentoIvaTab mode={mode} productId={productId} />
+                <ExentoIvaTab mode={modoPestana} />
               </div>
             )}
 
             {activeTab === 'check-list' && (
               <div>
-                <CheckListTab mode={mode} productId={productId} />
+                <CheckListTab mode={modoPestana} />
               </div>
             )}
 
@@ -1217,7 +1220,7 @@ export function ProductoForm({
                   {!isView && efectivoAmortizaciones.length === 0 && (
                     <button
                       onClick={() => setAmortizacionesState(AMORTIZACIONES_DATA.map(row => ({ ...row })))}
-                      className="px-3 py-1 bg-[#4A6FA5] text-white text-[10px] hover:bg-[#3E5C91] rounded font-medium transition-colors"
+                      className="px-3 py-1 bg-[color:var(--theme-primary)] text-white text-[10px] hover:bg-[color:var(--theme-secondary)] rounded font-medium transition-colors"
                     >
                       Cargar Catálogo
                     </button>
@@ -1291,7 +1294,7 @@ export function ProductoForm({
                 ) : (
                   <div className="border border-gray-300">
                     <table className="w-full text-xs">
-                      <thead className="bg-[#4A6FA5] text-white">
+                      <thead className="bg-[color:var(--theme-primary)] text-white">
                         <tr>
                           <th className="text-left px-3 py-2 font-medium">Puesto</th>
                           <th className="text-left px-3 py-2 font-medium">Nombre</th>

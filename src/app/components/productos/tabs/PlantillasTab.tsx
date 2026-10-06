@@ -1,5 +1,5 @@
 import { useState, useRef, forwardRef, useImperativeHandle, useEffect } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 import { useTabPersistence } from '@/app/hooks/useProductoPersistence';
 import type { PlantillaInstitucional, TipoPlantilla } from '@/app/types/product';
 import { TIPO_PLANTILLA_OPTIONS, TIPO_PLANTILLA_CATALOGO, getTipoPlantillaMeta } from '@/app/types/product';
@@ -138,7 +138,7 @@ export const PlantillasTab = forwardRef<{ getData: () => PlantillaInstitucional[
             <div className="relative">
               <button
                 onClick={() => setShowMenu(!showMenu)}
-                className="px-3 py-1 bg-[#4A6FA5] text-white text-xs hover:bg-[#3E5C91] border border-[#3E5C91] flex items-center gap-1"
+                className="px-3 py-1 bg-[color:var(--theme-primary)] text-white text-xs hover:bg-[color:var(--theme-secondary)] border border-[color:var(--theme-secondary)] flex items-center gap-1"
               >
                 Menú
                 <svg width="10" height="6" viewBox="0 0 10 6" fill="white">
@@ -154,15 +154,15 @@ export const PlantillasTab = forwardRef<{ getData: () => PlantillaInstitucional[
               )}
             </div>
 
-            <button onClick={handleNew} disabled={isViewMode} className="px-3 py-1 bg-[#4A6FA5] text-white text-xs hover:bg-[#3E5C91] border border-[#3E5C91] disabled:bg-gray-400 disabled:cursor-not-allowed">Nuevo</button>
-            <button onClick={handleDelete} disabled={selectedRow === null || isViewMode} className="px-3 py-1 bg-[#4A6FA5] text-white text-xs hover:bg-[#3E5C91] border border-[#3E5C91] disabled:bg-gray-400 disabled:cursor-not-allowed">Eliminar</button>
+            <button onClick={handleNew} disabled={isViewMode} className="px-3 py-1 bg-[color:var(--theme-primary)] text-white text-xs hover:bg-[color:var(--theme-secondary)] border border-[color:var(--theme-secondary)] disabled:bg-gray-400 disabled:cursor-not-allowed">Nuevo</button>
+            <button onClick={handleDelete} disabled={selectedRow === null || isViewMode} className="px-3 py-1 bg-[color:var(--theme-primary)] text-white text-xs hover:bg-[color:var(--theme-secondary)] border border-[color:var(--theme-secondary)] disabled:bg-gray-400 disabled:cursor-not-allowed">Eliminar</button>
             {selectedRow !== null && !isViewMode && (
               <button
                 onClick={() => {
                   const item = data.find(d => d.id === selectedRow);
                   if (item) handleToggleEstatus(item);
                 }}
-                className="px-3 py-1 bg-[#4A6FA5] text-white text-xs hover:bg-[#3E5C91] border border-[#3E5C91]"
+                className="px-3 py-1 bg-[color:var(--theme-primary)] text-white text-xs hover:bg-[color:var(--theme-secondary)] border border-[color:var(--theme-secondary)]"
               >
                 {data.find(d => d.id === selectedRow)?.estatus === 'Activo' ? 'Desactivar' : 'Activar'}
               </button>
@@ -172,7 +172,7 @@ export const PlantillasTab = forwardRef<{ getData: () => PlantillaInstitucional[
           <div className="border border-gray-400 overflow-x-auto">
             <table className="w-full text-xs">
               <thead>
-                <tr className="bg-[#4A6FA5] text-white">
+                <tr className="bg-[color:var(--theme-primary)] text-white">
                   <th className="px-3 py-2 text-left font-medium text-xs border-r border-white/20 whitespace-nowrap">Nombre</th>
                   <th className="px-3 py-2 text-left font-medium text-xs border-r border-white/20 whitespace-nowrap">Tipo</th>
                   <th className="px-3 py-2 text-left font-medium text-xs border-r border-white/20 whitespace-nowrap">Archivo</th>
@@ -191,7 +191,7 @@ export const PlantillasTab = forwardRef<{ getData: () => PlantillaInstitucional[
                       key={item.id}
                       onClick={() => setSelectedRow(item.id)}
                       onDoubleClick={() => handleEdit(item)}
-                      className={`border-b border-gray-300 cursor-pointer transition-colors ${selectedRow === item.id ? 'bg-[#D6EAF8]' : index % 2 === 0 ? 'bg-white' : 'bg-[#F9F9F9]'}`}
+                      className={`border-b border-gray-300 cursor-pointer transition-colors ${selectedRow === item.id ? 'bg-[color:var(--theme-tint-soft)]' : index % 2 === 0 ? 'bg-white' : 'bg-[#F9F9F9]'}`}
                       onMouseEnter={(e) => {
                         if (selectedRow !== item.id) {
                           e.currentTarget.style.backgroundColor = '#E8F4F8';
@@ -352,7 +352,7 @@ function FormModal({ mode, item, onSave, onClose }: FormModalProps) {
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
       <div className="bg-white shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-hidden flex flex-col border-2 border-gray-400" onClick={(e) => e.stopPropagation()}>
-        <div className="bg-[#2E5C91] px-4 py-2.5 border-b-2 border-gray-400 flex items-center justify-between">
+        <div className="bg-[color:var(--theme-secondary)] px-4 py-2.5 border-b-2 border-gray-400 flex items-center justify-between">
           <h3 className="text-sm font-medium text-white">
             {mode === 'create' ? 'Nueva Plantilla' : mode === 'edit' ? 'Editar Plantilla' : 'Ver Plantilla'}
           </h3>
@@ -362,7 +362,7 @@ function FormModal({ mode, item, onSave, onClose }: FormModalProps) {
         <div className="px-6 py-4 overflow-auto bg-white">
           <form onSubmit={handleSubmit}>
             <div className="mb-4">
-              <div className="bg-[#E7E6E6] px-3 py-1.5 mb-3 border-l-4 border-[#2E5C91]">
+              <div className="bg-[#E7E6E6] px-3 py-1.5 mb-3 border-l-4 border-[color:var(--theme-secondary)]">
                 <span className="text-xs font-medium text-gray-800">INFORMACIÓN DE LA PLANTILLA</span>
               </div>
 
@@ -451,7 +451,7 @@ function FormModal({ mode, item, onSave, onClose }: FormModalProps) {
                     />
                   ) : (
                     <div className="flex items-center gap-2">
-                      <label className="px-3 py-1 bg-[#4A6FA5] text-white text-xs hover:bg-[#3E5C91] cursor-pointer border border-[#3E5C91]">
+                      <label className="px-3 py-1 bg-[color:var(--theme-primary)] text-white text-xs hover:bg-[color:var(--theme-secondary)] cursor-pointer border border-[color:var(--theme-secondary)]">
                         Seleccionar archivo
                         <input
                           type="file"
@@ -477,7 +477,7 @@ function FormModal({ mode, item, onSave, onClose }: FormModalProps) {
                 {isViewMode ? 'Cerrar' : 'Cancelar'}
               </button>
               {!isViewMode && (
-                <button type="submit" className="px-4 py-1.5 bg-[#4A6FA5] text-white text-xs hover:bg-[#3E5C91]">
+                <button type="submit" className="px-4 py-1.5 bg-[color:var(--theme-primary)] text-white text-xs hover:bg-[color:var(--theme-secondary)]">
                   Guardar
                 </button>
               )}

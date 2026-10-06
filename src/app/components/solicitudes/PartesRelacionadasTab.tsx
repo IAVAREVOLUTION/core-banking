@@ -9,7 +9,7 @@
  * - Validaciones de duplicados
  */
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 import { loadFromSession, saveToSession } from './solicitudCreditoStore';
 
 // Tipos
@@ -228,7 +228,7 @@ export function PartesRelacionadasTab({
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-[#4A6FA5] to-[#607698] flex items-center justify-center shadow-sm">
+          <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-[color:var(--theme-primary)] to-[#607698] flex items-center justify-center shadow-sm">
             <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="white" strokeWidth="1.5">
               <circle cx="10" cy="6" r="3" />
               <path d="M3 18v-1a5 5 0 0110 0v1" />
@@ -243,7 +243,7 @@ export function PartesRelacionadasTab({
         {!isRO && (
           <button
             onClick={handleNuevo}
-            className="px-3 py-1.5 bg-[#4A6FA5] text-white rounded text-xs font-medium flex items-center gap-1.5 hover:bg-[#3d5c8a] transition-colors"
+            className="px-3 py-1.5 bg-[color:var(--theme-primary)] text-white rounded text-xs font-medium flex items-center gap-1.5 hover:bg-[color:var(--theme-primary-hover)] transition-colors"
           >
             <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M6 1v10M1 6h10" />
@@ -263,7 +263,7 @@ export function PartesRelacionadasTab({
           {!isRO && (
             <button
               onClick={handleNuevo}
-              className="mt-3 text-[#4A6FA5] text-xs hover:underline"
+              className="mt-3 text-[color:var(--theme-primary)] text-xs hover:underline"
             >
               + Agregar primera parte relacionada
             </button>
@@ -278,7 +278,7 @@ export function PartesRelacionadasTab({
             >
               <div className="flex items-start justify-between">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-[#4A6FA5]/10 flex items-center justify-center">
+                  <div className="w-10 h-10 rounded-full bg-[color:var(--theme-primary)]/10 flex items-center justify-center">
                     <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#4A6FA5" strokeWidth="1.5">
                       <circle cx="9" cy="5" r="3" />
                       <path d="M3 17v-1a5 5 0 0110 0v1" />
@@ -333,7 +333,7 @@ export function PartesRelacionadasTab({
             {/* Header del modal */}
             <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between">
               <h3 className="text-sm font-semibold text-gray-800">Agregar Parte Relacionada</h3>
-              <button
+              <button type="button" aria-label="Cerrar" title="Cerrar"
                 onClick={() => setShowModal(false)}
                 className="p-1 text-gray-400 hover:text-gray-600 rounded"
               >
@@ -355,7 +355,7 @@ export function PartesRelacionadasTab({
                   value={nuevaParte.nombrePersona}
                   onChange={e => setNuevaParte(p => ({ ...p, nombrePersona: e.target.value }))}
                   placeholder="Nombre completo de la persona"
-                  className="w-full px-3 py-2 text-xs border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-[#4A6FA5] focus:border-[#4A6FA5]"
+                  className="w-full px-3 py-2 text-xs border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-[color:var(--theme-primary)] focus:border-[color:var(--theme-primary)]"
                 />
                 {formErrors.persona && (
                   <p className="text-[10px] text-red-500 mt-1">{formErrors.persona}</p>
@@ -370,7 +370,7 @@ export function PartesRelacionadasTab({
                 <select
                   value={nuevaParte.tipoRelacion}
                   onChange={e => setNuevaParte(p => ({ ...p, tipoRelacion: e.target.value }))}
-                  className="w-full px-3 py-2 text-xs border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-[#4A6FA5] focus:border-[#4A6FA5]"
+                  className="w-full px-3 py-2 text-xs border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-[color:var(--theme-primary)] focus:border-[color:var(--theme-primary)]"
                 >
                   <option value="">-- Seleccione --</option>
                   {CAT_TIPOS_RELACION.map(tipo => (
@@ -394,7 +394,7 @@ export function PartesRelacionadasTab({
                   value={nuevaParte.porcentajeParticipacion}
                   onChange={e => setNuevaParte(p => ({ ...p, porcentajeParticipacion: e.target.value }))}
                   placeholder="0-100"
-                  className="w-full px-3 py-2 text-xs border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-[#4A6FA5] focus:border-[#4A6FA5]"
+                  className="w-full px-3 py-2 text-xs border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-[color:var(--theme-primary)] focus:border-[color:var(--theme-primary)]"
                 />
                 {formErrors.porcentaje && (
                   <p className="text-[10px] text-red-500 mt-1">{formErrors.porcentaje}</p>
@@ -411,7 +411,7 @@ export function PartesRelacionadasTab({
                   onChange={e => setNuevaParte(p => ({ ...p, observaciones: e.target.value }))}
                   placeholder="Observaciones adicionales (opcional)"
                   rows={3}
-                  className="w-full px-3 py-2 text-xs border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-[#4A6FA5] focus:border-[#4A6FA5] resize-none"
+                  className="w-full px-3 py-2 text-xs border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-[color:var(--theme-primary)] focus:border-[color:var(--theme-primary)] resize-none"
                 />
               </div>
 
@@ -433,7 +433,7 @@ export function PartesRelacionadasTab({
               </button>
               <button
                 onClick={handleAgregar}
-                className="px-4 py-2 text-xs font-medium text-white bg-[#4A6FA5] rounded hover:bg-[#3d5c8a]"
+                className="px-4 py-2 text-xs font-medium text-white bg-[color:var(--theme-primary)] rounded hover:bg-[color:var(--theme-primary-hover)]"
               >
                 Agregar
               </button>

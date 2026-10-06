@@ -1,5 +1,5 @@
 import { useState, useRef, useMemo, useEffect } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 import { K_PERIODS } from '../../data/mockData';
 import { ConstitucionTab } from './tabs/ConstitucionTab';
 import { ComisionesTab } from './tabs/ComisionesTab';
@@ -15,6 +15,7 @@ import { useProductoPersistence, useProductoTabs } from '../../hooks/useProducto
 import { syncToJProducts } from '../../hooks/useSyncJProducts';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 import { MotorContableTab } from './tabs/MotorContableTab';
+import { CampoMonto } from '@/app/components/ui/CampoMonto';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-7e2d13d9`;
 
@@ -631,7 +632,7 @@ export function ProductoCaptacionForm({ mode, productoId, producto, onCancel, on
     ];
 
     const emptyFields = requiredFields.filter(({ field }) => {
-      const value = formData[field];
+      const value = (formData as Record<string, any>)[field];
       return value === '' || value === undefined || value === null;
     });
 
@@ -929,11 +930,11 @@ export function ProductoCaptacionForm({ mode, productoId, producto, onCancel, on
       {isLoadingFromDB && (
         <div className="absolute inset-0 bg-white/70 z-50 flex items-center justify-center">
           <div className="flex items-center gap-3 bg-white px-6 py-3 rounded shadow-lg border border-gray-200">
-            <svg className="animate-spin h-5 w-5 text-[#0099CC]" viewBox="0 0 24 24" fill="none">
+            <svg className="animate-spin h-5 w-5 text-[color:var(--theme-action)]" viewBox="0 0 24 24" fill="none">
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
             </svg>
-            <span className="text-sm text-gray-700">{isViewMode ? 'Consultando registro desde J_PRODUCTOS...' : 'Cargando datos desde la base de datos...'}</span>
+            <span className="text-sm text-gray-700">{isViewMode ? 'Cargando producto...' : 'Cargando datos desde la base de datos...'}</span>
           </div>
         </div>
       )}
@@ -954,7 +955,7 @@ export function ProductoCaptacionForm({ mode, productoId, producto, onCancel, on
                 Modo Consulta
               </span>
             )}
-            <button className="p-1">
+            <button type="button" aria-label="Buscar" title="Buscar" className="p-1">
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#999" strokeWidth="2">
                 <circle cx="7" cy="7" r="5"/>
                 <path d="M11 11l3 3"/>
@@ -967,7 +968,7 @@ export function ProductoCaptacionForm({ mode, productoId, producto, onCancel, on
                 <button
                   onClick={handleSave}
                   disabled={saving}
-                  className={`px-4 py-1 bg-[#5B9BD5] text-white text-sm rounded hover:bg-[#4A8BC2] flex items-center gap-1.5 ${saving ? 'opacity-60 cursor-wait' : ''}`}
+                  className={`px-4 py-1 bg-[color:var(--theme-accent)] text-white text-sm rounded hover:bg-[color:var(--theme-accent-hover)] flex items-center gap-1.5 ${saving ? 'opacity-60 cursor-wait' : ''}`}
                 >
                   {saving ? (
                     <>
@@ -1004,7 +1005,7 @@ export function ProductoCaptacionForm({ mode, productoId, producto, onCancel, on
         <div className="px-6 py-2 bg-blue-50 border-b border-blue-100 flex items-center justify-between">
           <div className="flex items-center gap-6 text-xs text-gray-700">
             <div className="flex items-center gap-1.5">
-              <span className="font-medium text-gray-500">TYPE (J_PRODUCTOS):</span>
+              <span className="font-medium text-gray-500">Tipo:</span>
               <span className="font-semibold text-gray-800">Captación</span>
             </div>
             {(producto?.dbUuid || producto?.identificacion) && (
@@ -1023,7 +1024,7 @@ export function ProductoCaptacionForm({ mode, productoId, producto, onCancel, on
 
         {/* ── Sub-sección 1: Datos de Identificación ── */}
         <div>
-          <div className="bg-[#D9E2F3] px-3 py-1 mb-4 border-l-4 border-[#4A6FA5]">
+          <div className="bg-[color:var(--theme-tint)] px-3 py-1 mb-4 border-l-4 border-[color:var(--theme-primary)]">
             <span className="text-sm text-gray-800">Datos de Identificación</span>
           </div>
           <div className="grid grid-cols-3 gap-x-8 gap-y-3">
@@ -1147,7 +1148,7 @@ export function ProductoCaptacionForm({ mode, productoId, producto, onCancel, on
 
         {/* ── Sub-sección 2: Tasas e Intereses ── */}
         <div>
-          <div className="bg-[#D9E2F3] px-3 py-1 mb-4 border-l-4 border-[#4A6FA5]">
+          <div className="bg-[color:var(--theme-tint)] px-3 py-1 mb-4 border-l-4 border-[color:var(--theme-primary)]">
             <span className="text-sm text-gray-800">Tasas e Intereses</span>
           </div>
           <div className="grid grid-cols-3 gap-x-8 gap-y-3">
@@ -1240,14 +1241,13 @@ export function ProductoCaptacionForm({ mode, productoId, producto, onCancel, on
 
         {/* ── Sub-sección 3: Montos y Plazos ── */}
         <div>
-          <div className="bg-[#D9E2F3] px-3 py-1 mb-4 border-l-4 border-[#4A6FA5]">
+          <div className="bg-[color:var(--theme-tint)] px-3 py-1 mb-4 border-l-4 border-[color:var(--theme-primary)]">
             <span className="text-sm text-gray-800">Montos y Plazos</span>
           </div>
           <div className="grid grid-cols-3 gap-x-8 gap-y-3">
             <div>
               <label className="block text-xs text-gray-700 mb-1">MONTO MÍNIMO</label>
-              <input
-                type="text"
+              <CampoMonto
                 value={formData.montoMinimo}
                 onChange={(e) => handleInputChange('montoMinimo', e.target.value)}
                 disabled={isViewMode}
@@ -1258,8 +1258,7 @@ export function ProductoCaptacionForm({ mode, productoId, producto, onCancel, on
 
             <div>
               <label className="block text-xs text-gray-700 mb-1">MONTO MÁXIMO</label>
-              <input
-                type="text"
+              <CampoMonto
                 value={formData.montoMaximo}
                 onChange={(e) => handleInputChange('montoMaximo', e.target.value)}
                 disabled={isViewMode}
@@ -1341,7 +1340,7 @@ export function ProductoCaptacionForm({ mode, productoId, producto, onCancel, on
             onClick={() => setActiveTab(tab.id)}
             className={`flex-shrink-0 px-6 py-3 text-xs font-medium transition-colors border-r border-white/10 ${
               activeTab === tab.id
-                ? 'bg-[#5B9BD5] text-white'
+                ? 'bg-[color:var(--theme-accent)] text-white'
                 : 'bg-primary-theme text-white hover:bg-primary-hover-theme'
             }`}
           >
@@ -1518,8 +1517,7 @@ export function ProductoCaptacionForm({ mode, productoId, producto, onCancel, on
 
               <div>
                 <label className="block text-xs text-gray-700 mb-1">MONTO MÍNIMO</label>
-                <input
-                  type="text"
+                <CampoMonto
                   value={formData.montoMinimo}
                   onChange={(e) => handleInputChange('montoMinimo', e.target.value)}
                   disabled={isViewMode}
@@ -1581,8 +1579,7 @@ export function ProductoCaptacionForm({ mode, productoId, producto, onCancel, on
 
               <div>
                 <label className="block text-xs text-gray-700 mb-1">MONTO MÁXIMO</label>
-                <input
-                  type="text"
+                <CampoMonto
                   value={formData.montoMaximo}
                   onChange={(e) => handleInputChange('montoMaximo', e.target.value)}
                   disabled={isViewMode}

@@ -171,11 +171,11 @@ export function DatePicker({ value = '', onChange, disabled = false, placeholder
           onFocus={() => !disabled && setShowCalendar(true)}
           placeholder={placeholder}
           disabled={disabled}
-          className={`w-full pl-2 py-1 pr-8 text-xs border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-[#4A6FA5] ${
+          className={`w-full pl-2 py-1 pr-8 text-xs border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-[color:var(--theme-primary)] ${
             disabled ? 'bg-gray-100 text-gray-600 cursor-not-allowed' : 'bg-white'
           } ${className}`}
         />
-        <button
+        <button aria-label="Abrir calendario" title="Abrir calendario"
           type="button"
           onClick={() => !disabled && setShowCalendar(!showCalendar)}
           disabled={disabled}
@@ -212,7 +212,7 @@ export function DatePicker({ value = '', onChange, disabled = false, placeholder
               <>
                 {/* Header del calendario */}
                 <div className="flex items-center justify-between mb-2">
-                  <button
+                  <button aria-label="Mes anterior" title="Mes anterior"
                     type="button"
                     onClick={previousMonth}
                     className="p-1 hover:bg-gray-100 rounded"
@@ -228,7 +228,7 @@ export function DatePicker({ value = '', onChange, disabled = false, placeholder
                   >
                     {monthNames[currentMonth.getMonth()]} {currentMonth.getFullYear()}
                   </button>
-                  <button
+                  <button aria-label="Mes siguiente" title="Mes siguiente"
                     type="button"
                     onClick={nextMonth}
                     className="p-1 hover:bg-gray-100 rounded"

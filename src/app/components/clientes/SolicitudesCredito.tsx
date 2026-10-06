@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 import { DatePicker } from './DatePicker';
 import { PercentageInput } from './PercentageInput';
 import { useProductosCatalogoDB } from '../../hooks/useProductosCatalogoDB';
@@ -7,13 +7,14 @@ import { useSolicitudesDB } from '../../hooks/useSolicitudesDB';
 import { consumeNoSol, getFechaSolicitudNow, EMPTY_FORM } from '../solicitudes/solicitudCreditoStore';
 import type { SolicitudFormData } from '../solicitudes/solicitudCreditoStore';
 import type { Cliente } from './ClientesList';
+import { CampoMonto } from '@/app/components/ui/CampoMonto';
 
 interface SolicitudesCreditoProps {
   onBack: () => void;
   mode: 'nuevo' | 'editar' | 'ver';
   clienteId?: string;
   cliente?: Cliente;
-  onVerSolicitudCompleta?: (solicitudId: string, noSol: string) => void;
+  onVerSolicitudCompleta?: (solicitudId: string, noSol: string, clienteId?: string) => void;
 }
 
 function mapPersonalidad(personalidad?: string): string {
@@ -294,7 +295,7 @@ export function SolicitudesCredito({ mode, clienteId, cliente, onVerSolicitudCom
               <h3 className="text-base font-medium text-white">
                 {editingDbId ? 'Editar Solicitud de Crédito' : 'Nueva Solicitud de Crédito'}
               </h3>
-              <button onClick={() => setShowModal(false)} className="text-white hover:text-gray-200">
+              <button type="button" aria-label="Cerrar" title="Cerrar" onClick={() => setShowModal(false)} className="text-white hover:text-gray-200">
                 <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
                   <path d="M10 8.586L2.929 1.515 1.515 2.929 8.586 10l-7.071 7.071 1.414 1.414L10 11.414l7.071 7.071 1.414-1.414L11.414 10l7.071-7.071-1.414-1.414L10 8.586z"/>
                 </svg>
@@ -340,11 +341,11 @@ export function SolicitudesCredito({ mode, clienteId, cliente, onVerSolicitudCom
                   </div>
                   <div>
                     <label className="block text-xs text-gray-700 mb-1 font-medium">Monto Solicitado <span className="text-red-600">*</span></label>
-                    <input type="text" value={formData.montoSolicitado} onChange={e => setFormData(p => ({ ...p, montoSolicitado: e.target.value }))} placeholder="$ 0.00" className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded bg-white" />
+                    <CampoMonto value={formData.montoSolicitado} onChange={e => setFormData(p => ({ ...p, montoSolicitado: e.target.value }))} placeholder="$ 0.00" className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded bg-white" />
                   </div>
                   <div>
                     <label className="block text-xs text-gray-700 mb-1 font-medium">Monto Autorizado</label>
-                    <input type="text" value={formData.montoAutorizado} onChange={e => setFormData(p => ({ ...p, montoAutorizado: e.target.value }))} placeholder="$ 0.00" className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded bg-white" />
+                    <CampoMonto value={formData.montoAutorizado} onChange={e => setFormData(p => ({ ...p, montoAutorizado: e.target.value }))} placeholder="$ 0.00" className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded bg-white" />
                   </div>
                 </div>
 

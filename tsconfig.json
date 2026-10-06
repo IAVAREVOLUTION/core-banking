@@ -30,5 +30,8 @@
       "/utils/supabase/info": ["./utils/supabase/info.tsx"]
     }
   },
-  "include": ["src", "utils"]
+  "include": ["src", "utils"],
+  // src/imports son notas y borradores de especificaciones (.md/.ts sueltos), no código
+  // de la app; varios no compilan y hacían que tsc se detuviera sin revisar el resto.
+  "exclude": ["src/imports"]
 }

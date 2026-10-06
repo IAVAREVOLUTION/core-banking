@@ -24,7 +24,7 @@ const dataInversionesPorSucursal = [
 const dataEstatus = [
   { name: 'Activas', value: 68, color: '#28A745' },
   { name: 'Vencidas', value: 15, color: '#FFA500' },
-  { name: 'En revisión', value: 17, color: '#2E5C91' },
+  { name: 'En revisión', value: 17, color: 'var(--theme-secondary)' },
 ];
 
 // Registros recientes mock

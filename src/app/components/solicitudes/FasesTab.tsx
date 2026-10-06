@@ -77,7 +77,7 @@ export function FasesTab({ productoId, productoSeleccionado, fasesDelProducto }:
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-[#4A6FA5] to-[#607698] flex items-center justify-center shadow-sm">
+          <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-[color:var(--theme-primary)] to-[#607698] flex items-center justify-center shadow-sm">
             <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="white" strokeWidth="1.5">
               <path d="M4 4h12v12H4z" />
               <path d="M4 8h12M8 4v12" />

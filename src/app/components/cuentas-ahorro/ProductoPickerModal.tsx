@@ -228,7 +228,7 @@ export function ProductoPickerModal({ open, onClose, onSelect }: ProductoPickerM
     // ── Sin datos ──
     addDebug('✗ Todos los intentos fallaron');
     setProductos([]);
-    setSource('Sin conexión a J_PRODUCTOS');
+    setSource('Sin conexión al catálogo de productos');
     setErrorMsg(
       'No se encontraron productos. Ejecute el SQL de migración en Supabase SQL Editor para crear las RPCs.'
     );
@@ -281,7 +281,7 @@ export function ProductoPickerModal({ open, onClose, onSelect }: ProductoPickerM
             value={search}
             onChange={e => setSearch(e.target.value)}
             placeholder="Buscar por clave o nombre de producto..."
-            className="w-full px-3 py-1.5 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-[#4A6FA5] focus:border-[#4A6FA5] focus:outline-none"
+            className="w-full px-3 py-1.5 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-[color:var(--theme-primary)] focus:border-[color:var(--theme-primary)] focus:outline-none"
             autoFocus
           />
           <div className="flex items-center justify-between mt-1">
@@ -294,11 +294,11 @@ export function ProductoPickerModal({ open, onClose, onSelect }: ProductoPickerM
         <div className="flex-1 overflow-auto">
           {loading ? (
             <div className="flex items-center justify-center py-12 text-xs text-gray-500">
-              <svg className="animate-spin h-5 w-5 mr-2 text-[#4A6FA5]" viewBox="0 0 24 24" fill="none">
+              <svg className="animate-spin h-5 w-5 mr-2 text-[color:var(--theme-primary)]" viewBox="0 0 24 24" fill="none">
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
               </svg>
-              Cargando productos desde J_PRODUCTOS...
+              Cargando productos...
             </div>
           ) : productos.length === 0 ? (
             <div className="text-center py-6 px-6">
@@ -401,7 +401,7 @@ GRANT EXECUTE ON FUNCTION public.get_all_jproductos()
         <div className="px-5 py-2 border-t border-gray-200 bg-gray-50 rounded-b-lg flex items-center justify-between">
           <button
             onClick={fetchProductos}
-            className="px-3 py-1.5 text-xs text-[#4A6FA5] hover:bg-blue-50 rounded border border-transparent hover:border-blue-200 transition-colors"
+            className="px-3 py-1.5 text-xs text-[color:var(--theme-primary)] hover:bg-blue-50 rounded border border-transparent hover:border-blue-200 transition-colors"
             title="Reintentar carga desde la BD"
           >
             Reintentar

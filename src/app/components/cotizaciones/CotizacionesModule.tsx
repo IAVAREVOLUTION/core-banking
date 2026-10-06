@@ -18,11 +18,11 @@
 import { useState, useEffect, useRef } from 'react';
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { FileText, DollarSign, Clock, CheckCircle } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 
 import { CotizacionCaptacionList } from './CotizacionCaptacionList';
 import { CotizacionCaptacionForm } from './CotizacionCaptacionForm';
-import type { CotizacionCaptacion } from './cotizacionCaptacionTypes';
+import { montoANumero, type CotizacionCaptacion } from './cotizacionCaptacionTypes';
 import { useCotizacionesCaptacionDB } from '../../hooks/useCotizacionesCaptacionDB';
 import { CotizacionCreditoList } from './CotizacionCreditoList';
 import { CotizacionCreditoForm } from './CotizacionCreditoForm';
@@ -47,7 +47,7 @@ function CotizacionesDashboard({ cotizaciones, onNew, onViewList }: {
   const total = cotizaciones.length;
   const pendientes = cotizaciones.filter(c => c.estatus_cotiza === 'Pendiente').length;
   const aprobadas = cotizaciones.filter(c => c.estatus_cotiza === 'Aprobada').length;
-  const montoTotal = cotizaciones.reduce((s, c) => s + (c.data.montoCotizado || 0), 0);
+  const montoTotal = cotizaciones.reduce((s, c) => s + montoANumero(c.data.montoCotizado), 0);
 
   const estatusData = Object.entries(
     cotizaciones.reduce((acc, c) => { acc[c.estatus_cotiza] = (acc[c.estatus_cotiza] || 0) + 1; return acc; }, {} as Record<string, number>)
@@ -64,7 +64,7 @@ function CotizacionesDashboard({ cotizaciones, onNew, onViewList }: {
   const montoByProducto = Object.entries(
     cotizaciones.reduce((acc, c) => {
       const key = c.data.producto?.nombreProducto || 'Otro';
-      acc[key] = (acc[key] || 0) + (c.data.montoCotizado || 0);
+      acc[key] = (acc[key] || 0) + montoANumero(c.data.montoCotizado);
       return acc;
     }, {} as Record<string, number>)
   ).map(([prod, monto]) => ({ prod, monto: monto / 1000 }));
@@ -167,7 +167,7 @@ function CotizacionesDashboard({ cotizaciones, onNew, onViewList }: {
                   <td className="px-3 py-2 text-blue-600">{c.no_cotiza}</td>
                   <td className="px-3 py-2">{c.data.cliente?.nombreCompleto || '—'}</td>
                   <td className="px-3 py-2">{c.data.producto?.nombreProducto || '—'}</td>
-                  <td className="px-3 py-2 text-right">{formatMoney(c.data.montoCotizado || 0)}</td>
+                  <td className="px-3 py-2 text-right">{formatMoney(montoANumero(c.data.montoCotizado))}</td>
                   <td className="px-3 py-2 text-center">{renderEstatus(c.estatus_cotiza)}</td>
                 </tr>
               ))}
@@ -287,7 +287,7 @@ export function CotizacionesModule({ deepLinkCotizacionId, deepLinkLinea, onDeep
       const foundInLC = cotizacionesLC.find(c => c.id === targetId);
       if (foundInLC) return { found: true, type: 'cre', data: foundInLC };
 
-      return { found: false };
+      return { found: false, type: 'cap' as const };
     };
 
     const result = searchAllSources();
@@ -418,7 +418,7 @@ export function CotizacionesModule({ deepLinkCotizacionId, deepLinkLinea, onDeep
       nombreProducto: c.data.producto?.nombreProducto || '',
       montoSolicitado: String(parseFloat(String(c.data.montoCotizado || '0').replace(/[^0-9.-]/g, '')) || 0),
       // Cliente — requerido para Solicitud de Activación (Fase 6)
-      _clienteId: c.cliente_id || c.data?.cliente?.id || '',
+      _clienteId: c.cliente_id || (c.data?.cliente as any)?.id || '',
       // Fechas derivadas del calendario de aportaciones — convertir YYYY-MM-DD → DD/MM/YYYY
       fechaInicio: isoToDMY(c.data.calendarioAportaciones?.[0]?.fecha || ''),
       fechaFin: c.data.calendarioAportaciones?.length > 0
@@ -504,7 +504,7 @@ export function CotizacionesModule({ deepLinkCotizacionId, deepLinkLinea, onDeep
       nombreProducto: c.data.producto?.nombreProducto || '',
       montoSolicitado: Number(c.data.montoSolicitado || 0).toFixed(2),
       // Cliente — requerido para Solicitud de Activación (Fase 6)
-      _clienteId: c.cliente_id || c.data?.cliente?.id || '',
+      _clienteId: c.cliente_id || (c.data?.cliente as any)?.id || '',
       // Fechas derivadas de la tabla de amortización
       fechaInicio: isoToDMY(c.data.fechaPrimerPago || (c.data.tablaAmortizacion?.[0] as any)?.fechaPago || ''),
       fechaFin: (() => {

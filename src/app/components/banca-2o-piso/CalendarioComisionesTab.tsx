@@ -13,7 +13,7 @@
  * Garantizado se mantiene constante y cada periodo sólo devenga comisión + IVA.
  */
 import { useState, useMemo, useEffect, useCallback } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 import { crearAvisoVencimiento, type Amortizacion } from '../../hooks/useCarteraDB';
 import {
   fmtMoneyExacto, parseMon, generarCalendarioComisiones, faltantesComisionGPO,
@@ -380,14 +380,14 @@ export function CalendarioComisionesTab({
       {showAvisoModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => !enviando && setShowAvisoModal(false)}>
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg border border-gray-200" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-5 py-3.5 bg-[#2E5C91] rounded-t-xl">
+            <div className="flex items-center justify-between px-5 py-3.5 bg-[color:var(--theme-secondary)] rounded-t-xl">
               <div>
                 <h4 className="text-sm font-bold text-white">Nuevo Aviso de Vencimiento</h4>
                 <p className="text-[11px] text-blue-200 mt-0.5">
                   {seleccion.size} comisión{seleccion.size !== 1 ? 'es' : ''} GPO · {row.moneda || 'MXN'}
                 </p>
               </div>
-              <button onClick={() => !enviando && setShowAvisoModal(false)} className="text-white/70 hover:text-white">
+              <button type="button" aria-label="Cerrar" title="Cerrar" onClick={() => !enviando && setShowAvisoModal(false)} className="text-white/70 hover:text-white">
                 <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 3l8 8M11 3l-8 8" /></svg>
               </button>
             </div>
@@ -402,7 +402,7 @@ export function CalendarioComisionesTab({
                 ))}
                 <div className="flex justify-between text-xs font-bold border-t border-gray-200 pt-1.5">
                   <span>Total a Cobrar</span>
-                  <span className="text-[#2E5C91] font-mono">{fmtMoneyExacto(totalesSeleccion.total)}</span>
+                  <span className="text-[color:var(--theme-secondary)] font-mono">{fmtMoneyExacto(totalesSeleccion.total)}</span>
                 </div>
               </div>
 

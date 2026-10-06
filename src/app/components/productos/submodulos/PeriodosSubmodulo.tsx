@@ -11,7 +11,7 @@ import {
   SelectValue,
 } from '../../ui/select';
 import { mockPeriodos, Periodo } from '../../../data/mockData';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 
 interface PeriodosSubmoduloProps {
   productoId?: number;
@@ -79,13 +79,13 @@ export function PeriodosSubmodulo({
           variant="ghost"
           size="icon"
           onClick={onBack}
-          className="text-[#3C3C3C] hover:text-[#2E5C91] hover:bg-[#F5F5F7]"
+          className="text-[#3C3C3C] hover:text-[color:var(--theme-secondary)] hover:bg-[#F5F5F7]"
         >
           <ArrowLeft className="h-5 w-5" />
         </Button>
         <div className="flex-1 flex items-center gap-3">
-          <div className="w-10 h-10 bg-[#2E5C91] bg-opacity-10 rounded-lg flex items-center justify-center">
-            <Calendar className="h-5 w-5 text-[#2E5C91]" strokeWidth={2} />
+          <div className="w-10 h-10 bg-[color:var(--theme-secondary)] bg-opacity-10 rounded-lg flex items-center justify-center">
+            <Calendar className="h-5 w-5 text-[color:var(--theme-secondary)]" strokeWidth={2} />
           </div>
           <div>
             <h3 className="text-lg font-semibold text-[#3C3C3C]">
@@ -149,7 +149,7 @@ export function PeriodosSubmodulo({
                   setNuevoPeriodo({ ...nuevoPeriodo, periodo: value })
                 }
               >
-                <SelectTrigger className="border-[#E0E0E0] focus:border-[#2E5C91]">
+                <SelectTrigger className="border-[#E0E0E0] focus:border-[color:var(--theme-secondary)]">
                   <SelectValue placeholder="Seleccione periodo..." />
                 </SelectTrigger>
                 <SelectContent>
@@ -175,7 +175,7 @@ export function PeriodosSubmodulo({
                 onChange={(e) =>
                   setNuevoPeriodo({ ...nuevoPeriodo, descripcion: e.target.value })
                 }
-                className="border-[#E0E0E0] focus:border-[#2E5C91]"
+                className="border-[#E0E0E0] focus:border-[color:var(--theme-secondary)]"
                 placeholder="Descripción del periodo"
               />
             </div>
@@ -193,7 +193,7 @@ export function PeriodosSubmodulo({
             </Button>
             <Button
               onClick={handleAgregar}
-              className="gap-2 bg-[#2E5C91] hover:bg-[#4A76A8] text-white"
+              className="gap-2 bg-[color:var(--theme-secondary)] hover:bg-[color:var(--theme-primary)] text-white"
             >
               <Plus className="h-4 w-4" />
               Guardar

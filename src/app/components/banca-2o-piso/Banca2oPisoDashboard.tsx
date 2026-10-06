@@ -228,7 +228,7 @@ export function Banca2oPisoDashboard({ rows, loading, error, onGoToList }: Props
             </table>
           </div>
           <div className="px-4 py-3 border-t border-gray-300 flex justify-end">
-            <button onClick={onGoToList} className="text-xs text-[#0066CC] hover:underline">
+            <button onClick={onGoToList} className="text-xs text-[color:var(--theme-link)] hover:underline">
               Ver todas las líneas →
             </button>
           </div>

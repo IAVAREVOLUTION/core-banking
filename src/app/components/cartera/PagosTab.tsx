@@ -45,7 +45,7 @@ export function PagosTab({ solicitudId, noSol, montoAut }: Props) {
           <tbody>
             {loading ? (
               <tr><td colSpan={6} className="px-3 py-8 text-center text-gray-400">
-                <svg className="animate-spin h-5 w-5 mx-auto mb-1 text-[#4A6FA5]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10" strokeOpacity="0.25"/><path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round"/></svg>
+                <svg className="animate-spin h-5 w-5 mx-auto mb-1 text-[color:var(--theme-primary)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10" strokeOpacity="0.25"/><path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round"/></svg>
                 Cargando movimientos...
               </td></tr>
             ) : rows.length === 0 ? (

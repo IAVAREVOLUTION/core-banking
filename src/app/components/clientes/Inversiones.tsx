@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 import { useClienteSubtabList } from '@/app/hooks/useClientePersistence';
 import { DatePicker } from './DatePicker';
 import { PercentageInput } from './PercentageInput';
+import { CampoMonto } from '@/app/components/ui/CampoMonto';
 
 interface InversionesProps {
   onBack: () => void;
@@ -348,7 +349,7 @@ export function Inversiones({ onBack, mode, clienteId }: InversionesProps) {
               <h3 className="text-base font-medium text-white">
                 {editingId !== null ? 'Editar Inversión' : 'Nueva Inversión'}
               </h3>
-              <button
+              <button type="button" aria-label="Cerrar" title="Cerrar"
                 onClick={() => setShowModal(false)}
                 className="text-white hover:text-gray-200"
               >
@@ -509,8 +510,7 @@ export function Inversiones({ onBack, mode, clienteId }: InversionesProps) {
                       <label className="block text-xs text-gray-700 mb-1 font-medium">
                         Monto Pagaré <span className="text-red-600">*</span>
                       </label>
-                      <input
-                        type="text"
+                      <CampoMonto
                         value={formData.montoPagare}
                         onChange={(e) => setFormData(prev => ({ ...prev, montoPagare: e.target.value }))}
                         placeholder="$ 0.00"

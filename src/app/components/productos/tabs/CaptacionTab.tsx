@@ -42,10 +42,10 @@ export function CaptacionTab({ mode }: CaptacionTabProps) {
           <div className="flex gap-2">
             {!isView && (
               <>
-                <button className="px-3 py-1 text-xs bg-[#5B9BD5] text-white hover:bg-[#4A8BC2] rounded">
+                <button className="px-3 py-1 text-xs bg-[color:var(--theme-accent)] text-white hover:bg-[color:var(--theme-accent-hover)] rounded">
                   Nuevo
                 </button>
-                <button className="px-3 py-1 text-xs bg-[#5B9BD5] text-white hover:bg-[#4A8BC2] rounded">
+                <button className="px-3 py-1 text-xs bg-[color:var(--theme-accent)] text-white hover:bg-[color:var(--theme-accent-hover)] rounded">
                   Eliminar
                 </button>
               </>

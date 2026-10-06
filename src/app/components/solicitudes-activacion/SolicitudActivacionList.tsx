@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
+import { useOrdenTabla, coincideBusqueda } from '@/app/lib/ordenTabla';
 import { SolicitudActivacionForm } from './SolicitudActivacionForm';
 import {
   type SolicitudActivacionListItem,
@@ -17,6 +18,40 @@ import {
   lineaProdToTipo,
 } from '../../hooks/useSolicitudesActivacionDB';
 import { activarCuentaDB, crearCuentaEjeDB } from '../../hooks/useSolicitudesDB';
+import { useNoSolicitudes } from '../../hooks/useNoSolicitudes';
+import { Copy } from 'lucide-react';
+
+/** ID corto legible a partir del UUID: "6E61E4F1". */
+const idCorto = (uuid: string) => (uuid || '').replace(/-/g, '').slice(0, 8).toUpperCase();
+
+/** Celda "ID Solicitud": No. de solicitud si se conoce; si no, ID corto. Copia el UUID completo. */
+function CeldaIdSolicitud({ uuid, noSol }: { uuid: string; noSol?: string }) {
+  if (!uuid) return <span className="text-gray-400">—</span>;
+  const copiar = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    navigator.clipboard?.writeText(uuid).then(
+      () => toast.success('ID copiado', { description: uuid, duration: 2500 }),
+      () => toast.error('No se pudo copiar el ID'),
+    );
+  };
+  return (
+    <div className="group flex items-center gap-1.5" title={`ID completo: ${uuid}`}>
+      {noSol ? (
+        <span className="text-[color:var(--theme-secondary)] font-semibold text-[11px] tracking-wide whitespace-nowrap">
+          {noSol}
+        </span>
+      ) : (
+        <span className="text-gray-700 font-mono text-[11px] tracking-wider whitespace-nowrap">
+          <span className="text-gray-400 mr-0.5">#</span>{idCorto(uuid)}
+        </span>
+      )}
+      <button type="button" onClick={copiar} aria-label="Copiar ID completo" title="Copiar ID completo"
+        className="p-0.5 rounded text-gray-400 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover:text-gray-700 hover:bg-gray-200 transition-opacity">
+        <Copy className="w-3 h-3" />
+      </button>
+    </div>
+  );
+}
 
 type ViewState =
   | { type: 'list' }
@@ -100,7 +135,6 @@ estatus:               initialEditItem.estatus || d.estatus || 'Pendiente',
   });
   const [solicitudes, setSolicitudes] = useState<SolicitudActivacionListItem[]>([]);
   const [searchTerm,  setSearchTerm]  = useState('');
-  const [sortOrder,   setSortOrder]   = useState<'desc' | 'asc'>('desc');
   const [currentPage, setCurrentPage] = useState(1);
   const [showDiag,    setShowDiag]    = useState(false);
   const [filterEstatus, setFilterEstatus] = useState<string>('');
@@ -297,7 +331,7 @@ estatus:               initialEditItem.estatus || d.estatus || 'Pendiente',
     const isNew = modeIsNew || !dbId;
 
     console.log('[DIAG Activacion] handleSave:', {
-      viewMode: view.mode,
+      viewMode: view.type === 'form' ? view.mode : undefined,
       rawDbId,
       dbId,
       isNew,
@@ -381,6 +415,32 @@ estatus:               initialEditItem.estatus || d.estatus || 'Pendiente',
     refetch();
   };
 
+  // ─── LIST VIEW: filtro y orden ─────────────────────────────────────
+  // Antes del return del formulario: useOrdenTabla es un hook.
+  // No. de solicitud legible para la columna ID (las activaciones sólo guardan el UUID).
+  const noSolPorId = useNoSolicitudes();
+  const filteredSolicitudes = solicitudes.filter(s =>
+    (!filterEstatus || s.estatus === filterEstatus) &&
+    coincideBusqueda(searchTerm, [s.solicitudId, noSolPorId.get(s.solicitudId), s.cliente, s.numeroDocumento, s.tipo, s.fechaSolicitud, s.moneda, s.estatus]));
+
+  // Más recientes primero (fecha de solicitud; a igual fecha, el ID).
+  const orden = useOrdenTabla(filteredSolicitudes, {
+    id: 'solicitudes-activacion',
+    columnas: {
+      id: s => noSolPorId.get(s.solicitudId) || s.solicitudId,
+      cliente: s => s.cliente,
+      documento: s => s.numeroDocumento,
+      tipo: s => s.tipo,
+      fecha: s => parseDate(s.fechaSolicitud),
+      monto: s => s.montoTransaccion,
+      moneda: s => s.moneda,
+      estatus: s => s.estatus,
+    },
+    porDefecto: { campo: 'fecha', dir: 'desc' },
+    desempate: s => s.solicitudId,
+    alCambiar: () => setCurrentPage(1),
+  });
+
   // ─── FORM VIEW ───────────────────────────────────────────────────
   if (view.type === 'form') {
     const rawDbIdForEnviar = view.type === 'form' ? (view as { dbId?: string }).dbId : undefined;
@@ -413,14 +473,17 @@ estatus:               initialEditItem.estatus || d.estatus || 'Pendiente',
           if (data._fromActivar) {
             const solIdValido = !!(data.solicitudId && UUID_RE_ACT.test(data.solicitudId));
             let clienteIdFinal = data.clienteId || '';
+            // Se usa en los pasos 1 y 2. Antes vivía dentro del try del paso 1 y el
+            // paso 2 lanzaba ReferenceError (esCaptacion is not defined), así que la
+            // cuenta eje de crédito nunca se creaba. Sin acentos: 'Captación' también cuenta.
+            const linea = (data.lineaProducto || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+            const esCaptacion = linea.includes('captacion') || linea.includes('ahorro') || linea.includes('aportacion') || linea.includes('inversion');
 
             // Paso 1: actualizar el registro de crédito/captación si hay solicitudId válido
             if (solIdValido) {
               try {
                 const noCuenta = String(Math.floor(Math.random() * 9000000000000000) + 1000000000000000);
                 const montoNum = parseFloat((data.montoTransaccion || '0').replace(/[^0-9.-]/g, '')) || 0;
-                const linea = (data.lineaProducto || '').toLowerCase();
-                const esCaptacion = linea.includes('captacion') || linea.includes('ahorro') || linea.includes('aportacion') || linea.includes('inversion');
                 console.log('[onEnviar] activarCuentaDB →', data.solicitudId, 'clienteId actual:', clienteIdFinal);
                 const activResult = await activarCuentaDB(data.solicitudId, {
                   estatus_sol:       'Autorizada',
@@ -529,37 +592,16 @@ estatus:               initialEditItem.estatus || d.estatus || 'Pendiente',
   }
 
   // ─── LIST VIEW ───────────────────────────────────────────────────
-  const filteredSolicitudes = solicitudes
-    .filter(s => {
-      if (filterEstatus && s.estatus !== filterEstatus) return false;
-      if (!searchTerm) return true;
-      const q = searchTerm.toLowerCase();
-      return (
-        s.solicitudId.toLowerCase().includes(q)      ||
-        s.cliente.toLowerCase().includes(q)          ||
-        s.numeroDocumento.toLowerCase().includes(q)  ||
-        s.tipo.toLowerCase().includes(q)             ||
-        s.estatus.toLowerCase().includes(q)
-      );
-    })
-    .sort((a, b) => {
-      try {
-        const da = parseDate(a.fechaSolicitud).getTime();
-        const db = parseDate(b.fechaSolicitud).getTime();
-        return sortOrder === 'desc' ? db - da : da - db;
-      } catch { return 0; }
-    });
-
-  const totalPages   = Math.ceil(filteredSolicitudes.length / itemsPerPage);
+  const totalPages   = Math.ceil(orden.filas.length / itemsPerPage);
   const startIndex   = (currentPage - 1) * itemsPerPage;
-  const currentItems = filteredSolicitudes.slice(startIndex, startIndex + itemsPerPage);
+  const currentItems = orden.filas.slice(startIndex, startIndex + itemsPerPage);
 
   const handlePreviousPage = () => { if (currentPage > 1) setCurrentPage(currentPage - 1); };
   const handleNextPage     = () => { if (currentPage < totalPages) setCurrentPage(currentPage + 1); };
   const handleFirstPage    = () => setCurrentPage(1);
   const handleLastPage     = () => setCurrentPage(totalPages);
   const handleSearchChange  = (v: string) => { setSearchTerm(v); setCurrentPage(1); };
-  const handleSortChange    = (v: 'desc' | 'asc') => { setSortOrder(v); setCurrentPage(1); };
+  const handleSortChange    = (v: 'desc' | 'asc') => orden.fijar(orden.campo, v);
   const handleEstatusChange = (v: string) => { setFilterEstatus(v); setCurrentPage(1); };
 
   const statusClass = (estatus: string) => {
@@ -730,7 +772,7 @@ estatus:               initialEditItem.estatus || d.estatus || 'Pendiente',
             <div className="flex items-center gap-2">
               <span>Orden</span>
               <select
-                value={sortOrder}
+                value={orden.dir}
                 onChange={e => handleSortChange(e.target.value as 'desc' | 'asc')}
                 className="px-2 py-1 border border-gray-400 rounded text-sm bg-white pr-6 appearance-none"
               >
@@ -750,14 +792,14 @@ estatus:               initialEditItem.estatus || d.estatus || 'Pendiente',
             <thead>
               <tr className="bg-gray-100 border-b border-gray-300">
                 <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700">Editar | Ver</th>
-                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700">ID SOLICITUD</th>
-                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700">CLIENTE</th>
-                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700">N° DOCUMENTO</th>
-                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700">TIPO</th>
-                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700">FECHA SOLICITUD</th>
-                <th className="px-2 py-2.5 text-right font-medium text-xs text-gray-700">MONTO TRANSACCIÓN</th>
-                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700">MONEDA</th>
-                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700">ESTATUS</th>
+                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700" {...orden.th('id')}>ID SOLICITUD{orden.flecha('id')}</th>
+                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700" {...orden.th('cliente')}>CLIENTE{orden.flecha('cliente')}</th>
+                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700" {...orden.th('documento')}>N° DOCUMENTO{orden.flecha('documento')}</th>
+                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700" {...orden.th('tipo')}>TIPO{orden.flecha('tipo')}</th>
+                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700" {...orden.th('fecha')}>FECHA SOLICITUD{orden.flecha('fecha')}</th>
+                <th className="px-2 py-2.5 text-right font-medium text-xs text-gray-700" {...orden.th('monto')}>MONTO TRANSACCIÓN{orden.flecha('monto')}</th>
+                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700" {...orden.th('moneda')}>MONEDA{orden.flecha('moneda')}</th>
+                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700" {...orden.th('estatus')}>ESTATUS{orden.flecha('estatus')}</th>
               </tr>
             </thead>
             <tbody>
@@ -788,11 +830,11 @@ estatus:               initialEditItem.estatus || d.estatus || 'Pendiente',
                     onMouseLeave={e => (e.currentTarget.style.backgroundColor = idx % 2 === 1 ? '#EEEEEE' : '#FFFFFF')}
                   >
                     <td className="px-2 py-2.5 text-xs whitespace-nowrap">
-                      <a href="#" className="text-[#0066CC] hover:underline" onClick={e => { e.preventDefault(); handleEditar(s); }}>Editar</a>
+                      <button type="button" className="enlace-accion text-[color:var(--theme-link)] hover:underline" onClick={() => { handleEditar(s); }}>Editar</button>
                       <span className="text-gray-500"> | </span>
-                      <a href="#" className="text-[#0066CC] hover:underline" onClick={e => { e.preventDefault(); handleVer(s); }}>Ver</a>
+                      <button type="button" className="enlace-accion text-[color:var(--theme-link)] hover:underline" onClick={() => { handleVer(s); }}>Ver</button>
                     </td>
-                    <td className="px-2 py-2.5 text-xs font-mono text-gray-600 max-w-[150px] truncate" title={s.solicitudId}>{s.solicitudId || '—'}</td>
+                    <td className="px-2 py-2.5 text-xs"><CeldaIdSolicitud uuid={s.solicitudId} noSol={noSolPorId.get(s.solicitudId)} /></td>
                     <td className="px-2 py-2.5 text-xs text-gray-700 max-w-[160px] truncate" title={s.cliente}>{s.cliente}</td>
                     <td className="px-2 py-2.5 text-xs text-gray-700 max-w-[130px] truncate" title={s.numeroDocumento}>{s.numeroDocumento || '—'}</td>
                     <td className="px-2 py-2.5 text-xs text-gray-700">{s.tipo || '—'}</td>
@@ -817,19 +859,19 @@ estatus:               initialEditItem.estatus || d.estatus || 'Pendiente',
       {/* ── Pagination ── */}
       <div className="px-4 py-3 border-t border-gray-300">
         <div className="flex items-center justify-end gap-3">
-          <button className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-40" onClick={handleFirstPage} disabled={currentPage === 1}>
+          <button type="button" aria-label="Primera página" title="Primera página" className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-40" onClick={handleFirstPage} disabled={currentPage === 1}>
             <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#666" strokeWidth="1.5"><path d="M13 4L4 9l9 5V4z" /></svg>
           </button>
-          <button className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-40" onClick={handlePreviousPage} disabled={currentPage === 1}>
+          <button type="button" aria-label="Página anterior" title="Página anterior" className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-40" onClick={handlePreviousPage} disabled={currentPage === 1}>
             <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#666" strokeWidth="1.5"><path d="M9 4L4 9l5 5V4z" /></svg>
           </button>
           <div className="text-sm text-gray-700 min-w-[100px] text-center">
             Página {currentPage} de {totalPages || 1}
           </div>
-          <button className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-40" onClick={handleNextPage} disabled={currentPage === totalPages || totalPages === 0}>
+          <button type="button" aria-label="Página siguiente" title="Página siguiente" className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-40" onClick={handleNextPage} disabled={currentPage === totalPages || totalPages === 0}>
             <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#666" strokeWidth="1.5"><path d="M5 4l5 5-5 5V4z" /></svg>
           </button>
-          <button className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-40" onClick={handleLastPage} disabled={currentPage === totalPages || totalPages === 0}>
+          <button type="button" aria-label="Última página" title="Última página" className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-40" onClick={handleLastPage} disabled={currentPage === totalPages || totalPages === 0}>
             <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#666" strokeWidth="1.5"><path d="M4 4L13 9l-9 5V4z" /></svg>
           </button>
         </div>
