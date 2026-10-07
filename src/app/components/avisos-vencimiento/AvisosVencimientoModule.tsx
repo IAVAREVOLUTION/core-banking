@@ -569,7 +569,7 @@ function AvisosList({ items, onNuevo, onEditar, onVer }: {
                 <th className="px-3 py-2.5 text-left text-xs text-gray-700">Editar | Ver</th>
                 <th className="px-3 py-2.5 text-left text-xs text-gray-700" {...orden.th('noAviso')}>N° AVISO{orden.flecha('noAviso')}</th>
                 <th className="px-3 py-2.5 text-left text-xs text-gray-700" {...orden.th('noCredito')}>N° CRÉDITO{orden.flecha('noCredito')}</th>
-                <th className="px-3 py-2.5 text-left text-xs text-gray-700" {...orden.th('cliente')}>CLIENTE{orden.flecha('cliente')}</th>
+                <th className="px-3 py-2.5 text-left text-xs text-gray-700" {...orden.th('cliente')}>NOMBRE INTERLOCUTOR{orden.flecha('cliente')}</th>
                 <th className="px-3 py-2.5 text-left text-xs text-gray-700" {...orden.th('fecha')}>FECHA AVISO{orden.flecha('fecha')}</th>
                 <th className="px-3 py-2.5 text-left text-xs text-gray-700" {...orden.th('vencimiento')}>VENCIMIENTO{orden.flecha('vencimiento')}</th>
                 <th className="px-3 py-2.5 text-left text-xs text-gray-700" {...orden.th('monto')}>MONTO TOTAL{orden.flecha('monto')}</th>
@@ -756,7 +756,7 @@ function AvisoForm({ mode, avisoId, onCancel, onSave }: {
           <div className="space-y-3">
             <div><Lbl req>N° Aviso</Lbl><input type="text" value={fd.noAviso} disabled className={ic(false, true)} /></div>
             <div><Lbl req error={errors.noCredito}>N° Crédito</Lbl><select value={fd.noCredito} onChange={e => set('noCredito', e.target.value)} disabled={isRO} className={sc(!!errors.noCredito)}><option value="">Seleccionar...</option>{CAT_CREDITOS.map(c => <option key={c} value={c}>{c}</option>)}</select>{errors.noCredito && <span className="text-[10px] text-red-500">{errors.noCredito}</span>}</div>
-            <div><Lbl req error={errors.cliente}>Cliente</Lbl><select value={fd.noCliente} onChange={e => { const cl = CAT_CLIENTES.find(c => c.value === e.target.value); set('noCliente', e.target.value); set('cliente', cl?.label.split(' - ')[1] || ''); }} disabled={isRO} className={sc(!!errors.cliente)}><option value="">Seleccionar...</option>{CAT_CLIENTES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}</select>{errors.cliente && <span className="text-[10px] text-red-500">{errors.cliente}</span>}</div>
+            <div><Lbl req error={errors.cliente}>Nombre Interlocutor</Lbl><select value={fd.noCliente} onChange={e => { const cl = CAT_CLIENTES.find(c => c.value === e.target.value); set('noCliente', e.target.value); set('cliente', cl?.label.split(' - ')[1] || ''); }} disabled={isRO} className={sc(!!errors.cliente)}><option value="">Seleccionar...</option>{CAT_CLIENTES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}</select>{errors.cliente && <span className="text-[10px] text-red-500">{errors.cliente}</span>}</div>
           </div>
           <div className="space-y-3">
             <div><Lbl req error={errors.fechaAviso}>Fecha Aviso</Lbl><DatePicker value={fd.fechaAviso} onChange={v => set('fechaAviso', v)} disabled={isRO} placeholder="dd/mm/aaaa" className={`px-2 py-1 ${errors.fechaAviso ? 'border-red-400' : ''}`} />{errors.fechaAviso && <span className="text-[10px] text-red-500">{errors.fechaAviso}</span>}</div>

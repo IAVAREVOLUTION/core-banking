@@ -206,7 +206,7 @@ export function SeleccionarClienteModal({ isOpen, onClose, onSelect }: Props) {
             <table className="w-full text-xs">
               <thead className="sticky top-0 bg-gray-50">
                 <tr className="border-b border-gray-200">
-                  <th className="px-4 py-2 text-left text-[11px] font-semibold text-gray-500 uppercase">ID</th>
+                  <th className="px-4 py-2 text-left text-[11px] font-semibold text-gray-500 uppercase">No. Interlocutor</th>
                   <th className="px-4 py-2 text-left text-[11px] font-semibold text-gray-500 uppercase">Nombre</th>
                   <th className="px-4 py-2 text-left text-[11px] font-semibold text-gray-500 uppercase">RFC</th>
                   <th className="px-4 py-2 text-center text-[11px] font-semibold text-gray-500 uppercase">Tipo</th>

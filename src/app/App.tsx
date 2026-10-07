@@ -16,6 +16,7 @@ import type { Inversion } from '@/types/inversion';
 import * as inversionesStore from './components/inversiones/inversionesStore';
 import { SplashScreen } from './components/SplashScreen';
 import { LoginScreen, type PerfilUsuario } from './components/LoginScreen';
+import { CATALOGO_MODULOS, useModulosOcultos } from './lib/modulosVisibles';
 import { useSolicitudesActivacionDB } from './hooks/useSolicitudesActivacionDB';
 import efinanciaLogo from '@/assets/7b6cb23c00b7817818c638af3eae0a416e1e9f57.png';
 import { ThemeProvider } from './contexts/ThemeContext';
@@ -98,6 +99,7 @@ const PRECARGA_MODULOS: Partial<Record<string, Array<{ precargar: () => void }>>
   'banca-2o-piso': [Banca2oPisoModule],
   'cartera-arrendamiento': [CarteraArrendamientoList],
   'cartera-credito': [CarteraList],
+  'cartera-credito-individual': [CarteraList],
   'cartera-inversion': [AportacionesModule],
   'cartera-ahorro': [AportacionesModule],
   'ejec-reportes': [EjecReportesModule],
@@ -107,7 +109,7 @@ const PRECARGA_MODULOS: Partial<Record<string, Array<{ precargar: () => void }>>
 };
 
 type View = 'list' | 'form' | 'direccion';
-type Module = 'dashboard' | 'configuracion' | 'productos' | 'garantias' | 'prospectos' | 'clientes' | 'oportunidades' | 'cotizaciones' | 'cuentas-ahorro' | 'solicitudes-creditos' | 'solicitudes-activacion' | 'originacion' | 'creditos' | 'inversiones' | 'cartera-credito' | 'cartera-arrendamiento' | 'cartera-inversion' | 'cartera-ahorro' | 'avisos-vencimiento' | 'pld' | 'pagos-referenciados' | 'casos-cobranza' | 'cobranza' | 'ejec-reportes' | 'polizas-contables' | 'gestion-riesgos' | 'banca-2o-piso' | 'une';
+type Module = 'dashboard' | 'configuracion' | 'productos' | 'garantias' | 'prospectos' | 'clientes' | 'oportunidades' | 'cotizaciones' | 'cuentas-ahorro' | 'solicitudes-creditos' | 'solicitudes-activacion' | 'originacion' | 'creditos' | 'inversiones' | 'cartera-credito' | 'cartera-credito-individual' | 'cartera-arrendamiento' | 'cartera-inversion' | 'cartera-ahorro' | 'avisos-vencimiento' | 'pld' | 'pagos-referenciados' | 'casos-cobranza' | 'cobranza' | 'ejec-reportes' | 'polizas-contables' | 'gestion-riesgos' | 'banca-2o-piso' | 'une';
 type ClienteView = 'dashboard' | 'list' | 'form' | 'direccion';
 type ProspectoView = 'dashboard' | 'list' | 'form';
 type SolicitudView = 'dashboard' | 'list' | 'form';
@@ -128,6 +130,7 @@ function App() {
   const [currentModule, setCurrentModule] = useState<Module>('dashboard');
   /** REQ-25 — perfil de la sesion; sin `modulosPermitidos` se ve todo (RN-03). */
   const [perfil, setPerfil] = useState<PerfilUsuario | null>(null);
+  const modulosOcultos = useModulosOcultos(perfil?.usuario || 'admin');
   const [products, setProducts] = useState<Product[]>(creditProducts);
 
   const [currentView, setCurrentView] = useState<View>('list');
@@ -732,37 +735,11 @@ function App() {
     || !perfil?.modulosPermitidos
     || perfil.modulosPermitidos.includes(id);
 
-  const navigationTabsTodos = [
-    { id: 'configuracion', label: 'Configuración' },
-    { id: 'productos', label: 'Productos' },
-    { id: 'garantias', label: 'Bienes' },
-    { id: 'prospectos', label: 'Tipo Interlocutor' },
-    { id: 'clientes', label: 'Personas' },
-    { id: 'oportunidades', label: 'Oportunidades' },
-    { id: 'cotizaciones', label: 'Cotizaciones' },
-    { id: 'cuentas-ahorro', label: 'Cuentas ahorro' },
-    { id: 'solicitudes-creditos', label: 'Solicitudes' },
-    { id: 'solicitudes-activacion', label: 'Sol. Activación' },
-    { id: 'originacion', label: 'Originación' },
-    { id: 'creditos', label: 'Créditos' },
-    { id: 'inversiones', label: 'Inversiones' },
-    { id: 'pld', label: 'PLD' },
-    { id: 'pagos-referenciados', label: 'Pagos Referenciados' },
-    { id: 'casos-cobranza', label: 'Casos de Cobranza' },
-    { id: 'cobranza', label: 'Cobranza' },
-    { id: 'avisos-vencimiento', label: 'Avisos de Vencimiento' },
-    { id: 'banca-2o-piso', label: 'Banca 2º Piso' },
-    { id: 'cartera-credito', label: 'Cartera de Crédito 2º Piso' },
-    { id: 'cartera-arrendamiento', label: 'Cartera Arrendamiento' },
-    { id: 'cartera-inversion', label: 'Cartera inversión' },
-    { id: 'cartera-ahorro', label: 'Cartera ahorro' },
-    { id: 'ejec-reportes', label: 'Ejec. Reportes Regulatorios' },
-    { id: 'polizas-contables', label: 'Pólizas Contables' },
-    { id: 'gestion-riesgos', label: 'Gestión de Riesgos' },
-    { id: 'une', label: 'UNE — Quejas y Reclamaciones' },
-  ];
+  // Catálogo de módulos (lib/modulosVisibles): lo comparte Configuración → Módulos visibles.
+  const navigationTabsTodos = CATALOGO_MODULOS;
 
-  const navigationTabs = navigationTabsTodos.filter(t => permitido(t.id));
+  // Permiso (perfil) + preferencia de visibilidad del usuario (Configuración → Módulos visibles).
+  const navigationTabs = navigationTabsTodos.filter(t => permitido(t.id) && !modulosOcultos.includes(t.id));
 
   // RN-02 — esconder del menu no restringe: si el modulo activo no esta
   // permitido (sesion previa, estado heredado), se cae al primero permitido.
@@ -1529,6 +1506,9 @@ function App() {
           <Banca2oPisoModule />
         ) : moduloActivo === 'cartera-credito' ? (
           <CarteraModule />
+        ) : moduloActivo === 'cartera-credito-individual' ? (
+          // Clon de Cartera de Crédito 2º Piso fijo a la sublínea Crédito Individual.
+          <CarteraList sublineaFija="Crédito Individual" etiqueta="Cartera Crédito Individual" />
         ) : moduloActivo === 'cartera-arrendamiento' ? (
           <CarteraArrendamientoList />
         ) : moduloActivo === 'cartera-inversion' ? (

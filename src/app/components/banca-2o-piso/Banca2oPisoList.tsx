@@ -234,7 +234,7 @@ export function Banca2oPisoList({ rows, loading, error, refetch, onVer }: Props)
                 <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700">Ver</th>
                 <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700" {...orden.th('cuenta')}>N° CUENTA{orden.flecha('cuenta')}</th>
                 <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700" {...orden.th('noSol')}>N° SOLICITUD{orden.flecha('noSol')}</th>
-                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700" {...orden.th('cliente')}>CLIENTE{orden.flecha('cliente')}</th>
+                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700" {...orden.th('cliente')}>NOMBRE INTERLOCUTOR{orden.flecha('cliente')}</th>
                 <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700" {...orden.th('producto')}>PRODUCTO{orden.flecha('producto')}</th>
                 <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700" {...orden.th('institucion')}>INSTITUCIÓN{orden.flecha('institucion')}</th>
                 <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700" {...orden.th('fecha')}>FECHA{orden.flecha('fecha')}</th>

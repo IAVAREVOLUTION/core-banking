@@ -758,7 +758,7 @@ export function PersonasRelacionadas({
                   <Star className="w-3.5 h-3.5 mx-auto text-gray-500" />
                 </th>
               )}
-              <th className="px-3 py-2 text-left font-medium text-xs text-gray-800 border-r border-gray-300">Clave Cliente</th>
+              <th className="px-3 py-2 text-left font-medium text-xs text-gray-800 border-r border-gray-300">No. Interlocutor</th>
               <th className="px-3 py-2 text-left font-medium text-xs text-gray-800 border-r border-gray-300">RFC</th>
               <th className="px-3 py-2 text-left font-medium text-xs text-gray-800 border-r border-gray-300">Nombre</th>
               <th className="px-3 py-2 text-left font-medium text-xs text-gray-800 border-r border-gray-300">Personalidad</th>
@@ -964,7 +964,7 @@ export function PersonasRelacionadas({
                 <table className="w-full text-xs">
                   <thead className="bg-gray-100 sticky top-0">
                     <tr>
-                      <th className="px-4 py-2 text-left font-semibold text-gray-600">Clave</th>
+                      <th className="px-4 py-2 text-left font-semibold text-gray-600">No. Interlocutor</th>
                       <th className="px-4 py-2 text-left font-semibold text-gray-600">Nombre Completo</th>
                       <th className="px-4 py-2 text-left font-semibold text-gray-600">RFC</th>
                       <th className="px-4 py-2 text-left font-semibold text-gray-600">Tipo</th>

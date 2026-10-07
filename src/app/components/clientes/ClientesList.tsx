@@ -418,7 +418,7 @@ export function ClientesList({
             <thead>
               <tr className="bg-gray-100 border-b border-gray-300">
                 <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700 whitespace-nowrap">Editar | Ver</th>
-                <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700 whitespace-nowrap" {...orden.th('id')}>ID{orden.flecha('id')}</th>
+                <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700 whitespace-nowrap" {...orden.th('id')}>NO. INTERLOCUTOR{orden.flecha('id')}</th>
                 <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700 whitespace-nowrap" {...orden.th('nombre')}>NOMBRE COMPLETO{orden.flecha('nombre')}</th>
                 <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700 whitespace-nowrap" {...orden.th('curp')}>CURP{orden.flecha('curp')}</th>
                 <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700 whitespace-nowrap" {...orden.th('rfc')}>RFC{orden.flecha('rfc')}</th>

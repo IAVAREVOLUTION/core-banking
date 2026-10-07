@@ -779,7 +779,7 @@ export function CuentasAhorroForm({ mode, accountId, onCancel, onSave }: Cuentas
           {/* ═══ Col 2: Pick Maps ═══ */}
           <div className="space-y-3">
             <div>
-              <Lbl req error={errors.cliente_id}>Cliente</Lbl>
+              <Lbl req error={errors.cliente_id}>Nombre Interlocutor</Lbl>
               <div className="flex items-center gap-2">
                 <input
                   type="text"
@@ -1091,7 +1091,7 @@ export function CuentasAhorroForm({ mode, accountId, onCancel, onSave }: Cuentas
                   { label: 'No. Solicitud',  value: dbForm.no_sol },
                   { label: 'No. Cuenta',     value: dbForm.no_cuenta },
                   { label: 'No. Referencia', value: dbForm.no_referenc1 },
-                  { label: 'Cliente',        value: dbForm.clienteNombreDisplay },
+                  { label: 'Nombre Interlocutor',        value: dbForm.clienteNombreDisplay },
                   { label: 'Producto',       value: dbForm.productoNombreDisplay },
                   { label: 'Línea',          value: dbForm.linea_produc },
                   { label: 'Tipo',           value: dbForm.tipo_produc },

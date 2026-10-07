@@ -297,7 +297,7 @@ export function CatalogoInstitucionGobierno({ isOpen, onClose, onSelect }: Catal
               <thead>
                 <tr className="bg-gray-100 border-b">
                   <th className="text-left px-2 py-2 w-8"></th>
-                  <th className="text-left px-2 py-2">ID</th>
+                  <th className="text-left px-2 py-2">NO. INTERLOCUTOR</th>
                   <th className="text-left px-2 py-2">NOMBRE / RAZON SOCIAL</th>
                   <th className="text-left px-2 py-2">RFC</th>
                   <th className="text-left px-2 py-2">CLASIFICACION</th>

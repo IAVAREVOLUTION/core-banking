@@ -30,6 +30,7 @@ import { AgregarDocumentoModal } from '../originacion/AgregarDocumentoModal';
 import {
   autoCrearReporteBuro, CLAVE_REPORTE_BURO,
   autoCrearKitLegal, generarPagareDesdePlantilla,
+  generarDocumentoDesdePlantilla, plantillaParaRequisito,
   CLAVE_CONTRATO_REQ, CLAVE_PAGARE_REQ, CLAVE_ANEXO_RENTAS,
   autoCrearDocumentosComitePrepago, CLAVE_ACTA_COMITE, CLAVE_CERT_PREAPART,
 } from '../../hooks/generarDocumentosFase4';
@@ -1248,6 +1249,7 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
   // ── Kit Legal (Fase 3): Contrato + Anexo de Rentas + Pagaré ──
   const [generandoKit, setGenerandoKit] = useState(false);
   const [generandoPagare, setGenerandoPagare] = useState(false);
+  const [generandoFase, setGenerandoFase] = useState(false);
   const [generandoComite, setGenerandoComite] = useState(false);
 
   /**
@@ -1405,6 +1407,73 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
       toast.error('Error al generar el Pagaré', { description: err?.message || String(err), duration: 8000 });
     } finally {
       setGenerandoPagare(false);
+    }
+  };
+
+  /**
+   * Documentos obligatorios de la FASE ACTUAL que el sistema puede generar desde
+   * plantilla (Solicitud, Contrato, Pagaré) y que aún no están cargados. Los que
+   * entrega el cliente (INE, comprobante, acta, constancia…) no aplican.
+   */
+  const generablesDeLaFase = useMemo(() => requisitos.filter(r => {
+    if (Number(r.faseId) !== Number(faseIdActual) || r.obligatorio === false) return false;
+    if (r.tipoPersona && tipoPersona && !normTipo(tipoPersona).includes(normTipo(r.tipoPersona))) return false;
+    const tp = plantillaParaRequisito(r.tipoDocumento);
+    if (!tp) return false;
+    if (tp !== 'solicitud' && !plantillasProducto.some(p => p?.tipoPlantilla === tp && p?.estatus === 'Activo')) return false;
+    return !findDocForReq(r);
+  }), [requisitos, faseIdActual, tipoPersona, plantillasProducto, findDocForReq]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleGenerarDocumentosFase = async () => {
+    if (generandoFase || generablesDeLaFase.length === 0) return;
+    setGenerandoFase(true);
+    const creados: string[] = [];
+    const errores: string[] = [];
+    try {
+      for (const req of generablesDeLaFase) {
+        const tp = plantillaParaRequisito(req.tipoDocumento)!;
+        const r = await generarDocumentoDesdePlantilla({
+          tipoPlantilla: tp,
+          storageId: solicitudId,
+          datos: {
+            noSol: noSolicitud || '',
+            cliente: nombreSolicitante || 'Cliente',
+            lineaProducto: lineaProducto || '',
+            tipoProducto: tipoProducto || '',
+            productoNombre: nombreProducto || tipoProducto || '',
+            terminos: loadFromSession<any>(solicitudId, 'terminos') || loadFromSavedStore<any>(solicitudId, 'terminos') || {},
+            rfc: rfcCliente || '',
+            curp: curpCliente || '',
+          },
+          plantillas: plantillasProducto,
+          supabase,
+          projectId,
+          tipoDocumento: req.tipoDocumento,
+          fase: descripcionFase || req.fase,
+          faseId: Number(faseIdActual) || undefined,
+        });
+        if (!r.exito) errores.push(`${req.tipoDocumento}: ${r.error}`);
+        else if (r.documentosCreados.length) {
+          creados.push(req.tipoDocumento);
+          if (!r.registradosEnExpediente && r.error) errores.push(r.error);
+        }
+      }
+      const fresh = loadFromSession<DocumentoCargado[]>(solicitudId, 'documentos')
+        ?? loadFromSavedStore<DocumentoCargado[]>(solicitudId, 'documentos');
+      if (fresh) setDocumentos(fresh);
+      if (creados.length) {
+        toast.success(`${creados.length} documento(s) generado(s)`, {
+          description: `${creados.join(', ')} — falta validarlos con IA.`,
+          duration: 8000,
+        });
+      }
+      if (errores.length) {
+        toast.error('Algunos documentos no se pudieron generar', { description: errores.join(' · '), duration: 12000 });
+      }
+    } catch (err: any) {
+      toast.error('Error al generar los documentos de la fase', { description: err?.message || String(err) });
+    } finally {
+      setGenerandoFase(false);
     }
   };
 
@@ -2438,6 +2507,22 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
                   <path d="M6.5 1v2.5H9" />
                 </svg>
                 {generandoBuro ? 'Generando...' : 'Generar Autorización Buró'}
+              </button>
+            )}
+            {/* Genera de una vez los documentos de plantilla que pide la fase actual */}
+            {!isRO && generablesDeLaFase.length > 0 && (
+              <button
+                onClick={handleGenerarDocumentosFase}
+                disabled={generandoFase}
+                title={`Genera desde las plantillas del producto: ${generablesDeLaFase.map(r => r.tipoDocumento).join(', ')}`}
+                className="px-3.5 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all duration-200 shadow-sm bg-[color:var(--theme-action)] text-white hover:bg-[color:var(--theme-action-hover)] disabled:opacity-60"
+              >
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M2 1.5h5L10 4v6.5H2z" />
+                  <path d="M7 1.5V4h3" />
+                  <path d="M6 6v3M4.5 7.5h3" />
+                </svg>
+                {generandoFase ? 'Generando...' : `Generar documentos de la fase (${generablesDeLaFase.length})`}
               </button>
             )}
             {/* REQ-23 HU-23.1 — Pagaré solo, para productos cuya fase lo declara

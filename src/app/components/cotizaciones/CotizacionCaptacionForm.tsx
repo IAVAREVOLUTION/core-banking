@@ -671,7 +671,7 @@ export function CotizacionCaptacionForm({ mode, cotizacion, onSave, onBack, onCr
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4">
                   <div className="flex flex-col">
-                    <label className="text-[10px] text-gray-600 mb-1">Clave Cliente <span className="text-[9px] text-gray-400">(data.cliente.claveCliente)</span></label>
+                    <label className="text-[10px] text-gray-600 mb-1">No. Interlocutor <span className="text-[9px] text-gray-400">(data.cliente.claveCliente)</span></label>
                     <input value={data.cliente.claveCliente} disabled className={readonlyClass} />
                   </div>
                   <div className="flex flex-col">
@@ -1454,7 +1454,7 @@ export function CotizacionCaptacionForm({ mode, cotizacion, onSave, onBack, onCr
               <table className="w-full text-xs">
                 <thead className="sticky top-0">
                   <tr className="bg-gray-100 border-b border-gray-300">
-                    <th className="px-3 py-2 text-left font-normal text-gray-700">Clave</th>
+                    <th className="px-3 py-2 text-left font-normal text-gray-700">No. Interlocutor</th>
                     <th className="px-3 py-2 text-left font-normal text-gray-700">Nombre Completo</th>
                     <th className="px-3 py-2 text-center font-normal text-gray-700">Acción</th>
                   </tr>

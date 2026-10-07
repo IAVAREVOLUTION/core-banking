@@ -177,7 +177,7 @@ function DatosGeneralesGrid({ formData, onChange, errors, isRO, canEditEstatus }
         {/* Col 2 */}
         <div className="space-y-1.5">
           {f({ label: 'Número de Documento', field: 'numeroDocumento', forceRO: true })}
-          {f({ label: 'Cliente',             field: 'cliente',         forceRO: true })}
+          {f({ label: 'Nombre Interlocutor',             field: 'cliente',         forceRO: true })}
           {/* Estatus — dropdown in edit mode, badge otherwise */}
           <div className="flex flex-col min-h-[52px]">
             <label className="text-[10px] text-gray-600 mb-0.5">ESTATUS</label>

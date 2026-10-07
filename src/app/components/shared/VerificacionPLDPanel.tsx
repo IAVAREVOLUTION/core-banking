@@ -229,7 +229,7 @@ export function VerificacionPLDPanel({ registros, onChange, datos, isView = fals
               <div className="flex-1 overflow-y-auto p-6 space-y-4 text-xs">
                 <div className="grid grid-cols-2 gap-4">
                   <div className="border border-gray-200 rounded p-3">
-                    <p className="text-[10px] uppercase text-gray-500 mb-1">Persona</p>
+                    <p className="text-[10px] uppercase text-gray-500 mb-1">Nombre Interlocutor</p>
                     <p className="font-semibold text-gray-800">{datos.nombre.toUpperCase()}</p>
                     <p className="font-mono text-gray-600">{datos.rfc}</p>
                   </div>

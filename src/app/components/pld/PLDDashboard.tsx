@@ -66,7 +66,7 @@ export function PLDDashboard() {
                 <thead>
                   <tr style={{ backgroundColor: '#D0D0D0' }} className="border-b border-gray-300">
                     <th className="px-3 py-2 text-left text-[10px] text-gray-700 border-r border-gray-300" style={{ fontWeight: 600 }}>No. Alerta</th>
-                    <th className="px-3 py-2 text-left text-[10px] text-gray-700 border-r border-gray-300" style={{ fontWeight: 600 }}>Cliente</th>
+                    <th className="px-3 py-2 text-left text-[10px] text-gray-700 border-r border-gray-300" style={{ fontWeight: 600 }}>Nombre Interlocutor</th>
                     <th className="px-3 py-2 text-left text-[10px] text-gray-700 border-r border-gray-300" style={{ fontWeight: 600 }}>Tipo</th>
                     <th className="px-3 py-2 text-left text-[10px] text-gray-700 border-r border-gray-300" style={{ fontWeight: 600 }}>Monto</th>
                     <th className="px-3 py-2 text-left text-[10px] text-gray-700" style={{ fontWeight: 600 }}>Estatus</th>

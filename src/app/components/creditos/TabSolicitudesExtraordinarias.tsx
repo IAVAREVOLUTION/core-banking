@@ -32,8 +32,8 @@ export function TabSolicitudesExtraordinarias({ mode, creditoId }: TabSolicitude
           <thead>
             <tr className="bg-[#8B8B8B]">
               <th className="text-left px-3 py-2 font-normal text-white border-r border-gray-400">No. Solicitud</th>
-              <th className="text-left px-3 py-2 font-normal text-white border-r border-gray-400">Número de Cliente</th>
-              <th className="text-left px-3 py-2 font-normal text-white border-r border-gray-400">Cliente</th>
+              <th className="text-left px-3 py-2 font-normal text-white border-r border-gray-400">No. Interlocutor</th>
+              <th className="text-left px-3 py-2 font-normal text-white border-r border-gray-400">Nombre Interlocutor</th>
               <th className="text-left px-3 py-2 font-normal text-white border-r border-gray-400">Número de Cuenta</th>
               <th className="text-left px-3 py-2 font-normal text-white border-r border-gray-400">Producto Financiero</th>
               <th className="text-left px-3 py-2 font-normal text-white border-r border-gray-400">Área que Solicita</th>

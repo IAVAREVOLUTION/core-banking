@@ -165,7 +165,7 @@ export function PLDAlertasInternas({ onBack }: Props) {
                 <th className="px-3 py-2.5 text-left text-xs text-gray-700">Editar | Ver</th>
                 <th className="px-3 py-2.5 text-left text-xs text-gray-700">No. Alerta</th>
                 <th className="px-3 py-2.5 text-left text-xs text-gray-700">Fecha</th>
-                <th className="px-3 py-2.5 text-left text-xs text-gray-700">Cliente</th>
+                <th className="px-3 py-2.5 text-left text-xs text-gray-700">Nombre Interlocutor</th>
                 <th className="px-3 py-2.5 text-left text-xs text-gray-700">Tipo</th>
                 <th className="px-3 py-2.5 text-left text-xs text-gray-700">Descripción</th>
                 <th className="px-3 py-2.5 text-left text-xs text-gray-700">Estatus</th>
@@ -241,7 +241,7 @@ export function PLDAlertasInternas({ onBack }: Props) {
                       : <DatePicker value={current.fecha} onChange={v => setCurrent(c => ({ ...c, fecha: v }))} />}
                   </div>
                   <div className="flex items-center gap-2">
-                    <label className={labelCls}>CLIENTE <span className="text-red-600">*</span></label>
+                    <label className={labelCls}>NOMBRE INTERLOCUTOR <span className="text-red-600">*</span></label>
                     {isView ? <div className={viewCls}>{current.cliente}</div> : (
                       <div className="flex-1 relative">
                         <input type="text"

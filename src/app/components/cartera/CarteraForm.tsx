@@ -64,7 +64,7 @@ export function CarteraForm({ credito, mode, onBack }: Props) {
   const isRO = mode === 'ver';
 
   useEffect(() => {
-    fetchMontoAut(credito.id).then(r => { if (r) setMontoActual(r.monto_aut); });
+    fetchMontoAut(credito.id).then(r => { if (r) setMontoActual(r.monto_aut || r.monto_sol); });
   }, [credito.id]);
 
   return (
@@ -104,7 +104,7 @@ export function CarteraForm({ credito, mode, onBack }: Props) {
       <div className="px-4 py-2.5 bg-[#F0F2F5] border-b border-gray-300">
         <div className="flex flex-wrap gap-x-8 gap-y-1.5">
           {[
-            { label: 'Cliente',             value: credito.cliente },
+            { label: 'Nombre Interlocutor',             value: credito.cliente },
             { label: 'Inst. Gobierno',      value: credito.gobierno || '—' },
             { label: 'Producto',            value: credito.productoNombre },
             { label: 'Línea',               value: credito.lineaProducto },

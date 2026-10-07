@@ -793,7 +793,7 @@ estatus:               initialEditItem.estatus || d.estatus || 'Pendiente',
               <tr className="bg-gray-100 border-b border-gray-300">
                 <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700">Editar | Ver</th>
                 <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700" {...orden.th('id')}>ID SOLICITUD{orden.flecha('id')}</th>
-                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700" {...orden.th('cliente')}>CLIENTE{orden.flecha('cliente')}</th>
+                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700" {...orden.th('cliente')}>NOMBRE INTERLOCUTOR{orden.flecha('cliente')}</th>
                 <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700" {...orden.th('documento')}>N° DOCUMENTO{orden.flecha('documento')}</th>
                 <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700" {...orden.th('tipo')}>TIPO{orden.flecha('tipo')}</th>
                 <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700" {...orden.th('fecha')}>FECHA SOLICITUD{orden.flecha('fecha')}</th>

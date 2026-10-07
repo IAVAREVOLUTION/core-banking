@@ -489,7 +489,7 @@ export function ProspectosList({ onNew, onEdit, onView, prospectos: prospectosPr
             <thead>
               <tr className="bg-[#D0D0D0] border-b border-gray-300">
                 <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700">Editar | Ver</th>
-                <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700" {...orden.th('id')}>ID{orden.flecha('id')}</th>
+                <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700" {...orden.th('id')}>NO. INTERLOCUTOR{orden.flecha('id')}</th>
                 <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700" {...orden.th('nombre')}>NOMBRE{orden.flecha('nombre')}</th>
                 <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700" {...orden.th('estatus')}>ESTATUS DEL CLIENTE{orden.flecha('estatus')}</th>
                 <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700" {...orden.th('sucursal')}>SUCURSAL{orden.flecha('sucursal')}</th>

@@ -165,7 +165,7 @@ export function CreditosDashboard({ creditos, onNew, onEdit, onView }: CreditosD
               <thead className="bg-gray-50 border-b border-gray-300">
                 <tr>
                   <th className="text-left px-3 py-2 font-medium text-gray-700">No. Crédito</th>
-                  <th className="text-left px-3 py-2 font-medium text-gray-700">Cliente</th>
+                  <th className="text-left px-3 py-2 font-medium text-gray-700">Nombre Interlocutor</th>
                   <th className="text-left px-3 py-2 font-medium text-gray-700">Fecha</th>
                   <th className="text-left px-3 py-2 font-medium text-gray-700">Monto</th>
                 </tr>

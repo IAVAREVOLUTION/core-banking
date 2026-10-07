@@ -174,7 +174,7 @@ export function SolicitudActivacionDashboard({
               <thead className="bg-gray-50 border-b border-gray-300">
                 <tr>
                   <th className="text-left px-3 py-2 font-medium text-gray-700">ID Solicitud</th>
-                  <th className="text-left px-3 py-2 font-medium text-gray-700">Cliente</th>
+                  <th className="text-left px-3 py-2 font-medium text-gray-700">Nombre Interlocutor</th>
                   <th className="text-left px-3 py-2 font-medium text-gray-700">Tipo</th>
                   <th className="text-left px-3 py-2 font-medium text-gray-700">Estatus</th>
                 </tr>

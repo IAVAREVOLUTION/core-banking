@@ -23,6 +23,7 @@ import { supabase, SUPABASE_URL } from '../lib/supabaseClient';
 import { publicAnonKey } from '/utils/supabase/info';
 import type { SolicitudFormData, SolicitudListItem } from '../components/solicitudes/solicitudCreditoStore';
 import { versionToDB } from '../components/solicitudes/solicitudCreditoStore';
+import { repararDataSolicitud } from '@/app/lib/repararDataSolicitud';
 
 // ═══════════════════════════════════════════════════════════════════
 const DB_AVAILABLE = true;
@@ -177,13 +178,9 @@ function saveToSession(items: SolicitudListItem[]) {
 // ═══════════════════════════════════════════════════════════════════
 function mapRowToListItem(row: SolicitudDBRow): SolicitudListItem {
   // ── Protección: row.data puede venir como string si el driver no parsea JSONB ──
-  let d: Record<string, any>;
-  if (typeof row.data === 'string') {
-    try { d = JSON.parse(row.data); } catch { d = {}; }
-    console.warn('[mapRow] row.data era STRING — parseado manualmente. id:', row.id);
-  } else {
-    d = (row.data || {}) as Record<string, any>;
-  }
+  // También repara data corrupta: texto JSON (a veces doble) o contenido
+  // atrapado en llaves "0", "1"… por guardados anteriores (ver lib/repararDataSolicitud).
+  let d: Record<string, any> = repararDataSolicitud(row.data);
 
   // ── Nested structure (banca móvil) ──
   const sol = d.solicitud || {};
@@ -315,7 +312,6 @@ function deepMerge(base: Record<string, any>, patch: Record<string, any>): Recor
 
 function formToDBPayload(form: SolicitudFormData, allSubtabs?: Record<string, any>) {
   const montoSolNum = parseFloat((form.montoSolicitado || '0').replace(/[^0-9.-]/g, ''));
-  const montoAutNum = parseFloat((form.montoAutorizado || '0').replace(/[^0-9.-]/g, ''));
 
   // Original JSONB from DB (present when editing an existing record from any source)
   const originalData: Record<string, any> | undefined = allSubtabs?._originalData;
@@ -329,6 +325,18 @@ function formToDBPayload(form: SolicitudFormData, allSubtabs?: Record<string, an
   }
 
   const terminos = allSubtabs?.terminos || {};
+
+  // Monto Autorizado (columna monto_aut). Sólo Arrendamiento Puro lo calculaba
+  // en Términos y Condiciones; en la línea Crédito nunca se llenaba y la
+  // solicitud se activaba con monto_aut = 0 (Cartera mostraba $0.00). Regla de
+  // Términos: Monto Autorizado = Monto Solicitado × (1 − % Enganche); sin
+  // enganche, igual al solicitado. Captación no maneja monto autorizado.
+  const aNum = (v: unknown) => parseFloat(String(v ?? '').replace(/[^0-9.-]/g, '')) || 0;
+  const lineaNorm = (form.lineaProducto || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  const esCaptacionLinea = /captacion|ahorro|inversion|aportacion/.test(lineaNorm);
+  const pctEnganche = aNum((form as any).porcentajeEnganche || terminos.porcentajeEnganche);
+  const montoAutNum = aNum(form.montoAutorizado) || aNum(terminos.montoAutorizado)
+    || (esCaptacionLinea ? 0 : montoSolNum * (1 - pctEnganche / 100));
   const simulacion: any[] = allSubtabs?.simulacion || [];
   const documentos: any[] = allSubtabs?.documentos !== undefined ? allSubtabs.documentos : (origSol.expediente_electronico?.documentos || []);
   const garantias: any[] = subtabArr('garantias', 'garantias');
@@ -1402,6 +1410,30 @@ function generateNoCuentaInterno(): string {
  * Debe llamarse inmediatamente después de que la solicitud cambia a 'Autorizada'.
  * Soporta: Crédito, Captación, Aportación, Inversión, Línea de Crédito.
  */
+/**
+ * ¿El cliente ya tiene cuenta EJE? (registro de cuenta con cta_eje_chec, o los
+ * folios de cuenta eje AUTO-/CEJE-). Se consulta la misma lista de solicitudes
+ * que usa la app (la comparte la caché de lecturas).
+ *
+ * Al activar/liberar una solicitud se creaba además una cuenta "por solicitud"
+ * aunque el cliente ya tuviera su cuenta EJE: por eso aparecían cuentas de más.
+ */
+export async function clienteTieneCuentaEje(clienteId: string, excluirId?: string): Promise<boolean> {
+  if (!clienteId || !UUID_RE.test(clienteId)) return false;
+  try {
+    const res = await fetch(`${API_BASE}/solicitudes-credito`, { headers: { 'Authorization': `Bearer ${publicAnonKey}` } });
+    if (!res.ok) return false;
+    const json = await res.json();
+    const filas: any[] = Array.isArray(json?.data) ? json.data : Array.isArray(json) ? json : [];
+    return filas.some(r =>
+      String(r?.cliente_id || '') === clienteId &&
+      String(r?.id || '') !== String(excluirId || '') &&
+      (r?.cta_eje_chec === true || /^(AUTO|CEJE)-/i.test(String(r?.no_sol || ''))));
+  } catch {
+    return false; // ante la duda, no se bloquea el flujo
+  }
+}
+
 export async function crearCuentaDesdeSolicitudDB(params: {
   solicitudId: string;
   clienteId: string;
@@ -1418,6 +1450,12 @@ export async function crearCuentaDesdeSolicitudDB(params: {
   const debeCrear = PRODUCTOS_CON_CUENTA.some(p => lineaNorm.includes(p));
   if (!debeCrear) {
     console.log('[SolicDB] crearCuentaDesdeSolicitud — línea no genera cuenta:', params.lineaProducto);
+    return { ok: true };
+  }
+
+  // El cliente ya tiene cuenta EJE: no se crea otra cuenta por esta solicitud.
+  if (UUID_RE.test(params.clienteId || '') && await clienteTieneCuentaEje(params.clienteId, params.solicitudId)) {
+    console.log('[SolicDB] crearCuentaDesdeSolicitud — el cliente ya tiene cuenta EJE; no se crea otra.');
     return { ok: true };
   }
 
@@ -1539,6 +1577,12 @@ export async function crearCuentaEjeDB(
   montoInicial?: number,
 ): Promise<void> {
   if (!clienteId || !UUID_RE.test(clienteId)) return;
+  // Con solicitud, el servidor crea una cuenta "por solicitud" sin revisar si
+  // el cliente ya tiene cuenta EJE: aquí se evita la cuenta duplicada.
+  if (solicitudId && await clienteTieneCuentaEje(clienteId, solicitudId)) {
+    console.log('[SolicDB] crearCuentaEjeDB — el cliente ya tiene cuenta EJE; no se crea otra.');
+    return;
+  }
   try {
     const body: Record<string, unknown> = { cliente_id: clienteId, nombre_prospecto: nombreCliente || '' };
     if (solicitudId && UUID_RE.test(solicitudId)) body.solicitud_id = solicitudId;
@@ -2051,7 +2095,7 @@ export function useSolicitudesDB(active: boolean) {
           // puede leer — 42501 — así que esta recuperación nunca funcionaba.)
           const row = await fetchSolicitudCompleta(existingDbId);
           if (row?.data) {
-            const fetchedData = typeof row.data === 'string' ? JSON.parse(row.data) : row.data;
+            const fetchedData = repararDataSolicitud(row.data);
             subtabsWithOriginal = { ...(allSubtabs || {}), _originalData: fetchedData };
             console.log('[SolicDB] SAVE — _originalData recuperado de BD, keys:', Object.keys(fetchedData).length);
           } else {

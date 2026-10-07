@@ -94,7 +94,7 @@ export function CreditoForm({ mode, onCancel }: CreditoFormProps) {
                 </div>
 
                 <div className="flex flex-col">
-                  <label className="text-[10px] text-gray-600 mb-0.5">CLIENTE <span className="text-red-600">*</span></label>
+                  <label className="text-[10px] text-gray-600 mb-0.5">NOMBRE INTERLOCUTOR <span className="text-red-600">*</span></label>
                   {!camposEditables ? (
                     <div className="px-2 py-1 text-xs text-gray-700">001-001- Juan Pérez Pérez</div>
                   ) : (

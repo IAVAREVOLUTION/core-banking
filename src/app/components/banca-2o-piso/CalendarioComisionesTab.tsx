@@ -408,7 +408,7 @@ export function CalendarioComisionesTab({
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="col-span-2">
-                  <label className="block text-[10px] font-medium text-gray-600 mb-1 uppercase tracking-wide">Cliente</label>
+                  <label className="block text-[10px] font-medium text-gray-600 mb-1 uppercase tracking-wide">Nombre Interlocutor</label>
                   <input value={row.cliente} disabled className="w-full px-3 py-1.5 text-xs border border-gray-200 rounded-lg bg-gray-100 text-gray-600" />
                 </div>
                 <div className="col-span-2">

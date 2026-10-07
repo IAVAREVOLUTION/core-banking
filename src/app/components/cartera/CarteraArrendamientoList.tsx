@@ -370,7 +370,7 @@ function DashboardArrendamiento({ rows, loading, error, refetch, onVer }: {
             <thead className="bg-gray-50 border-b border-gray-300">
               <tr>
                 <th className="text-left px-3 py-2 font-medium text-gray-700">No. Sol.</th>
-                <th className="text-left px-3 py-2 font-medium text-gray-700">Cliente</th>
+                <th className="text-left px-3 py-2 font-medium text-gray-700">Nombre Interlocutor</th>
                 <th className="text-left px-3 py-2 font-medium text-gray-700">Producto</th>
                 <th className="text-right px-3 py-2 font-medium text-gray-700">Monto Aut.</th>
                 <th className="text-right px-3 py-2 font-medium text-gray-700">Residual</th>
@@ -493,7 +493,7 @@ function ListScreen({ rows, loading, error, refetch, onVer }: {
       <p class="meta">Generado: ${new Date().toLocaleDateString('es-MX', { dateStyle: 'long' })} — ${filtered.length} registro(s)</p>
       <table>
         <thead><tr>
-          <th>NO. SOLICITUD</th><th>CLIENTE</th><th>PRODUCTO</th>
+          <th>NO. SOLICITUD</th><th>NOMBRE INTERLOCUTOR</th><th>PRODUCTO</th>
           <th>MONTO AUT.</th><th>ENGANCHE</th><th>RESIDUAL</th>
           <th>PLAZO</th><th>RENTA</th><th>RENTAS PAGADAS</th><th>CARTERA</th>
         </tr></thead>
@@ -626,7 +626,7 @@ function ListScreen({ rows, loading, error, refetch, onVer }: {
               <tr className="bg-gray-100 border-b border-gray-300">
                 <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700">Ver</th>
                 <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700" {...orden.th('noSol')}>NO. SOLICITUD{orden.flecha('noSol')}</th>
-                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700" {...orden.th('cliente')}>CLIENTE{orden.flecha('cliente')}</th>
+                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700" {...orden.th('cliente')}>NOMBRE INTERLOCUTOR{orden.flecha('cliente')}</th>
                 <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700" {...orden.th('producto')}>PRODUCTO{orden.flecha('producto')}</th>
                 <th className="px-2 py-2.5 text-right font-medium text-xs text-gray-700" {...orden.th('monto')}>MONTO AUT.{orden.flecha('monto')}</th>
                 <th className="px-2 py-2.5 text-right font-medium text-xs text-gray-700" {...orden.th('enganche')}>ENGANCHE{orden.flecha('enganche')}</th>
@@ -866,7 +866,7 @@ function DetalleScreen({ contrato, onBack, onVerXML, onAvisoCreado }: {
             <div className="grid grid-cols-3 gap-x-4 gap-y-1.5 text-xs">
               <div className="space-y-1.5">
                 <Field label="No. Solicitud" value={<span className="font-mono">{contrato.noSol}</span>} />
-                <Field label="Cliente" value={contrato.cliente} />
+                <Field label="Nombre Interlocutor" value={contrato.cliente} />
               </div>
               <div className="space-y-1.5">
                 <Field label="Producto" value={contrato.productoNombre} />
@@ -1152,7 +1152,7 @@ function DetalleScreen({ contrato, onBack, onVerXML, onAvisoCreado }: {
                     className="w-full px-3 py-1.5 text-xs border border-gray-200 rounded-lg bg-gray-50 text-gray-600 cursor-default" />
                 </div>
                 <div className="col-span-2">
-                  <label className="block text-[10px] font-medium text-gray-600 mb-1 uppercase tracking-wide">Cliente</label>
+                  <label className="block text-[10px] font-medium text-gray-600 mb-1 uppercase tracking-wide">Nombre Interlocutor</label>
                   <input type="text" value={contrato.cliente} readOnly
                     className="w-full px-3 py-1.5 text-xs border border-gray-200 rounded-lg bg-gray-50 text-gray-600 cursor-default" />
                 </div>

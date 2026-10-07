@@ -155,7 +155,7 @@ function CotizacionesDashboard({ cotizaciones, onNew, onViewList }: {
             <thead>
               <tr className="bg-gray-50 border-b">
                 <th className="text-left px-3 py-2">ID Cotiza</th>
-                <th className="text-left px-3 py-2">Cliente</th>
+                <th className="text-left px-3 py-2">Nombre Interlocutor</th>
                 <th className="text-left px-3 py-2">Producto</th>
                 <th className="text-right px-3 py-2">Monto</th>
                 <th className="text-center px-3 py-2">Estatus</th>

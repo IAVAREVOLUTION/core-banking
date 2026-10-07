@@ -455,7 +455,7 @@ function OriginacionDashboard({ items, onGoToList }: {
               <thead className="bg-gray-50 border-b border-gray-300">
                 <tr>
                   <th className="text-left px-3 py-2 text-gray-700">N° Solicitud</th>
-                  <th className="text-left px-3 py-2 text-gray-700">Cliente</th>
+                  <th className="text-left px-3 py-2 text-gray-700">Nombre Interlocutor</th>
                   <th className="text-left px-3 py-2 text-gray-700">Monto</th>
                   <th className="text-left px-3 py-2 text-gray-700">Sub-Estatus</th>
                 </tr>
@@ -706,7 +706,7 @@ function OriginacionList({ items, onEditar, onVer }: {
               <tr style={{ backgroundColor: '#D0D0D0' }} className="border-b border-gray-300">
                 <th className="px-3 py-2.5 text-left text-xs text-gray-700">Editar | Ver</th>
                 <th className="px-3 py-2.5 text-left text-xs text-gray-700" {...orden.th('noSol')}>N° SOLICITUD{orden.flecha('noSol')}</th>
-                <th className="px-3 py-2.5 text-left text-xs text-gray-700" {...orden.th('cliente')}>CLIENTE{orden.flecha('cliente')}</th>
+                <th className="px-3 py-2.5 text-left text-xs text-gray-700" {...orden.th('cliente')}>NOMBRE INTERLOCUTOR{orden.flecha('cliente')}</th>
                 <th className="px-3 py-2.5 text-left text-xs text-gray-700" {...orden.th('estatus')}>ESTATUS{orden.flecha('estatus')}</th>
                 <th className="px-3 py-2.5 text-left text-xs text-gray-700" {...orden.th('subEstatus')}>SUB-ESTATUS{orden.flecha('subEstatus')}</th>
                 <th className="px-3 py-2.5 text-left text-xs text-gray-700" {...orden.th('fecha')}>FECHA{orden.flecha('fecha')}</th>
@@ -1193,7 +1193,7 @@ function OriginacionForm({ mode, originacionId, onCancel, onSave, onActivarCuent
           <div className="space-y-3">
             <div><Lbl req>N° Originación</Lbl><input type="text" value={fd.noOriginacion} disabled className={ic(false, true)} /></div>
             <div><Lbl>N° Solicitud</Lbl><input type="text" value={fd.noSolicitud} disabled className={ic(false, true)} /></div>
-            <div><Lbl req error={errors.cliente}>Cliente</Lbl>{isRO ? <input type="text" value={fd.cliente} disabled className={ic(false, true)} /> : <select value={fd.cliente} onChange={e => set('cliente', e.target.value)} className={sc(!!errors.cliente)}><option value="">Seleccionar...</option>{CAT_CLIENTES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}</select>}{errors.cliente && <span className="text-[10px] text-red-500">{errors.cliente}</span>}</div>
+            <div><Lbl req error={errors.cliente}>Nombre Interlocutor</Lbl>{isRO ? <input type="text" value={fd.cliente} disabled className={ic(false, true)} /> : <select value={fd.cliente} onChange={e => set('cliente', e.target.value)} className={sc(!!errors.cliente)}><option value="">Seleccionar...</option>{CAT_CLIENTES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}</select>}{errors.cliente && <span className="text-[10px] text-red-500">{errors.cliente}</span>}</div>
             <div><Lbl req error={errors.fechaSolicitud}>Fecha de Solicitud</Lbl><DatePicker value={fd.fechaSolicitud} onChange={v => set('fechaSolicitud', v)} disabled={isRO} placeholder="DD/MM/YYYY" className={`px-2 py-1 ${errors.fechaSolicitud ? 'border-red-400' : ''}`} />{errors.fechaSolicitud && <span className="text-[10px] text-red-500">{errors.fechaSolicitud}</span>}</div>
             <div><Lbl>Empresa Fondeadora</Lbl>{isRO ? <input type="text" value={fd.empresaFondeadora || '—'} disabled className={ic(false, true)} /> : <select value={fd.empresaFondeadora} onChange={e => set('empresaFondeadora', e.target.value)} className={sc()}><option value="">Seleccionar...</option>{CAT_EMPRESA_FONDEADORA.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}</select>}</div>
             <div><Lbl req error={errors.sucursal}>Sucursal</Lbl><select value={fd.sucursal} onChange={e => set('sucursal', e.target.value)} disabled={isRO} className={sc(!!errors.sucursal)}><option value="">Seleccionar...</option>{CAT_SUCURSAL.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}</select>{errors.sucursal && <span className="text-[10px] text-red-500">{errors.sucursal}</span>}</div>
@@ -1798,7 +1798,7 @@ function ContratoModal({ contrato, lineaProducto, tipoProducto, noOriginacion, o
           <h2 className="text-xs font-semibold text-gray-700 border-b border-gray-200 pb-1 mb-3">1. DATOS DEL CLIENTE</h2>
           <div className="grid grid-cols-2 gap-x-8 gap-y-2 mb-4">
             {[
-              { label: 'Cliente', value: hdr.cliente },
+              { label: 'Nombre Interlocutor', value: hdr.cliente },
               { label: 'No. Originación', value: noOriginacion },
               { label: 'Línea de Producto', value: lineaProducto },
               { label: 'Tipo de Producto', value: tipoProducto },

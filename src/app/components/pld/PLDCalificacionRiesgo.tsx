@@ -121,7 +121,7 @@ export function PLDCalificacionRiesgo({ onBack }: Props) {
               </select>
               {(filterRiesgo || searchTerm) && <button onClick={() => { setFilterRiesgo(''); setSearchTerm(''); }} className="text-xs text-[color:var(--theme-link)] hover:underline">Limpiar</button>}
             </div>
-            <input type="text" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Buscar por nombre, RFC, No. Cliente..." className="px-3 py-1 border border-gray-400 rounded text-sm w-72 transition-all" />
+            <input type="text" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Buscar por nombre, RFC, No. Interlocutor..." className="px-3 py-1 border border-gray-400 rounded text-sm w-72 transition-all" />
           </div>
         </div>
 
@@ -149,8 +149,8 @@ export function PLDCalificacionRiesgo({ onBack }: Props) {
               <thead>
                 <tr style={{ backgroundColor: '#D0D0D0' }} className="border-b border-gray-300">
                   <th className="px-3 py-2.5 text-left text-xs text-gray-700">Editar | Ver</th>
-                  <th className="px-3 py-2.5 text-left text-xs text-gray-700">No. Cliente</th>
-                  <th className="px-3 py-2.5 text-left text-xs text-gray-700">Cliente</th>
+                  <th className="px-3 py-2.5 text-left text-xs text-gray-700">No. Interlocutor</th>
+                  <th className="px-3 py-2.5 text-left text-xs text-gray-700">Nombre Interlocutor</th>
                   <th className="px-3 py-2.5 text-left text-xs text-gray-700">RFC</th>
                   <th className="px-3 py-2.5 text-left text-xs text-gray-700">Personalidad</th>
                   <th className="px-3 py-2.5 text-left text-xs text-gray-700">Calificación</th>
@@ -277,8 +277,8 @@ export function PLDCalificacionRiesgo({ onBack }: Props) {
             <span className="text-xs text-gray-700" style={{ fontWeight: 600 }}>INFORMACIÓN DEL CLIENTE</span>
           </div>
           <div className="p-4 grid grid-cols-3 gap-x-6 gap-y-2">
-            <div className="flex items-center gap-2"><label className={labelCls}>No. CLIENTE</label><div className={disabledCls}>{selectedData.noCliente}</div></div>
-            <div className="flex items-center gap-2"><label className={labelCls}>CLIENTE</label><div className={disabledCls} style={{ fontWeight: 500 }}>{selectedData.nombreCliente}</div></div>
+            <div className="flex items-center gap-2"><label className={labelCls}>NO. INTERLOCUTOR</label><div className={disabledCls}>{selectedData.noCliente}</div></div>
+            <div className="flex items-center gap-2"><label className={labelCls}>NOMBRE INTERLOCUTOR</label><div className={disabledCls} style={{ fontWeight: 500 }}>{selectedData.nombreCliente}</div></div>
             <div className="flex items-center gap-2"><label className={labelCls}>RFC</label><div className={`${disabledCls} font-mono`}>{selectedData.clienteRFC||'—'}</div></div>
             <div className="flex items-center gap-2"><label className={labelCls}>PERSONALIDAD</label><div className={disabledCls}>{selectedData.clientePersonalidad||'—'}</div></div>
             <div className="flex items-center gap-2"><label className={labelCls}>SUCURSAL</label><div className={disabledCls}>{selectedData.clienteSucursal||'—'}</div></div>
@@ -338,7 +338,7 @@ export function PLDCalificacionRiesgo({ onBack }: Props) {
             <div className="flex items-center justify-between">
               <div>
                 <div className="text-xs text-gray-800 mb-1" style={{ fontWeight: 700 }}>RESULTADO DE CALIFICACIÓN</div>
-                <div className="text-xs text-gray-700">Cliente: <strong>{selectedData.nombreCliente}</strong></div>
+                <div className="text-xs text-gray-700">Nombre Interlocutor: <strong>{selectedData.nombreCliente}</strong></div>
                 <div className="text-xs text-gray-700 mt-0.5">Calificación Total: <strong>{selectedData.calificacionTotal.toFixed(2)}</strong> puntos</div>
               </div>
               <div className={`px-6 py-3 rounded text-white text-sm ${selectedData.nivelRiesgo==='Alto'?'bg-red-700':selectedData.nivelRiesgo==='Medio'?'bg-yellow-600':'bg-green-700'}`} style={{ fontWeight: 700 }}>

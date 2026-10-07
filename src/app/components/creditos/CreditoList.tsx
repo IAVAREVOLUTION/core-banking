@@ -333,7 +333,7 @@ export function CreditoList({ onNew, onEdit, onView }: CreditoListProps) {
               <tr className="bg-[#D0D0D0] border-b border-gray-300">
                 <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700 whitespace-nowrap">Editar | Ver</th>
                 <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700">NO. DE CRÉDITO</th>
-                <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700">CLIENTE</th>
+                <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700">NOMBRE INTERLOCUTOR</th>
                 <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700">FECHA DE CRÉDITO</th>
                 <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700">MONTO SOLICITADO</th>
                 <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700">MONTO AUTORIZADO</th>

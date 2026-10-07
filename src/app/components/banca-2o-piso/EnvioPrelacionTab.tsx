@@ -240,7 +240,7 @@ export function EnvioPrelacionTab({
     // no es auditable, y este archivo se manda fuera del sistema.
     const meta: string[][] = [
       ['Línea', row.noCuenta || row.noSol || String(row.id)],
-      ['Cliente', row.cliente],
+      ['Nombre Interlocutor', row.cliente],
       ['Producto', producto?.nombre || ''],
       ['Escenario', esGenerada ? ultima!.escenario : subEstatus],
       ['Origen', esGenerada ? 'Prelación generada' : 'Cascada configurada en el producto (sin generar)'],

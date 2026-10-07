@@ -61,7 +61,7 @@ export function Banca2oPisoDetalle({
   const [activeTab, setActiveTab] = useState('default');
 
   const chips = [
-    { label: 'Cliente', value: row.cliente },
+    { label: 'Nombre Interlocutor', value: row.cliente },
     { label: 'Inst. Gobierno', value: row.gobierno || '—' },
     { label: 'Producto', value: row.productoNombre },
     { label: 'Línea', value: row.lineaProducto },

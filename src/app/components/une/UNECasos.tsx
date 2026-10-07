@@ -251,7 +251,7 @@ export function UNECasos({ casos, onSave, onVerCaso }: Props) {
               <div className="grid grid-cols-2 gap-x-5 gap-y-2.5 mb-4">
                 {/* Cliente */}
                 <div className="col-span-2">
-                  <label className="block text-[10px] text-gray-600 mb-1 font-medium">CLIENTE <span className="text-red-500">*</span></label>
+                  <label className="block text-[10px] text-gray-600 mb-1 font-medium">NOMBRE INTERLOCUTOR <span className="text-red-500">*</span></label>
                   <select value={form.clienteId} onChange={e => set('clienteId', e.target.value)} className={ic(errors.clienteId)}>
                     <option value="">Seleccionar...</option>
                     {CLIENTES_MOCK.map(c => <option key={c.id} value={c.id}>{c.id} — {c.nombre}</option>)}

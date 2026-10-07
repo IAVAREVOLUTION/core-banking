@@ -121,7 +121,7 @@ export function InversionesHome({ onViewList, onNewInversion }: InversionesHomeP
           <div className="space-y-0">
             <div className="grid grid-cols-4 gap-2 pb-2 border-b border-gray-200 mb-2">
               <p className="text-xs font-medium text-gray-600">No. Inversión</p>
-              <p className="text-xs font-medium text-gray-600">Cliente</p>
+              <p className="text-xs font-medium text-gray-600">Nombre Interlocutor</p>
               <p className="text-xs font-medium text-gray-600">Fecha</p>
               <p className="text-xs font-medium text-gray-600 text-right">Monto</p>
             </div>

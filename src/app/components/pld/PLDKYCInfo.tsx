@@ -180,7 +180,7 @@ export function PLDKYCInfo({ onBack }: Props) {
                 <tr style={{ backgroundColor: '#D0D0D0' }} className="border-b border-gray-300">
                   <th className="px-3 py-2.5 text-left text-xs text-gray-700">Editar | Ver</th>
                   <th className="px-3 py-2.5 text-left text-xs text-gray-700">No. KYC</th>
-                  <th className="px-3 py-2.5 text-left text-xs text-gray-700">Cliente</th>
+                  <th className="px-3 py-2.5 text-left text-xs text-gray-700">Nombre Interlocutor</th>
                   <th className="px-3 py-2.5 text-left text-xs text-gray-700">RFC</th>
                   <th className="px-3 py-2.5 text-left text-xs text-gray-700">Personalidad</th>
                   <th className="px-3 py-2.5 text-left text-xs text-gray-700">Sucursal</th>

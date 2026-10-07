@@ -146,8 +146,8 @@ export function UNEDetalleCaso({ caso, onBack, onUpdate }: Props) {
             <p className="text-[10px] text-gray-500 uppercase tracking-wide font-semibold mb-3">Información del caso</p>
             <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 text-xs">
               {[
-                ['Cliente',           caso.clienteNombre],
-                ['ID Cliente',        caso.clienteId],
+                ['Nombre Interlocutor',           caso.clienteNombre],
+                ['No. Interlocutor',        caso.clienteId],
                 ['Canal',             caso.canal],
                 ['Producto afectado', caso.productoAfectado],
                 ['Área responsable',  caso.areaResponsable],

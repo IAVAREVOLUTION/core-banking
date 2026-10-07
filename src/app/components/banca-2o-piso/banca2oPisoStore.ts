@@ -11,6 +11,7 @@ import { fechasCobroComision } from '../../lib/fechasComisionGPO';
 import type { CarteraCredito } from '../cartera/CarteraForm';
 import { loadFromSession, loadFromSavedStore, versionFromDB } from '../solicitudes/solicitudCreditoStore';
 import type { DocumentoCargado } from '../solicitudes/solicitudCreditoStore';
+import { repararDataSolicitud } from '@/app/lib/repararDataSolicitud';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-7e2d13d9`;
 const HDR = { Authorization: `Bearer ${publicAnonKey}` };
@@ -589,8 +590,7 @@ export async function fetchCuentasBeneficiarias(solicitudId: string | number): P
     const json = await res.json();
     if (!res.ok) return [];
     const fila = (json.data || []).find((r: any) => String(r.id) === String(solicitudId));
-    let d = fila?.data;
-    if (typeof d === 'string') { try { d = JSON.parse(d); } catch { d = {}; } }
+    const d = repararDataSolicitud(fila?.data);
     const arr = d?.solicitud?.cuentasBeneficiarias;
     return Array.isArray(arr) ? arr : [];
   } catch {
@@ -623,7 +623,7 @@ export async function fetchLineaPadre(solicitudId: string): Promise<string> {
 
 /** CA-17 — lee el vínculo al padre del JSONB de una solicitud, venga como venga. */
 export function lineaPadreDe(dataObj: any): string {
-  const d = typeof dataObj === 'string' ? (() => { try { return JSON.parse(dataObj); } catch { return {}; } })() : (dataObj || {});
+  const d = repararDataSolicitud(dataObj);
   return String(d?.solicitud?.disposicionDe || d?.disposicionDe || '');
 }
 
@@ -707,8 +707,8 @@ export async function aplicarDisposicionALinea(params: {
   }
   if (!linea) return { ok: false, aplicada: false, error: `No se encontró la línea ${lineaId}` };
 
-  let dataObj = linea.data;
-  if (typeof dataObj === 'string') { try { dataObj = JSON.parse(dataObj); } catch { dataObj = {}; } }
+  // Repara data corrupta (texto JSON / llaves "0"…) antes de leer o reescribir la línea.
+  let dataObj: any = repararDataSolicitud(linea.data);
   const rawSol = dataObj?.solicitud || {};
   const nodo = (rawSol.banca2oPiso || {}) as Banca2oPisoData;
   const aplicadas: DisposicionAplicada[] = Array.isArray(nodo.disposicionesAplicadas)
@@ -882,10 +882,7 @@ export function useLineasCreditoActivas() {
       if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
       const mapped: LineaCreditoRow[] = (json.data || [])
         .filter((r: any) => {
-          let dataObj = r.data;
-          if (typeof dataObj === 'string') {
-            try { dataObj = JSON.parse(dataObj); } catch { dataObj = {}; }
-          }
+          const dataObj = repararDataSolicitud(r.data);
           const h = dataObj?.solicitud?.header || {};
           return esLineaCredito2oPisoRow(
             r.linea_produc || h.linea_producto || '',
@@ -893,10 +890,7 @@ export function useLineasCreditoActivas() {
           );
         })
         .map((r: any) => {
-          let dataObj = r.data;
-          if (typeof dataObj === 'string') {
-            try { dataObj = JSON.parse(dataObj); } catch { dataObj = {}; }
-          }
+          const dataObj = repararDataSolicitud(r.data);
           const rawSolicitud = dataObj?.solicitud || {};
           const h = rawSolicitud.header || {};
           const t = rawSolicitud.terminos_condiciones?._raw || {};

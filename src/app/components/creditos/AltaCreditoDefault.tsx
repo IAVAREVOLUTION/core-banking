@@ -354,7 +354,7 @@ export function AltaCreditoDefault({ onBack, onSave, mode }: AltaCreditoDefaultP
               </div>
 
               <div>
-                <label className="block text-[10px] text-gray-600 mb-0.5">CLIENTE <span className="text-red-600">*</span></label>
+                <label className="block text-[10px] text-gray-600 mb-0.5">NOMBRE INTERLOCUTOR <span className="text-red-600">*</span></label>
                 {!camposEditables ? (
                   <div className={readOnlyTextClass}>{formData.cliente || 'N/A'}</div>
                 ) : (

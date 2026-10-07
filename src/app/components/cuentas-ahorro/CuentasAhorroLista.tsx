@@ -283,7 +283,7 @@ export function CuentasAhorroLista({ onEdit, onView, onNew }: CuentasAhorroLista
                 <th className="px-3 py-2.5 text-left font-medium text-xs text-gray-700 whitespace-nowrap">Editar | Ver</th>
                 <th className="px-3 py-2.5 text-left font-medium text-xs text-gray-700 whitespace-nowrap" {...orden.th('cuenta')}>NO. CUENTA{orden.flecha('cuenta')}</th>
                 <th className="px-3 py-2.5 text-left font-medium text-xs text-gray-700 whitespace-nowrap" {...orden.th('referencia')}>NO. REFERENCIA{orden.flecha('referencia')}</th>
-                <th className="px-3 py-2.5 text-left font-medium text-xs text-gray-700 whitespace-nowrap" {...orden.th('cliente')}>CLIENTE{orden.flecha('cliente')}</th>
+                <th className="px-3 py-2.5 text-left font-medium text-xs text-gray-700 whitespace-nowrap" {...orden.th('cliente')}>NOMBRE INTERLOCUTOR{orden.flecha('cliente')}</th>
                 <th className="px-3 py-2.5 text-left font-medium text-xs text-gray-700 whitespace-nowrap" {...orden.th('producto')}>PRODUCTO{orden.flecha('producto')}</th>
                 <th className="px-3 py-2.5 text-left font-medium text-xs text-gray-700 whitespace-nowrap" {...orden.th('fechaSol')}>FECHA SOLICITUD{orden.flecha('fechaSol')}</th>
                 <th className="px-3 py-2.5 text-left font-medium text-xs text-gray-700 whitespace-nowrap" {...orden.th('fechaAut')}>FECHA AUTORIZACIÓN{orden.flecha('fechaAut')}</th>

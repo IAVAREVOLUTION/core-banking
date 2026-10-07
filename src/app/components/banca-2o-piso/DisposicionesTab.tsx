@@ -257,7 +257,7 @@ export function DisposicionesTab({
               <th className="px-2 py-2 text-left font-medium">No. Solicitud</th>
               <th className="px-2 py-2 text-left font-medium">Fecha</th>
               <th className="px-2 py-2 text-left font-medium">Producto</th>
-              <th className="px-2 py-2 text-left font-medium">Cliente</th>
+              <th className="px-2 py-2 text-left font-medium">Nombre Interlocutor</th>
               <th className="px-2 py-2 text-right font-medium">Monto Solicitado</th>
               <th className="px-2 py-2 text-right font-medium">Monto Autorizado</th>
               <th className="px-2 py-2 text-left font-medium">Descripción</th>
@@ -338,7 +338,7 @@ export function DisposicionesTab({
                 </Campo>
 
                 {/* CA-13 — heredado */}
-                <Campo label="Cliente">
+                <Campo label="Nombre Interlocutor">
                   <input type="text" value={row.cliente} disabled
                     className="w-full px-2 py-1.5 border border-gray-300 rounded bg-gray-100 text-gray-600" />
                 </Campo>

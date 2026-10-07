@@ -1314,7 +1314,7 @@ export function GarantiaForm({
               <table className="w-full text-xs">
                 <thead className="bg-gray-100 sticky top-0">
                   <tr>
-                    <th className="px-3 py-2 text-left font-semibold text-gray-700 border-b">ID</th>
+                    <th className="px-3 py-2 text-left font-semibold text-gray-700 border-b">No. Interlocutor</th>
                     <th className="px-3 py-2 text-left font-semibold text-gray-700 border-b">Nombre Completo</th>
                     <th className="px-3 py-2 text-left font-semibold text-gray-700 border-b">RFC</th>
                     <th className="px-3 py-2 text-left font-semibold text-gray-700 border-b">CURP</th>
@@ -1415,7 +1415,7 @@ export function GarantiaForm({
               <table className="w-full text-xs">
                 <thead className="bg-gray-100 sticky top-0">
                   <tr>
-                    <th className="px-3 py-2 text-left font-semibold text-gray-700 border-b">ID</th>
+                    <th className="px-3 py-2 text-left font-semibold text-gray-700 border-b">No. Interlocutor</th>
                     <th className="px-3 py-2 text-left font-semibold text-gray-700 border-b">Nombre Completo</th>
                     <th className="px-3 py-2 text-left font-semibold text-gray-700 border-b">RFC</th>
                     <th className="px-3 py-2 text-left font-semibold text-gray-700 border-b">Estatus</th>

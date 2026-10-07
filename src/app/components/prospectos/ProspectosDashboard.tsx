@@ -160,7 +160,7 @@ export function ProspectosDashboard({ prospectos, onNew, onEdit, onView, onProsp
             <table className="w-full text-xs">
               <thead className="bg-gray-50 border-b border-gray-300">
                 <tr>
-                  <th className="text-left px-3 py-2 font-medium text-gray-700">ID</th>
+                  <th className="text-left px-3 py-2 font-medium text-gray-700">No. Interlocutor</th>
                   <th className="text-left px-3 py-2 font-medium text-gray-700">Nombre</th>
                   <th className="text-left px-3 py-2 font-medium text-gray-700">Sucursal</th>
                   <th className="text-left px-3 py-2 font-medium text-gray-700">Fecha</th>

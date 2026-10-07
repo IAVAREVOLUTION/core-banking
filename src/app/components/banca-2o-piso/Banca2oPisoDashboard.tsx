@@ -198,7 +198,7 @@ export function Banca2oPisoDashboard({ rows, loading, error, onGoToList }: Props
               <thead className="bg-gray-50 border-b border-gray-300">
                 <tr>
                   <th className="text-left px-3 py-2 font-medium text-gray-700">No. Cuenta</th>
-                  <th className="text-left px-3 py-2 font-medium text-gray-700">Cliente</th>
+                  <th className="text-left px-3 py-2 font-medium text-gray-700">Nombre Interlocutor</th>
                   <th className="text-left px-3 py-2 font-medium text-gray-700">Monto autorizado</th>
                   <th className="text-left px-3 py-2 font-medium text-gray-700">Estatus</th>
                 </tr>

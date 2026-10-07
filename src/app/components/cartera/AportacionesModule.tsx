@@ -169,7 +169,7 @@ function AportDashboard({ rows, loading, refetch, onVer }: { rows: AportacionCre
               <thead className="bg-gray-50 border-b border-gray-300">
                 <tr>
                   <th className="text-left px-3 py-2 font-medium text-gray-700">No. Sol.</th>
-                  <th className="text-left px-3 py-2 font-medium text-gray-700">Cliente</th>
+                  <th className="text-left px-3 py-2 font-medium text-gray-700">Nombre Interlocutor</th>
                   <th className="text-right px-3 py-2 font-medium text-gray-700">Monto</th>
                   <th className="text-left px-3 py-2 font-medium text-gray-700">Estatus</th>
                 </tr>
@@ -272,7 +272,7 @@ function AportLista({ rows, loading, error, refetch, onVer }: { rows: Aportacion
               <tr className="bg-[#D0D0D0] border-b border-gray-300">
                 <th className="px-3 py-2.5 text-left font-normal text-gray-700">Ver</th>
                 <th className="px-3 py-2.5 text-left font-normal text-gray-700" {...orden.th('noSol')}>NO. SOL.{orden.flecha('noSol')}</th>
-                <th className="px-3 py-2.5 text-left font-normal text-gray-700" {...orden.th('cliente')}>CLIENTE{orden.flecha('cliente')}</th>
+                <th className="px-3 py-2.5 text-left font-normal text-gray-700" {...orden.th('cliente')}>NOMBRE INTERLOCUTOR{orden.flecha('cliente')}</th>
                 <th className="px-3 py-2.5 text-left font-normal text-gray-700" {...orden.th('producto')}>PRODUCTO{orden.flecha('producto')}</th>
                 <th className="px-3 py-2.5 text-left font-normal text-gray-700" {...orden.th('linea')}>LÍNEA{orden.flecha('linea')}</th>
                 <th className="px-3 py-2.5 text-right font-normal text-gray-700" {...orden.th('monto')}>MONTO AUT.{orden.flecha('monto')}</th>
@@ -355,7 +355,7 @@ function AportDetalle({ credito, onBack }: { credito: AportacionCredito; onBack:
       <div className="px-4 py-2.5 bg-[#F0F2F5] border-b border-gray-300">
         <div className="flex flex-wrap gap-x-8 gap-y-1.5">
           {[
-            { label: 'Cliente',    value: credito.cliente },
+            { label: 'Nombre Interlocutor',    value: credito.cliente },
             { label: 'Producto',   value: credito.productoNombre },
             { label: 'Línea',      value: credito.lineaProducto },
             { label: 'Monto Aut.', value: fmtMoney(credito.montoAut) },

@@ -206,7 +206,7 @@ export function PLDPerfilTransaccional({ mode = 'editar', onBack }: Props) {
             <table className="w-full text-xs">
               <thead>
                 <tr className="bg-[#D0D0D0]">
-                  {['Cliente', 'RFC', 'Sublínea', 'Producto', 'Trans. Retiro', 'Trans. Depósito', 'Máx. Retiros', 'Máx. Depósitos', 'Periodo', 'Acciones'].map(h => (
+                  {['Nombre Interlocutor', 'RFC', 'Sublínea', 'Producto', 'Trans. Retiro', 'Trans. Depósito', 'Máx. Retiros', 'Máx. Depósitos', 'Periodo', 'Acciones'].map(h => (
                     <th key={h} className="px-2 py-2 text-left text-[10px] border-r border-gray-300 last:border-r-0" style={{ fontWeight: 600 }}>{h}</th>
                   ))}
                 </tr>
@@ -368,7 +368,7 @@ export function PLDPerfilTransaccional({ mode = 'editar', onBack }: Props) {
                   </div>
                   <div className="grid grid-cols-3 gap-x-4 gap-y-1 mb-4 px-1">
                     <div className="flex items-center gap-2">
-                      <label className="text-[10px] text-gray-500 w-16 flex-shrink-0">CLIENTE</label>
+                      <label className="text-[10px] text-gray-500 w-16 flex-shrink-0">NOMBRE INTERLOCUTOR</label>
                       <span className="text-xs text-gray-800" style={{ fontWeight: 500 }}>{modalForm.clienteNombre}</span>
                     </div>
                     <div className="flex items-center gap-2">
@@ -573,7 +573,7 @@ export function PLDPerfilTransaccional({ mode = 'editar', onBack }: Props) {
               </div>
               <div className="grid grid-cols-2 gap-x-6 gap-y-2 mb-4">
                 <div className="flex items-center gap-2">
-                  <label className={labelCls}>CLIENTE</label>
+                  <label className={labelCls}>NOMBRE INTERLOCUTOR</label>
                   <div className={viewFieldCls} style={{ fontWeight: 500 }}>{viewPerfil.clienteNombre || '—'}</div>
                 </div>
                 <div className="flex items-center gap-2">

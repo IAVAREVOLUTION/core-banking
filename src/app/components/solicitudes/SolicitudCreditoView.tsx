@@ -17,7 +17,7 @@ export function SolicitudCreditoView({ solicitud }: SolicitudCreditoViewProps) {
           {/* Columna 1 */}
           <div className="space-y-3">
             <div>
-              <label className="block text-[10px] text-gray-600 mb-0.5 uppercase">ID Cliente *</label>
+              <label className="block text-[10px] text-gray-600 mb-0.5 uppercase">No. Interlocutor *</label>
               <div className="text-xs text-gray-900">{solicitud.id || '-'}</div>
             </div>
 

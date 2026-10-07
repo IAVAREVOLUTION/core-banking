@@ -469,7 +469,7 @@ export function InversionForm({ mode, inversionId, onCancel, onSave }: Props) {
   const renderCotitulares = () => renderTable<Cotitular>(
     data.cotitulares, 'cotitulares',
     [
-      { label: 'ID Cliente', field: 'idCliente', readOnly: true },
+      { label: 'No. Interlocutor', field: 'idCliente', readOnly: true },
       { label: 'Nombre', field: 'nombre', readOnly: true },
       { label: 'Apellido Paterno', field: 'apellidoPaterno', readOnly: true },
       { label: 'Apellido Materno', field: 'apellidoMaterno', readOnly: true },
@@ -508,7 +508,7 @@ export function InversionForm({ mode, inversionId, onCancel, onSave }: Props) {
         <table className="w-full text-xs">
           <thead>
             <tr>
-              <TH>Clave Cliente</TH><TH>Nombre</TH><TH>Ap. Paterno</TH><TH>Ap. Materno</TH>
+              <TH>No. Interlocutor</TH><TH>Nombre</TH><TH>Ap. Paterno</TH><TH>Ap. Materno</TH>
               <TH>F. Nacimiento</TH><TH>Parentesco</TH><TH>% Participación</TH><TH>Notas</TH>
             </tr>
           </thead>
@@ -712,7 +712,7 @@ export function InversionForm({ mode, inversionId, onCancel, onSave }: Props) {
     data.solicitudesExtra, 'solicitudesExtra',
     [
       { label: 'No. Solicitud', field: 'noSolicitud', readOnly: true },
-      { label: 'Cliente', field: 'cliente' },
+      { label: 'Nombre Interlocutor', field: 'cliente' },
       { label: 'No. Cuenta', field: 'numeroCuenta' },
       { label: 'Producto', field: 'productoFinanciero' },
       { label: 'Área Solicitó', field: 'areaSolicito' },

@@ -80,7 +80,7 @@ export function CoTitularesTab({ mode, accountId }: CoTitularesTabProps) {
         <table className="w-full border-collapse min-w-[1000px]">
           <thead>
             <tr className="bg-[#D0D0D0] border-b border-gray-300">
-              <th className="px-2 py-2 text-xs font-normal text-gray-700 text-left border-r border-gray-300 w-[100px]">Id Cliente *</th>
+              <th className="px-2 py-2 text-xs font-normal text-gray-700 text-left border-r border-gray-300 w-[100px]">No. Interlocutor *</th>
               <th className="px-2 py-2 text-xs font-normal text-gray-700 text-left border-r border-gray-300 w-[100px]">Nombre</th>
               <th className="px-2 py-2 text-xs font-normal text-gray-700 text-left border-r border-gray-300 w-[120px]">Ap. Paterno</th>
               <th className="px-2 py-2 text-xs font-normal text-gray-700 text-left border-r border-gray-300 w-[120px]">Ap. Materno</th>

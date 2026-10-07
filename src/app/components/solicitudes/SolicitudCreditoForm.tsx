@@ -49,7 +49,7 @@ import { generarPagareDesdePlantilla } from '../../hooks/generarDocumentosFase4'
 // REQ-24 HU-24.1 — alta automatica de la Solicitud de Activacion al liberar.
 import { crearActivacionDispersion } from '../../hooks/useSolicitudesActivacionDB';
 import { fetchLineaPadre, fetchCuentasBeneficiarias } from '../banca-2o-piso/banca2oPisoStore';
-import { formalizarGarantiaGPO } from '../../hooks/formalizacionCarteraGPO';
+import { formalizarGarantiaGPO, obtenerMotorContableProducto } from '../../hooks/formalizacionCarteraGPO';
 // REQ-20 — el saldo de la garantía lo lee y lo escribe el mismo módulo, para que
 // el significado de `saldo_actual` en una línea GPO tenga un solo dueño.
 import { sembrarSaldoGarantia } from '../banca-2o-piso/banca2oPisoStore';
@@ -97,7 +97,7 @@ import { SolicitudCargosTab } from './SolicitudCargosTab';
 import { FacturasArrendamientoTab } from './FacturasArrendamientoTab';
 import { ComitesTab } from '../shared/ComitesTab';
 import { CampoMonto } from '@/app/components/ui/CampoMonto';
-import { decidirFaseIA } from '@/app/lib/decisionFaseIA';
+import { decidirFaseIA, decidirFasePorPresencia, esPromptSoloPresencia, REGLAS_GENERALES_FASE_IA } from '@/app/lib/decisionFaseIA';
 
 // ═══════════════════════════════════════════════════════════════════
 // COMPUERTAS DEL BPM GPO — ancladas a la POSICIÓN de la fase
@@ -1639,6 +1639,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
           {
             promptConContexto =
               (fasePromptIA || '') + '\n\n' +
+              REGLAS_GENERALES_FASE_IA + '\n\n' +
               'INSTRUCCIÓN IMPORTANTE: Algunos documentos provienen de banca móvil y pueden tener nombres ' +
               'abreviados o en formato snake_case (ej: "ine", "identificacion_oficial", "comprobante_domicilio"). ' +
               'Debes hacer matching SEMÁNTICO: si el nombre del documento cargado corresponde al tipo requerido ' +
@@ -1647,6 +1648,10 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
               '=== DATOS DEL CLIENTE ===\n' +
               `Nombre: ${nombreCliente}\n` +
               `Tipo persona: ${formData.tipoPersona || 'No especificado'}\n` +
+              // RFC/CURP del cliente: el prompt de la Fase 3 los compara contra la Constancia
+              // del SAT; sin enviarlos la IA los infería de otros documentos y "no coincidían".
+              `RFC del cliente (registrado en el sistema): ${(formData as any)._rfc || 'No registrado'}\n` +
+              `CURP del cliente: ${(formData as any)._curp || 'No registrada'}\n` +
               `No. Solicitud: ${formData.noSol || 'No asignado'}\n\n` +
               '=== DATOS DEL CRÉDITO ===\n' +
               `Línea de producto: ${formData.lineaProducto || 'No especificada'}\n` +
@@ -1736,7 +1741,17 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
           if (resFaseIA?.ok) {
             // Si los motivos vienen etiquetados (OK / ADVERTENCIA / RECHAZO), la
             // decisión la aplica el sistema: sólo un RECHAZO impide avanzar.
-            const resultadoFaseIA = decidirFaseIA(await resFaseIA.json());
+            // Documentos que ya pasaron su validación individual: la fase no los re-evalúa.
+            const tiposValidados = docsDeFase
+              .filter(d => d.validadoIA && d.estatus === 'Validado')
+              .map(d => d.tipoDocumento || '')
+              .filter(Boolean);
+            const resultadoIA = decidirFaseIA(await resFaseIA.json(), tiposValidados);
+            // Fases de "sólo presencia": decide el sistema con los requisitos de la fase y el
+            // estatus real de cada documento en KM (la IA sólo aporta observaciones).
+            const resultadoFaseIA = esPromptSoloPresencia(fasePromptIA)
+              ? decidirFasePorPresencia(resultadoIA, requisitosDeEstaFase, documentos)
+              : resultadoIA;
             setIaFaseDebug(prev => prev ? { ...prev, status: 'ok', httpStatus: resFaseIA!.status, resultado: resultadoFaseIA } : null);
 
             if (resultadoFaseIA.valido === false) {
@@ -3163,11 +3178,14 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
     // Garantía de Pago Oportuno") vive en el Motor Contable del producto, y los
     // importes de cada partida en los Cargos de la Solicitud (REQ-15).
     const rawProdGPO = productoSeleccionado?.rawData as Record<string, any> | undefined;
-    const motorContableProducto: any[] =
+    const motorEnMemoria: any[] =
       (Array.isArray((productoSeleccionado as any)?.motorContable)
         ? (productoSeleccionado as any).motorContable
         : null) ??
       (Array.isArray(rawProdGPO?.motorContable) ? rawProdGPO!.motorContable : []);
+    // Si el producto en memoria no trae el Motor Contable, se consulta el producto completo.
+    const motorContableProducto = await obtenerMotorContableProducto(
+      String(formData.productoId || productoSeleccionado?.id || ''), motorEnMemoria);
     const cargosSolicitud: any[] =
       loadFromSession<any[]>(storageId, 'cargos') || loadFromSavedStore<any[]>(storageId, 'cargos') || [];
     const resultado = await formalizarGarantiaGPO({
@@ -4015,7 +4033,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
           {/* Fila de datos del cliente/producto que se envían */}
           <div className="grid grid-cols-5 gap-px bg-violet-100 border-b border-violet-200 text-[10px]">
             {[
-              { label: 'Cliente', value: (iaFaseDebug.payload as any).nombreSolicitante },
+              { label: 'Nombre Interlocutor', value: (iaFaseDebug.payload as any).nombreSolicitante },
               { label: 'Tipo Persona', value: (iaFaseDebug.payload as any).tipoPersona },
               { label: 'Línea Producto', value: (iaFaseDebug.payload as any).lineaProducto },
               { label: 'Tipo Producto', value: (iaFaseDebug.payload as any).tipoProducto },
@@ -4273,7 +4291,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
               Cliente; la spec lo pide como campo del Formulario General. */}
           {formData.noCliente && (
             <div>
-              <Lbl>ID Cliente CRM</Lbl>
+              <Lbl>No. Interlocutor</Lbl>
               <input type="text" value={formData.noCliente} disabled className={ic(false, true)} />
             </div>
           )}

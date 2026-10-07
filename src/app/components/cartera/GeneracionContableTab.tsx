@@ -540,7 +540,7 @@ export function GeneracionContableTab({ solicitudId, credito, componentes }: Pro
                   <span className="font-mono">{confirmEv.evento_codigo}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-gray-500">Cliente:</span>
+                  <span className="text-gray-500">Nombre Interlocutor:</span>
                   <span className="font-medium">{credito.cliente || '—'}</span>
                 </div>
               </div>

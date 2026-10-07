@@ -207,7 +207,7 @@ export function CuentasBeneficiariasTab({
         <table className="w-full text-xs">
           <thead>
             <tr className="bg-[color:var(--theme-primary)] text-white">
-              <th className="px-2 py-2 text-left font-medium">Id Cliente</th>
+              <th className="px-2 py-2 text-left font-medium">No. Interlocutor</th>
               <th className="px-2 py-2 text-left font-medium">Beneficiario</th>
               <th className="px-2 py-2 text-left font-medium">Banco</th>
               <th className="px-2 py-2 text-left font-medium">CLABE</th>

@@ -698,7 +698,7 @@ export function CotizacionCreditoForm({ mode, lineaProducto, cotizacion, onSave,
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4">
                   <div className="flex flex-col">
-                    <label className="text-[10px] text-gray-600 mb-1">Clave Cliente</label>
+                    <label className="text-[10px] text-gray-600 mb-1">No. Interlocutor</label>
                     <input value={data.cliente.claveCliente} disabled className={readonlyClass} />
                   </div>
                   <div className="flex flex-col">

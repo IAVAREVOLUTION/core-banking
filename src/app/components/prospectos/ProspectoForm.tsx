@@ -1272,7 +1272,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, onCa
     if (!formData.curp || formData.curp.trim() === '') errores.push('CURP');
     if (!formData.fechaNacimiento || formData.fechaNacimiento.trim() === '') errores.push('Fecha de nacimiento');
     const idProspecto = formData.idProspecto || prospecto?.idProspecto || '';
-    if (!idProspecto) errores.push('Número de solicitud (ID Interlocutor Comercial)');
+    if (!idProspecto) errores.push('No. Interlocutor');
 
     if (errores.length > 0) {
       toast.error('Datos incompletos para generar el reporte', {
@@ -1623,7 +1623,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, onCa
               {/* Columna 1 */}
               <div className="space-y-1">
                 <div className="flex items-center gap-2">
-                  <label className="text-xs w-44 flex-shrink-0 text-gray-700 leading-tight">ID INTERLOCUTOR COMERCIAL <span className="text-red-600">*</span></label>
+                  <label className="text-xs w-44 flex-shrink-0 text-gray-700 leading-tight">NO. INTERLOCUTOR <span className="text-red-600">*</span></label>
                   <input
                     type="text"
                     value={formData.idProspecto}
@@ -1910,7 +1910,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, onCa
                   {/* Columna 1 */}
                   <div className="space-y-1">
                     <div className="flex items-center gap-2">
-                      <label className="text-xs w-44 flex-shrink-0 text-gray-700 leading-tight">ID INTERLOCUTOR COMERCIAL <span className="text-red-600">*</span></label>
+                      <label className="text-xs w-44 flex-shrink-0 text-gray-700 leading-tight">NO. INTERLOCUTOR <span className="text-red-600">*</span></label>
                       <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100">{formData.idProspecto}</div>
                     </div>
                     {isFisica && (<>

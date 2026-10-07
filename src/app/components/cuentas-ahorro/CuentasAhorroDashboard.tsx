@@ -275,7 +275,7 @@ export function CuentasAhorroDashboard({ onNew, onEdit, onView }: CuentasAhorroD
                 <thead className="bg-gray-50 border-b border-gray-300">
                   <tr>
                     <th className="text-left px-3 py-2 font-medium text-gray-700">N° Cuenta</th>
-                    <th className="text-left px-3 py-2 font-medium text-gray-700">Cliente</th>
+                    <th className="text-left px-3 py-2 font-medium text-gray-700">Nombre Interlocutor</th>
                     <th className="text-left px-3 py-2 font-medium text-gray-700">Saldo</th>
                     <th className="text-left px-3 py-2 font-medium text-gray-700">Estatus</th>
                     <th className="text-left px-3 py-2 font-medium text-gray-700">Fecha</th>

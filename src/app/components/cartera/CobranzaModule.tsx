@@ -106,7 +106,7 @@ function DatosAviso({ aviso, edit, onChange }: {
           <Field label="Moneda"          value={aviso.moneda || 'MXN'} isRO />
         </div>
         <div className="space-y-1.5">
-          <Field label="Cliente"         value={aviso.cliente || ''} isRO />
+          <Field label="Nombre Interlocutor"         value={aviso.cliente || ''} isRO />
           <div className="flex flex-col min-h-[52px]">
             <label className="text-[10px] text-gray-600 mb-0.5">ESTATUS</label>
             <div className="px-2 py-1 text-xs">
@@ -193,7 +193,7 @@ function CobranzaDetailTable({ aviso, detalle, loading }: {
           <div><span className="text-gray-500">Estatus:</span>{' '}
             {statusBadge(aviso.estatus)}
           </div>
-          <div><span className="text-gray-500">Cliente:</span>{' '}
+          <div><span className="text-gray-500">Nombre Interlocutor:</span>{' '}
             <span className="text-gray-800">{aviso.cliente || '—'}</span>
           </div>
           <div><span className="text-gray-500">Solicitud ID:</span>{' '}
@@ -661,7 +661,7 @@ function AvisosVencimientoPanel({ subTipoFijo, titulo }: { subTipoFijo?: string;
       <table>
         <thead><tr>
           <th>NO. DOCUMENTO</th><th>F. COMPROMISO</th><th>TIPO</th>
-          ${muestraGobierno ? '<th>INST. GOBIERNO</th>' : ''}<th>CLIENTE</th><th>REFERENCIA</th>
+          ${muestraGobierno ? '<th>INST. GOBIERNO</th>' : ''}<th>NOMBRE INTERLOCUTOR</th><th>REFERENCIA</th>
           <th>MONTO</th><th>MONEDA</th><th>ESTATUS</th>
         </tr></thead>
         <tbody>${rows}</tbody>
@@ -855,7 +855,7 @@ function AvisosVencimientoPanel({ subTipoFijo, titulo }: { subTipoFijo?: string;
                 {muestraGobierno && (
                   <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700" {...orden.th('gobierno')}>INST. GOBIERNO{orden.flecha('gobierno')}</th>
                 )}
-                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700" {...orden.th('cliente')}>CLIENTE{orden.flecha('cliente')}</th>
+                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700" {...orden.th('cliente')}>NOMBRE INTERLOCUTOR{orden.flecha('cliente')}</th>
                 <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700" {...orden.th('referencia')}>REFERENCIA{orden.flecha('referencia')}</th>
                 <th className="px-2 py-2.5 text-right font-medium text-xs text-gray-700" {...orden.th('monto')}>MONTO TRANSACCIÓN{orden.flecha('monto')}</th>
                 <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700" {...orden.th('moneda')}>MONEDA{orden.flecha('moneda')}</th>

@@ -1715,7 +1715,7 @@ export function AltaClienteDefault({ onBack, onSave, mode, cliente, onNavigateTo
               {/* ════════════════════════════════════════════════════ */}
               <div className="space-y-1.5">
                 <div className="flex flex-col min-h-[52px]">
-                  <label className="text-[10px] text-gray-600 mb-0.5">ID <span className="text-red-600">*</span></label>
+                  <label className="text-[10px] text-gray-600 mb-0.5">No. Interlocutor <span className="text-red-600">*</span></label>
                   <input 
                     type="text" 
                     value={formData.idCliente || ''}
