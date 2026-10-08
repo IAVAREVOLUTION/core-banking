@@ -5,6 +5,10 @@ import type { ReporteCNBV } from './pldStore';
 import { usePLDReportes } from './usePLDData';
 import { usePLDClientes } from './usePLDClientes';
 import { CampoMonto } from '@/app/components/ui/CampoMonto';
+import { getParametros } from './pldStore';
+import { getUsuarioSesion } from '@/app/lib/sesion';
+import { generarXmlReporte, descargarXml, montoNumero, fechaISO, trimestre, type OperacionReporte } from '@/app/lib/pldReportesXml';
+import { formatearFecha } from '@/app/lib/fechas';
 
 interface Props { onBack?: () => void; }
 
@@ -54,7 +58,7 @@ export function PLDReportesCNBV({ onBack }: Props) {
   const paged = filtered.slice((page - 1) * perPage, page * perPage);
 
   const openNew = () => {
-    setCurrent({ ...EMPTY, id: 0, folio: `REP-CNBV-${Date.now()}`, fecha: new Date().toLocaleDateString('es-MX') });
+    setCurrent({ ...EMPTY, id: 0, folio: `REP-CNBV-${Date.now()}`, fecha: formatearFecha(new Date()) });
     setClienteSearch('');
     setModal('nuevo');
   };
@@ -70,6 +74,47 @@ export function PLDReportesCNBV({ onBack }: Props) {
   };
 
   const handleDelete = async (id: number) => { await removeReporte(id); toast.success('Reporte eliminado'); setModal(null); };
+
+  // ── XML: datos completos de la persona (RFC, CURP, personalidad) desde el catálogo de personas ──
+  const normNom = (s: string) => (s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+  const aOperacion = (r: ReporteCNBV): OperacionReporte => {
+    const p = clientesDB.find(c => normNom(c.nombre) === normNom(r.cliente));
+    return {
+      folio: r.folio, fecha: r.fecha, tipo: r.tipo, monto: montoNumero(r.monto), estatus: r.estatus,
+      persona: { nombre: r.cliente, rfc: p?.rfc, curp: p?.curp, personalidad: p?.personalidad, sucursal: p?.sucursal },
+    };
+  };
+  const encabezado = (inicio?: string, fin?: string) => {
+    const par = getParametros();
+    return { sujetoObligado: par.sujetoObligado || 'Sujeto obligado', organoSupervisor: par.organoSupervisor || 'CNBV', usuario: getUsuarioSesion(), periodoInicio: inicio, periodoFin: fin };
+  };
+  const descargarUno = (r: ReporteCNBV) => {
+    descargarXml(r.folio, generarXmlReporte([aOperacion(r)], encabezado(r.fecha, r.fecha)));
+    toast.success('XML descargado', { description: `${r.folio}.xml` });
+  };
+
+  // Exportación por periodo (por defecto, el trimestre en curso: periodicidad de operaciones relevantes)
+  const tri = trimestre(new Date());
+  const isoLocal = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const [showExport, setShowExport] = useState(false);
+  const [expTipo, setExpTipo] = useState('Todos');
+  const [expDesde, setExpDesde] = useState(isoLocal(tri.inicio));
+  const [expHasta, setExpHasta] = useState(isoLocal(tri.fin));
+  const [expSoloValidados, setExpSoloValidados] = useState(true);
+  const enPeriodo = useMemo(() => reportes.filter(r => {
+    const f = fechaISO(r.fecha);
+    if (f < expDesde || f > expHasta) return false;
+    if (expTipo !== 'Todos' && r.tipo !== expTipo) return false;
+    if (expSoloValidados && r.estatus !== 'Validado') return false;
+    return true;
+  }), [reportes, expDesde, expHasta, expTipo, expSoloValidados]);
+  const exportarPeriodo = () => {
+    if (!enPeriodo.length) { toast.error('No hay reportes en ese periodo con esos filtros'); return; }
+    const sufijo = expTipo === 'Todos' ? 'PLD' : expTipo.replace(/^Operación\s+/i, '').replace(/\s+/g, '_').toUpperCase();
+    descargarXml(`REPORTE_${sufijo}_${expDesde}_${expHasta}`, generarXmlReporte(enPeriodo.map(aOperacion), encabezado(expDesde, expHasta)));
+    toast.success('XML del periodo descargado', { description: `${enPeriodo.length} reporte(s) del ${expDesde} al ${expHasta}.` });
+    setShowExport(false);
+  };
 
   const handleValidar = async (r: ReporteCNBV) => {
     await saveReporte({ ...r, estatus: 'Validado' });
@@ -116,7 +161,12 @@ export function PLDReportesCNBV({ onBack }: Props) {
             </select>
             <svg className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" width="12" height="12" viewBox="0 0 12 12" fill="#666"><path d="M6 8l-4-4h8z"/></svg>
           </div>
-          <button onClick={openNew} className="px-4 py-1.5 bg-white border border-gray-400 text-gray-700 rounded text-sm hover:bg-gray-50">+ Generar Reporte</button>
+          <button onClick={openNew} className="px-4 py-1.5 rounded text-sm text-white bg-[color:var(--theme-action)] hover:bg-[color:var(--theme-action-hover)]">+ Generar Reporte</button>
+          <button type="button" onClick={() => setShowExport(true)}
+            className="px-4 py-1.5 rounded text-sm border border-[color:var(--theme-primary)] text-[color:var(--theme-primary)] bg-white hover:bg-[color:var(--theme-tint-soft)] inline-flex items-center gap-1.5">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M4 21h16" /></svg>
+            Exportar XML del periodo
+          </button>
         </div>
       </div>
 
@@ -180,15 +230,16 @@ export function PLDReportesCNBV({ onBack }: Props) {
                 <th className="px-3 py-2.5 text-left text-xs text-gray-700">Monto</th>
                 <th className="px-3 py-2.5 text-left text-xs text-gray-700">Estatus</th>
                 <th className="px-3 py-2.5 text-left text-xs text-gray-700">Enviado</th>
+                <th className="px-3 py-2.5 text-center text-xs text-gray-700">XML</th>
               </tr>
             </thead>
             <tbody>
               {paged.length === 0 ? (
-                <tr><td colSpan={8} className="px-3 py-8 text-center text-gray-500">Sin reportes</td></tr>
+                <tr><td colSpan={9} className="px-3 py-8 text-center text-gray-500">Sin reportes</td></tr>
               ) : paged.map((r, idx) => (
                 <tr key={r.id} className="border-b border-gray-200 transition-colors duration-150"
                   style={{ backgroundColor: idx % 2 === 1 ? '#EEEEEE' : '#FFFFFF' }}
-                  onMouseEnter={e => e.currentTarget.style.backgroundColor = '#E8F4F8'}
+                  onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--theme-tint-soft)'}
                   onMouseLeave={e => e.currentTarget.style.backgroundColor = idx % 2 === 1 ? '#EEEEEE' : '#FFFFFF'}>
                   <td className="px-3 py-2.5 text-xs whitespace-nowrap">
                     <span className="text-[color:var(--theme-link)] cursor-pointer hover:underline" onClick={() => openEdit(r)}>Editar</span>
@@ -207,6 +258,13 @@ export function PLDReportesCNBV({ onBack }: Props) {
                   </td>
                   <td className="px-3 py-2.5 text-xs text-center">
                     {r.enviado === 'Sí' ? <span className="text-green-700" style={{ fontWeight: 700 }}>&#x2713;</span> : <span className="text-gray-400">—</span>}
+                  </td>
+                  <td className="px-3 py-2.5 text-center">
+                    <button type="button" onClick={() => descargarUno(r)} title={`Descargar ${r.folio}.xml`} aria-label={`Descargar XML ${r.folio}`}
+                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded border border-gray-300 text-[10px] text-[color:var(--theme-primary)] hover:bg-[color:var(--theme-tint-soft)]">
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M4 21h16" /></svg>
+                      XML
+                    </button>
                   </td>
                 </tr>
               ))}
@@ -274,7 +332,7 @@ export function PLDReportesCNBV({ onBack }: Props) {
                         {showClienteDrop && clientesFiltrados.length > 0 && (
                           <div className="absolute left-0 top-full z-50 bg-white border border-gray-300 shadow-lg w-full max-h-40 overflow-auto">
                             {clientesFiltrados.map(c => (
-                              <div key={c.id} className="px-3 py-1.5 text-xs cursor-pointer hover:bg-[#E8F4F8] border-b border-gray-100"
+                              <div key={c.id} className="px-3 py-1.5 text-xs cursor-pointer hover:bg-[color:var(--theme-tint-soft)] border-b border-gray-100"
                                 onMouseDown={() => { setCurrent(cur => ({ ...cur, cliente: c.nombre })); setClienteSearch(''); setShowClienteDrop(false); }}>
                                 <span style={{ fontWeight: 500 }}>{c.nombre}</span>
                                 {c.rfc && <span className="text-gray-400 ml-2 font-mono text-[10px]">{c.rfc}</span>}
@@ -345,6 +403,49 @@ export function PLDReportesCNBV({ onBack }: Props) {
                   {isView ? 'Cerrar' : 'Cancelar'}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {showExport && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={() => setShowExport(false)}>
+          <div className="bg-white rounded shadow-xl w-full max-w-lg" onClick={e => e.stopPropagation()}>
+            <div className="bg-[color:var(--theme-primary)] px-6 py-4 rounded-t flex items-center justify-between">
+              <h3 className="text-base text-white font-medium">Exportar reportes en XML</h3>
+              <button type="button" aria-label="Cerrar" title="Cerrar" onClick={() => setShowExport(false)} className="text-white/80 hover:text-white text-xl leading-none">&times;</button>
+            </div>
+            <div className="p-6 space-y-4 text-xs">
+              <div className="grid grid-cols-2 gap-4">
+                <label className="block">
+                  <span className="block text-gray-700 mb-1">Desde</span>
+                  <DatePicker formato="iso" value={expDesde} onChange={(__v: string) => setExpDesde(__v)} className="w-full" />
+                </label>
+                <label className="block">
+                  <span className="block text-gray-700 mb-1">Hasta</span>
+                  <DatePicker formato="iso" value={expHasta} onChange={(__v: string) => setExpHasta(__v)} className="w-full" />
+                </label>
+              </div>
+              <label className="block">
+                <span className="block text-gray-700 mb-1">Tipo de reporte</span>
+                <select value={expTipo} onChange={e => setExpTipo(e.target.value)} className="w-full px-2 py-1.5 border border-gray-300 rounded bg-white">
+                  <option value="Todos">Todos</option>
+                  {[...new Set(reportes.map(r => r.tipo))].map(t => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </label>
+              <label className="flex items-center gap-2 text-gray-700">
+                <input type="checkbox" checked={expSoloValidados} onChange={e => setExpSoloValidados(e.target.checked)} />
+                Sólo reportes validados
+              </label>
+              <p className="text-gray-600 bg-[color:var(--theme-tint-soft)] rounded px-3 py-2">
+                {enPeriodo.length} reporte(s) en el periodo. Por defecto se propone el trimestre en curso ({tri.numero}° trimestre {tri.anio}), periodicidad de las operaciones relevantes.
+              </p>
+            </div>
+            <div className="border-t border-gray-200 px-6 py-3 bg-gray-50 flex justify-end gap-2 rounded-b">
+              <button type="button" onClick={() => setShowExport(false)} className="px-4 py-1.5 text-sm border border-gray-300 rounded bg-white hover:bg-gray-50">Cancelar</button>
+              <button type="button" onClick={exportarPeriodo} disabled={!enPeriodo.length}
+                className="px-4 py-1.5 text-sm rounded text-white bg-[color:var(--theme-action)] hover:bg-[color:var(--theme-action-hover)] disabled:opacity-50">
+                Descargar XML
+              </button>
             </div>
           </div>
         </div>

@@ -4,6 +4,7 @@ import { toast } from '@/app/lib/notificaciones';
 import { GL_JOURNAL_URL, GL_BASE_URL, GL_HEADERS } from '../../hooks/usePolizasContablesDB';
 import type { PolizaContable } from './PolizasContablesModule';
 import { CuentaFinancieraPickerModal } from './CuentaFinancieraPickerModal';
+import { DatePicker } from '@/app/components/ui/DatePicker';
 
 type FormMode = 'create' | 'edit' | 'view';
 
@@ -311,7 +312,7 @@ export function PolizaContableForm({ mode, poliza, onSave, onCancel }: Props) {
                   <label className={labelCls}>
                     Fecha Valor <span className="text-red-500 normal-case font-normal">*</span>
                   </label>
-                  <input type="date" value={journalDate} onChange={e => setJournalDate(e.target.value)} readOnly={isView} className={inputCls} />
+                  <DatePicker formato="iso" value={journalDate} onChange={(__v: string) => setJournalDate(__v)} disabled={isView} />
                 </div>
                 <div>
                   <label className={labelCls}>
@@ -417,7 +418,7 @@ export function PolizaContableForm({ mode, poliza, onSave, onCancel }: Props) {
                 <div className="grid grid-cols-3 gap-4">
                   <div>
                     <label className={labelCls}>Fecha Valor <span className="text-red-500 normal-case font-normal">*</span></label>
-                    <input type="date" value={journalDate} onChange={e => setJournalDate(e.target.value)} readOnly={isView} className={inputCls} />
+                    <DatePicker formato="iso" value={journalDate} onChange={(__v: string) => setJournalDate(__v)} disabled={isView} />
                   </div>
                   <div>
                     <label className={labelCls}>Moneda</label>

@@ -8,6 +8,7 @@ import { toast } from '@/app/lib/notificaciones';
 import { useOrdenTabla, coincideBusqueda } from '@/app/lib/ordenTabla';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 import { cargarXLSX, cargarPDF } from '@/app/lib/librerias';
+import { formatearFecha } from '@/app/lib/fechas';
 
 // ═══════════════════════════════════════════════════════════════════
 // TIPOS — Tabla EFINANCIANET_DB.J_CATALOGO_EVENTOS_CONTABLES
@@ -280,7 +281,7 @@ export function EventosContablesSection() {
     doc.setFontSize(14);
     doc.text('Eventos Contables', 14, 15);
     doc.setFontSize(8);
-    doc.text(`Generado: ${new Date().toLocaleDateString('es-MX')}`, 14, 21);
+    doc.text(`Generado: ${formatearFecha(new Date())}`, 14, 21);
     autoTable(doc, {
       startY: 26,
       head: [['Código', 'Evento', 'Prompt IA']],

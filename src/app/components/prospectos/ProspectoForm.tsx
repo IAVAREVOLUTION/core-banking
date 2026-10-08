@@ -18,6 +18,7 @@ import { LISTAS_PLD, validarDatosPLD, verificarListasPLDConLatencia, estatusGene
 import type { RegistroPLD, ResolucionPLD } from '@/app/lib/pldSimulado';
 import { getUsuarioSesion } from '@/app/lib/sesion';
 import { CampoMonto } from '@/app/components/ui/CampoMonto';
+import { formatearFecha } from '@/app/lib/fechas';
 
 // ═══════════════════════════════════════════════════════════════════
 // PERSONERÍA JURÍDICA — qué juego de campos aplica
@@ -1417,7 +1418,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, onCa
           interes: interes.toFixed(2),
           amortizacion: amortizacion.toFixed(2),
           pagoMensual: pagoMensual.toFixed(2),
-          fechaPago: fechaPago.toLocaleDateString('es-MX')
+          fechaPago: formatearFecha(fechaPago)
         });
       }
     } else if (cotizacion.tipoAmortizacion === 'Alemán') {
@@ -1438,7 +1439,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, onCa
           interes: interes.toFixed(2),
           amortizacion: amortizacionConstante.toFixed(2),
           pagoMensual: pagoMensual.toFixed(2),
-          fechaPago: fechaPago.toLocaleDateString('es-MX')
+          fechaPago: formatearFecha(fechaPago)
         });
       }
     } else if (cotizacion.tipoAmortizacion === 'Americano') {
@@ -1458,7 +1459,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, onCa
           interes: interes.toFixed(2),
           amortizacion: amortizacion.toFixed(2),
           pagoMensual: pagoMensual.toFixed(2),
-          fechaPago: fechaPago.toLocaleDateString('es-MX')
+          fechaPago: formatearFecha(fechaPago)
         });
       }
     }
@@ -2768,8 +2769,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, onCa
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-gray-700 mb-1">Fecha de firma <span className="text-red-600">*</span></label>
-                    <input type="date" value={autFecha} max={new Date().toISOString().slice(0, 10)} onChange={e => setAutFecha(e.target.value)} disabled={consultando}
-                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-primary-theme" />
+                    <DatePicker formato="iso" value={autFecha} onChange={(__v: string) => setAutFecha(__v)} disabled={consultando} max={new Date().toISOString().slice(0, 10)} className="w-full text-sm" />
                   </div>
                 </div>
                 <label className="mt-3 flex items-start gap-2 text-xs text-gray-700">

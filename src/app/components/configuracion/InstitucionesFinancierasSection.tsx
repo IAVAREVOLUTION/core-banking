@@ -18,6 +18,8 @@ import {
 } from 'lucide-react';
 import { toast } from '@/app/lib/notificaciones';
 import { cargarXLSX, cargarPDF } from '@/app/lib/librerias';
+import { DatePicker } from '@/app/components/ui/DatePicker';
+import { formatearFecha } from '@/app/lib/fechas';
 
 // ═══════════════════════════════════════════════════════════════════
 // TIPOS
@@ -624,7 +626,7 @@ async function exportToPDF(data: InstitucionFinanciera[]) {
   doc.setFontSize(14);
   doc.text('Instituciones Financieras', 14, 18);
   doc.setFontSize(9);
-  doc.text(`Generado: ${new Date().toLocaleDateString('es-MX')}`, 14, 24);
+  doc.text(`Generado: ${formatearFecha(new Date())}`, 14, 24);
 
   autoTable(doc, {
     startY: 30,
@@ -661,7 +663,7 @@ function handlePrint(data: InstitucionFinanciera[]) {
       .date { color: #888; font-size: 9px; margin-bottom: 12px; }
     </style></head><body>
     <h2>Instituciones Financieras</h2>
-    <div class="date">Generado: ${new Date().toLocaleDateString('es-MX')}</div>
+    <div class="date">Generado: ${formatearFecha(new Date())}</div>
     <table>
       <tr><th>#</th><th>Nombre</th><th>Tipo</th><th>Ubicación</th><th>Ciudad</th><th>Región</th><th>Teléfono</th><th>Moneda</th></tr>
       ${data.map((d) => `<tr><td>${d.institucionNumero}</td><td>${d.nombre}</td><td>${d.tipoInstitucion}</td><td>${d.ubicacion}</td><td>${d.ciudad}</td><td>${d.region}</td><td>${d.telefono}</td><td>${d.moneda}</td></tr>`).join('')}
@@ -811,17 +813,7 @@ const FormFieldIF = React.memo(function FormFieldIF({
           ))}
         </select>
       ) : type === 'date' ? (
-        <input
-          type="date"
-          value={value ?? ''}
-          readOnly={!isEditable}
-          onChange={isEditable ? (e) => onChange!(name!, e.target.value) : undefined}
-          className={`flex-1 text-[11px] px-1.5 py-1 border border-gray-300 rounded bg-white text-gray-800 min-w-0 ${
-            isEditable
-              ? 'focus:border-primary-theme focus:ring-1 focus:ring-accent-theme outline-none'
-              : 'read-only:bg-gray-50'
-          }`}
-        />
+        <DatePicker formato="iso" value={value ?? ''} onChange={(__v: string) => onChange?.(name!, __v)} disabled={!isEditable} className="text-[11px] min-w-0" />
       ) : (
         <input
           type={inputType ?? 'text'}
@@ -1021,14 +1013,7 @@ function CreateModal({
             ))}
           </select>
         ) : o.type === 'date' ? (
-          <input
-            type="date"
-            value={String(form[name] ?? '')}
-            onChange={(e) => handleChange(name, e.target.value)}
-            className={`flex-1 text-[11px] px-1.5 py-1 border rounded bg-white text-gray-800 min-w-0 focus:border-primary-theme focus:ring-1 focus:ring-accent-theme outline-none ${
-              errors[name] ? 'border-red-400 bg-red-50/30' : 'border-gray-300'
-            }`}
-          />
+          <DatePicker formato="iso" value={String(form[name] ?? '')} onChange={(__v: string) => handleChange(name, __v)} />
         ) : (
           <input
             type="text"

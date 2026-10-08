@@ -6,6 +6,8 @@ import {
 import { toast } from '@/app/lib/notificaciones';
 import { useOrdenTabla, coincideBusqueda } from '@/app/lib/ordenTabla';
 import { cargarXLSX, cargarPDF } from '@/app/lib/librerias';
+import { DatePicker } from '@/app/components/ui/DatePicker';
+import { formatearFecha } from '@/app/lib/fechas';
 
 // ═══════════════════════════════════════════════════════════════════
 // TIPOS
@@ -71,7 +73,7 @@ async function exportCSVEmp(data: Empleado[]) {
 }
 async function exportPDFEmp(data: Empleado[]) {
   const { jsPDF, autoTable } = await cargarPDF();
-  const doc = new jsPDF({ orientation: 'landscape' }); doc.setFontSize(14); doc.text('Empleados', 14, 18); doc.setFontSize(9); doc.text(`Generado: ${new Date().toLocaleDateString('es-MX')}`, 14, 24);
+  const doc = new jsPDF({ orientation: 'landscape' }); doc.setFontSize(14); doc.text('Empleados', 14, 18); doc.setFontSize(9); doc.text(`Generado: ${formatearFecha(new Date())}`, 14, 24);
   autoTable(doc, { startY: 30, head: [['No', 'Ap. Paterno', 'Nombre', 'Cargo', 'ID Usuario', 'Responsabilidad', 'Sucursal', 'Correo']], body: data.map((d) => [d.noEmpleado, d.apellidoPaterno, d.nombre, d.cargo, d.idUsuario, d.responsabilidad, d.sucursal, d.correoElectronico]), styles: { fontSize: 7 }, headStyles: { fillColor: [74, 111, 165] }, alternateRowStyles: { fillColor: [245, 245, 245] } });
   doc.save('empleados.pdf'); toast.success('Exportado a PDF');
 }
@@ -103,7 +105,7 @@ const FormFieldEmp = React.memo(function FormFieldEmp({ label, value, name, requ
       <label className="text-[11px] text-gray-600 w-[145px] flex-shrink-0 text-right">{label}{required && <span className="text-red-500 ml-0.5">*</span>}{':'}</label>
       {type === 'checkbox' ? <input type="checkbox" checked={checked} onChange={(e) => onCheck?.(name, e.target.checked)} className="h-3.5 w-3.5 accent-primary-theme" />
       : type === 'select' ? <select value={String(value ?? '')} onChange={(e) => onChange?.(name, e.target.value)} className="flex-1 text-[11px] px-1.5 py-1 border border-gray-300 rounded bg-white text-gray-800 min-w-0 focus:border-primary-theme focus:ring-1 focus:ring-primary-theme/30 outline-none"><option value="">-- Seleccionar --</option>{options?.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}</select>
-      : type === 'date' ? <input type="date" value={value ?? ''} onChange={(e) => onChange?.(name, e.target.value)} className="flex-1 text-[11px] px-1.5 py-1 border border-gray-300 rounded bg-white text-gray-800 min-w-0 focus:border-primary-theme focus:ring-1 focus:ring-primary-theme/30 outline-none" />
+      : type === 'date' ? <DatePicker formato="iso" value={value ?? ''} onChange={(__v: string) => onChange?.(name, __v)} className="min-w-0" />
       : <input type={type === 'password' ? 'password' : inputType ?? 'text'} value={value ?? ''} onChange={(e) => onChange?.(name, e.target.value)} className="flex-1 text-[11px] px-1.5 py-1 border border-gray-300 rounded bg-white text-gray-800 min-w-0 focus:border-primary-theme focus:ring-1 focus:ring-primary-theme/30 outline-none" />}
     </div>
   );

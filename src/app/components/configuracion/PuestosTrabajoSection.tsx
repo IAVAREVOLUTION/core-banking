@@ -5,6 +5,8 @@ import {
 } from 'lucide-react';
 import { toast } from '@/app/lib/notificaciones';
 import { cargarXLSX, cargarPDF } from '@/app/lib/librerias';
+import { DatePicker } from '@/app/components/ui/DatePicker';
+import { formatearFecha } from '@/app/lib/fechas';
 
 // ═══════════════════════════════════════════════════════════════════
 // TIPOS
@@ -95,7 +97,7 @@ async function exportCSVPT(data: PuestoTrabajo[]) {
 }
 async function exportPDFPT(data: PuestoTrabajo[]) {
   const { jsPDF, autoTable } = await cargarPDF();
-  const doc = new jsPDF({ orientation: 'landscape' }); doc.setFontSize(14); doc.text('Puestos de Trabajo', 14, 18); doc.setFontSize(9); doc.text(`Generado: ${new Date().toLocaleDateString('es-MX')}`, 14, 24);
+  const doc = new jsPDF({ orientation: 'landscape' }); doc.setFontSize(14); doc.text('Puestos de Trabajo', 14, 18); doc.setFontSize(9); doc.text(`Generado: ${formatearFecha(new Date())}`, 14, 24);
   autoTable(doc, { startY: 30, head: [['Row ID', 'Puesto', 'Superior', 'Tipo', 'Sucursal', 'Territorio', 'Cargo']], body: data.map((d) => [d.rowIdBase, d.puestoTrabajo, d.puestoSuperiorNombre, d.tipoPuesto, d.sucursal, d.territorio, d.cargo]), styles: { fontSize: 7 }, headStyles: { fillColor: [74, 111, 165] }, alternateRowStyles: { fillColor: [245, 245, 245] } });
   doc.save('puestos_trabajo.pdf'); toast.success('Exportado a PDF');
 }
@@ -219,8 +221,7 @@ const FormFieldPT = React.memo(function FormFieldPT({ label, value, name, requir
           <option value="">-- Seleccionar --</option>{options?.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
       ) : type === 'date' ? (
-        <input type="date" value={value ?? ''} readOnly={!editable} onChange={editable ? (e) => onChange!(name!, e.target.value) : undefined}
-          className={`flex-1 text-[11px] px-1.5 py-1 border border-gray-300 rounded bg-white text-gray-800 min-w-0 ${editable ? 'focus:border-primary-theme focus:ring-1 focus:ring-accent-theme outline-none' : 'read-only:bg-gray-50'}`} />
+        <DatePicker formato="iso" value={value ?? ''} onChange={(__v: string) => onChange?.(name!, __v)} disabled={!editable} className="text-[11px] min-w-0" />
       ) : (
         <input type="text" value={value ?? ''} readOnly={!editable} onChange={editable ? (e) => onChange!(name!, e.target.value) : undefined}
           className={`flex-1 text-[11px] px-1.5 py-1 border border-gray-300 rounded bg-white text-gray-800 min-w-0 ${editable ? 'focus:border-primary-theme focus:ring-1 focus:ring-accent-theme outline-none' : 'read-only:bg-gray-50'}`} />
@@ -290,7 +291,7 @@ function CreateModalPT({ nextRowId, puestoOptions, onSave, onCancel }: {
         <label className={`text-[11px] w-[160px] flex-shrink-0 text-right ${errors[name] ? 'text-red-600' : 'text-gray-600'}`}>{label}{o.required && <span className="text-red-500 ml-0.5">*</span>}{':'}</label>
         {o.type === 'checkbox' ? <input type="checkbox" checked={(form as any)[name] as boolean} onChange={(e) => handleCheck(name, e.target.checked)} className="h-3.5 w-3.5 accent-primary-theme" />
         : o.type === 'select' ? <select value={String((form as any)[name] ?? '')} onChange={(e) => handleChange(name, e.target.value)} className={`flex-1 text-[11px] px-1.5 py-1 border rounded bg-white text-gray-800 min-w-0 focus:border-primary-theme focus:ring-1 focus:ring-accent-theme outline-none ${errors[name] ? 'border-red-400' : 'border-gray-300'}`}><option value="">-- Seleccionar --</option>{o.options?.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}</select>
-        : o.type === 'date' ? <input type="date" value={String((form as any)[name] ?? '')} onChange={(e) => handleChange(name, e.target.value)} className={`flex-1 text-[11px] px-1.5 py-1 border rounded bg-white text-gray-800 min-w-0 focus:border-primary-theme focus:ring-1 focus:ring-accent-theme outline-none ${errors[name] ? 'border-red-400' : 'border-gray-300'}`} />
+        : o.type === 'date' ? <DatePicker formato="iso" value={String((form as any)[name] ?? '')} onChange={(__v: string) => handleChange(name, __v)} />
         : <input type="text" value={String((form as any)[name] ?? '')} onChange={(e) => handleChange(name, e.target.value)} className={`flex-1 text-[11px] px-1.5 py-1 border rounded bg-white text-gray-800 min-w-0 focus:border-primary-theme focus:ring-1 focus:ring-accent-theme outline-none ${errors[name] ? 'border-red-400' : 'border-gray-300'}`} />}
       </div>
     );

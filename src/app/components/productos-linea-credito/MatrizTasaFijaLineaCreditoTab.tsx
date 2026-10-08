@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { toast } from '@/app/lib/notificaciones';
 import { MatrizTasaFijaLineaCredito } from '@/app/types/productoLineaCredito';
+import { DatePicker } from '@/app/components/ui/DatePicker';
 
 interface MatrizTasaFijaLineaCreditoTabProps {
   mode: 'create' | 'edit' | 'view';
@@ -395,24 +396,12 @@ function FormModal({ mode, item, onSave, onClose }: FormModalProps) {
 
                 <div>
                   <label className="block text-xs text-gray-700 mb-1 font-medium">Inicio vigencia <span className="text-red-600">*</span></label>
-                  <input 
-                    type="date" 
-                    value={formData.inicioVigencia} 
-                    onChange={(e) => handleChange('inicioVigencia', e.target.value)} 
-                    disabled={isViewMode} 
-                    className={inputClassName()} 
-                  />
+                  <DatePicker formato="iso" value={formData.inicioVigencia} onChange={(__v: string) => handleChange('inicioVigencia', __v)} disabled={isViewMode} />
                 </div>
 
                 <div>
                   <label className="block text-xs text-gray-700 mb-1 font-medium">Fin vigencia <span className="text-red-600">*</span></label>
-                  <input 
-                    type="date" 
-                    value={formData.finVigencia} 
-                    onChange={(e) => handleChange('finVigencia', e.target.value)} 
-                    disabled={isViewMode} 
-                    className={inputClassName()} 
-                  />
+                  <DatePicker formato="iso" value={formData.finVigencia} onChange={(__v: string) => handleChange('finVigencia', __v)} disabled={isViewMode} />
                 </div>
 
                 <div>

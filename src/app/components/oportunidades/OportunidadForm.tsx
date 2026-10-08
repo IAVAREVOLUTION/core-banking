@@ -28,6 +28,7 @@ import { syncToJClientes } from '../../hooks/useSyncJClientes';
 import { fechasCobroComision } from '../../lib/fechasComisionGPO';
 import { SeleccionarClienteModal } from '../solicitudes/SeleccionarClienteModal';
 import { CampoMonto } from '@/app/components/ui/CampoMonto';
+import { DatePicker } from '@/app/components/ui/DatePicker';
 
 type FormMode = 'create' | 'edit' | 'view';
 type TabId = 'default' | 'solicitudes' | 'adjuntos' | 'cierre';
@@ -2153,7 +2154,7 @@ function CorpFinModal({ item, monedaDefault, onSave, onClose }: CorpFinModalProp
             </div>
             <div>
               <label className="block text-[11px] font-semibold text-gray-600 uppercase mb-1.5">Fecha Solicitud</label>
-              <input type="date" value={f.fecha_solicitud} onChange={e => set('fecha_solicitud', e.target.value)} className={inputCls} />
+              <DatePicker formato="iso" value={f.fecha_solicitud} onChange={(__v: string) => set('fecha_solicitud', __v)} />
             </div>
             <div className="col-span-2">
               <label className="block text-[11px] font-semibold text-gray-600 uppercase mb-1.5">Folio</label>

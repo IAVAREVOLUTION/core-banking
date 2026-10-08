@@ -2,6 +2,7 @@ import { useState, useRef, useMemo } from 'react';
 import { toast } from '@/app/lib/notificaciones';
 import { useOrdenTabla, coincideBusqueda } from '@/app/lib/ordenTabla';
 import type { PolizaContable } from './PolizasContablesModule';
+import { formatearFecha } from '@/app/lib/fechas';
 
 interface Props {
   polizas: PolizaContable[];
@@ -62,7 +63,7 @@ export function PolizaContableList({ polizas, onNew, onEdit, onView, loading, er
   const items = filtered.slice((pg - 1) * PER_PAGE, pg * PER_PAGE);
 
   const fmt = (n: number) => n === 0 ? '—' : n.toLocaleString('es-MX', { minimumFractionDigits: 2 });
-  const fmtDate = (s: string) => { try { return new Date(s).toLocaleDateString('es-MX'); } catch { return s || '—'; } };
+  const fmtDate = (s: string) => { try { return formatearFecha(new Date(s)); } catch { return s || '—'; } };
 
   const startResize = (e: React.MouseEvent, col: string) => {
     e.preventDefault();

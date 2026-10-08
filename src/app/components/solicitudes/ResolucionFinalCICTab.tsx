@@ -27,6 +27,7 @@ import {
 import {
   leerVotacionCPC, conteoVotosCPC, CAT_DECISION_VOTO, type VotoCPC,
 } from './VotacionCPCTab';
+import { DatePicker } from '@/app/components/ui/DatePicker';
 
 export const SUBTAB_RESOLUCION_CIC = 'resolucionCIC';
 
@@ -268,13 +269,7 @@ export function ResolucionFinalCICTab({
           <label className="block text-xs text-gray-700 mb-1">
             Fecha de Sesión CIC <span className="text-red-500">*</span>
           </label>
-          <input
-            type="date"
-            value={datos.fechaSesionCIC}
-            onChange={e => set('fechaSesionCIC', e.target.value)}
-            disabled={isRO}
-            className={isRO ? roClass : inputClass}
-          />
+          <DatePicker formato="iso" value={datos.fechaSesionCIC} onChange={(__v: string) => set('fechaSesionCIC', __v)} disabled={isRO} />
         </div>
         <div>
           <label className="block text-xs text-gray-700 mb-1">

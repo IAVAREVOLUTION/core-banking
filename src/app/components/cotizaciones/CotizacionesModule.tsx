@@ -530,8 +530,27 @@ export function CotizacionesModule({ deepLinkCotizacionId, deepLinkLinea, onDeep
         tipoCalculo: c.data.tipoCalculoAmortizacion || 'Francés',
         moneda: c.data.moneda || 'MXN',
         montoGarantia: Number(c.data.montoGarantia || 0).toFixed(2),
+        // Bien elegido en la cotización. La cotización guarda el aforo como
+        // fracción (1.0 = 100%) y Términos de la Solicitud lo espera en %.
+        ...(c.data.tipoGarantia ? {
+          _garantiaActiva: true,
+          tipoGarantia: c.data.tipoGarantia,
+          subtipoGarantia: c.data.subtipoGarantia || '',
+          porcentajeAforo: (() => {
+            const a = Number(c.data.aforo || 0);
+            return a > 0 && a <= 10 ? Math.round(a * 10000) / 100 : a;
+          })(),
+          montoCubrirGarantia: Number(c.data.montoCubrirGarantia || 0),
+        } : {}),
         seguroFinanciado: c.data.seguroFinanciado || false,
         montoSeguro: Number(c.data.montoSeguro || 0).toFixed(2),
+        // Seguro elegido: la cotización lo identifica por nombre.
+        ...(c.data.seguroFinanciado && c.data.seguroNombre ? {
+          seguroNombre: c.data.seguroNombre,
+          seguroProductoIdCot: (c.data as any).seguroProductoId || '',
+          seguroMontoDefaultCot: Number(c.data.montoSeguro || 0),
+          tasaSeguro: c.data.tasaSeguro || 0,
+        } : {}),
         // Línea de Crédito — campos específicos (homologados §4)
         ...(c.data.lineaProducto === 'Línea de Crédito' ? {
           tipoLinea: c.data.tipoLinea || '',

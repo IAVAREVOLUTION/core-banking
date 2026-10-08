@@ -517,9 +517,6 @@ function ArchivoModal({ archivo, onClose, onDownload }: { archivo: Archivo; onCl
             &nbsp;·&nbsp;
             Generado: <strong>{formatDateDMY(archivo.generadoEn)}</strong>
           </span>
-          {archivo.modelo && (
-            <span className="font-mono text-gray-400 text-[10px]">{archivo.modelo}</span>
-          )}
         </div>
 
         {/* Content */}

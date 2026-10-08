@@ -20,6 +20,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useCuentasAhorroDB } from '@/app/hooks/useCuentasAhorroDB';
 import type { CuentaAhorroListItem } from '@/app/hooks/useCuentasAhorroDB';
 import { getCuentaAhorroById } from '@/app/hooks/useCuentasAhorroDB';
+import { formatearFecha } from '@/app/lib/fechas';
 
 interface CuentaAhorroProps {
   onBack: () => void;
@@ -124,11 +125,9 @@ export function CuentaAhorro({ onBack, mode, clienteId, onCuentaEjeChange }: Cue
   // HELPERS
   // ═══════════════════════════════════════════════════════════════════
   const formatDate = (d: string) => {
+    // Formato único del sistema (lib/fechas): dd/mm/aaaa, sin corrimiento de un día en fechas ISO.
     if (!d) return '—';
-    try {
-      const date = new Date(d);
-      return date.toLocaleDateString('es-MX', { day: '2-digit', month: '2-digit', year: 'numeric' });
-    } catch { return d; }
+    return formatearFecha(d);
   };
 
   const formatMoney = (n: number) => {

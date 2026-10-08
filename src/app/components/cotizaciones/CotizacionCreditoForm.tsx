@@ -45,6 +45,7 @@ import { useProductosSeguros } from '../../hooks/useProductosSeguros';
 import { CampoInstitucionGobierno } from '../ui/CatalogoInstitucionGobierno';
 import type { InstitucionGobiernoSeleccion } from '../ui/CatalogoInstitucionGobierno';
 import { CampoMonto } from '@/app/components/ui/CampoMonto';
+import { DatePicker } from '@/app/components/ui/DatePicker';
 
 type FormMode = 'create' | 'edit' | 'view';
 type LineaProducto = 'Crédito' | 'Línea de Crédito';
@@ -191,11 +192,11 @@ export function CotizacionCreditoForm({ mode, lineaProducto, cotizacion, onSave,
                   : Array.isArray(pk.matrizTasaFija) ? pk.matrizTasaFija : [];
 
                 // 2. Cross-reference con el Producto Seguro real de BD (por UUID o nombre)
+                const segProd = productosSegurosDB.find((sp: any) =>
+                  (sp.dbUuid && sp.dbUuid === pkId) ||
+                  (sp.nombre && sp.nombre.trim().toLowerCase() === pkNombre.toLowerCase())
+                );
                 if (rawMC.length === 0 && productosSegurosDB.length > 0) {
-                  const segProd = productosSegurosDB.find((sp: any) =>
-                    (sp.dbUuid && sp.dbUuid === pkId) ||
-                    (sp.nombre && sp.nombre.trim().toLowerCase() === pkNombre.toLowerCase())
-                  );
                   if (segProd && Array.isArray((segProd as any).matrizTasaFija)) {
                     rawMC = (segProd as any).matrizTasaFija;
                     console.log(`[CotizCredito] Cross-ref seguro "${pkNombre}" → matrizTasaFija del Producto Seguro (${rawMC.length} filas)`);
@@ -223,8 +224,11 @@ export function CotizacionCreditoForm({ mode, lineaProducto, cotizacion, onSave,
 
                 return {
                   id: pk.id ?? idx + 1,
-                  nombre: pkNombre,
+                  // Nombre vigente del Producto Seguro (el paquete puede traer una copia vieja)
+                  nombre: String((segProd as any)?.nombre || '').trim() || pkNombre,
+                  nombreAnterior: pkNombre,
                   tipo: 'Seguro',
+                  productoSeguroId: String((segProd as any)?.dbUuid || pkId || ''),
                   montosYCoberturas,
                 };
               });
@@ -430,7 +434,7 @@ export function CotizacionCreditoForm({ mode, lineaProducto, cotizacion, onSave,
       // Reset garantía
       tipoGarantia: '', subtipoGarantia: '', aforo: 0, montoGarantia: 0, montoCubrirGarantia: 0,
       // Reset seguro
-      seguroFinanciado: false, seguroNombre: '', montoSeguro: 0, tasaSeguro: 0, totalSeguro: 0,
+      seguroFinanciado: false, seguroNombre: '', seguroProductoId: '', montoSeguro: 0, tasaSeguro: 0, totalSeguro: 0,
     });
     setForm(prev => ({ ...prev, producto_id: prod.id }));
   };
@@ -552,6 +556,14 @@ export function CotizacionCreditoForm({ mode, lineaProducto, cotizacion, onSave,
   const garantiaRows = selectedProducto?.garantias || [];
 
   const seguroRows = (selectedProducto?.seguros || []).filter(s => s.tipo === 'Seguro');
+
+  // Cotizaciones guardadas con el nombre anterior del seguro → nombre vigente.
+  useEffect(() => {
+    if (!data.seguroNombre || seguroRows.some(s => s.nombre === data.seguroNombre)) return;
+    const s = seguroRows.find(r => r.nombreAnterior === data.seguroNombre);
+    if (s) setData({ seguroNombre: s.nombre, ...(s.productoSeguroId ? { seguroProductoId: s.productoSeguroId } : {}) });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seguroRows.map(s => s.nombre).join('|'), data.seguroNombre]);
 
   // Validaciones en tiempo real — spec §9
   const plazoErr = data.plazoMinimo > 0 && data.plazo > 0 && (data.plazo < data.plazoMinimo || data.plazo > data.plazoMaximo);
@@ -1003,76 +1015,8 @@ export function CotizacionCreditoForm({ mode, lineaProducto, cotizacion, onSave,
                       <label className="text-[10px] text-gray-600 mb-1">
                         Fecha Primer Pago <span className="text-red-500">*</span>
                       </label>
-                      <div className="relative" ref={datePickerRef}>
-                        <button
-                          type="button"
-                          disabled={isView}
-                          onClick={() => !isView && setShowDatePicker(prev => !prev)}
-                          className={`${fieldClass} text-left flex items-center justify-between cursor-pointer ${
-                            !isView && !data.fechaPrimerPago ? 'border-red-400 bg-red-50' : ''
-                          }`}
-                        >
-                          <span className={data.fechaPrimerPago ? 'text-gray-800' : 'text-gray-400'}>
-                            {data.fechaPrimerPago
-                              ? format(parse(data.fechaPrimerPago, 'yyyy-MM-dd', new Date()), "dd 'de' MMMM 'de' yyyy", { locale: es })
-                              : 'Seleccionar fecha...'}
-                          </span>
-                          <CalendarDays className="w-4 h-4 text-gray-400 shrink-0" />
-                        </button>
-
-                        {showDatePicker && !isView && (
-                          <div className="absolute top-full left-0 mt-1 z-50 bg-white border border-gray-300 rounded-lg shadow-xl p-3">
-                            <DayPicker
-                              mode="single"
-                              locale={es}
-                              captionLayout="dropdown-buttons"
-                              fromYear={2020}
-                              toYear={2040}
-                              defaultMonth={
-                                data.fechaPrimerPago
-                                  ? parse(data.fechaPrimerPago, 'yyyy-MM-dd', new Date())
-                                  : new Date()
-                              }
-                              selected={
-                                data.fechaPrimerPago
-                                  ? parse(data.fechaPrimerPago, 'yyyy-MM-dd', new Date())
-                                  : undefined
-                              }
-                              onSelect={(date) => {
-                                if (date && isValid(date)) {
-                                  setData({ fechaPrimerPago: format(date, 'yyyy-MM-dd') });
-                                }
-                                setShowDatePicker(false);
-                              }}
-                              styles={{
-                                caption: { color: 'var(--theme-primary)' },
-                                day: { borderRadius: '6px' },
-                              }}
-                              modifiersStyles={{
-                                selected: { backgroundColor: 'var(--theme-primary)', color: 'white' },
-                                today: { fontWeight: 'bold', border: '1px solid var(--theme-primary)', borderRadius: '6px' },
-                              }}
-                            />
-                            <div className="border-t border-gray-200 pt-2 mt-1 flex items-center justify-between px-1">
-                              <button
-                                type="button"
-                                onClick={() => { setData({ fechaPrimerPago: format(new Date(), 'yyyy-MM-dd') }); setShowDatePicker(false); }}
-                                className="text-[10px] text-blue-600 hover:text-blue-800"
-                              >
-                                Hoy
-                              </button>
-                              {data.fechaPrimerPago && (
-                                <button
-                                  type="button"
-                                  onClick={() => { setData({ fechaPrimerPago: '' }); setShowDatePicker(false); }}
-                                  className="text-[10px] text-red-500 hover:text-red-700"
-                                >
-                                  Limpiar
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                        )}
+                      <div ref={datePickerRef}>
+                        <DatePicker formato="iso" value={data.fechaPrimerPago || ''} onChange={(__v: string) => setData({ fechaPrimerPago: __v })} disabled={isView} />
                       </div>
                     </div>
 
@@ -1128,6 +1072,7 @@ export function CotizacionCreditoForm({ mode, lineaProducto, cotizacion, onSave,
                                 // Solo setear nombre, resetear valores — el usuario debe seleccionar fila de M&C
                                 setData({
                                   seguroNombre: nombre,
+                                  seguroProductoId: seguroRows.find(s => s.nombre === nombre)?.productoSeguroId || '',
                                   montoSeguro: 0,
                                   tasaSeguro: 0,
                                   totalSeguro: 0,
@@ -1267,13 +1212,7 @@ export function CotizacionCreditoForm({ mode, lineaProducto, cotizacion, onSave,
                               </div>
                               <div className="flex flex-col">
                                 <label className="text-[11px] text-gray-600 mb-1 uppercase tracking-wider font-medium">Fecha Primer Pago <span className="text-red-500">*</span></label>
-                                <input
-                                  type="date"
-                                  value={data.fechaPrimerPago || ''}
-                                  disabled={isView}
-                                  onChange={e => setData({ fechaPrimerPago: e.target.value })}
-                                  className={fieldClass}
-                                />
+                                <DatePicker formato="iso" value={data.fechaPrimerPago || ''} onChange={(__v: string) => setData({ fechaPrimerPago: __v })} disabled={isView} />
                                 <span className="text-[9px] text-gray-400 mt-0.5">Base para las fechas de pago del seguro</span>
                               </div>
                             </div>

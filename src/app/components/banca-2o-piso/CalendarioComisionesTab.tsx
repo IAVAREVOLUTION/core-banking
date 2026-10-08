@@ -26,6 +26,7 @@ import { useProductosLineaCreditoDB } from '../../hooks/useProductosLineaCredito
 // REQ-21 HU-21.1 — los conceptos del Aviso salen del catálogo de Cargos del
 // producto, no de literales: tienen que coincidir con el componente contable.
 import { conceptosAvisoComision, construirConceptosAviso } from '../../lib/cargosProductoGPO';
+import { DatePicker } from '@/app/components/ui/DatePicker';
 
 const FORMAS_PAGO = [
   'Transferencia SPEI', 'Banca por internet', 'En sucursal',
@@ -419,7 +420,7 @@ export function CalendarioComisionesTab({
                 </div>
                 <div>
                   <label className="block text-[10px] font-medium text-gray-600 mb-1 uppercase tracking-wide">Fecha Compromiso</label>
-                  <input type="date" value={fechaCompromiso} onChange={e => setFechaCompromiso(e.target.value)} className="w-full px-3 py-1.5 text-xs border border-gray-200 rounded-lg" />
+                  <DatePicker formato="iso" value={fechaCompromiso} onChange={(__v: string) => setFechaCompromiso(__v)} className="w-full text-xs" />
                 </div>
                 <div>
                   <label className="block text-[10px] font-medium text-gray-600 mb-1 uppercase tracking-wide">Institución Financiera</label>

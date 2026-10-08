@@ -682,6 +682,15 @@ export function SolicitudCreditoList({
         montoGarantia: tc.montoGarantia || '',
         seguroFinanciado: tc.seguroFinanciado || false,
         montoSeguro: tc.montoSeguro || '',
+        // Bien y seguro elegidos en la cotización
+        ...(tc.tipoGarantia ? {
+          _garantiaActiva: true,
+          tipoGarantia: tc.tipoGarantia,
+          subtipoGarantia: tc.subtipoGarantia || '',
+          porcentajeAforo: tc.porcentajeAforo,
+          montoCubrirGarantia: tc.montoCubrirGarantia,
+        } : {}),
+        ...(tc.seguroNombre ? { seguroNombre: tc.seguroNombre, seguroProductoIdCot: tc.seguroProductoIdCot || '', seguroMontoDefaultCot: tc.seguroMontoDefaultCot, tasaSeguroCot: tc.tasaSeguro } : {}),
         // Garantía Financiera 2o Piso (GPO) — heredados de la Oportunidad (Línea de Crédito).
         ...(tc.sectorInfraestructura !== undefined ? { sectorInfraestructura: tc.sectorInfraestructura } : {}),
         ...(tc.montoEmisionProyectado !== undefined ? { montoEmisionProyectado: tc.montoEmisionProyectado } : {}),
@@ -697,6 +706,13 @@ export function SolicitudCreditoList({
       const simRows = tc._simulacion;
       if (Array.isArray(simRows) && simRows.length > 0) {
         saveToSession('new', 'simulacion', simRows);
+        // Marca para el formulario: esta simulación viene de la cotización y no
+        // debe limpiarse al abrir (el prop cotizacionData ya llega en null).
+        // Sólo Cotización: el flujo de Oportunidad (Banca 2º Piso, trae campos GPO)
+        // se deja exactamente como estaba.
+        const vieneDeOportunidad = tc.sectorInfraestructura !== undefined
+          || tc.montoGarantizadoGpo !== undefined || tc.plazosProducto !== undefined;
+        if (!vieneDeOportunidad) saveToSession('new', 'simulacion_desde_cotizacion', true);
       }
     }
 

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { DatePicker } from '@/app/components/ui/DatePicker';
 import { CampoMonto } from '@/app/components/ui/CampoMonto';
+import { formatearFecha } from '@/app/lib/fechas';
 
 interface CotizacionesSectionProps {
   solicitudId?: number;
@@ -53,7 +54,7 @@ export function CotizacionesSection({ solicitudId }: CotizacionesSectionProps) {
           interes: interes.toFixed(2),
           amortizacion: amortizacion.toFixed(2),
           pagoMensual: pagoMensual.toFixed(2),
-          fechaPago: fechaPago.toLocaleDateString('es-MX')
+          fechaPago: formatearFecha(fechaPago)
         });
       }
     } else if (cotizacion.tipoAmortizacion === 'Alemán') {
@@ -74,7 +75,7 @@ export function CotizacionesSection({ solicitudId }: CotizacionesSectionProps) {
           interes: interes.toFixed(2),
           amortizacion: amortizacionConstante.toFixed(2),
           pagoMensual: pagoMensual.toFixed(2),
-          fechaPago: fechaPago.toLocaleDateString('es-MX')
+          fechaPago: formatearFecha(fechaPago)
         });
       }
     } else if (cotizacion.tipoAmortizacion === 'Americano') {
@@ -94,7 +95,7 @@ export function CotizacionesSection({ solicitudId }: CotizacionesSectionProps) {
           interes: interes.toFixed(2),
           amortizacion: amortizacion.toFixed(2),
           pagoMensual: pagoMensual.toFixed(2),
-          fechaPago: fechaPago.toLocaleDateString('es-MX')
+          fechaPago: formatearFecha(fechaPago)
         });
       }
     }

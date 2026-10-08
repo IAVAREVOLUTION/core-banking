@@ -89,7 +89,7 @@ export function PLDCatalogos({ onBack }: Props) {
                   key={k}
                   onClick={() => { setActivo(k); setEditIdx(null); setShowNuevo(false); setConfirmDelete(null); }}
                   className={`w-full text-left px-3 py-1.5 text-xs transition-colors ${
-                    activo === k ? 'bg-[color:var(--theme-primary)] text-white' : 'text-gray-700 hover:bg-[#E8F4F8]'
+                    activo === k ? 'bg-[color:var(--theme-primary)] text-white' : 'text-gray-700 hover:bg-[color:var(--theme-tint-soft)]'
                   }`}
                 >
                   {TITULOS[k]}

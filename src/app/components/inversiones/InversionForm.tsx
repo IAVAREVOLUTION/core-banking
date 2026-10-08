@@ -7,6 +7,7 @@ import type {
   DocumentoValor, MovimientoInv, BloqueoInv, SolicitudExtra,
 } from '@/types/inversion';
 import * as store from './inversionesStore';
+import { formatearFecha } from '@/app/lib/fechas';
 
 // ═══════════════════════════════════════════════════════════════════
 // PROPS
@@ -521,7 +522,7 @@ export function InversionForm({ mode, inversionId, onCancel, onSave }: Props) {
                 <td className="px-2 py-1 border-r border-gray-200"><input value={b.nombre} readOnly className="w-full px-1 py-0.5 text-[10px] bg-gray-100 border border-gray-300 rounded" /></td>
                 <td className="px-2 py-1 border-r border-gray-200"><input value={b.apellidoPaterno} readOnly className="w-full px-1 py-0.5 text-[10px] bg-gray-100 border border-gray-300 rounded" /></td>
                 <td className="px-2 py-1 border-r border-gray-200"><input value={b.apellidoMaterno} readOnly className="w-full px-1 py-0.5 text-[10px] bg-gray-100 border border-gray-300 rounded" /></td>
-                <td className="px-2 py-1 border-r border-gray-200"><input type="date" value={b.fechaNacimiento} readOnly className="w-full px-1 py-0.5 text-[10px] bg-gray-100 border border-gray-300 rounded" /></td>
+                <td className="px-2 py-1 border-r border-gray-200"><input type="text" value={formatearFecha(b.fechaNacimiento)} readOnly className="w-full px-1 py-0.5 text-[10px] bg-gray-100 border border-gray-300 rounded" /></td>
                 <td className="px-2 py-1 border-r border-gray-200">
                   <select value={b.parentesco} disabled={isView} onChange={(e) => updateList('beneficiarios', data.beneficiarios.map((x) => x.id === b.id ? { ...x, parentesco: e.target.value } : x))} className="w-full px-1 py-0.5 text-[10px] border border-gray-300 rounded bg-white disabled:bg-gray-100">
                     <option value="">—</option>

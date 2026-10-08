@@ -9,6 +9,7 @@
  */
 import { useState, useMemo } from 'react';
 import { useCotizacionesCaptacionDB } from '@/app/hooks/useCotizacionesCaptacionDB';
+import { formatearFecha } from '@/app/lib/fechas';
 
 const LOG = '[CotizCliente]';
 
@@ -109,12 +110,9 @@ export function Cotizaciones({ onBack: _onBack, mode, clienteId, onNavigateToCot
 
   // ── Helpers de formato ──
   const formatFecha = (fecha: string) => {
+    // Formato único del sistema (lib/fechas): dd/mm/aaaa, sin corrimiento de un día en fechas ISO.
     if (!fecha) return '—';
-    try {
-      return new Date(fecha).toLocaleDateString('es-MX', {
-        year: 'numeric', month: '2-digit', day: '2-digit'
-      });
-    } catch { return fecha; }
+    return formatearFecha(fecha);
   };
 
   const formatMonto = (monto: number | string | undefined | null) => {

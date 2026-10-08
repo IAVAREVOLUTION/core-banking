@@ -195,7 +195,7 @@ export function PLDKYCInfo({ onBack }: Props) {
                 ) : paged.map((kyc, idx) => (
                   <tr key={kyc.clienteId || idx} className="border-b border-gray-200 transition-colors duration-150"
                     style={{ backgroundColor: idx % 2 === 1 ? '#EEEEEE' : '#FFFFFF' }}
-                    onMouseEnter={e => e.currentTarget.style.backgroundColor = '#E8F4F8'}
+                    onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--theme-tint-soft)'}
                     onMouseLeave={e => e.currentTarget.style.backgroundColor = idx % 2 === 1 ? '#EEEEEE' : '#FFFFFF'}>
                     <td className="px-3 py-2.5 text-xs whitespace-nowrap">
                       <span className="text-[color:var(--theme-link)] cursor-pointer hover:underline" onClick={() => openDetail(kyc,'editar')}>Editar</span>
@@ -251,7 +251,7 @@ export function PLDKYCInfo({ onBack }: Props) {
           </div>
           <div className="flex items-center gap-2">
             {isView
-              ? <button onClick={() => setDetailMode('editar')} className="px-4 py-1.5 bg-white border border-gray-400 text-gray-700 rounded text-sm hover:bg-gray-50">Editar KYC</button>
+              ? <button onClick={() => setDetailMode('editar')} className="px-4 py-1.5 rounded text-sm text-white bg-[color:var(--theme-action)] hover:bg-[color:var(--theme-action-hover)]">Editar KYC</button>
               : <>
                   <button onClick={handleSave} className="px-5 py-1.5 bg-[color:var(--theme-action)] text-white rounded text-sm hover:bg-[color:var(--theme-action-hover)]" style={{ fontWeight: 500 }}>Guardar</button>
                   <button onClick={handleBackToList} className="px-4 py-1.5 bg-white border border-gray-400 text-gray-700 rounded text-sm hover:bg-gray-50">Cancelar</button>

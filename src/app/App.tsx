@@ -27,6 +27,7 @@ import { projectId, publicAnonKey } from '/utils/supabase/info';
 import { setUsuarioSesion } from './lib/sesion';
 import { SOLICITUDES_LISTA } from './components/solicitudes/solicitudCreditoStore';
 import { perezoso, CargandoModulo, LimiteCargaModulo } from './lib/cargaModulos';
+import { formatearFecha } from '@/app/lib/fechas';
 
 // ── Módulos bajo demanda: cada uno se descarga al entrar a él (ver lib/cargaModulos) ──
 const PLDHome = perezoso(() => import('./components/pld/PLDHome'), 'PLDHome');
@@ -633,7 +634,7 @@ function App() {
         id: inversiones.length > 0 ? Math.max(...inversiones.map(i => i.id)) + 1 : 1,
         noCuentaInversion: `INV-${String(inversiones.length + 1).padStart(6, '0')}`,
         cliente: inversionData.cliente || 'Nuevo Cliente',
-        fechaInicio: inversionData.fechaInicio || new Date().toLocaleDateString('es-MX'),
+        fechaInicio: inversionData.fechaInicio || formatearFecha(new Date()),
         fechaFin: inversionData.fechaVencimiento || '',
         montoPagare: parseFloat(inversionData.montoInversion) || 0,
         montoIntereses: 0,

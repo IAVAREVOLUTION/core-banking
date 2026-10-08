@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { CampoMonto } from '@/app/components/ui/CampoMonto';
+import { DatePicker } from '@/app/components/ui/DatePicker';
 
 interface TabCargosProps {
   mode: 'nuevo' | 'editar' | 'ver';
@@ -303,12 +304,7 @@ export function TabCargos({ mode, camposEditables }: TabCargosProps) {
                   <label className="block text-xs font-normal text-gray-700 mb-1">
                     Fecha de Cargo <span className="text-red-500">*</span>
                   </label>
-                  <input 
-                    type="date"
-                    value={nuevoCargo.fechaCargo}
-                    onChange={(e) => setNuevoCargo(prev => ({ ...prev, fechaCargo: e.target.value }))}
-                    className="w-full px-2 py-1.5 text-xs border border-gray-300 bg-white"
-                  />
+                  <DatePicker formato="iso" value={nuevoCargo.fechaCargo} onChange={(__v: string) => setNuevoCargo(prev => ({ ...prev, fechaCargo: __v }))} className="w-full text-xs" />
                 </div>
 
                 <div>

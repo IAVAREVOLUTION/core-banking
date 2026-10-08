@@ -78,7 +78,7 @@ export function PLDDashboard() {
                   ) : s.recentAlertas.map((a, idx) => (
                     <tr key={a.id} className="border-b border-gray-200"
                       style={{ backgroundColor: idx % 2 === 1 ? '#EEEEEE' : '#FFFFFF' }}
-                      onMouseEnter={e => { e.currentTarget.style.backgroundColor = '#E8F4F8'; }}
+                      onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'var(--theme-tint-soft)'; }}
                       onMouseLeave={e => { e.currentTarget.style.backgroundColor = idx % 2 === 1 ? '#EEEEEE' : '#FFFFFF'; }}>
                       <td className="px-3 py-2 text-[color:var(--theme-link)] border-r border-gray-200" style={{ fontWeight: 500 }}>{a.noAlerta}</td>
                       <td className="px-3 py-2 max-w-[160px] truncate border-r border-gray-200">{a.cliente}</td>

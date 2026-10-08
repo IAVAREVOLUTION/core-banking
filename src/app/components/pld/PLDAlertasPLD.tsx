@@ -2,9 +2,11 @@ import { useState, useMemo } from 'react';
 import { toast } from '@/app/lib/notificaciones';
 import { DatePicker } from '@/app/components/ui/DatePicker';
 import type { AlertaPLD } from './pldStore';
-import { usePLDAlertas } from './usePLDData';
+import { usePLDAlertas, usePLDReportes } from './usePLDData';
+import { MonitoreoPLDModal } from './MonitoreoPLDModal';
 import { usePLDClientes } from './usePLDClientes';
 import { CampoMonto } from '@/app/components/ui/CampoMonto';
+import { formatearFecha } from '@/app/lib/fechas';
 
 interface Props { onBack?: () => void; }
 
@@ -36,6 +38,24 @@ export function PLDAlertasPLD({ onBack }: Props) {
 
   const [modal, setModal] = useState<'nuevo' | 'editar' | 'ver' | null>(null);
   const [current, setCurrent] = useState<AlertaPLD>({ ...EMPTY });
+  const [showMonitoreo, setShowMonitoreo] = useState(false);
+  const { reportes, save: saveReporte } = usePLDReportes();
+
+  /** Convierte la alerta dictaminada en reporte para la autoridad (Reportes CNBV). */
+  const reportar = async (a: AlertaPLD) => {
+    if (/reportad/i.test(a.resultado || '')) { toast.info('Esta alerta ya fue reportada', { description: a.resultado }); return; }
+    const anio = new Date().getFullYear();
+    const prefijo = a.tipoAlerta === 'Relevante' ? 'REL' : a.tipoAlerta === 'Preocupante' ? 'PRE' : 'INU';
+    const consecutivo = reportes.filter(r => String(r.folio).includes(`-${prefijo}-${anio}-`)).length + 1;
+    const folio = `REP-${prefijo}-${anio}-${String(consecutivo).padStart(3, '0')}`;
+    const tipo = a.tipoAlerta === 'Preocupante' ? 'Operación Interna Preocupante' : `Operación ${a.tipoAlerta}`;
+    await saveReporte({
+      id: 0, folio, fecha: formatearFecha(new Date()), tipo,
+      cliente: a.cliente, monto: a.monto, estatus: 'Pendiente', enviado: 'No',
+    });
+    await saveAlerta({ ...a, estatus: 'Atendida', resultado: `Reportada — folio ${folio}` });
+    toast.success('Reporte generado', { description: `${folio} — descárguelo en XML desde Reportes CNBV.` });
+  };
 
   const { clientes: clientesDB } = usePLDClientes();
   const [clienteSearch, setClienteSearch] = useState('');
@@ -58,7 +78,7 @@ export function PLDAlertasPLD({ onBack }: Props) {
 
   const openNew = () => {
     const ts = Date.now();
-    setCurrent({ ...EMPTY, id: 0, noAlerta: `ALR-${ts}`, fechaCreacion: new Date().toLocaleDateString('es-MX'), usuarioAsignado: 'admin' });
+    setCurrent({ ...EMPTY, id: 0, noAlerta: `ALR-${ts}`, fechaCreacion: formatearFecha(new Date()), usuarioAsignado: 'admin' });
     setClienteSearch('');
     setModal('nuevo');
   };
@@ -110,7 +130,13 @@ export function PLDAlertasPLD({ onBack }: Props) {
             </select>
             <svg className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" width="12" height="12" viewBox="0 0 12 12" fill="#666"><path d="M6 8l-4-4h8z"/></svg>
           </div>
-          <button onClick={openNew} className="px-4 py-1.5 bg-white border border-gray-400 text-gray-700 rounded text-sm hover:bg-gray-50">+ Nueva Alerta</button>
+          <button onClick={openNew} className="px-4 py-1.5 rounded text-sm text-white bg-[color:var(--theme-action)] hover:bg-[color:var(--theme-action-hover)]">+ Nueva Alerta</button>
+          <button type="button" onClick={() => setShowMonitoreo(true)}
+            title="Revisa los movimientos reales con los parámetros PLD y propone alertas"
+            className="px-4 py-1.5 rounded text-sm border border-[color:var(--theme-primary)] text-[color:var(--theme-primary)] bg-white hover:bg-[color:var(--theme-tint-soft)] inline-flex items-center gap-1.5">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M3 12h4l3-8 4 16 3-8h4" /></svg>
+            Ejecutar monitoreo
+          </button>
         </div>
       </div>
 
@@ -175,15 +201,16 @@ export function PLDAlertasPLD({ onBack }: Props) {
                 <th className="px-3 py-2.5 text-left text-xs text-gray-700">Estatus</th>
                 <th className="px-3 py-2.5 text-left text-xs text-gray-700">Usuario</th>
                 <th className="px-3 py-2.5 text-left text-xs text-gray-700">CNBV</th>
+                <th className="px-3 py-2.5 text-left text-xs text-gray-700">Acción</th>
               </tr>
             </thead>
             <tbody>
               {paged.length === 0 ? (
-                <tr><td colSpan={9} className="px-3 py-8 text-center text-gray-500">Sin alertas que coincidan</td></tr>
+                <tr><td colSpan={10} className="px-3 py-8 text-center text-gray-500">Sin alertas que coincidan</td></tr>
               ) : paged.map((a, idx) => (
                 <tr key={a.id} className="border-b border-gray-200 transition-colors duration-150"
                   style={{ backgroundColor: idx % 2 === 1 ? '#EEEEEE' : '#FFFFFF' }}
-                  onMouseEnter={e => e.currentTarget.style.backgroundColor = '#E8F4F8'}
+                  onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--theme-tint-soft)'}
                   onMouseLeave={e => e.currentTarget.style.backgroundColor = idx % 2 === 1 ? '#EEEEEE' : '#FFFFFF'}>
                   <td className="px-3 py-2.5 text-xs whitespace-nowrap">
                     <span className="text-[color:var(--theme-link)] cursor-pointer hover:underline" onClick={() => openEdit(a)}>Editar</span>
@@ -204,6 +231,11 @@ export function PLDAlertasPLD({ onBack }: Props) {
                   <td className="px-3 py-2.5 text-xs text-center">
                     {a.enviadoCNBV === 'Sí' ? <span className="text-green-700" style={{ fontWeight: 700 }}>&#x2713;</span> : <span className="text-gray-400">—</span>}
                   </td>
+                  <td className="px-3 py-2.5 text-xs whitespace-nowrap">
+                    {/reportad/i.test(a.resultado || '')
+                      ? <span className="text-[10px] text-green-700" title={a.resultado}>Reportada</span>
+                      : <button type="button" onClick={() => reportar(a)} className="enlace-accion text-[color:var(--theme-link)] hover:underline">Reportar</button>}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -222,6 +254,10 @@ export function PLDAlertasPLD({ onBack }: Props) {
           </div>
         </div>
       </div>
+
+      {showMonitoreo && (
+        <MonitoreoPLDModal alertasExistentes={alertas} onGenerar={saveAlerta} onClose={() => setShowMonitoreo(false)} />
+      )}
 
       {/* Modal */}
       {modal && (
@@ -264,7 +300,7 @@ export function PLDAlertasPLD({ onBack }: Props) {
                         {showClienteDrop && clientesFiltrados.length > 0 && (
                           <div className="absolute left-0 top-full z-50 bg-white border border-gray-300 shadow-lg w-full max-h-40 overflow-auto">
                             {clientesFiltrados.map(c => (
-                              <div key={c.id} className="px-3 py-1.5 text-xs cursor-pointer hover:bg-[#E8F4F8] border-b border-gray-100"
+                              <div key={c.id} className="px-3 py-1.5 text-xs cursor-pointer hover:bg-[color:var(--theme-tint-soft)] border-b border-gray-100"
                                 onMouseDown={() => { setCurrent(cur => ({ ...cur, cliente: c.nombre })); setClienteSearch(''); setShowClienteDrop(false); }}>
                                 <span style={{ fontWeight: 500 }}>{c.nombre}</span>
                                 {c.rfc && <span className="text-gray-400 ml-2 font-mono text-[10px]">{c.rfc}</span>}

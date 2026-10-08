@@ -1,5 +1,6 @@
 import { Product, FormMode } from '../../types/product';
 import { organizations } from '../../data/mockData';
+import { formatearFecha } from '@/app/lib/fechas';
 
 interface ProductoFormDefaultTabProps {
   formData: Product;
@@ -136,7 +137,7 @@ export function ProductoFormDefaultTab({ formData, mode, handleChange, showDescu
         </div>
         <div>
           <Lbl req>Fecha de Registro</Lbl>
-          <input type="date" value={formData.fechaRegistro ? new Date(formData.fechaRegistro).toISOString().split('T')[0] : ''} disabled className={inputDisabled} />
+          <input type="text" value={formatearFecha(formData.fechaRegistro)} disabled className={inputDisabled} />
         </div>
       </div>
 

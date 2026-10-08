@@ -335,12 +335,12 @@ export function PLDPerfilTransaccional({ mode = 'editar', onBack }: Props) {
                             onClick={() => handleSelectCliente(c)}
                             className="cursor-pointer border-b border-gray-100 transition-colors"
                             style={{ backgroundColor: idx % 2 === 1 ? '#EEEEEE' : '#FFFFFF' }}
-                            onMouseEnter={e => { e.currentTarget.style.backgroundColor = '#E8F4F8'; }}
+                            onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'var(--theme-tint-soft)'; }}
                             onMouseLeave={e => { e.currentTarget.style.backgroundColor = idx % 2 === 1 ? '#EEEEEE' : '#FFFFFF'; }}
                           >
                             <td className="px-3 py-2 border-r border-gray-200" style={{ fontWeight: 500 }}>
                               <div className="flex items-center gap-2">
-                                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="#4A6FA5" strokeWidth="1.2"><circle cx="7" cy="5.5" r="2.5"/><path d="M3 12.5c0-2.2 1.8-4 4-4s4 1.8 4 4"/></svg>
+                                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="var(--theme-primary)" strokeWidth="1.2"><circle cx="7" cy="5.5" r="2.5"/><path d="M3 12.5c0-2.2 1.8-4 4-4s4 1.8 4 4"/></svg>
                                 {c.nombre}
                               </div>
                             </td>
@@ -537,7 +537,7 @@ export function PLDPerfilTransaccional({ mode = 'editar', onBack }: Props) {
                         onClick={() => handleSelectProducto(p, i)}
                         className="cursor-pointer border-b border-gray-200"
                         style={{ backgroundColor: selectedProductRow === i ? 'var(--theme-primary)' : i % 2 === 1 ? '#EEEEEE' : '#FFFFFF', color: selectedProductRow === i ? 'white' : 'inherit' }}
-                        onMouseEnter={e => { if (selectedProductRow !== i) e.currentTarget.style.backgroundColor = '#E8F4F8'; }}
+                        onMouseEnter={e => { if (selectedProductRow !== i) e.currentTarget.style.backgroundColor = 'var(--theme-tint-soft)'; }}
                         onMouseLeave={e => { if (selectedProductRow !== i) e.currentTarget.style.backgroundColor = i % 2 === 1 ? '#EEEEEE' : '#FFFFFF'; }}
                       >
                         <td className="px-3 py-2 border-r border-gray-200">{p.clave}</td>

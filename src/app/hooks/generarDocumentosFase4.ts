@@ -37,6 +37,7 @@ import type { Estructura2oPisoData } from '../components/solicitudes/EstructuraO
 import type { ValidacionClausulasData } from '../components/solicitudes/ValidacionClausulasFiduciariasTab';
 import { getTipoPlantillaMeta } from '../types/product';
 import { projectId as SUPA_PROJECT_ID, publicAnonKey } from '/utils/supabase/info';
+import { formatearFecha } from '@/app/lib/fechas';
 
 type SolId = number | string;
 
@@ -366,7 +367,7 @@ export function generarContratoPDF(datos: DatosSolicitud): string {
 
   return buildPDFDataUrl('CONTRATO DE CREDITO', [
     ['No. Solicitud',   datos.noSol],
-    ['Fecha',           new Date().toLocaleDateString('es-MX')],
+    ['Fecha',           formatearFecha(new Date())],
     ['Producto',        datos.productoNombre || datos.tipoProducto],
     ['Linea',          datos.lineaProducto],
     ['Cliente',         datos.cliente],
@@ -390,13 +391,13 @@ export function generarPagePDF(datos: DatosSolicitud): string {
   const monto   = t.montoSolicitado || t.monto || '0.00';
   const moneda  = t.moneda || 'MXN';
   const plazo   = t.plazo  || t.plazoMeses || '';
-  const fecha   = new Date().toLocaleDateString('es-MX');
+  const fecha   = formatearFecha(new Date());
   const meses   = parseInt(String(plazo)) || 0;
   let fechaVence = 'Sin definir';
   if (meses > 0) {
     const d = new Date();
     d.setMonth(d.getMonth() + meses);
-    fechaVence = d.toLocaleDateString('es-MX');
+    fechaVence = formatearFecha(d);
   }
 
   return buildPDFDataUrl('PAGARE', [
@@ -605,7 +606,7 @@ export function generarReporteBuroPDF(datos: DatosSolicitud): string {
   doc.setFontSize(7);
   doc.setTextColor(120, 120, 120);
   doc.text('Nombre y firma del titular', W / 2, y + 10, { align: 'center' });
-  doc.text(`Fecha: ${new Date().toLocaleDateString('es-MX')}`, W / 2, y + 15, { align: 'center' });
+  doc.text(`Fecha: ${formatearFecha(new Date())}`, W / 2, y + 15, { align: 'center' });
 
   return doc.output('datauristring');
 }
@@ -1135,7 +1136,7 @@ export function generarAnexoRentasPDF(datos: DatosSolicitud, filas: FilaAnexo[])
   doc.setFontSize(7.5);
   doc.setFont('helvetica', 'normal');
   doc.text(`Contrato: ${datos.noSol || '—'}`, W - 14, 9, { align: 'right' });
-  doc.text(`Fecha: ${new Date().toLocaleDateString('es-MX')}`, W - 14, 15, { align: 'right' });
+  doc.text(`Fecha: ${formatearFecha(new Date())}`, W - 14, 15, { align: 'right' });
   doc.text(`Arrendatario: ${datos.cliente || '—'}`, W - 14, 21, { align: 'right' });
 
   let y = HEADER_H + 8;
@@ -1560,7 +1561,7 @@ export function generarSolicitudPDF(datos: DatosSolicitud): string {
   const plazo  = t.plazo || t.plazoMeses ? `${t.plazo || t.plazoMeses} meses` : 'Sin definir';
   const tasa   = t.tasa  || t.tasaAnual  ? `${t.tasa  || t.tasaAnual}%` : 'Sin definir';
   const moneda = t.moneda || 'MXN';
-  const fecha  = new Date().toLocaleDateString('es-MX');
+  const fecha  = formatearFecha(new Date());
 
   const tpNorm = (datos.tipoProducto || '').toLowerCase();
   const esInversion = tpNorm.includes('invers');
@@ -1698,7 +1699,7 @@ export function importeALetra(monto: number, moneda = 'MXN'): string {
 
 export function sustituirPlaceholders(html: string, datos: DatosSolicitud): string {
   const t = datos.terminos ?? {};
-  const fechaStr = new Date().toLocaleDateString('es-MX');
+  const fechaStr = formatearFecha(new Date());
   const monto = t.montoSolicitado || t.monto || '';
   const plazoRaw = String(t.plazo || t.plazoMeses || '');
   const tasaValor = String(t.tasa || t.tasaAnual || t.tasaMinInteres || '');
@@ -1742,7 +1743,7 @@ export function sustituirPlaceholders(html: string, datos: DatosSolicitud): stri
     if (!mesesPlazo) return 'N/A';
     const d = new Date();
     d.setMonth(d.getMonth() + mesesPlazo);
-    return d.toLocaleDateString('es-MX');
+    return formatearFecha(d);
   })();
 
   // Pago periódico (pagoMensual, primerPago, pagoPeriodico, etc.)
@@ -2229,7 +2230,7 @@ export function generarComprobanteSPEIPDF(datos: DatosSolicitud): string {
     head: [['Campo', 'Valor', 'Campo', 'Valor']],
     body: [
       ['Clave de rastreo', claveRastreo, 'Referencia numérica', referencia],
-      ['Fecha de operación', ahora.toLocaleDateString('es-MX'), 'Hora', ahora.toLocaleTimeString('es-MX')],
+      ['Fecha de operación', formatearFecha(ahora), 'Hora', ahora.toLocaleTimeString('es-MX')],
       ['Tipo de pago', 'Transferencia SPEI (Tercero a Tercero)', 'Divisa', 'MXN'],
       ['Estado', 'Liquidada', 'Medio de entrega', 'Electrónico'],
     ],

@@ -18,3 +18,16 @@ describe('limpiarMensaje — avisos sin detalles internos de la BD', () => {
     expect(limpiarMensaje('duplicate key value violates unique constraint')).toMatch(/^Ocurrió un error en el servidor/);
   });
 });
+
+import { quitarModeloIA } from './toastNegocio';
+describe('sin mencionar el modelo de IA', () => {
+  it('quita el modelo de notas y avisos', () => {
+    expect(quitarModeloIA('IA: Validado (98%) · claude:claude-haiku-4-5-20251001')).toBe('IA: Validado (98%)');
+    expect(quitarModeloIA('Solicitud de Crédito · 95% · 🤖 claude:claude-haiku-4-5-20251001')).toBe('Solicitud de Crédito · 95%');
+    expect(quitarModeloIA('Validado · openai/gpt-4o-mini')).toBe('Validado');
+    expect(quitarModeloIA('Comprobante de Domicilio')).toBe('Comprobante de Domicilio');
+  });
+  it('limpiarMensaje también lo quita', () => {
+    expect(limpiarMensaje('Solicitud de Crédito · 95% · 🤖 claude:claude-haiku-4-5-20251001')).toBe('Solicitud de Crédito · 95%');
+  });
+});

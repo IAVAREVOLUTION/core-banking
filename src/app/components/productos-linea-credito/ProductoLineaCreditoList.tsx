@@ -2,6 +2,7 @@ import { useState, useRef, useMemo, useEffect } from 'react';
 import { ProductoLineaCredito } from '@/app/types/productoLineaCredito';
 import { toast } from '@/app/lib/notificaciones';
 import { useOrdenTabla, coincideBusqueda } from '@/app/lib/ordenTabla';
+import { formatearFecha } from '@/app/lib/fechas';
 
 interface ProductoLineaCreditoListProps {
   onNew: () => void;
@@ -50,11 +51,9 @@ export function ProductoLineaCreditoList({ onNew, onEdit, onView, products: exte
   const [startWidth, setStartWidth] = useState(0);
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('es-MX', {
-      day: '2-digit',
-      month: '2-digit',
-      year: '2-digit',
-    });
+    // Formato único del sistema (lib/fechas): dd/mm/aaaa, sin corrimiento de un día en fechas ISO.
+    if (!dateString) return '—';
+    return formatearFecha(dateString);
   };
 
   const handleExportExcel = () => {

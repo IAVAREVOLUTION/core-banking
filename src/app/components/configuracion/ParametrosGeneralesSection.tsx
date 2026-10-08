@@ -1,5 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import { Settings, Save, XCircle } from 'lucide-react';
+import { DatePicker } from '@/app/components/ui/DatePicker';
 
 // ═══════════════════════════════════════════════════════════════════
 // TIPOS
@@ -165,13 +166,7 @@ const FormFieldPG = React.memo(function FormFieldPG({
           ))}
         </select>
       ) : type === 'date' ? (
-        <input
-          type="date"
-          value={value}
-          onChange={(e) => onChange(name, e.target.value)}
-          readOnly={readOnly}
-          className={`${baseInputClasses} read-only:bg-gray-50`}
-        />
+        <DatePicker formato="iso" value={value} onChange={(__v: string) => onChange(name, __v)} disabled={readOnly} />
       ) : (
         <input
           type="text"

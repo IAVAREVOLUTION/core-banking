@@ -18,6 +18,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { toast } from '@/app/lib/notificaciones';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
+import { formatearFechaHora } from '@/app/lib/fechas';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-7e2d13d9`;
 const HDR = { 'Content-Type': 'application/json', Authorization: `Bearer ${publicAnonKey}` };
@@ -79,9 +80,9 @@ const fmt = (n: number) =>
   `$${n.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 const fmtFecha = (iso: string) => {
-  const d = new Date(iso);
-  if (isNaN(d.getTime())) return iso;
-  return d.toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' });
+  // Formato único del sistema (lib/fechas): dd/mm/aaaa, sin corrimiento de un día en fechas ISO.
+  if (!iso) return '';
+  return formatearFechaHora(iso);
 };
 
 const ESTATUS_CLS: Record<string, string> = {

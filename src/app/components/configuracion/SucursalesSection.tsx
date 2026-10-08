@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { toast } from '@/app/lib/notificaciones';
 import { cargarXLSX, cargarPDF } from '@/app/lib/librerias';
+import { formatearFecha } from '@/app/lib/fechas';
 
 // ═══════════════════════════════════════════════════════════════════
 // TIPOS
@@ -217,7 +218,7 @@ async function exportPDF(data: Sucursal[]) {
   const { jsPDF, autoTable } = await cargarPDF();
   const doc = new jsPDF({ orientation: 'landscape' });
   doc.setFontSize(14); doc.text('Sucursales', 14, 18);
-  doc.setFontSize(9); doc.text(`Generado: ${new Date().toLocaleDateString('es-MX')}`, 14, 24);
+  doc.setFontSize(9); doc.text(`Generado: ${formatearFecha(new Date())}`, 14, 24);
   autoTable(doc, {
     startY: 30,
     head: [['No', 'Nombre', 'Tipo', 'Ubicación', 'Ciudad', 'Región', 'Teléfono', 'Moneda']],

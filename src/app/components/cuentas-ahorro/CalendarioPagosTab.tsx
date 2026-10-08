@@ -14,6 +14,7 @@
 import { useState, useEffect } from 'react';
 import { toast } from '@/app/lib/notificaciones';
 import { useAmortizaciones, crearAvisoVencimiento, formatMoney, fmtDate } from '../../hooks/useCarteraDB';
+import { formatearFecha } from '@/app/lib/fechas';
 
 const ESTATUS_COLOR: Record<string, string> = {
   Pendiente: 'bg-amber-50 text-amber-700 border-amber-200',
@@ -324,8 +325,8 @@ export function CalendarioPagosTab({ accountId, cliente = '', noSol, noCuenta, m
                 <div>
                   <label className="block text-[10px] font-medium text-gray-600 mb-1 uppercase tracking-wide">Fecha Compromiso</label>
                   <input
-                    type="date"
-                    value={fechaCompromiso}
+                    type="text"
+                    value={formatearFecha(fechaCompromiso)}
                     readOnly
                     className="w-full px-3 py-1.5 text-xs border border-gray-200 rounded-lg bg-gray-50 text-gray-600 cursor-default"
                   />

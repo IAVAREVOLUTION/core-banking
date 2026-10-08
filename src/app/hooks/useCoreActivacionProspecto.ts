@@ -28,6 +28,7 @@
 // Tabla:   "EFINANCIANET_DB"."J_CUENTAS_CORP_CLIENTES"
 // Tabla:   "EFINANCIANET_DB"."J_NOTIFICACIONES" (notificaciones institucionales)
 // ════════════════════════════════════════════════════════
+import { buscarCuentaEjeExistente } from './useCuentaEjeGenerator';
 import { useState, useCallback } from 'react';
 import { toast } from '@/app/lib/notificaciones';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
@@ -518,6 +519,12 @@ function generateNoReferencia(): string {
  */
 async function generarCuentaEje(prospectoUuid: string, nombreProspecto: string): Promise<{ id: string; noCuenta: string } | null> {
   const LOG_CE = '[CORE:CuentaEje]';
+  // Una sola cuenta EJE por persona: si ya existe se devuelve esa.
+  const existente = await buscarCuentaEjeExistente(prospectoUuid);
+  if (existente) {
+    console.log(`${LOG_CE} El interlocutor ya tiene cuenta EJE (${existente.noCuenta}); no se genera otra.`);
+    return existente;
+  }
   const noSol = generateNoSol();
   const noCuenta = generateNoCuenta(prospectoUuid);
   const noRef = generateNoReferencia();

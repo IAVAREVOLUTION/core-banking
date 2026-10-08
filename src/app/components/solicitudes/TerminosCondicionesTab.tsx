@@ -1,3 +1,4 @@
+import { CheckCircle2 } from 'lucide-react';
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { DatePicker } from '@/app/components/ui/DatePicker';
 import {
@@ -619,10 +620,40 @@ export function TerminosCondicionesTab({ mode, solicitudId, lineaProducto, tipoP
     () => (data.seguroMatrizFila as MatrizSeguroFila) || null
   );
 
+  // Desde una cotización llega el seguro elegido (id del Producto Seguro y el
+  // nombre del paquete): al cargar la lista se ubica y se deja seleccionado.
+  // El nombre del paquete no siempre es idéntico al del Producto Seguro, por
+  // eso se compara normalizado y, si no, por contención.
+  useEffect(() => {
+    const idCot = String((data as any).seguroProductoIdCot || '');
+    if (seguroSeleccionadoId || !data.seguroFinanciado || (!(data as any).seguroNombre && !idCot) || productosSeguros.length === 0) return;
+    const norm = (v: unknown) => String(v ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+    const nombreDe = (p: any) => norm(p.nombre || p.nombreProducto);
+    const nombre = norm((data as any).seguroNombre);
+    const s = (idCot && productosSeguros.find(p => p.dbUuid === idCot || String(p.id) === idCot))
+      || (nombre && productosSeguros.find(p => nombreDe(p) === nombre))
+      || (nombre && productosSeguros.find(p => { const n = nombreDe(p); return !!n && (n.includes(nombre) || nombre.includes(n)); }))
+      || (productosSeguros.length === 1 ? productosSeguros[0] : undefined);
+    if (!s) return;
+    const id = String((s as any).dbUuid || s.id);
+    setSeguroSeleccionadoId(id);
+    setData(prev => ({ ...prev, seguroProductoId: id }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [productosSeguros, data.seguroFinanciado]);
+
   const seguroActual = useMemo(() => {
     if (!seguroSeleccionadoId) return null;
     return productosSeguros.find(s => s.dbUuid === seguroSeleccionadoId || String(s.id) === seguroSeleccionadoId) || null;
   }, [seguroSeleccionadoId, productosSeguros]);
+
+  // Celdas de "Plazos y Montos del Seguro" (mismas columnas que en Cotización)
+  const numCelda = (v: unknown) => (v === null || v === undefined || v === '' ? '—' : String(v));
+  const montoCelda = (v: unknown) => (v === null || v === undefined || v === '' ? '—' : formatCurrency(Number(v) || 0));
+  const tasaCelda = (v: unknown) => {
+    if (v === null || v === undefined || v === '') return '—';
+    const n = parseFloat(String(v)) || 0;
+    return `${(n > 0 && n <= 1 ? n * 100 : n).toFixed(4)}%`;
+  };
 
   // Filas de matriz — matrizTasaFija está directo en el objeto Product (no en rawData)
   const matrizFiltrada = useMemo((): MatrizSeguroFila[] => {
@@ -650,6 +681,21 @@ export function TerminosCondicionesTab({ mode, solicitudId, lineaProducto, tipoP
       String((f as any).periodo ?? '') === String((matrizFilaSeleccionada as any).periodo ?? '')
     );
     if (equivalente) setMatrizFilaSeleccionada(equivalente);
+  }, [matrizFiltrada]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Desde una cotización: deja marcada la misma fila de "Plazos y Montos" que se
+  // eligió allá (mismo Monto Default y, si viene, misma tasa).
+  useEffect(() => {
+    if (isRO || matrizFilaSeleccionada || matrizFiltrada.length === 0) return;
+    const montoCot = Number((data as any).seguroMontoDefaultCot || 0);
+    if (!(montoCot > 0)) return;
+    const tasaCotRaw = Number((data as any).tasaSeguroCot || 0);
+    const pct = (v: unknown) => { const n = parseFloat(String(v ?? 0)) || 0; return n > 0 && n <= 1 ? n * 100 : n; };
+    const candidatas = matrizFiltrada.filter(f => Math.abs((parseFloat(String(f.montoDefault ?? 0)) || 0) - montoCot) < 0.005);
+    const fila = (tasaCotRaw > 0 && candidatas.find(f => Math.abs(pct(f.tasaDefault) - pct(tasaCotRaw)) < 0.0001)) || candidatas[0];
+    if (!fila) return;
+    setMatrizFilaSeleccionada(fila);
+    setData(prev => ({ ...prev, seguroMatrizFila: fila }));
   }, [matrizFiltrada]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Al seleccionar fila de matriz → calcular totalSeguro = monto + monto * (tasa/100)
@@ -1535,12 +1581,15 @@ export function TerminosCondicionesTab({ mode, solicitudId, lineaProducto, tipoP
                     ))}
                   </select>
                 )}
+                {(data as any).seguroNombre && seguroActual && String((data as any).seguroNombre).trim().toLowerCase() !== String(seguroActual.nombre || '').trim().toLowerCase() && (
+                  <p className="text-[10px] text-gray-500 mt-1">En la cotización: <span className="font-medium">{String((data as any).seguroNombre)}</span> (paquete del producto)</p>
+                )}
               </div>
 
-              {/* Tabla Plazos y Montos del Seguro */}
+              {/* Tabla Plazos y Montos del Seguro — mismo diseño que en Cotización */}
               {seguroActual && (
                 <div>
-                  <p className="text-xs font-medium text-gray-700 mb-1">Plazos y Montos del Seguro</p>
+                  <p className="text-[11px] text-gray-700 font-medium uppercase tracking-wider mb-1.5">Plazos y Montos del Seguro</p>
                   {matrizFiltrada.length === 0 ? (
                     <p className="text-xs text-amber-600 py-1">
                       {montoEfectivo > 0
@@ -1548,50 +1597,55 @@ export function TerminosCondicionesTab({ mode, solicitudId, lineaProducto, tipoP
                         : 'Ingrese el monto solicitado para filtrar coberturas disponibles.'}
                     </p>
                   ) : (
-                    <div className="border border-gray-300 overflow-hidden">
-                      <table className="w-full text-xs">
+                    <div className="overflow-x-auto border-2 border-gray-400">
+                      <table className="w-full text-[10px]">
                         <thead>
-                          <tr style={{ backgroundColor: '#D0D0D0' }} className="border-b border-gray-300">
-                            <th className="px-3 py-2 text-left text-[10px] text-gray-700 font-semibold border-r border-gray-300">PERIODO</th>
-                            <th className="px-3 py-2 text-right text-[10px] text-gray-700 font-semibold border-r border-gray-300">MONTO DEF.</th>
-                            <th className="px-3 py-2 text-right text-[10px] text-gray-700 font-semibold border-r border-gray-300">TASA DEF.</th>
-                            <th className="px-3 py-2 text-center text-[10px] text-gray-700 font-semibold">ACCIÓN</th>
+                          <tr className="bg-[color:var(--theme-secondary)] text-white">
+                            <th className="px-2 py-1.5 text-center w-8"></th>
+                            <th className="px-2 py-1.5 text-center">Periodo</th>
+                            <th className="px-2 py-1.5 text-center">Plazo Min</th>
+                            <th className="px-2 py-1.5 text-center">Plazo Max</th>
+                            <th className="px-2 py-1.5 text-center">Plazo Def</th>
+                            <th className="px-2 py-1.5 text-center">Monto Min</th>
+                            <th className="px-2 py-1.5 text-center">Monto Max</th>
+                            <th className="px-2 py-1.5 text-center font-bold">Monto Default</th>
+                            <th className="px-2 py-1.5 text-center">Tasa Min</th>
+                            <th className="px-2 py-1.5 text-center">Tasa Max</th>
+                            <th className="px-2 py-1.5 text-center font-bold">Tasa Default</th>
                           </tr>
                         </thead>
                         <tbody>
                           {matrizFiltrada.map((f, idx) => {
                             const sel = matrizFilaSeleccionada === f;
                             const periodo = (f as any).periodo || (f as any).frecuencia || '—';
+                            const fondo = idx % 2 === 1 ? '#EEEEEE' : '#FFFFFF';
                             return (
-                              <tr key={idx} className="border-b border-gray-200"
-                                style={{ backgroundColor: sel ? '#E8F4F8' : idx % 2 === 0 ? '#FFF' : '#EEE' }}>
-                                <td className="px-3 py-2 border-r border-gray-200 text-gray-700">{periodo}</td>
-                                <td className="px-3 py-2 border-r border-gray-200 text-right font-mono text-gray-700">
-                                  {f.montoDefault != null ? formatCurrency(Number(f.montoDefault)) : '—'}
+                              <tr key={idx}
+                                className={`border-b border-gray-200 transition-colors ${isRO ? '' : 'cursor-pointer'} ${sel ? 'bg-blue-100 ring-1 ring-blue-400' : ''}`}
+                                style={!sel ? { backgroundColor: fondo } : undefined}
+                                onClick={() => {
+                                  if (isRO || sel) return;
+                                  setMatrizFilaSeleccionada(f);
+                                  setData(prev => ({ ...prev, seguroMatrizFila: f }));
+                                }}
+                                onMouseEnter={e => { if (!sel && !isRO) e.currentTarget.style.backgroundColor = '#E8F4F8'; }}
+                                onMouseLeave={e => { if (!sel) e.currentTarget.style.backgroundColor = fondo; }}
+                              >
+                                <td className="px-2 py-1.5 text-center">
+                                  {sel
+                                    ? <CheckCircle2 className="w-4 h-4 text-blue-600 mx-auto" />
+                                    : <span className="w-4 h-4 border border-gray-400 rounded-full block mx-auto" />}
                                 </td>
-                                <td className="px-3 py-2 border-r border-gray-200 text-right font-mono text-gray-700">
-                                  {f.tasaDefault != null ? `${f.tasaDefault}%` : '—'}
-                                </td>
-                                <td className="px-3 py-2 text-center">
-                                  {sel ? (
-                                    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" className="inline-block text-[color:var(--theme-primary)]">
-                                      <circle cx="9" cy="9" r="8" stroke="#4A6FA5" strokeWidth="1.5"/>
-                                      <path d="M5 9l3 3 5-5" stroke="#4A6FA5" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                                    </svg>
-                                  ) : (
-                                    <button
-                                      onClick={() => {
-                                        if (isRO) return;
-                                        setMatrizFilaSeleccionada(f);
-                                        setData(prev => ({ ...prev, seguroMatrizFila: f }));
-                                      }}
-                                      disabled={isRO}
-                                      className="px-2 py-0.5 bg-[color:var(--theme-primary)] text-white text-[10px] rounded hover:bg-[color:var(--theme-secondary)] disabled:opacity-40"
-                                    >
-                                      Sel.
-                                    </button>
-                                  )}
-                                </td>
+                                <td className="px-2 py-1.5 text-center">{periodo}</td>
+                                <td className="px-2 py-1.5 text-center">{numCelda(f.plazoMinimo ?? f.plazoInicial)}</td>
+                                <td className="px-2 py-1.5 text-center">{numCelda(f.plazoMaximo ?? f.plazoFinal)}</td>
+                                <td className="px-2 py-1.5 text-center font-medium">{numCelda(f.plazoDefault ?? f.plazoMinimo ?? f.plazoInicial)}</td>
+                                <td className="px-2 py-1.5 text-right">{montoCelda(f.montoMinimo ?? f.montoInicial)}</td>
+                                <td className="px-2 py-1.5 text-right">{montoCelda(f.montoMaximo ?? f.montoFinal)}</td>
+                                <td className="px-2 py-1.5 text-right font-bold text-blue-800">{montoCelda(f.montoDefault)}</td>
+                                <td className="px-2 py-1.5 text-center">{tasaCelda(f.tasaMinima ?? f.tasaSeguro)}</td>
+                                <td className="px-2 py-1.5 text-center">{tasaCelda(f.tasaMaxima ?? f.tasaSeguro)}</td>
+                                <td className="px-2 py-1.5 text-center font-bold text-blue-800">{tasaCelda(f.tasaDefault ?? f.tasaSeguro)}</td>
                               </tr>
                             );
                           })}
@@ -1602,28 +1656,31 @@ export function TerminosCondicionesTab({ mode, solicitudId, lineaProducto, tipoP
                 </div>
               )}
 
-              {/* Resumen calculado */}
+              {/* Valores del seguro — mismo diseño que en Cotización */}
               {matrizFilaSeleccionada && (() => {
                 const monto = Number(matrizFilaSeleccionada.montoDefault || 0);
                 const tasa  = Number(matrizFilaSeleccionada.tasaDefault  || 0);
                 const total = monto + monto * (tasa / 100);
                 return (
-                  <div className="space-y-2">
-                    <div>
-                      <label className="block text-xs text-gray-500 mb-1">Monto Seguro</label>
-                      <input type="text" value={formatCurrency(monto)} readOnly disabled className={`${ic(true)} bg-gray-50`} />
+                  <div className="bg-blue-50 border border-blue-200 p-3 space-y-3">
+                    <div className="flex items-center gap-2 mb-1">
+                      <CheckCircle2 className="w-4 h-4 text-blue-600" />
+                      <span className="text-[10px] font-medium text-blue-800 uppercase tracking-wider">Valores del Seguro (desde Montos y Coberturas)</span>
                     </div>
-                    <div>
-                      <label className="block text-xs text-gray-500 mb-1">Tasa Seguro</label>
-                      <input type="text" value={`${tasa}%`} readOnly disabled className={`${ic(true)} bg-gray-50`} />
-                    </div>
-                    <div>
-                      <label className="block text-xs text-gray-500 mb-1">Total Seguro</label>
-                      <input type="text" value={formatCurrency(total)} readOnly disabled
-                        className={`${ic(true)} bg-green-50 border-green-300 font-semibold`} />
-                      <p className="text-[10px] text-gray-400 mt-0.5">
-                        Total = {formatCurrency(monto)} + {formatCurrency(monto)} × {tasa / 100} = {formatCurrency(total)}
-                      </p>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div>
+                        <label className="block text-[11px] text-gray-600 mb-1 uppercase tracking-wider font-medium">Monto Seguro <span className="text-[9px] text-gray-400 normal-case tracking-normal">(Monto Default)</span></label>
+                        <input type="text" value={formatCurrency(monto)} readOnly disabled className={`${ic(true)} bg-gray-50`} />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] text-gray-600 mb-1 uppercase tracking-wider font-medium">Tasa Seguro <span className="text-[9px] text-gray-400 normal-case tracking-normal">(Tasa Default)</span></label>
+                        <input type="text" value={tasaCelda(tasa)} readOnly disabled className={`${ic(true)} bg-gray-50`} />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] text-gray-600 mb-1 uppercase tracking-wider font-medium">Total Seguro <span className="text-[9px] text-gray-400 normal-case tracking-normal">(calc)</span></label>
+                        <input type="text" value={formatCurrency(total)} readOnly disabled className={`${ic(true)} bg-gray-50`} />
+                        <p className="text-[9px] text-gray-400 mt-0.5">= Monto × (1 + Tasa/100) · Pago/periodo = Total ÷ {data.plazo || '?'}</p>
+                      </div>
                     </div>
                   </div>
                 );

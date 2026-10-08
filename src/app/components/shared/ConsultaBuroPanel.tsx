@@ -10,6 +10,7 @@ import { getUsuarioSesion } from '@/app/lib/sesion';
 import { consultarBuroSimulado, validarDatosConsulta, reporteBuroAXml } from '@/app/lib/buroSimulado';
 import type { ReporteBuro, AutorizacionBuro, DatosConsultaBuro, ResultadoBuro } from '@/app/lib/buroSimulado';
 import { ReporteBuroVista } from './ReporteBuroVista';
+import { DatePicker } from '@/app/components/ui/DatePicker';
 
 export interface ConsultaBuroRegistro {
   id: number;
@@ -232,8 +233,7 @@ export function ConsultaBuroPanel({ consultas, onChange, datos, isView = false, 
                   </label>
                   <label className="block">
                     <span className="block text-xs font-medium text-gray-700 mb-1">Fecha de firma <span className="text-red-600">*</span></span>
-                    <input type="date" value={autFecha} max={hoy()} onChange={e => setAutFecha(e.target.value)} disabled={consultando}
-                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-primary-theme" />
+                    <DatePicker formato="iso" value={autFecha} onChange={(__v: string) => setAutFecha(__v)} disabled={consultando} max={hoy()} className="w-full text-sm" />
                   </label>
                 </div>
                 <label className="mt-3 flex items-start gap-2 text-xs text-gray-700">

@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useMemo } from 'react';
 import { Product } from '../../types/product';
 import { toast } from '@/app/lib/notificaciones';
 import { useOrdenTabla, coincideBusqueda } from '@/app/lib/ordenTabla';
+import { formatearFecha } from '@/app/lib/fechas';
 
 interface ProductosListProps {
   products: Product[];
@@ -95,11 +96,9 @@ export function ProductosList({ products, onNew, onEdit, onView, tipoProducto, l
   console.log('Total de productos cargados:', products.length);
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('es-MX', {
-      day: '2-digit',
-      month: '2-digit',
-      year: '2-digit',
-    });
+    // Formato único del sistema (lib/fechas): dd/mm/aaaa, sin corrimiento de un día en fechas ISO.
+    if (!dateString) return '—';
+    return formatearFecha(dateString);
   };
 
   const handleExportExcel = () => {

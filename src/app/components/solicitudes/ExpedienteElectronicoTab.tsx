@@ -34,6 +34,7 @@ import {
   CLAVE_CONTRATO_REQ, CLAVE_PAGARE_REQ, CLAVE_ANEXO_RENTAS,
   autoCrearDocumentosComitePrepago, CLAVE_ACTA_COMITE, CLAVE_CERT_PREAPART,
 } from '../../hooks/generarDocumentosFase4';
+import { quitarModeloIA } from '@/app/lib/toastNegocio';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-7e2d13d9`;
 const LOG = '[ExpedienteTab]';
@@ -1314,10 +1315,65 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
       setGenerandoComite(false);
     }
   };
-  const kitLegalCompleto =
-    documentos.some(d => d.tipoDocumento === CLAVE_CONTRATO_REQ) &&
-    documentos.some(d => d.tipoDocumento === CLAVE_PAGARE_REQ) &&
-    documentos.some(d => d.tipoDocumento === CLAVE_ANEXO_RENTAS);
+  /**
+   * Crédito Individual: el Kit Legal genérico arma el paquete de arrendamiento
+   * (Contrato + Anexo de Rentas + Pagaré). Este producto no usa Anexo de Rentas;
+   * su kit son sólo los documentos de plantilla (Contrato, Pagaré, Solicitud)
+   * que el producto declara en la(s) fase(s) donde pide el Contrato o el Pagaré.
+   * Los demás productos siguen exactamente igual.
+   */
+  const sinAcentos = (v: string) => String(v || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  const esCreditoIndividual = sinAcentos(tipoProducto || '').includes('credito individual')
+    && !sinAcentos(lineaProducto || '').includes('linea de credito');
+  const kitDeclaradoCI = useMemo(() => {
+    if (!esCreditoIndividual) return [];
+    const aplica = (r: RequisitoProducto) => r.obligatorio !== false
+      && !(r.tipoPersona && tipoPersona && !normTipo(tipoPersona).includes(normTipo(r.tipoPersona)));
+    const fasesKit = new Set(requisitos
+      .filter(r => aplica(r) && ['contrato', 'pagare'].includes(String(plantillaParaRequisito(r.tipoDocumento))))
+      .map(r => Number(r.faseId)));
+    return requisitos.filter(r => {
+      if (!aplica(r) || !fasesKit.has(Number(r.faseId))) return false;
+      const tp = plantillaParaRequisito(r.tipoDocumento);
+      if (!tp) return false;
+      return tp === 'solicitud' || plantillasProducto.some((p: any) => p?.tipoPlantilla === tp && p?.estatus === 'Activo');
+    });
+  }, [esCreditoIndividual, requisitos, tipoPersona, plantillasProducto]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const kitLegalCompleto = esCreditoIndividual
+    ? kitDeclaradoCI.every(r => !!findDocForReq(r))
+    : documentos.some(d => d.tipoDocumento === CLAVE_CONTRATO_REQ) &&
+      documentos.some(d => d.tipoDocumento === CLAVE_PAGARE_REQ) &&
+      documentos.some(d => d.tipoDocumento === CLAVE_ANEXO_RENTAS);
+
+  /** Kit Legal de Crédito Individual: sólo lo declarado (ver kitDeclaradoCI). */
+  const generarKitCreditoIndividual = async (datos: any) => {
+    const res = { exito: true, documentosCreados: [] as string[], pdfGenerados: [] as string[], subidosASupabase: false,
+      registradosEnExpediente: true, error: undefined as string | undefined,
+      documentosGenerados: [] as Array<{ tipo: string; archivo: string; fileData: string }> };
+    const errores: string[] = [];
+    for (const req of kitDeclaradoCI) {
+      if (findDocForReq(req)) continue;
+      const r = await generarDocumentoDesdePlantilla({
+        tipoPlantilla: plantillaParaRequisito(req.tipoDocumento)!,
+        storageId: solicitudId, datos, plantillas: plantillasProducto, supabase, projectId,
+        tipoDocumento: req.tipoDocumento,
+        fase: req.fase,
+        faseId: Number(req.faseId) || undefined,
+      });
+      if (!r.exito) { errores.push(`${req.tipoDocumento}: ${r.error}`); continue; }
+      res.documentosCreados.push(...r.documentosCreados);
+      res.pdfGenerados.push(...r.pdfGenerados);
+      res.documentosGenerados.push(...(r.documentosGenerados || []));
+      if (r.subidosASupabase) res.subidosASupabase = true;
+      if (r.documentosCreados.length && !r.registradosEnExpediente) { res.registradosEnExpediente = false; if (r.error) errores.push(r.error); }
+    }
+    if (errores.length) {
+      res.error = errores.join(' · ');
+      if (res.documentosCreados.length === 0) res.exito = false;
+    }
+    return res;
+  };
 
   /**
    * REQ-23 HU-23.1 — genera el Pagaré solo, desde la plantilla del producto.
@@ -1480,7 +1536,17 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
   const handleGenerarKitLegal = async () => {
     setGenerandoKit(true);
     try {
-      const resultado = await autoCrearKitLegal({
+      const datosKit = {
+          noSol: noSolicitud || '',
+          cliente: nombreSolicitante || 'Cliente',
+          lineaProducto: lineaProducto || '',
+          tipoProducto: tipoProducto || '',
+          productoNombre: nombreProducto || tipoProducto || '',
+          terminos: loadFromSession<any>(solicitudId, 'terminos') || loadFromSavedStore<any>(solicitudId, 'terminos') || {},
+          rfc: rfcCliente || '',
+          curp: curpCliente || '',
+      };
+      const resultado = esCreditoIndividual ? await generarKitCreditoIndividual(datosKit) : await autoCrearKitLegal({
         storageId: solicitudId,
         datos: {
           noSol: noSolicitud || '',
@@ -1897,7 +1963,6 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
       const confianza = typeof result.confianza === 'number' ? Math.round(result.confianza * 100) : null;
       const modeloUsado: string = result.modelo || 'desconocido';
       setLastModeloIA(modeloUsado);
-      const modeloCorto = modeloUsado.includes('/') ? modeloUsado.split('/').pop()! : modeloUsado;
 
       // Actualizar documento con resultado IA
       setDocumentos(prev => prev.map(d =>
@@ -1911,8 +1976,8 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
               nota: d.nota
                 ? d.nota
                 : esValido
-                  ? `IA: Validado${confianza ? ` (${confianza}%)` : ''} · ${modeloCorto}`
-                  : `IA: Rechazado — ${(result.motivos || []).join('; ').substring(0, 80)} · ${modeloCorto}`,
+                  ? `IA: Validado${confianza ? ` (${confianza}%)` : ''}`
+                  : `IA: Rechazado — ${(result.motivos || []).join('; ').substring(0, 80)}`,
             }
           : d
       ));
@@ -1921,12 +1986,12 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
 
       if (esValido) {
         toast.success('Documento VALIDADO por IA', {
-          description: `${doc.tipoDocumento}${confianza ? ` · ${confianza}%` : ''} · 🤖 ${modeloCorto}`,
+          description: `${doc.tipoDocumento}${confianza ? ` · ${confianza}%` : ''}`,
           duration: 6000,
         });
       } else {
         toast.error('Documento RECHAZADO por IA', {
-          description: `${doc.tipoDocumento} · ${(result.motivos || ['Sin motivo']).slice(0, 1).join('')} · 🤖 ${modeloCorto}`,
+          description: `${doc.tipoDocumento} · ${(result.motivos || ['Sin motivo']).slice(0, 1).join('')}`,
           duration: 8000,
         });
       }
@@ -2543,11 +2608,13 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
                 {generandoPagare ? 'Generando...' : 'Generar Pagaré'}
               </button>
             )}
-            {!isRO && aplicaBuroYKitLegal && tienePlantillaContrato && !kitLegalCompleto && (
+            {!isRO && aplicaBuroYKitLegal && tienePlantillaContrato && !kitLegalCompleto && (!esCreditoIndividual || kitDeclaradoCI.length > 0) && (
               <button
                 onClick={handleGenerarKitLegal}
                 disabled={generandoKit}
-                title="Genera Contrato, Anexo de Rentas y Pagaré desde las plantillas del producto"
+                title={esCreditoIndividual
+                  ? `Genera desde las plantillas del producto: ${kitDeclaradoCI.map(r => r.tipoDocumento).join(', ')}`
+                  : 'Genera Contrato, Anexo de Rentas y Pagaré desde las plantillas del producto'}
                 className="px-3.5 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all duration-200 shadow-sm bg-[#7C3AED] text-white hover:bg-[#6D28D9] disabled:opacity-60"
               >
                 <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -2584,10 +2651,6 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
             <div className="p-4 space-y-3 text-xs">
               {/* Modelo y contexto */}
               <div className="grid grid-cols-2 gap-2">
-                <div className="bg-white border border-violet-100 rounded-lg p-2.5">
-                  <p className="text-[10px] text-violet-500 font-medium mb-1">Último modelo</p>
-                  <p className="font-mono text-violet-800 text-[11px]">{lastModeloIA || '(sin validaciones aún)'}</p>
-                </div>
                 <div className="bg-white border border-violet-100 rounded-lg p-2.5">
                   <p className="text-[10px] text-violet-500 font-medium mb-1">Fase / Producto</p>
                   <p className="font-mono text-violet-800 text-[11px]">Fase {faseIdActual} · {productoId?.substring(0, 8) || 'sin producto'}…</p>
@@ -2791,8 +2854,8 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
                           {doc.tipoArchivo}
                         </span>
                       </td>
-                      <td className="px-3 py-2 text-gray-500 max-w-[130px] truncate" title={doc.nota}>
-                        {doc.nota || <span className="text-gray-300 italic">--</span>}
+                      <td className="px-3 py-2 text-gray-500 max-w-[130px] truncate" title={quitarModeloIA(doc.nota || '')}>
+                        {quitarModeloIA(doc.nota || '') || <span className="text-gray-300 italic">--</span>}
                       </td>
                       <td className="px-3 py-2 text-center">
                         {doc.validadoIA ? (
@@ -3015,8 +3078,6 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
         const r = iaResultModal.result;
         const esValido = r.valido === true;
         const confianza = typeof r.confianza === 'number' ? Math.round(r.confianza * 100) : null;
-        const modelo = r.modelo || 'desconocido';
-        const modeloCorto = modelo.includes('/') ? modelo.split('/').pop() : modelo;
         const docModal = documentos.find(d => d.id === iaResultModal.docId);
         return (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setIaResultModal(null)}>
@@ -3054,9 +3115,6 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
                     <span className={`text-xs font-bold tabular-nums ${confianza >= 80 ? 'text-emerald-600' : confianza >= 50 ? 'text-amber-600' : 'text-red-600'}`}>{confianza}%</span>
                   </div>
                 )}
-                <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-mono bg-violet-50 text-violet-700 border border-violet-200 shrink-0">
-                  🤖 {modeloCorto}
-                </span>
               </div>
 
               {/* Body */}

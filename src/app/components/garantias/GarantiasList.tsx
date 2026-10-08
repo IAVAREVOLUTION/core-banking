@@ -4,6 +4,7 @@ import { toast } from '@/app/lib/notificaciones';
 import { useOrdenTabla, coincideBusqueda } from '@/app/lib/ordenTabla';
 import type { GarantiaBackendStatus } from '@/app/hooks/useGarantiasDB';
 import { useCategoriaBienDB } from '@/app/hooks/useCategoriaBienDB';
+import { formatearFecha } from '@/app/lib/fechas';
 
 interface GarantiasListProps {
   garantias: Garantia[];
@@ -48,12 +49,9 @@ export function GarantiasList({ garantias, loading, backendStatus, onNew, onEdit
     categoriasBien.find(c => c.clave === clave)?.nombre || clave || '—';
 
   const formatDate = (dateString: string) => {
+    // Formato único del sistema (lib/fechas): dd/mm/aaaa, sin corrimiento de un día en fechas ISO.
     if (!dateString) return '—';
-    return new Date(dateString).toLocaleDateString('es-MX', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-    });
+    return formatearFecha(dateString);
   };
 
   const formatCurrency = (value: number) => {

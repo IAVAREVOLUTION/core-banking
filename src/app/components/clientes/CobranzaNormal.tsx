@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { toast } from '@/app/lib/notificaciones';
 import { X } from 'lucide-react';
 import { cargarXLSX } from '@/app/lib/librerias';
+import { formatearFecha } from '@/app/lib/fechas';
 
 interface CobranzaNormal {
   id: number;
@@ -83,7 +84,7 @@ export function CobranzaNormal({ clienteId, mode, isView }: CobranzaNormalProps 
 
   const handleNuevo = () => {
     // Obtener fecha actual en formato DD/MM/YYYY
-    const fechaActual = new Date().toLocaleDateString('es-MX');
+    const fechaActual = formatearFecha(new Date());
     const fechaHoraActual = `${fechaActual} ${new Date().toLocaleTimeString('es-MX')}`;
     
     setFormData({

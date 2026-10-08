@@ -23,6 +23,7 @@ import {
   guardarCuentasBeneficiarias, fetchCuentasBeneficiarias,
 } from '../banca-2o-piso/banca2oPisoStore';
 import { CampoMonto } from '@/app/components/ui/CampoMonto';
+import { formatearFecha } from '@/app/lib/fechas';
 
 export interface CuentaBeneficiaria {
   id: number;
@@ -167,7 +168,7 @@ export function CuentasBeneficiariasTab({
       pais: c.pais || '',
       // Monto Dispersión = Monto Autorizado de la Solicitud.
       montoDispersion: montoAut,
-      fechaRegistro: new Date().toLocaleDateString('es-MX'),
+      fechaRegistro: formatearFecha(new Date()),
     };
     persistir([...items, nueva]);
     setShowModal(false);

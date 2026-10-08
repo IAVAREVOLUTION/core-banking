@@ -11,6 +11,7 @@
  */
 import { useState, useEffect, useRef } from 'react';
 import { loadFromSession, loadFromSavedStore, saveToSession } from './solicitudCreditoStore';
+import { DatePicker } from '@/app/components/ui/DatePicker';
 
 export const SUBTAB_VALIDACION_CLAUSULAS = 'validacionClausulas';
 const BUCKET_EXPEDIENTES = 'make-7e2d13d9-expedientes-electronicos-prospectos';
@@ -126,13 +127,7 @@ export function ValidacionClausulasFiduciariasTab({ mode, solicitudId, onChange 
           <label className="block text-xs text-gray-700 mb-1">
             Fecha de Firma de Contratos <span className="text-red-500">*</span>
           </label>
-          <input
-            type="date"
-            value={datos.fechaFirmaContratos}
-            onChange={e => set('fechaFirmaContratos', e.target.value)}
-            disabled={isRO}
-            className={isRO ? roClass : inputClass}
-          />
+          <DatePicker formato="iso" value={datos.fechaFirmaContratos} onChange={(__v: string) => set('fechaFirmaContratos', __v)} disabled={isRO} />
         </div>
       </div>
 

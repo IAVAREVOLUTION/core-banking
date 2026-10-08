@@ -338,8 +338,13 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
   // Limpiar datos de simulación de solicitudes previas que quedaron en sessionStorage bajo 'new'
   useEffect(() => {
     if (mode !== 'nuevo') return;
-    const hasCotizSimulacion = !!(cotizacionData as any)?._terminosCondiciones?._simulacion?.length ||
+    // cotizacionData ya llega en null (la lista lo consume antes de abrir el
+    // formulario): por eso también se respeta la marca que deja ese flujo.
+    const desdeCotizacion = loadFromSession<boolean>('new', 'simulacion_desde_cotizacion') === true;
+    const hasCotizSimulacion = desdeCotizacion ||
+      !!(cotizacionData as any)?._terminosCondiciones?._simulacion?.length ||
       !!(cotizacionData as any)?._calendarioAportaciones?.length;
+    if (desdeCotizacion) saveToSession('new', 'simulacion_desde_cotizacion', null);
     if (!hasCotizSimulacion) {
       saveToSession('new', 'simulacion', []);
       saveToSession('new', 'simulacion_cal', null);
@@ -876,6 +881,8 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
 
   // Modal de Solicitud de Activación
   const [showActivacionModal,   setShowActivacionModal]   = useState(false);
+  /** Cuenta beneficiaria de la dispersión: define beneficiario y cuenta destino de la Solicitud de Activación. */
+  const [beneficiariaActivacion, setBeneficiariaActivacion] = useState<any | null>(null);
   const [activacionModalRO,     setActivacionModalRO]     = useState(false);
 
   // Solicitud de Activación vinculada a ESTA originación (por solicitudId = storageId)
@@ -3136,7 +3143,27 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
    * Solicitud de Activación — abre el módulo externo.
    * Si la fase contiene "activac" pero NO "solicitud", abre en modo solo lectura.
    */
-  const handleSolicitudActivacion = () => {
+  /**
+   * Regla de negocio: en productos ACTIVOS con dispersión de dinero (Crédito y
+   * Línea de Crédito) la Solicitud de Activación exige que la solicitud tenga
+   * registrada su Cuenta Beneficiaria, y el beneficiario de la activación es el
+   * que indica esa cuenta. Quedan fuera: Captación/Inversión (no son activos),
+   * GPO (garantía, no dispersa dinero) y Arrendamiento (paga al proveedor con
+   * su propio flujo de factura).
+   */
+  // Función (no valor): esGPOForm se declara más abajo en el componente.
+  const requiereCuentaBeneficiaria = (): boolean => {
+    const n = (v: unknown) => String(v || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const lp = n(formData.lineaProducto);
+    const tp = n(formData.tipoProducto);
+    if (!lp.includes('credito')) return false;
+    if (lp.includes('captac') || lp.includes('ahorro') || lp.includes('invers') || tp.includes('invers')) return false;
+    if (tp.includes('arrendamiento')) return false;
+    if (esGPOForm) return false;
+    return true;
+  };
+
+  const handleSolicitudActivacion = async () => {
     if (enviandoFase) return;
 
     // ── VALIDACIÓN: la solicitud debe estar guardada en BD (UUID) ───────────
@@ -3156,6 +3183,25 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
     const esSoloVer = nombre.includes('completada')
       || formData.faseId?.includes('_completada')
       || formData.estatusSolicitud === 'Aprobado';
+
+    // ── Cuenta Beneficiaria obligatoria (sólo al crear la activación) ──
+    let beneficiaria: any | null = null;
+    if (requiereCuentaBeneficiaria()) {
+      let cuentasBenef: any[] =
+        loadFromSession<any[]>(storageId, 'cuentasBeneficiarias')
+        || loadFromSavedStore<any[]>(storageId, 'cuentasBeneficiarias')
+        || [];
+      if (cuentasBenef.length === 0) cuentasBenef = await fetchCuentasBeneficiarias(storageIdStr);
+      beneficiaria = cuentasBenef.find(c => String(c?.cuentaClabe || c?.numeroCuenta || '').trim()) || null;
+      if (!beneficiaria && !activacionForThisSol && !esSoloVer) {
+        toast.error('Falta la Cuenta Beneficiaria', {
+          description: 'Registre la cuenta a la que se dispersará el dinero en la subpestaña "Cuenta(s) Beneficiaria(s)" antes de generar la Solicitud de Activación.',
+          duration: 12000,
+        });
+        return;
+      }
+    }
+    setBeneficiariaActivacion(beneficiaria);
     setActivacionModalRO(esSoloVer);
     setShowActivacionModal(true);
   };
@@ -4015,12 +4061,6 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
               {iaFaseDebug.status === 'skipped' && (
                 <span className="px-2 py-0.5 rounded-full bg-gray-500 text-white text-[10px] font-bold">SIN PROMPT</span>
               )}
-              {/* Modelo IA usado */}
-              {iaFaseDebug.resultado?.modelo && (
-                <span className="px-2 py-0.5 rounded-full bg-violet-900 text-violet-200 text-[10px] font-mono border border-violet-500" title="Modelo IA utilizado">
-                  🤖 {iaFaseDebug.resultado.modelo}
-                </span>
-              )}
               {iaFaseDebug.resultado?._rateLimited && (
                 <span className="px-2 py-0.5 rounded-full bg-orange-600 text-white text-[10px] font-bold">⚠ SIN IA (rate limit)</span>
               )}
@@ -4835,9 +4875,14 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
 
               // Fecha Compromiso = Fecha Inicio de la solicitud
               const fechaCompromiso: string = formData.fechaInicio || '';
+              // Productos activos con dispersión: beneficiario y cuenta destino
+              // son los de la Cuenta Beneficiaria registrada.
+              const _cb: any = requiereCuentaBeneficiaria() ? beneficiariaActivacion : null;
               return {
-                cliente: [formData.nombrePersona, formData.apellidoPaternoPersona, formData.apellidoMaternoPersona]
+                cliente: (_cb?.beneficiario ? String(_cb.beneficiario) : '')
+                  || [formData.nombrePersona, formData.apellidoPaternoPersona, formData.apellidoMaternoPersona]
                   .filter(Boolean).join(' ').trim(),
+                ...(_cb ? { cuentaBancaria: String(_cb.cuentaClabe || _cb.numeroCuenta || '').trim() } : {}),
                 clienteId: formData._clienteId || '',
                 lineaProducto: formData.lineaProducto || '',
                 tipoProducto: formData.tipoProducto || '',
@@ -4847,7 +4892,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
                 fechaCompromiso,
                 periodicidad: frecuencia,
                 numeroDocumento: (formData as any)._curp || (formData as any)._rfc || '',
-                institucionFinanciera: (formData as any)._gobierno || '',
+                institucionFinanciera: (_cb?.banco ? String(_cb.banco) : '') || (formData as any)._gobierno || '',
               };
             })()}
             existingActivacion={activacionForThisSol}

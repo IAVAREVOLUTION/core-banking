@@ -4,6 +4,7 @@ import { DatePicker } from '@/app/components/ui/DatePicker';
 import type { AlertaInterna } from './pldStore';
 import { usePLDAlertasInternas } from './usePLDData';
 import { usePLDClientes } from './usePLDClientes';
+import { formatearFecha } from '@/app/lib/fechas';
 
 interface Props { onBack?: () => void; }
 
@@ -54,7 +55,7 @@ export function PLDAlertasInternas({ onBack }: Props) {
   const paged = filtered.slice((page - 1) * perPage, page * perPage);
 
   const openNew = () => {
-    setCurrent({ ...EMPTY, id: 0, noAlerta: `AI-${Date.now()}`, fecha: new Date().toLocaleDateString('es-MX') });
+    setCurrent({ ...EMPTY, id: 0, noAlerta: `AI-${Date.now()}`, fecha: formatearFecha(new Date()) });
     setClienteSearch('');
     setModal('nuevo');
   };
@@ -106,7 +107,7 @@ export function PLDAlertasInternas({ onBack }: Props) {
             </select>
             <svg className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" width="12" height="12" viewBox="0 0 12 12" fill="#666"><path d="M6 8l-4-4h8z"/></svg>
           </div>
-          <button onClick={openNew} className="px-4 py-1.5 bg-white border border-gray-400 text-gray-700 rounded text-sm hover:bg-gray-50">+ Nueva Alerta</button>
+          <button onClick={openNew} className="px-4 py-1.5 rounded text-sm text-white bg-[color:var(--theme-action)] hover:bg-[color:var(--theme-action-hover)]">+ Nueva Alerta</button>
         </div>
       </div>
 
@@ -178,7 +179,7 @@ export function PLDAlertasInternas({ onBack }: Props) {
               ) : paged.map((a, idx) => (
                 <tr key={a.id} className="border-b border-gray-200 transition-colors duration-150"
                   style={{ backgroundColor: idx % 2 === 1 ? '#EEEEEE' : '#FFFFFF' }}
-                  onMouseEnter={e => e.currentTarget.style.backgroundColor = '#E8F4F8'}
+                  onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--theme-tint-soft)'}
                   onMouseLeave={e => e.currentTarget.style.backgroundColor = idx % 2 === 1 ? '#EEEEEE' : '#FFFFFF'}>
                   <td className="px-3 py-2.5 text-xs whitespace-nowrap">
                     <span className="text-[color:var(--theme-link)] cursor-pointer hover:underline" onClick={() => openEdit(a)}>Editar</span>
@@ -253,7 +254,7 @@ export function PLDAlertasInternas({ onBack }: Props) {
                         {showClienteDrop && clientesFiltrados.length > 0 && (
                           <div className="absolute left-0 top-full z-50 bg-white border border-gray-300 shadow-lg w-full max-h-40 overflow-auto">
                             {clientesFiltrados.map(c => (
-                              <div key={c.id} className="px-3 py-1.5 text-xs cursor-pointer hover:bg-[#E8F4F8] border-b border-gray-100"
+                              <div key={c.id} className="px-3 py-1.5 text-xs cursor-pointer hover:bg-[color:var(--theme-tint-soft)] border-b border-gray-100"
                                 onMouseDown={() => { setCurrent(cur => ({ ...cur, cliente: c.nombre })); setClienteSearch(''); setShowClienteDrop(false); }}>
                                 <span style={{ fontWeight: 500 }}>{c.nombre}</span>
                                 {c.rfc && <span className="text-gray-400 ml-2 font-mono text-[10px]">{c.rfc}</span>}

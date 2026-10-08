@@ -696,6 +696,13 @@ const activarProspectoHandler = async (c: any) => {
         return c.json({ ok: true, ya_existe: true, cuentaId: existsSol[0].id, noCuenta: existsSol[0].no_cuenta });
       }
 
+      // La persona ya tiene cuenta EJE: no se crea otra cuenta por esta solicitud.
+      const ejeCliente = await cuentaEjeExistente(String(clienteUuid));
+      if (ejeCliente) {
+        console.log('[activar-prospecto] El cliente ya tiene cuenta EJE', ejeCliente.no_cuenta, '— no se crea otra (solicitud', solicitudUuid, ')');
+        return c.json({ ok: true, ya_tiene_cuenta_eje: true, cuentaId: ejeCliente.id, cuentaEjeId: ejeCliente.id, noCuenta: ejeCliente.no_cuenta });
+      }
+
       // Buscar producto eje para asociar
       let productoEjeId: string | null = null;
       try {
@@ -3271,6 +3278,24 @@ const postSolicitudesHandler = async (c: any) => {
   }
 };
 
+// ── Regla de negocio: UNA cuenta EJE por persona ─────────────────────────────
+// Una vez que la persona tiene cuenta EJE (cta_eje_chec, o folios AUTO-/CEJE- de
+// registros previos), ningún producto genera otra. Devuelve la existente o null.
+async function cuentaEjeExistente(clienteId: string): Promise<{ id: string; no_cuenta: string } | null> {
+  try {
+    const [row] = await sql`
+      SELECT id, no_cuenta FROM "EFINANCIANET_DB"."J_CUENTAS_CORP_CLIENTES"
+      WHERE cliente_id = ${clienteId}::uuid
+        AND (cta_eje_chec = true OR no_sol LIKE 'AUTO-%' OR no_sol LIKE 'CEJE-%')
+      ORDER BY cta_eje_chec DESC NULLS LAST, fecha_sol ASC NULLS LAST
+      LIMIT 1
+    `;
+    return row ? { id: String(row.id), no_cuenta: String(row.no_cuenta || '') } : null;
+  } catch {
+    return null;
+  }
+}
+
 // ── Helper: crea CuentaAhorro por solicitud (idempotente por JSONB solicitudId) ──
 // no_referenc1 es VARCHAR(30) — no puede almacenar un UUID de 36 chars.
 // Se usa data->metadatos->solicitudId para la relación y la idempotencia.
@@ -3316,6 +3341,13 @@ async function crearCuentaAhorroParaSolicitud(
       } catch { /* no bloquea */ }
       console.log(`${LOG} Ya existe para solicitud ${solicitudId}: ${existe[0].id}`);
       return existe[0].id;
+    }
+
+    // La persona ya tiene cuenta EJE: no se crea otra cuenta por esta solicitud.
+    const ejeCliente = await cuentaEjeExistente(clienteId);
+    if (ejeCliente) {
+      console.log(`${LOG} Cliente ${clienteId} ya tiene cuenta EJE ${ejeCliente.no_cuenta}; no se crea otra (solicitud ${solicitudId}).`);
+      return ejeCliente.id;
     }
 
     const lineaNorm = lineaProd.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');

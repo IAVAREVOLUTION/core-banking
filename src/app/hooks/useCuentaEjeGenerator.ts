@@ -69,6 +69,28 @@ interface InsertCuentaAhorroPayload {
 }
 
 /**
+ * Regla de negocio: una persona tiene UNA sola cuenta EJE. Una vez activada,
+ * ningún producto (crédito, captación, inversión…) genera otra.
+ * Devuelve la cuenta EJE existente del cliente (cta_eje_chec, o folios de
+ * cuenta eje AUTO-/CEJE- de registros previos), o null si no tiene.
+ */
+export async function buscarCuentaEjeExistente(clienteUuid: string): Promise<{ id: string; noCuenta: string } | null> {
+  if (!clienteUuid) return null;
+  try {
+    const res = await fetch(`${BASE_URL}/cuentas-ahorro`, { headers: { 'Authorization': `Bearer ${publicAnonKey}` } });
+    if (!res.ok) return null;
+    const json = await res.json();
+    const cuentas: any[] = Array.isArray(json) ? json : (json?.data || []);
+    const delCliente = cuentas.filter(c => String(c.cliente_id || c.cliente_id_eff || '') === clienteUuid);
+    const eje = delCliente.find(c => c.cta_eje_chec === true || c.cta_eje_chec === 't' || c.cta_eje_chec === 'true' || c.cta_eje_chec === '1')
+      || delCliente.find(c => /^(AUTO|CEJE)-/i.test(String(c.no_sol || '')));
+    return eje ? { id: String(eje.id), noCuenta: String(eje.no_cuenta || '') } : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Verifica si un cliente ya tiene una cuenta eje en J_CUENTAS_CORP_CLIENTES.
  * Retorna true si ya existe, false si no tiene cuenta eje.
  *
@@ -119,6 +141,12 @@ export async function generarCuentaEje(
   nombreCliente: string
 ): Promise<{ id: string; noCuenta: string } | null> {
   const LOG_CE = '[CuentaEjeGenerator]';
+  // Una sola cuenta EJE por persona: si ya existe se devuelve esa.
+  const existente = await buscarCuentaEjeExistente(clienteUuid);
+  if (existente) {
+    console.log(`${LOG_CE} El cliente ya tiene cuenta EJE (${existente.noCuenta}); no se genera otra.`);
+    return existente;
+  }
   const noSol = generateNoSol();
   const noCuenta = generateNoCuenta(clienteUuid);
   const noRef = generateNoReferencia();

@@ -73,6 +73,8 @@ export interface CotizacionCreditoData {
   // §7 — Seguro Financiado
   seguroFinanciado: boolean;
   seguroNombre: string;
+  /** UUID del Producto Seguro (para ubicarlo en la Solicitud aunque el nombre del paquete difiera) */
+  seguroProductoId?: string;
   montoSeguro: number;
   tasaSeguro: number;
   totalSeguro: number;         // = montoSeguro * (1 + tasaSeguro * plazo)
@@ -287,6 +289,10 @@ export interface SeguroProducto {
   id: number;
   nombre: string;
   tipo: string;
+  /** UUID del Producto Seguro real (si se pudo cruzar) */
+  productoSeguroId?: string;
+  /** Nombre copiado en el paquete del producto (puede ser anterior a un renombre) */
+  nombreAnterior?: string;
   montosYCoberturas: SeguroMatrizRow[];
 }
 

@@ -66,7 +66,18 @@ export const PaquetesTab = forwardRef<{ getData: () => Paquete[] }, PaquetesTabP
       }
     }, [initialData, data.length, setData, storageKey]);
 
-    useImperativeHandle(ref, () => ({ getData: () => data }), [data]);
+    // El paquete guarda una copia del nombre del producto vinculado al momento de
+    // agregarlo. Si luego se renombra ese producto, se muestra (y se guarda) el
+    // nombre vigente del catálogo, ubicándolo por su id.
+    const { productos: catalogoProductos } = useProductosCatalogoDB(true);
+    const nombreVigente = React.useCallback((item: Paquete) => {
+      const p = catalogoProductos.find(x => String(x.id) === String(item.paqueteProductoId));
+      return p?.nombreProducto || item.paqueteProductoNombre;
+    }, [catalogoProductos]);
+
+    useImperativeHandle(ref, () => ({
+      getData: () => data.map(item => ({ ...item, paqueteProductoNombre: nombreVigente(item) })),
+    }), [data, nombreVigente]);
 
     const [selectedRow, setSelectedRow] = useState<number | null>(null);
     const [showConsulta, setShowConsulta] = useState(false);
@@ -298,7 +309,7 @@ export const PaquetesTab = forwardRef<{ getData: () => Paquete[] }, PaquetesTabP
                             {isSeguro ? 'SEG' : 'CRE'}
                           </span>
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 font-medium text-gray-800 truncate max-w-[200px]">{item.paqueteProductoNombre}</td>
+                        <td className="px-2 py-1.5 border-r border-gray-200 font-medium text-gray-800 truncate max-w-[200px]">{nombreVigente(item)}</td>
                         <td className="px-2 py-1.5 border-r border-gray-200 text-gray-600">{displayLinea(item.lineaProducto) || item.tipo || '—'}</td>
                         <td className="px-2 py-1.5 border-r border-gray-200 text-gray-600">{item.sublineaProducto || '—'}</td>
                         <td className="px-2 py-1.5 text-center">
