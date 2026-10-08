@@ -77,11 +77,8 @@ eq('código', rVacia.codigoError, 'FECHA_REQUERIDA');
 eq('mensaje literal de §17.1', rVacia.error, 'Debe capturar la Fecha Estado.');
 eq('no elige periodo', rVacia.periodo, null);
 
-console.log('\n── §17.2 Fecha Estado futura ──');
-const rFutura = run({ fechaEstado: '2026-12-01', fechaActual: '2026-10-18', avisos: [AVISO_SEP] });
-eq('no procede', rFutura.ok, false);
-eq('código', rFutura.codigoError, 'FECHA_FUTURA');
-eq('mensaje literal de §17.2', rFutura.error, 'La Fecha Estado no puede ser mayor a la fecha actual.');
+console.log('\n── §17.2 Fecha Estado futura (permitida) ──');
+ok_('una fecha futura SÍ se permite', run({ fechaEstado: '2026-12-01', fechaActual: '2026-10-18', avisos: [AVISO_SEP] }).ok);
 ok_('la fecha de hoy SÍ se permite', run({ fechaEstado: '2026-10-18', fechaActual: '2026-10-18', avisos: [AVISO_SEP] }).ok);
 
 console.log('\n── §17.3 Sin periodo de corte ──');
@@ -511,5 +508,33 @@ const rSinCxC = run({
   pagos: [pago('suelto', '2026-10-01', 300)],
 });
 eq('pago sin CxC se conserva', rSinCxC.pagosConsiderados.length, 1);
+
+console.log('');
+console.log('-- Con Estado anterior RECLASIFICADO, su Saldo al Corte no se arrastra --');
+// Caso real (línea 1176df90): el corte 15/10 dejó 3,680 pendientes, se
+// reclasificó como cargo 023 el 16/10 y el Aviso quedó 'Pagado x Reclasificación'.
+const avOct = aviso('O1', '2026-09-16', '2026-10-15', '2026-11-04', 15580,
+  [concepto('o', 1, 15580, 11900)], { pagoTotal: 11900, saldoPendiente: 3680, estatus: 'Pagado x Reclasificación' });
+const avNov = aviso('N1', '2026-10-16', '2026-11-15', '2026-12-07', 21072.42,
+  [concepto('n', 1, 21072.42, 16000)], { pagoTotal: 16000, saldoPendiente: 5072.42, estatus: 'Parcial' });
+const rReal = run({
+  fechaEstado: '2026-12-08', fechaActual: '2026-12-08',
+  avisos: [avOct, avNov],
+  movimientos: [
+    mov('m1', '2026-10-16', 200.36), mov('m2', '2026-10-16', 32.06), mov('m3', '2026-10-16', 3680),
+    mov('m4', '2026-11-05', 10000), mov('m5', '2026-11-05', 1000), mov('m6', '2026-11-05', 160),
+    mov('m7', '2026-11-05', 5000), mov('m8', '2026-11-08', 1000),
+  ],
+  pagos: [
+    pago('p1', '2026-11-04', 11900, { idCxC: 'O1' }),
+    pago('p2', '2026-12-07', 16000, { idCxC: 'N1' }),
+  ],
+  estadosPrevios: [{ id: 'E1', fechaEstado: '2026-11-05', fechaCorte: '2026-10-15', saldoAlCorte: 3680, estatus: 'GENERADO' }],
+});
+eq('saldo anterior cero (ya es el cargo 023)', rReal.snapshot.saldoAnterior, 0);
+eq('cargos del periodo', rReal.snapshot.cargosPeriodo, 21072.42);
+eq('saldo al corte = pendiente del aviso', rReal.snapshot.saldoAlCorte, 5072.42);
+eq('pago que no genera intereses', rReal.snapshot.pagoNoGeneraIntereses, 21072.42);
+eq('sigue reportando el estado anterior', rReal.estadoAnterior.id, 'E1');
 console.log(`\n${pass} aserciones OK, ${fail} fallas`);
 process.exit(fail > 0 ? 1 : 0);

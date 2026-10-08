@@ -465,7 +465,7 @@ export function ModeloViabilidadFinancieraTab({
         <div className="mb-5 px-3 py-2 bg-amber-50 border border-amber-200 rounded text-[11px] text-amber-700">
           No hay <span className="font-medium">Plazo de Bonos (años)</span> heredado de la
           Oportunidad, así que no se puede dimensionar la matriz. Captúrelo en
-          Estructura Bursátil de la Oportunidad.
+          Estructura del Producto de la Oportunidad.
         </div>
       ) : (
         <div className="border border-gray-300 overflow-x-auto mb-5">

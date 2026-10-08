@@ -147,7 +147,7 @@ export function OportunidadesModule({
     setVista('form');
 
     toast.success('Oportunidad abierta', {
-      description: `Folio ${oportunidad.no_cotiza} — complete la estructura bursátil y la cotización de comisiones.`,
+      description: `Folio ${oportunidad.no_cotiza} — complete la estructura del producto y la cotización de comisiones.`,
     });
 
     onLeadParaOportunidadConsumido?.();

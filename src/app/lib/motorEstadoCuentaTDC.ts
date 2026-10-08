@@ -409,10 +409,9 @@ export function generarEstadoCuenta(params: ParamsEstadoCuenta): ResultadoEstado
   // §17.1
   if (!fechaEstado) return fallo('FECHA_REQUERIDA', 'Debe capturar la Fecha Estado.', '');
 
-  // §17.2
-  if (fechaActual && fechaEstado > fechaActual) {
-    return fallo('FECHA_FUTURA', 'La Fecha Estado no puede ser mayor a la fecha actual.', fechaEstado);
-  }
+  // §17.2 desactivada a petición del usuario: se permite cualquier Fecha
+  // Estado, incluso futura. `fechaActual` se sigue recibiendo por contrato.
+  void fechaActual;
 
   // §16 — el duplicado se valida antes de trabajar. La base lo vuelve a
   // impedir con un índice único: esto es el aviso amable, no la garantía.
@@ -464,7 +463,16 @@ export function generarEstadoCuenta(params: ParamsEstadoCuenta): ResultadoEstado
 
   // D3 — del estado anterior si lo hay; si no, de las CxC previas.
   // Se calcula aparte porque D2 lo necesita para el pago que no genera intereses.
-  const saldoAnterior = estadoAnterior
+  //
+  // Si el Aviso de ese estado anterior ya quedó 'Pagado x Reclasificación', su
+  // Saldo al Corte ya entró a la Línea como cargo 023 y viene dentro de los
+  // Cargos del Periodo: tomarlo también como Saldo Anterior lo cobraría dos
+  // veces. En ese caso manda `saldoAnteriorDeAvisos`, que excluye los
+  // reclasificados y sólo arrastra lo que siga abierto.
+  const anteriorReclasificado = !!estadoAnterior && (params.avisos || []).some(
+    a => estaReclasificado(a) && aISO(a.fechaDocumento || a.fechaFin) === aISO(estadoAnterior.fechaCorte),
+  );
+  const saldoAnterior = estadoAnterior && !anteriorReclasificado
     ? money(estadoAnterior.saldoAlCorte)
     : saldoAnteriorDeAvisos(params.avisos || [], fechaCorte);
 

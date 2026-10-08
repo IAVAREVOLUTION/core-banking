@@ -359,7 +359,7 @@ export function EstadoCuentaTDCTab({
               )}
             </label>
             <input
-              type="date" value={fechaEstado} max={hoy()}
+              type="date" value={fechaEstado}
               onChange={e => { setFechaTocada(true); setFechaEstado(e.target.value); }}
               disabled={isRO} className={`${inp} w-full`}
             />

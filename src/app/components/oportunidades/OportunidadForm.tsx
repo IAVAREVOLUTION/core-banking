@@ -1306,7 +1306,7 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
           {activeTab === 'default' && (
             <div>
               {/* ── Estructura Bursátil — HU-CRM-06 ── */}
-              {seccion('Estructura Bursátil')}
+              {seccion('Estructura del Producto')}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-x-4 gap-y-2 p-3">
                 {/* CA-01 — Producto */}
                 <div className="flex flex-col">
@@ -1604,7 +1604,7 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
                     disabled
                     className={`${readonlyClass} text-right font-mono`}
                   />
-                  <span className="text-[9px] text-gray-400 mt-0.5">Se define en Estructura Bursátil</span>
+                  <span className="text-[9px] text-gray-400 mt-0.5">Se define en Estructura del Producto</span>
                 </div>
                 <div className="flex flex-col">
                   <label className="text-[10px] text-gray-600 mb-0.5">MONTO MÁXIMO GARANTIZADO</label>
