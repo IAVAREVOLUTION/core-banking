@@ -5,6 +5,8 @@ import {
   formatMoney, fmtDate, type Amortizacion,
 } from '../../hooks/useCarteraDB';
 import { formatearFecha } from '@/app/lib/fechas';
+import { conceptosAmortizacion } from '@/app/lib/prelacionCargos';
+import { cargarPrelacionProducto } from '@/app/lib/aplicacionPagosCartera';
 
 const ESTATUS_COLOR: Record<string, string> = {
   Pendiente: 'bg-amber-50 text-amber-700 border-amber-200',
@@ -21,9 +23,14 @@ interface Props {
   noCuenta?: string;
   moneda?: string;
   tipoProducto?: string;
+  /**
+   * Cartera de Crédito Individual: producto cuya "Prelación de cargos" ordena
+   * los conceptos del aviso. Sin él, el aviso se arma como siempre.
+   */
+  productoIdPrelacion?: string;
 }
 
-export function AmortizacionesTab({ solicitudId, cliente, noSol, noCuenta, moneda = 'MXN', tipoProducto }: Props) {
+export function AmortizacionesTab({ solicitudId, cliente, noSol, noCuenta, moneda = 'MXN', tipoProducto, productoIdPrelacion }: Props) {
   const isCaptacion = (tipoProducto || '').toLowerCase().includes('captaci') ||
                       (tipoProducto || '').toLowerCase().includes('ahorro') ||
                       (tipoProducto || '').toLowerCase().includes('aportaci');
@@ -106,9 +113,16 @@ export function AmortizacionesTab({ solicitudId, cliente, noSol, noCuenta, moned
   const handleAvisoVencimiento = async () => {
     if (selected.size === 0) { toast.error('Seleccione al menos una amortización'); return; }
     setEnviando(true);
+    // Crédito Individual: las líneas del aviso se registran en el orden de la
+    // "Prelación de cargos" del producto (es el orden en que se pagarán).
+    let amortizaciones: any[] = selectedRows;
+    if (productoIdPrelacion) {
+      const prelacion = await cargarPrelacionProducto(productoIdPrelacion);
+      amortizaciones = selectedRows.map(r => ({ ...r, conceptos: conceptosAmortizacion(r, prelacion) }));
+    }
     const result = await crearAvisoVencimiento({
       solicitud_id: solicitudId,
-      amortizaciones: selectedRows,
+      amortizaciones,
       sub_tipo: 'Amortizacion',
       cliente,
       forma_pago: formaPago,

@@ -9,6 +9,7 @@ import { AvisosVencimientoTab } from './AvisosVencimientoTab';
 import { MovimientosTab } from '../cuentas-ahorro/MovimientosTab';
 import { SolicitudesExtTab } from './SolicitudesExtTab';
 import { GeneracionContableTab } from './GeneracionContableTab';
+import { AplicacionPagosTab } from './AplicacionPagosTab';
 import { fetchMontoAut } from '../../hooks/useCarteraDB';
 
 export interface CarteraCredito {
@@ -16,6 +17,7 @@ export interface CarteraCredito {
   noSol: string;
   cliente: string;
   clienteId?: string;
+  productoId?: string;
   productoNombre: string;
   lineaProducto: string;
   tipoProducto?: string;
@@ -36,6 +38,11 @@ interface Props {
   credito: CarteraCredito;
   mode: 'ver' | 'editar';
   onBack: () => void;
+  /**
+   * Agrega "Aplicación de Pagos" y genera los avisos con la "Prelación de
+   * cargos" del producto (Cartera Crédito Individual y Cartera de Crédito 2º Piso).
+   */
+  conAplicacionPagos?: boolean;
 }
 
 const TABS = [
@@ -58,10 +65,13 @@ const ESTATUS_COLOR: Record<string, string> = {
 
 const fmtMoney = (n: number) => n.toLocaleString('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 2 });
 
-export function CarteraForm({ credito, mode, onBack }: Props) {
+export function CarteraForm({ credito, mode, onBack, conAplicacionPagos = false }: Props) {
   const [activeTab, setActiveTab] = useState('default');
   const [montoActual, setMontoActual] = useState(credito.montoAut);
   const isRO = mode === 'ver';
+  const tabs = conAplicacionPagos
+    ? [...TABS.slice(0, 3), { id: 'aplicacion-pagos', label: 'Aplicación de Pagos' }, ...TABS.slice(3)]
+    : TABS;
 
   useEffect(() => {
     fetchMontoAut(credito.id).then(r => { if (r) setMontoActual(r.monto_aut || r.monto_sol); });
@@ -125,7 +135,7 @@ export function CarteraForm({ credito, mode, onBack }: Props) {
       {/* ── Sub-tabs estilo institucional ── */}
       <div className="bg-primary-theme text-white border-b border-gray-400">
         <div className="px-4 flex items-center overflow-x-auto">
-          {TABS.map(tab => (
+          {tabs.map(tab => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
@@ -146,12 +156,17 @@ export function CarteraForm({ credito, mode, onBack }: Props) {
         )}
         {activeTab === 'amortizaciones' && (
           <div className="bg-white border border-gray-300 p-4">
-            <AmortizacionesTab solicitudId={credito.id} cliente={credito.cliente} noSol={credito.noSol} noCuenta={credito.noCuenta} moneda={credito.moneda} tipoProducto={credito.tipoProducto} />
+            <AmortizacionesTab solicitudId={credito.id} cliente={credito.cliente} noSol={credito.noSol} noCuenta={credito.noCuenta} moneda={credito.moneda} tipoProducto={credito.tipoProducto} productoIdPrelacion={conAplicacionPagos ? credito.productoId : undefined} />
           </div>
         )}
         {activeTab === 'avisos' && (
           <div className="bg-white border border-gray-300 p-4">
             <AvisosVencimientoTab solicitudId={credito.id} />
+          </div>
+        )}
+        {activeTab === 'aplicacion-pagos' && conAplicacionPagos && (
+          <div className="bg-white border border-gray-300 p-4">
+            <AplicacionPagosTab solicitudId={credito.id} clienteId={credito.clienteId} productoId={credito.productoId} noSol={credito.noSol} isRO={isRO} />
           </div>
         )}
         {activeTab === 'movimientos' && (

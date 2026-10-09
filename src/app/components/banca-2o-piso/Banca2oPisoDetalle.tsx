@@ -19,6 +19,7 @@ import { AvisosVencimientoTab } from '../cartera/AvisosVencimientoTab';
 import { CalendarioComisionesTab } from './CalendarioComisionesTab';
 import { EnvioPrelacionTab } from './EnvioPrelacionTab';
 import { DisposicionesTab } from './DisposicionesTab';
+import { AplicacionPagosTab } from '../cartera/AplicacionPagosTab';
 import {
   fmtMoneyExacto, parseMon, guardarBanca2oPiso,
   SUB_ESTATUS_2O_PISO, type SubEstatus2oPiso, type LineaCreditoRow,
@@ -35,6 +36,8 @@ const TABS = [
   // ── REQ-18 ──
   { id: 'calendario-comisiones', label: 'Calendario de Comisiones' },
   { id: 'avisos-vencimiento', label: 'Avisos de Vencimiento' },
+  // Mismo subtab que Cartera Crédito Individual (motorAplicacionPagos).
+  { id: 'aplicacion-pagos', label: 'Aplicación de Pagos' },
   { id: 'envio-prelacion', label: 'Envío Prelación' },
 ];
 
@@ -218,6 +221,12 @@ export function Banca2oPisoDetalle({
               <span className="text-sm font-medium text-gray-800">AVISOS DE VENCIMIENTO DE LA LÍNEA</span>
             </div>
             <AvisosVencimientoTab solicitudId={row.id} />
+          </div>
+        )}
+
+        {activeTab === 'aplicacion-pagos' && (
+          <div className="bg-white border border-gray-300 p-4">
+            <AplicacionPagosTab solicitudId={row.id} clienteId={row.clienteId} productoId={row.productoId} noSol={row.noSol} isRO={false} />
           </div>
         )}
 

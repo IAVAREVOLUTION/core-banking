@@ -198,6 +198,8 @@ export interface ProductoLineaCredito {
   motorContable?: any[];
   // Subtabs de Garantía Financiera 2o Piso (REQ-8)
   prelacion2oPiso?: PrelacionSegundoPiso[];
+  /** "Prelación de cargos" (mismo subtab que Producto Activo): orden de aplicación de pagos. */
+  prelacionCargos?: any[];
   cobertura2oPiso?: CoberturaComisiones2oPiso[];
 
   // Campos del sistema (mantener para compatibilidad)

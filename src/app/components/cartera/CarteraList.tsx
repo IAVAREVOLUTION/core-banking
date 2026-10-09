@@ -69,6 +69,7 @@ function useCreditos() {
           noSol:          r.no_sol || '',
           cliente:        [r.cliente_nombre, r.cliente_ap_paterno, r.cliente_ap_materno].filter(Boolean).join(' ') || h.nombre_persona || '—',
           clienteId:      r.cliente_id || '',
+          productoId:     r.producto_id || h.producto_id || '',
           productoNombre: r.producto_nombre || h.nombre_producto || '—',
           lineaProducto:  r.linea_produc || h.linea_producto || 'Crédito',
           tipoProducto:   r.tipo_produc || h.tipo_producto || '',
@@ -181,7 +182,8 @@ export function CarteraList({ sublineaFija, etiqueta = 'Cartera de Crédito 2º 
       ) : view.type === 'sol-ext' ? (
         <SolicitudesExtGestion />
       ) : (
-        <CarteraForm credito={view.credito} mode={view.mode === 'editar' ? 'editar' : 'ver'} onBack={goLista} />
+        <CarteraForm credito={view.credito} mode={view.mode === 'editar' ? 'editar' : 'ver'} onBack={goLista}
+          conAplicacionPagos />
       )}
     </>
   );

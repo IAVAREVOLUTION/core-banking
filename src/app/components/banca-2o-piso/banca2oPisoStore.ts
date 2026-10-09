@@ -46,6 +46,16 @@ export function esLineaCredito2oPisoRow(lineaProducto: string, estatus: string):
 }
 
 /**
+ * Tarjeta de Crédito: es Línea de Crédito pero NO se administra en Banca 2º Piso.
+ * Se excluye sólo de este módulo; no se toca `esLineaCredito2oPisoRow` para no
+ * cambiar qué muestra Cartera de Crédito.
+ */
+export function esTarjetaCreditoRow(tipoProducto: string, productoNombre = ''): boolean {
+  const t = norm(tipoProducto);
+  return (t.includes('tarjeta') && t.includes('credito')) || /^tdc\b/.test(norm(productoNombre));
+}
+
+/**
  * `data.solicitud.expediente_electronico.documentos` → `DocumentoCargado[]`.
  *
  * El Core persiste el expediente en snake_case (`tipo_documento`,
@@ -884,6 +894,7 @@ export function useLineasCreditoActivas() {
         .filter((r: any) => {
           const dataObj = repararDataSolicitud(r.data);
           const h = dataObj?.solicitud?.header || {};
+          if (esTarjetaCreditoRow(r.tipo_produc || h.tipo_producto || '', r.producto_nombre || h.nombre_producto || '')) return false;
           return esLineaCredito2oPisoRow(
             r.linea_produc || h.linea_producto || '',
             r.estatus_sol || h.estatus || '',

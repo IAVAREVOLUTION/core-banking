@@ -25,6 +25,7 @@ import { GarantiaTab } from '../productos/tabs/GarantiaTab';
 import { ComisionesTab } from '../productos/tabs/ComisionesTab';
 import { OpcionesConfigTab } from './OpcionesConfigTab';
 import { Prelacion2oPisoTab } from './Prelacion2oPisoTab';
+import { PrelacionTab } from '../productos/tabs/PrelacionTab';
 import { Cobertura2oPisoTab } from './Cobertura2oPisoTab';
 import { ExpedientesProductoTab } from '../productos/tabs/ExpedientesProductoTab';
 import { PlantillasTab } from '../productos/tabs/PlantillasTab';
@@ -411,6 +412,8 @@ export function ProductoLineaCreditoForm({
           motorContable: motorContable,
           // Subtabs de Garantía Financiera 2o Piso (REQ-8)
           prelacion2oPiso: prelacion2oPisoRef.current?.getData() || formData.prelacion2oPiso || [],
+          // "Prelación de cargos": orden en que la Aplicación de Pagos reparte cada pago.
+          prelacionCargos: prelacionCargosRef.current?.getData() || product?.prelacionCargos || [],
           cobertura2oPiso: cobertura2oPisoRef.current?.getData() || formData.cobertura2oPiso || [],
         };
 
@@ -469,6 +472,7 @@ export function ProductoLineaCreditoForm({
   const plantillasRef = useRef<{ getData: () => any[] }>(null);
   // Subtabs de Garantía Financiera 2o Piso (REQ-8)
   const prelacion2oPisoRef = useRef<{ getData: () => any[] }>(null);
+  const prelacionCargosRef = useRef<{ getData: () => any[] }>(null);
   const cobertura2oPisoRef = useRef<{ getData: () => any[] }>(null);
   const [motorContable, setMotorContable] = useState<any[]>(() =>
     Array.isArray((product as any)?.motorContable) ? (product as any).motorContable : []
@@ -593,6 +597,7 @@ export function ProductoLineaCreditoForm({
     { id: 'sucursal', label: 'Sucursal' },
     { id: 'garantias', label: 'Bienes' },
     { id: 'motor-contable', label: 'Motor Contable' },
+    { id: 'prelacion-cargos', label: 'Prelación de cargos' },
     // === Garantía Financiera 2o Piso ===
     { id: 'prelacion-2o-piso', label: 'Prelación 2o Piso' },
     { id: 'cobertura-2o-piso', label: 'Cobertura y Comisiones 2o Piso' },
@@ -1079,6 +1084,18 @@ export function ProductoLineaCreditoForm({
                 readOnly={isView}
               />
             )}
+
+            {/* Prelación de cargos — mismo subtab que Producto Activo */}
+            <div style={{ display: activeTab === 'prelacion-cargos' ? 'block' : 'none' }}>
+              <PrelacionTab
+                ref={prelacionCargosRef}
+                mode={mode}
+                productId={productId}
+                persistToStorage
+                storagePrefix="linea_credito"
+                initialData={Array.isArray(product?.prelacionCargos) ? product.prelacionCargos : undefined}
+              />
+            </div>
 
             {/* Garantía Financiera 2o Piso */}
             <div style={{ display: activeTab === 'prelacion-2o-piso' ? 'block' : 'none' }}>

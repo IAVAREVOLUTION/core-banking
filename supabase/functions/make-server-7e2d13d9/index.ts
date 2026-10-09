@@ -4441,6 +4441,148 @@ const carteraMarcarPagadoHandler = async (c: any) => {
   }
 };
 
+// ═══════════════════════════════════════════════════════════════════
+// APLICACIÓN DE PAGOS — POST /cartera/aplicar-pago  (Cartera Crédito Individual)
+// Portado de la rama Producto-TDC-FINAL. El reparto lo decide el motor del
+// cliente (motorAplicacionPagos) con la "Prelación de cargos" del producto;
+// aquí se persiste en UNA transacción y se valida que ninguna línea se pague
+// de más (si otro proceso pagó en medio, no se aplica nada).
+//   1. J_PAGOS por línea (factura_detalle_id) + estatus Pagado/Parcial del detalle
+//   2. J_FACTURAS → Pagado cuando todas sus líneas quedan pagadas
+//   3. monto_aut del crédito disminuye en lo aplicado (igual que /pagar)
+//   Después (no bloquea): Abono del pago y Cargo de lo aplicado en la Cuenta
+//   EJE (el remanente se queda ahí) y Abono "Pago de Crédito" en el crédito.
+// ═══════════════════════════════════════════════════════════════════
+const carteraAplicarPagoHandler = async (c: any) => {
+  const LOG = '[APLICAR-PAGO]';
+  try {
+    const body = await c.req.json().catch(() => ({}));
+    const solicitudId = String(body.solicitud_id || '');
+    const referencia  = String(body.referencia || '').trim();
+    const fechaPago   = String(body.fecha_pago || new Date().toISOString().slice(0, 10)).slice(0, 10);
+    const montoPago   = Number(body.monto_pago) || 0;
+    const cuentaEjeId = body.cuenta_eje_id ? String(body.cuenta_eje_id) : null;
+    const aplicaciones: any[] = Array.isArray(body.aplicaciones) ? body.aplicaciones : [];
+    const r2 = (n: number) => Math.round((Number(n) || 0) * 100) / 100;
+
+    if (!/^[0-9a-f-]{36}$/i.test(solicitudId)) return c.json({ ok: false, error: 'solicitud_id inválido' }, 400);
+    if (!referencia) return c.json({ ok: false, error: 'La referencia del pago es obligatoria' }, 400);
+    if (!cuentaEjeId) return c.json({ ok: false, error: 'El cliente no tiene Cuenta EJE válida' }, 400);
+    if (aplicaciones.some(a => !(Number(a?.monto) > 0) || !a?.detalle_id || !a?.factura_id)) {
+      return c.json({ ok: false, error: 'Aplicaciones inválidas' }, 400);
+    }
+
+    // Idempotencia: la misma referencia no se aplica dos veces al mismo crédito.
+    const previo = await sql`
+      SELECT 1 FROM "EFINANCIANET_DB"."J_PAGOS" p
+      JOIN "EFINANCIANET_DB"."J_FACTURAS" f ON f.id = p.factura_id
+      WHERE f.solicitud_id = ${solicitudId}::uuid AND p.numero_referencia = ${referencia}
+      LIMIT 1
+    `;
+    if (previo.length > 0) return c.json({ ok: true, ya_aplicado: true });
+
+    let totalAplicado = 0;
+    // Lo aplicado a avisos de COMISIÓN GPO no reduce el saldo de la línea
+    // (Saldo Monto Garantía): mismo criterio que PATCH /cartera/facturas/:id/pagar.
+    let aplicadoReduceSaldo = 0;
+    await sql.begin(async (tx: any) => {
+      const facturasTocadas = new Set<string>();
+      for (const a of aplicaciones) {
+        const monto = r2(a.monto);
+        const [det] = await tx`
+          SELECT id, factura_id, monto::numeric AS monto
+          FROM "EFINANCIANET_DB"."J_FACTURAS_DETALLE"
+          WHERE id = ${a.detalle_id} FOR UPDATE
+        `;
+        if (!det || String(det.factura_id) !== String(a.factura_id)) {
+          throw new Error(`La línea ${a.detalle_id} no pertenece al aviso ${a.factura_id}`);
+        }
+        const [fac] = await tx`
+          SELECT id, sub_tipo FROM "EFINANCIANET_DB"."J_FACTURAS"
+          WHERE id = ${a.factura_id} AND solicitud_id = ${solicitudId}::uuid
+        `;
+        if (!fac) throw new Error(`El aviso ${a.factura_id} no pertenece a este crédito`);
+
+        const [pag] = await tx`
+          SELECT COALESCE(SUM(TRIM(REPLACE(REPLACE(monto_pagado::text,'$',''),',',''))::numeric), 0) AS pagado
+          FROM "EFINANCIANET_DB"."J_PAGOS" WHERE factura_detalle_id = ${a.detalle_id}
+        `;
+        const montoLinea = r2(det.monto);
+        const pagado = r2(pag?.pagado);
+        if (r2(pagado + monto) > r2(montoLinea) + 0.005) {
+          throw new Error('Otro proceso cambió de saldo durante el proceso: la línea ya no admite ese monto');
+        }
+        await tx`
+          INSERT INTO "EFINANCIANET_DB"."J_PAGOS"
+            (factura_id, factura_detalle_id, fecha_pago, monto_pagado, numero_referencia, forma_pago, estatus)
+          VALUES (${a.factura_id}, ${a.detalle_id}, ${fechaPago}::date, ${monto}, ${referencia}, 'Pago Referenciado', 'Aplicado')
+        `;
+        const estDet = r2(pagado + monto) >= r2(montoLinea) ? 'Pagado' : 'Parcial';
+        await tx`UPDATE "EFINANCIANET_DB"."J_FACTURAS_DETALLE" SET estatus = ${estDet} WHERE id = ${a.detalle_id}`;
+        facturasTocadas.add(String(a.factura_id));
+        totalAplicado = r2(totalAplicado + monto);
+        if (String(fac.sub_tipo || '').trim() !== 'ComisionGPO') aplicadoReduceSaldo = r2(aplicadoReduceSaldo + monto);
+      }
+
+      // Aviso pagado cuando ninguna de sus líneas tiene saldo.
+      for (const fid of facturasTocadas) {
+        const [pend] = await tx`
+          SELECT COUNT(*)::int AS n FROM "EFINANCIANET_DB"."J_FACTURAS_DETALLE"
+          WHERE factura_id = ${fid} AND COALESCE(estatus, 'Pendiente') <> 'Pagado'
+        `;
+        if ((pend?.n ?? 1) === 0) {
+          await tx`UPDATE "EFINANCIANET_DB"."J_FACTURAS" SET estatus = 'Pagado' WHERE id = ${fid}`;
+        }
+      }
+
+      if (totalAplicado > 0) {
+        await tx`
+          UPDATE "EFINANCIANET_DB"."J_CUENTAS_CORP_CLIENTES"
+          SET monto_aut = GREATEST(0::money, monto_aut - ${totalAplicado}::numeric::money)
+          WHERE id = ${solicitudId}::uuid
+        `;
+      }
+    });
+    console.log(`${LOG} ✅ solicitud=${solicitudId} ref=${referencia} pago=${montoPago} aplicado=${totalAplicado}`);
+
+    // Movimientos (después del commit; no bloquean, igual que /pagar).
+    const noSol = String(body.no_sol || '');
+    try {
+      const [eje] = await sql`SELECT saldo_actual FROM "EFINANCIANET_DB"."J_CUENTAS_CORP_CLIENTES" WHERE id = ${cuentaEjeId}::uuid`;
+      let saldoEje = parseFloat(String(eje?.saldo_actual ?? '0').replace(/[^0-9.-]/g, '')) || 0;
+      if (montoPago > 0) {
+        saldoEje = r2(saldoEje + montoPago);
+        await escribirMovimientoEnCuenta(cuentaEjeId, {
+          tipo: 'Abono', concepto: 'Pago referenciado', referencia, monto: montoPago,
+          fechaOperacion: fechaPago, estatus: 'Aplicado', origenCreacion: 'Aplicación de Pagos',
+        }, saldoEje);
+      }
+      if (totalAplicado > 0) {
+        saldoEje = r2(saldoEje - totalAplicado);
+        await escribirMovimientoEnCuenta(cuentaEjeId, {
+          tipo: 'Cargo', concepto: `Aplicación de pago a crédito ${noSol}`.trim(), referencia, monto: totalAplicado,
+          fechaOperacion: fechaPago, estatus: 'Aplicado', origenCreacion: 'Aplicación de Pagos',
+        }, saldoEje);
+        const [cred] = await sql`SELECT saldo_actual FROM "EFINANCIANET_DB"."J_CUENTAS_CORP_CLIENTES" WHERE id = ${solicitudId}::uuid`;
+        const saldoCred = parseFloat(String(cred?.saldo_actual ?? '0').replace(/[^0-9.-]/g, '')) || 0;
+        await escribirMovimientoEnCuenta(solicitudId, {
+          tipo: 'Abono', concepto: aplicadoReduceSaldo > 0 ? 'Pago de Crédito' : 'Pago de Comisión GPO', referencia, monto: totalAplicado,
+          fechaOperacion: fechaPago, estatus: 'Aplicado', origenCreacion: 'Aplicación de Pagos',
+        }, aplicadoReduceSaldo > 0 ? Math.max(0, r2(saldoCred - aplicadoReduceSaldo)) : null);
+      }
+    } catch (movErr: any) {
+      console.warn(`${LOG} movimientos fallidos (el pago sí quedó aplicado): ${movErr?.message}`);
+    }
+
+    return c.json({ ok: true, monto_total_aplicado: totalAplicado });
+  } catch (err: any) {
+    console.error(`${LOG} Error:`, err?.message);
+    return c.json({ ok: false, error: String(err?.message || err) }, 500);
+  }
+};
+
+app.post(`${PREFIX}/cartera/aplicar-pago`, carteraAplicarPagoHandler);
+app.post(`/cartera/aplicar-pago`, carteraAplicarPagoHandler);
 app.patch(`${PREFIX}/cartera/facturas/:id/pagar`, carteraMarcarPagadoHandler);
 app.patch(`/cartera/facturas/:id/pagar`, carteraMarcarPagadoHandler);
 

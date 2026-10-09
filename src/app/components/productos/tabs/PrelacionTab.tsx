@@ -18,11 +18,13 @@ interface PrelacionTabProps {
   productId: number | string;
   initialData?: Prelacion[];
   persistToStorage?: boolean;
+  /** Prefijo de la llave de sesión: 'credito' (Producto Activo) o 'linea_credito'. */
+  storagePrefix?: string;
 }
 
 export const PrelacionTab = forwardRef<{ getData: () => Prelacion[] }, PrelacionTabProps>(
-  ({ mode, productId, initialData, persistToStorage }, ref) => {
-    const storageKey = persistToStorage && productId ? `credito_prelacion_${productId}` : '';
+  ({ mode, productId, initialData, persistToStorage, storagePrefix = 'credito' }, ref) => {
+    const storageKey = persistToStorage && productId ? `${storagePrefix}_prelacion_${productId}` : '';
 
     // ══════════════════════════════════════════════════════════════
     // FIX: Prelación de Cargos es 100% manual. Sin defaults hardcodeados.
@@ -105,6 +107,25 @@ export const PrelacionTab = forwardRef<{ getData: () => Prelacion[] }, Prelacion
       setShowFormModal(false);
     };
 
+    /**
+     * Reordena la prelación. El orden de la lista ES el orden de aplicación,
+     * así que al mover se renumera "Orden de Aplicación" (1, 2, 3…).
+     * hacia: -1 sube, +1 baja, 'inicio' / 'fin' lo manda al extremo.
+     */
+    const mover = (id: number, hacia: -1 | 1 | 'inicio' | 'fin') => {
+      if (isViewMode) return;
+      const i = data.findIndex(d => d.id === id);
+      if (i < 0) return;
+      const destino = hacia === 'inicio' ? 0 : hacia === 'fin' ? data.length - 1 : i + hacia;
+      if (destino < 0 || destino >= data.length || destino === i) return;
+      const lista = [...data];
+      const [item] = lista.splice(i, 1);
+      lista.splice(destino, 0, item);
+      setData(lista.map((d, k) => ({ ...d, ordenAplicacion: String(k + 1) })));
+      setSelectedRow(id);
+    };
+    const idxSel = selectedRow === null ? -1 : data.findIndex(d => d.id === selectedRow);
+
     const handleConsulta = () => {
       setShowConsulta(!showConsulta);
     };
@@ -139,6 +160,12 @@ export const PrelacionTab = forwardRef<{ getData: () => Prelacion[] }, Prelacion
 
             <button onClick={handleNew} disabled={isViewMode} className="px-3 py-1 bg-[color:var(--theme-primary)] text-white text-xs hover:bg-[color:var(--theme-secondary)] border border-[color:var(--theme-secondary)] disabled:bg-gray-400 disabled:cursor-not-allowed">Nuevo</button>
             <button onClick={handleDelete} disabled={selectedRow === null || isViewMode} className="px-3 py-1 bg-[color:var(--theme-primary)] text-white text-xs hover:bg-[color:var(--theme-secondary)] border border-[color:var(--theme-secondary)] disabled:bg-gray-400 disabled:cursor-not-allowed">Eliminar</button>
+            <div className="flex items-center gap-1 ml-2 pl-2 border-l border-gray-300" aria-label="Reordenar">
+              <button type="button" title="Mover al inicio" aria-label="Mover al inicio" onClick={() => selectedRow !== null && mover(selectedRow, 'inicio')} disabled={isViewMode || idxSel <= 0} className="px-2 py-1 bg-[color:var(--theme-primary)] text-white text-xs hover:bg-[color:var(--theme-secondary)] border border-[color:var(--theme-secondary)] disabled:bg-gray-400 disabled:cursor-not-allowed">⤒</button>
+              <button type="button" title="Subir" aria-label="Subir" onClick={() => selectedRow !== null && mover(selectedRow, -1)} disabled={isViewMode || idxSel <= 0} className="px-2 py-1 bg-[color:var(--theme-primary)] text-white text-xs hover:bg-[color:var(--theme-secondary)] border border-[color:var(--theme-secondary)] disabled:bg-gray-400 disabled:cursor-not-allowed">▲</button>
+              <button type="button" title="Bajar" aria-label="Bajar" onClick={() => selectedRow !== null && mover(selectedRow, 1)} disabled={isViewMode || idxSel < 0 || idxSel >= data.length - 1} className="px-2 py-1 bg-[color:var(--theme-primary)] text-white text-xs hover:bg-[color:var(--theme-secondary)] border border-[color:var(--theme-secondary)] disabled:bg-gray-400 disabled:cursor-not-allowed">▼</button>
+              <button type="button" title="Mover al final" aria-label="Mover al final" onClick={() => selectedRow !== null && mover(selectedRow, 'fin')} disabled={isViewMode || idxSel < 0 || idxSel >= data.length - 1} className="px-2 py-1 bg-[color:var(--theme-primary)] text-white text-xs hover:bg-[color:var(--theme-secondary)] border border-[color:var(--theme-secondary)] disabled:bg-gray-400 disabled:cursor-not-allowed">⤓</button>
+            </div>
             <button onClick={handleConsulta} className="px-3 py-1 bg-[color:var(--theme-primary)] text-white text-xs hover:bg-[color:var(--theme-secondary)] border border-[color:var(--theme-secondary)]">Consulta</button>
           </div>
 
@@ -156,12 +183,13 @@ export const PrelacionTab = forwardRef<{ getData: () => Prelacion[] }, Prelacion
                 <tr className="bg-[color:var(--theme-primary)] text-white">
                   <th className="px-3 py-2 text-left font-medium text-xs border-r border-white/20 whitespace-nowrap">Orden de Aplicación</th>
                   <th className="px-3 py-2 text-left font-medium text-xs whitespace-nowrap">Productos Cargos</th>
+                  {!isViewMode && <th className="px-3 py-2 text-center font-medium text-xs whitespace-nowrap w-24 border-l border-white/20">Mover</th>}
                 </tr>
               </thead>
               <tbody className="bg-white">
                 {data.length === 0 ? (
                   <tr>
-                    <td colSpan={2} className="px-3 py-6 text-center text-gray-500 text-xs">No se encontraron registros</td>
+                    <td colSpan={isViewMode ? 2 : 3} className="px-3 py-6 text-center text-gray-500 text-xs">No se encontraron registros</td>
                   </tr>
                 ) : (
                   data.map((item, index) => (
@@ -183,6 +211,18 @@ export const PrelacionTab = forwardRef<{ getData: () => Prelacion[] }, Prelacion
                     >
                       <td className="px-3 py-2 text-xs text-gray-700 border-r border-gray-300">{item.ordenAplicacion}</td>
                       <td className="px-3 py-2 text-xs text-gray-700">{item.productosCargos}</td>
+                      {!isViewMode && (
+                        <td className="px-2 py-1 text-center border-l border-gray-300 whitespace-nowrap">
+                          <button type="button" title="Subir" aria-label={`Subir ${item.productosCargos}`}
+                            onClick={(e) => { e.stopPropagation(); mover(item.id, -1); }}
+                            disabled={index === 0}
+                            className="w-6 h-6 inline-flex items-center justify-center rounded text-[color:var(--theme-primary)] hover:bg-[color:var(--theme-tint)] disabled:text-gray-300 disabled:hover:bg-transparent">▲</button>
+                          <button type="button" title="Bajar" aria-label={`Bajar ${item.productosCargos}`}
+                            onClick={(e) => { e.stopPropagation(); mover(item.id, 1); }}
+                            disabled={index === data.length - 1}
+                            className="w-6 h-6 inline-flex items-center justify-center rounded text-[color:var(--theme-primary)] hover:bg-[color:var(--theme-tint)] disabled:text-gray-300 disabled:hover:bg-transparent">▼</button>
+                        </td>
+                      )}
                     </tr>
                   ))
                 )}

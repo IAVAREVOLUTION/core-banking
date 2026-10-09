@@ -212,6 +212,7 @@ function mapRowToProduct(row: ProductoLineaCreditoRow, index: number): ProductoL
     motorContable: Array.isArray(d.motorContable) ? d.motorContable : undefined,
     // ── Garantía Financiera 2o Piso (REQ-8) ──
     prelacion2oPiso: Array.isArray(d.prelacion2oPiso) ? d.prelacion2oPiso : undefined,
+    prelacionCargos: Array.isArray(d.prelacionCargos) ? d.prelacionCargos : (Array.isArray(d.prelacion) ? d.prelacion : undefined),
     cobertura2oPiso: Array.isArray(d.cobertura2oPiso) ? d.cobertura2oPiso : undefined,
   } as ProductoLineaCredito;
 }
