@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
-import { toast } from 'sonner';
-import * as XLSX from 'xlsx';
+import { toast } from '@/app/lib/notificaciones';
 import { DatePicker } from './DatePicker';
+import { CampoMonto } from '@/app/components/ui/CampoMonto';
 
 interface Credito {
   id: number;
@@ -456,7 +456,7 @@ function ModalCredito({ mode, credito, onSave, onClose }: ModalCreditoProps) {
           <h3 className="text-base font-medium text-white">
             {mode === 'create' ? 'Nuevo Crédito' : 'Editar Crédito'}
           </h3>
-          <button
+          <button type="button" aria-label="Cerrar" title="Cerrar"
             onClick={onClose}
             className="text-white hover:text-gray-200"
           >
@@ -502,11 +502,9 @@ function ModalCredito({ mode, credito, onSave, onClose }: ModalCreditoProps) {
 
                   <div>
                     <label className="block text-xs text-gray-700 mb-1 font-medium">Monto Solicitado <span className="text-red-600">*</span></label>
-                    <input
-                      type="number"
+                    <CampoMonto
                       value={formData.montoSolicitado}
                       onChange={(e) => handleChange('montoSolicitado', parseFloat(e.target.value) || 0)}
-                      step="0.01"
                       className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded bg-white"
                     />
                     {errors.montoSolicitado && <p className="text-red-600 text-[10px] mt-1">{errors.montoSolicitado}</p>}
@@ -580,11 +578,9 @@ function ModalCredito({ mode, credito, onSave, onClose }: ModalCreditoProps) {
 
                   <div>
                     <label className="block text-xs text-gray-700 mb-1 font-medium">Monto Total</label>
-                    <input
-                      type="number"
+                    <CampoMonto
                       value={formData.montoTotal}
                       onChange={(e) => handleChange('montoTotal', parseFloat(e.target.value) || 0)}
-                      step="0.01"
                       className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded bg-white"
                     />
                   </div>
@@ -594,11 +590,9 @@ function ModalCredito({ mode, credito, onSave, onClose }: ModalCreditoProps) {
                 <div className="grid grid-cols-3 gap-6">
                   <div>
                     <label className="block text-xs text-gray-700 mb-1 font-medium">Total Pagado</label>
-                    <input
-                      type="number"
+                    <CampoMonto
                       value={formData.totalPagado}
                       onChange={(e) => handleChange('totalPagado', parseFloat(e.target.value) || 0)}
-                      step="0.01"
                       className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded bg-white"
                     />
                   </div>
@@ -709,7 +703,7 @@ function ModalPago({ mode, pago, onSave, onClose }: ModalPagoProps) {
           <h3 className="text-base font-medium text-white">
             {mode === 'create' ? 'Nuevo Pago' : 'Editar Pago'}
           </h3>
-          <button
+          <button type="button" aria-label="Cerrar" title="Cerrar"
             onClick={onClose}
             className="text-white hover:text-gray-200"
           >
@@ -755,11 +749,9 @@ function ModalPago({ mode, pago, onSave, onClose }: ModalPagoProps) {
 
                   <div>
                     <label className="block text-xs text-gray-700 mb-1 font-medium">Monto del Pago <span className="text-red-600">*</span></label>
-                    <input
-                      type="number"
+                    <CampoMonto
                       value={formData.pago}
                       onChange={(e) => handleChange('pago', parseFloat(e.target.value) || 0)}
-                      step="0.01"
                       className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded bg-white"
                     />
                     {errors.pago && <p className="text-red-600 text-[10px] mt-1">{errors.pago}</p>}

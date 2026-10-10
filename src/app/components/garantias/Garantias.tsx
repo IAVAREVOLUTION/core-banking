@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import { Garantia } from '@/types/garantia';
-import { FormMode } from '@/types/product';
+import { FormMode } from '@/app/types/product';
 import { GarantiasList } from './GarantiasList';
 import { GarantiaForm } from './GarantiaForm';
 import { useGarantiasDB } from '@/app/hooks/useGarantiasDB';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 
 export function Garantias() {
   // ── Hook DB (RPC-based) — datos reales de J_GARANTIAS (todas) ──
@@ -49,7 +49,7 @@ export function Garantias() {
     if (result.ok && result.source === 'db') {
       toast.success(
         formMode === 'create' ? 'Bien creado en DB' : 'Bien actualizado en DB',
-        { description: `"${garantiaData.garantia}" — guardado en J_GARANTIAS` }
+        { description: `"${garantiaData.garantia}" — guardado` }
       );
       // Refetch para asegurar sincronización con la tabla real
       refetch();

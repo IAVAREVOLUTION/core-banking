@@ -16,11 +16,12 @@
  * periodicidad de cobro de comisión. Ver REQ-9 §Contexto técnico.
  */
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { toast } from 'sonner';
-import * as XLSX from 'xlsx';
+import { toast } from '@/app/lib/notificaciones';
 import {
   loadFromSession, loadFromSavedStore, saveToSession, formatCurrency, parseCurrency,
 } from './solicitudCreditoStore';
+import { cargarXLSX } from '@/app/lib/librerias';
+import { CampoMonto } from '@/app/components/ui/CampoMonto';
 
 export const SUBTAB_MODELO_VIABILIDAD = 'modeloViabilidad';
 
@@ -238,7 +239,8 @@ export function ModeloViabilidadFinancieraTab({
    * filas. Así lo exportado se puede reimportar sin retoques y es comparable con
    * el Excel que usa el área de Riesgos.
    */
-  const exportarExcel = () => {
+  const exportarExcel = async () => {
+    const XLSX = await cargarXLSX();
     const cols = datos.proyecciones.map(f => `Año ${f.anio}`);
     const fila = (concepto: string, valores: (string | number)[]) => {
       const o: Record<string, any> = { 'CONCEPTO / AÑO OPERATIVO': concepto };
@@ -273,6 +275,7 @@ export function ModeloViabilidadFinancieraTab({
    */
   const importarExcel = async (file: File) => {
     try {
+      const XLSX = await cargarXLSX();
       const buf = await file.arrayBuffer();
       const wb = XLSX.read(buf, { type: 'array' });
       const ws = wb.Sheets[wb.SheetNames[0]];
@@ -360,7 +363,7 @@ export function ModeloViabilidadFinancieraTab({
   };
 
   const roClass = 'w-full px-2 py-1.5 text-xs bg-gray-100 border border-gray-200 rounded text-gray-600';
-  const inputClass = 'w-full px-2 py-1.5 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-[#4A6FA5]/30 focus:border-[#4A6FA5]';
+  const inputClass = 'w-full px-2 py-1.5 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-[color:var(--theme-primary)]/30 focus:border-[color:var(--theme-primary)]';
   const colorSemaforo: Record<Semaforo, string> = {
     'Verde': 'bg-green-100 text-green-800 border-green-300',
     'Amarillo': 'bg-amber-100 text-amber-800 border-amber-300',
@@ -394,7 +397,7 @@ export function ModeloViabilidadFinancieraTab({
               <button
                 onClick={() => fileRef.current?.click()}
                 title="Carga la plantilla Modelo Financiero Dinámico GPO"
-                className="px-3 py-1.5 bg-[#4A6FA5] text-white rounded text-xs hover:bg-[#3A5A8A] whitespace-nowrap"
+                className="px-3 py-1.5 bg-[color:var(--theme-primary)] text-white rounded text-xs hover:bg-[color:var(--theme-primary-hover)] whitespace-nowrap"
               >
                 Importar Excel
               </button>
@@ -416,7 +419,7 @@ export function ModeloViabilidadFinancieraTab({
       <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-3 mb-5">
         <div>
           <label className="block text-xs text-gray-700 mb-1">
-            Fuente Primaria de Ingreso <span className="text-red-500">*</span>
+            Fuente Principal de Ingresos <span className="text-red-500">*</span>
           </label>
           <select
             value={datos.fuentePrimariaIngreso}
@@ -432,9 +435,7 @@ export function ModeloViabilidadFinancieraTab({
           <label className="block text-xs text-gray-700 mb-1">
             Monto Fondo de Reserva del Fideicomiso <span className="text-red-500">*</span>
           </label>
-          <input
-            type="text"
-            inputMode="decimal"
+          <CampoMonto
             value={datos.montoFondoReservaFideicomiso}
             onChange={e => {
               const l = e.target.value.replace(/[^0-9.]/g, '');

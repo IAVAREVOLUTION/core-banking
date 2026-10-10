@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 import { DatePicker } from './DatePicker';
 import { PercentageInput } from './PercentageInput';
 import { useClienteSubtabList } from '@/app/hooks/useClientePersistence';
+import { CampoMonto } from '@/app/components/ui/CampoMonto';
 
 interface CreditosProps {
   onBack: () => void;
@@ -354,7 +355,7 @@ export function Creditos({ onBack, mode, clienteId }: CreditosProps) {
               <h3 className="text-base font-medium text-white">
                 {editingId !== null ? 'Editar Crédito' : 'Nuevo Crédito'}
               </h3>
-              <button
+              <button type="button" aria-label="Cerrar" title="Cerrar"
                 onClick={() => setShowModal(false)}
                 className="text-white hover:text-gray-200"
               >
@@ -410,8 +411,7 @@ export function Creditos({ onBack, mode, clienteId }: CreditosProps) {
                       <label className="block text-xs text-gray-700 mb-1 font-medium">
                         Monto Solicitado <span className="text-red-600">*</span>
                       </label>
-                      <input
-                        type="text"
+                      <CampoMonto
                         value={formData.montoSolicitado}
                         onChange={(e) => setFormData(prev => ({ ...prev, montoSolicitado: e.target.value }))}
                         placeholder="$ 0.00"
@@ -426,8 +426,7 @@ export function Creditos({ onBack, mode, clienteId }: CreditosProps) {
                       <label className="block text-xs text-gray-700 mb-1 font-medium">
                         Monto Autorizado <span className="text-red-600">*</span>
                       </label>
-                      <input
-                        type="text"
+                      <CampoMonto
                         value={formData.montoAutorizado}
                         onChange={(e) => setFormData(prev => ({ ...prev, montoAutorizado: e.target.value }))}
                         placeholder="$ 0.00"
@@ -439,8 +438,7 @@ export function Creditos({ onBack, mode, clienteId }: CreditosProps) {
                       <label className="block text-xs text-gray-700 mb-1 font-medium">
                         Monto Entregado <span className="text-red-600">*</span>
                       </label>
-                      <input
-                        type="text"
+                      <CampoMonto
                         value={formData.montoEntregado}
                         onChange={(e) => setFormData(prev => ({ ...prev, montoEntregado: e.target.value }))}
                         placeholder="$ 0.00"

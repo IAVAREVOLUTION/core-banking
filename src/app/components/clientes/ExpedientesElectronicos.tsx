@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { toast } from 'sonner';
-import { Eye, Download, Loader2 } from 'lucide-react';
+import { toast } from '@/app/lib/notificaciones';
+import { Eye, Download, Loader2, ChevronDown, CopyPlus } from 'lucide-react';
 import { useClienteSubtabList } from '@/app/hooks/useClientePersistence';
 import { useCatalogoDocumentosDB } from '@/app/hooks/useCatalogoDocumentosDB';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 import { supabase } from '../../lib/supabaseClient';
-import { currentUser } from '../../data/mockData';
+import { getUsuarioSesion } from '../../lib/sesion';
+import { fechaHoraActual } from '../solicitudes/solicitudCreditoStore';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-7e2d13d9`;
 
@@ -92,7 +93,19 @@ interface Expediente {
   observaciones: string;
   _pendingFile?: File;
   _bucket?: string;
+  /** Control de versiones (igual que KM Digital de Solicitudes): '1.0', '2.0'… */
+  version?: string;
+  /** Fecha y hora de la última actualización del registro (dd/mm/aaaa hh:mm:ss). */
+  fechaActualizacion?: string;
+  /** id de la versión de la que se clonó. */
+  versionDe?: number;
+  /** id de la versión 1.0 del documento; agrupa todas sus versiones. */
+  versionRaiz?: number;
 }
+
+const versionExp = (e: Expediente) => e.version || '1.0';
+const raizExp = (e: Expediente) => e.versionRaiz ?? e.id;
+const numVersionExp = (e: Expediente) => parseFloat(versionExp(e)) || 1;
 
 interface ExpedientesElectronicosProps {
   isView?: boolean;
@@ -159,6 +172,10 @@ function normalizeExpediente(raw: any, index: number): Expediente {
     estatus: r.estatus || r.status || 'Pendiente',
     observaciones: r.observaciones || r.observations || '',
     _bucket: r._bucket || '',
+    version: r.version || '1.0',
+    fechaActualizacion: r.fechaActualizacion || r.fecha_actualizacion || r.fechaCarga || r.fecha_carga || r.fechaHora || '',
+    versionDe: r.versionDe ?? r.version_de ?? undefined,
+    versionRaiz: r.versionRaiz ?? r.version_raiz ?? undefined,
   };
 }
 
@@ -498,7 +515,7 @@ export function ExpedientesElectronicos({ isView = false, clienteId, mode = 'nue
         fechaCarga: '—',
         usuarioCarga: '—',
         tipoDocumento: item.label,
-        descripcion: `Campo JSONB: ${item.campo}`,
+        descripcion: `Documento registrado (${item.campo})`,
         estatus: 'Activo',
         observaciones: '',
         _bucket: item.bucket,
@@ -512,6 +529,130 @@ export function ExpedientesElectronicos({ isView = false, clienteId, mode = 'nue
   }, [expedientes, dataFileExpedientes]);
 
   const getNextId = () => Math.max(...allExpedientes.map(e => e.id), 0) + 1;
+
+  // ─── Árbol KM Digital (como en Solicitudes): ramas por Tipo de Documento ──
+  // Tipo Interlocutor no tiene fases; la rama natural es el tipo de documento.
+  // Todas las ramas arrancan expandidas.
+  const SIN_TIPO = 'Sin tipo de documento';
+  const [ramasPlegadas, setRamasPlegadas] = useState<Set<string>>(new Set());
+  const ramas = useMemo(() => {
+    const m = new Map<string, Expediente[]>();
+    for (const e of allExpedientes) {
+      // Todas las versiones cuelgan de la rama de su versión vigente.
+      const k = (e.tipoDocumento || '').trim() || SIN_TIPO;
+      if (!m.has(k)) m.set(k, []);
+      m.get(k)!.push(e);
+    }
+    return [...m.entries()].sort(([a], [b]) => (a === SIN_TIPO ? 1 : b === SIN_TIPO ? -1 : a.localeCompare(b, 'es')));
+  }, [allExpedientes]);
+  const toggleRama = (k: string) => setRamasPlegadas(prev => {
+    const n = new Set(prev);
+    if (n.has(k)) n.delete(k); else n.add(k);
+    return n;
+  });
+
+  // Dentro de cada rama: una fila por documento (versión vigente) con su
+  // historial de versiones anteriores debajo, colapsado por defecto.
+  const [versionesAbiertas, setVersionesAbiertas] = useState<Set<number>>(new Set());
+  const toggleVersiones = (raiz: number) => setVersionesAbiertas(prev => {
+    const n = new Set(prev);
+    if (n.has(raiz)) n.delete(raiz); else n.add(raiz);
+    return n;
+  });
+  type FilaExp = { exp: Expediente; tipo: 'vigente' | 'anterior'; total: number; raiz: number; ultima: boolean };
+  const filasRama = (items: Expediente[]): FilaExp[] => {
+    const porRaiz = new Map<number, Expediente[]>();
+    for (const e of items) {
+      const r = raizExp(e);
+      if (!porRaiz.has(r)) porRaiz.set(r, []);
+      porRaiz.get(r)!.push(e);
+    }
+    return [...porRaiz.values()].flatMap(vs => {
+      vs.sort((a, b) => numVersionExp(b) - numVersionExp(a));
+      const raiz = raizExp(vs[0]);
+      const filas: FilaExp[] = [{ exp: vs[0], tipo: 'vigente', total: vs.length, raiz, ultima: false }];
+      if (versionesAbiertas.has(raiz)) {
+        vs.slice(1).forEach((e, i) => filas.push({ exp: e, tipo: 'anterior', total: vs.length, raiz, ultima: i === vs.length - 2 }));
+      }
+      return filas;
+    });
+  };
+
+  // ─── Nueva versión: clona el registro y obliga a reemplazar el archivo ──
+  const [versionDe, setVersionDe] = useState<Expediente | null>(null);
+  const [versionFile, setVersionFile] = useState<File | null>(null);
+  const [subiendoVersion, setSubiendoVersion] = useState(false);
+
+  /** ¿El archivo nuevo es idéntico al de la versión origen? */
+  const mismoContenido = async (file: File, origen: Expediente): Promise<boolean> => {
+    try {
+      if (!origen.url || !crypto?.subtle) return false;
+      const res = await fetch(origen.url);
+      if (!res.ok) return false;
+      const [a, b] = await Promise.all([file.arrayBuffer(), res.arrayBuffer()]);
+      if (a.byteLength !== b.byteLength) return false;
+      const [ha, hb] = await Promise.all([crypto.subtle.digest('SHA-256', a), crypto.subtle.digest('SHA-256', b)]);
+      const hex = (h: ArrayBuffer) => Array.from(new Uint8Array(h)).map(x => x.toString(16).padStart(2, '0')).join('');
+      return hex(ha) === hex(hb);
+    } catch {
+      return false; // URL vencida o sin CORS: no se bloquea la carga
+    }
+  };
+
+  const handleConfirmarVersion = async () => {
+    const origen = versionDe;
+    if (!origen || subiendoVersion) return;
+    if (!versionFile) {
+      toast.error('Adjunte el archivo actualizado de la nueva versión');
+      return;
+    }
+    if (versionFile.size > MAX_FILE_SIZE_BYTES) {
+      toast.error(`El archivo excede el tamaño máximo de ${MAX_FILE_SIZE_MB} MB`);
+      return;
+    }
+    setSubiendoVersion(true);
+    try {
+      if (await mismoContenido(versionFile, origen)) {
+        toast.error('El archivo es idéntico a la versión anterior', { description: 'Adjunte el archivo con el contenido actualizado.' });
+        return;
+      }
+      const up = await uploadFileToStorage(versionFile, diagUuid || clienteId || 'temp');
+      if (!up) return; // uploadFileToStorage ya avisó del error
+      const archivo: Pick<Expediente, 'nombre' | 'url' | 'storagePath' | 'storageBucket' | 'mime' | 'tamanoKB'> = {
+        nombre: up.nombre, url: up.url, storagePath: up.storagePath,
+        storageBucket: up.storagePath ? BUCKET_EXPEDIENTES : '', mime: up.mime, tamanoKB: up.tamanoKB,
+      };
+      const ahora = fechaHoraActual();
+      const raiz = raizExp(origen);
+      const max = expedientes.filter(e => raizExp(e) === raiz).reduce((m, e) => Math.max(m, numVersionExp(e)), 0);
+      const clon: Expediente = {
+        ...origen,
+        ...archivo,
+        id: getNextId(),
+        fechaCarga: ahora,
+        fechaActualizacion: ahora,
+        usuarioCarga: getUsuarioSesion(),
+        version: `${Math.floor(max) + 1}.0`,
+        versionDe: origen.id,
+        versionRaiz: raiz,
+        estatus: 'Pendiente',
+      };
+      setExpedientes(prev => {
+        const ultimo = prev.reduce((pos, e, i) => (raizExp(e) === raiz ? i : pos), -1);
+        const sig = prev.map(e => (e.id === origen.id
+          ? { ...e, version: versionExp(e), versionRaiz: raiz, fechaActualizacion: ahora }
+          : e));
+        sig.splice(ultimo + 1, 0, clon);
+        return sig;
+      });
+      setVersionesAbiertas(prev => new Set(prev).add(raiz));
+      setVersionDe(null);
+      setVersionFile(null);
+      toast.success(`Versión ${clon.version} creada`, { description: `${clon.tipoDocumento || 'Documento'} — ${clon.nombre}` });
+    } finally {
+      setSubiendoVersion(false);
+    }
+  };
 
   // ── Selección ──
   const handleSelectAll = (checked: boolean) => {
@@ -532,7 +673,7 @@ export function ExpedientesElectronicos({ isView = false, clienteId, mode = 'nue
       return;
     }
 
-    const fechaCarga = new Date().toISOString().split('T')[0];
+    const fechaCarga = fechaHoraActual();
     const entityId = diagUuid || clienteId || 'temp';
 
     setUploading(true);
@@ -551,7 +692,7 @@ export function ExpedientesElectronicos({ isView = false, clienteId, mode = 'nue
         mime: result.mime,
         tamanoKB: result.tamanoKB,
         fechaCarga,
-        usuarioCarga: currentUser.name || 'Usuario Actual',
+        usuarioCarga: getUsuarioSesion(),
         tipoDocumento: '',
         descripcion: '',
         estatus: 'Pendiente',
@@ -734,8 +875,8 @@ export function ExpedientesElectronicos({ isView = false, clienteId, mode = 'nue
       storagePath: '',
       mime: 'text/html',
       tamanoKB: 0,
-      fechaCarga: new Date().toISOString().split('T')[0],
-      usuarioCarga: currentUser.name || 'Usuario Actual',
+      fechaCarga: fechaHoraActual(),
+      usuarioCarga: getUsuarioSesion(),
       tipoDocumento: 'Documento web',
       descripcion: '',
       estatus: 'Pendiente',
@@ -770,12 +911,186 @@ export function ExpedientesElectronicos({ isView = false, clienteId, mode = 'nue
     return { isImage, isPDF, canPreview: isImage || isPDF };
   };
 
+  const COLUMNAS = isView ? 11 : 12;
+
+  const renderFila = (expediente: Expediente, info: FilaExp) => {
+    const anterior = info.tipo === 'anterior';
+    // Las versiones anteriores son historial: no se editan.
+    const soloLectura = isView || anterior;
+    return (
+                <tr
+                  key={expediente.id}
+                  className={`hover:bg-gray-50 ${selectedExpedientes.includes(expediente.id) ? 'bg-blue-50' : ''} ${anterior ? 'bg-gray-50/70 text-gray-500' : ''}`}
+                >
+                  {!isView && (
+                    <td className="border-b border-gray-200 px-2 py-1.5 text-center">
+                      <input
+                        type="checkbox"
+                        checked={selectedExpedientes.includes(expediente.id)}
+                        onChange={(e) => handleSelectExpediente(expediente.id, e.target.checked)}
+                        className="cursor-pointer"
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                    </td>
+                  )}
+                  <td className="border-b border-gray-200 px-2 py-1.5 text-xs text-gray-700 whitespace-nowrap">
+                    <div className={`flex items-center gap-1 ${anterior ? 'pl-5' : 'pl-3'}`}>
+                      {anterior && <span className="text-gray-300 font-mono -ml-3 mr-0.5">{info.ultima ? '└' : '├'}</span>}
+                      {!anterior && info.total > 1 ? (
+                        <button type="button" onClick={(e) => { e.stopPropagation(); toggleVersiones(info.raiz); }}
+                          aria-expanded={versionesAbiertas.has(info.raiz)}
+                          title={versionesAbiertas.has(info.raiz) ? 'Ocultar versiones anteriores' : 'Ver versiones anteriores'}
+                          className="inline-flex items-center gap-1 text-[color:var(--theme-primary)] hover:underline">
+                          <ChevronDown className={`w-3 h-3 transition-transform ${versionesAbiertas.has(info.raiz) ? '' : '-rotate-90'}`} />
+                          <span className="font-semibold">v{versionExp(expediente)}</span>
+                        </button>
+                      ) : (
+                        <span className={anterior ? '' : 'font-semibold'}>v{versionExp(expediente)}</span>
+                      )}
+                      {!anterior && info.total > 1 && (
+                        <span className="text-[10px] text-gray-500">· Vigente · {info.total} versiones</span>
+                      )}
+                    </div>
+                  </td>
+                  <td className="border-b border-gray-200 px-2 py-1.5 text-xs text-gray-700 whitespace-nowrap">
+                    {expediente.fechaCarga || <span className="text-gray-400 italic">—</span>}
+                  </td>
+                  <td className="border-b border-gray-200 px-2 py-1.5 text-xs text-gray-700 whitespace-nowrap">
+                    {expediente.fechaActualizacion || expediente.fechaCarga || <span className="text-gray-400 italic">—</span>}
+                  </td>
+                  <td className="border-b border-gray-200 px-2 py-1.5 text-xs text-gray-700">
+                    {expediente.usuarioCarga || <span className="text-gray-400 italic">—</span>}
+                  </td>
+                  <td className="border-b border-gray-200 px-2 py-1.5 text-xs text-gray-700">
+                    <div className="flex items-center gap-1">
+                      {expediente._pendingFile && (
+                        <span className="inline-block w-2 h-2 bg-amber-400 rounded-full flex-shrink-0" title="Pendiente de subir" />
+                      )}
+                      {expediente.storagePath && (
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-green-600 flex-shrink-0" aria-label="Archivo guardado"><title>Archivo guardado</title>
+                          <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8M16 17H8M10 9H8"/>
+                        </svg>
+                      )}
+                      <span className="truncate max-w-[160px]" title={expediente.nombre}>
+                        {expediente.nombre || <span className="text-gray-400 italic">—</span>}
+                      </span>
+                    </div>
+                  </td>
+                  <td className="border-b border-gray-200 px-2 py-1.5 text-xs text-gray-500">
+                    {expediente.tamanoKB > 0 ? expediente.tamanoKB : '—'}
+                  </td>
+                  <td className="border-b border-gray-200 px-2 py-1.5">
+                    <select
+                      value={expediente.tipoDocumento}
+                      onChange={(e) => {
+                        setExpedientes(prev => prev.map(exp =>
+                          exp.id === expediente.id ? { ...exp, tipoDocumento: e.target.value } : exp
+                        ));
+                      }}
+                      disabled={soloLectura}
+                      className={`w-full px-1 py-0.5 text-xs border border-gray-300 rounded ${soloLectura ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <option value="">Seleccione...</option>
+                      {tiposDocumento.map(tipo => (
+                        <option key={tipo} value={tipo}>{tipo}</option>
+                      ))}
+                      {/* Mostrar valor guardado si no está en el catálogo (compatibilidad) */}
+                      {expediente.tipoDocumento && !tiposDocumento.includes(expediente.tipoDocumento) && (
+                        <option value={expediente.tipoDocumento}>{expediente.tipoDocumento}</option>
+                      )}
+                    </select>
+                  </td>
+                  <td className="border-b border-gray-200 px-2 py-1.5">
+                    <input
+                      type="text"
+                      value={expediente.descripcion}
+                      onChange={(e) => {
+                        setExpedientes(prev => prev.map(exp =>
+                          exp.id === expediente.id ? { ...exp, descripcion: e.target.value } : exp
+                        ));
+                      }}
+                      disabled={soloLectura}
+                      className={`w-full px-1 py-0.5 text-xs border border-gray-300 rounded ${soloLectura ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                  </td>
+                  <td className="border-b border-gray-200 px-2 py-1.5">
+                    <select
+                      value={expediente.estatus}
+                      onChange={(e) => {
+                        setExpedientes(prev => prev.map(exp =>
+                          exp.id === expediente.id ? { ...exp, estatus: e.target.value } : exp
+                        ));
+                      }}
+                      disabled={soloLectura}
+                      className={`w-full px-1 py-0.5 text-xs border border-gray-300 rounded ${soloLectura ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <option>Pendiente</option>
+                      <option>Aprobado</option>
+                      <option>Rechazado</option>
+                    </select>
+                  </td>
+                  <td className="border-b border-gray-200 px-2 py-1.5">
+                    <input
+                      type="text"
+                      value={expediente.observaciones}
+                      onChange={(e) => {
+                        setExpedientes(prev => prev.map(exp =>
+                          exp.id === expediente.id ? { ...exp, observaciones: e.target.value } : exp
+                        ));
+                      }}
+                      disabled={soloLectura}
+                      className={`w-full px-1 py-0.5 text-xs border border-gray-300 rounded ${soloLectura ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                  </td>
+                  <td className="border-b border-gray-200 px-2 py-1.5 text-center">
+                    <div className="flex items-center justify-center gap-1">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleView(expediente);
+                        }}
+                        className="inline-flex items-center justify-center px-1.5 py-1 btn-accent-theme text-xs rounded hover:bg-accent-hover-theme"
+                        title="Ver archivo"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDownload(expediente);
+                        }}
+                        className="inline-flex items-center justify-center px-1.5 py-1 btn-accent-theme text-xs rounded hover:bg-accent-hover-theme"
+                        title="Descargar archivo"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                      </button>
+                      {!isView && !anterior && expedientes.some(e => e.id === expediente.id) && (
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); setVersionDe(expediente); setVersionFile(null); }}
+                          className="inline-flex items-center justify-center px-1.5 py-1 border border-gray-300 text-gray-600 text-xs rounded hover:bg-gray-100"
+                          title="Nueva versión"
+                          aria-label="Nueva versión"
+                        >
+                          <CopyPlus className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+    );
+  };
+
   return (
     <div className="flex-1">
 
       {/* Encabezado institucional */}
       <div className="bg-[rgb(239,246,255)] border-l-4 border-primary-theme px-3 py-2 mb-3 flex items-center justify-between">
-        <span className="text-sm font-medium text-gray-800">EXPEDIENTES ELECTRÓNICOS</span>
+        <span className="text-sm font-medium text-gray-800">KM DIGITAL</span>
         {!isView && (
           <div className="flex items-center gap-2">
             <button
@@ -835,6 +1150,18 @@ export function ExpedientesElectronicos({ isView = false, clienteId, mode = 'nue
         </div>
       )}
 
+      {/* Controles del árbol */}
+      {ramas.length > 0 && (
+        <div className="flex items-center justify-end gap-3 mb-1">
+          <button type="button" onClick={() => setRamasPlegadas(new Set())} className="text-[10px] text-gray-500 hover:text-[color:var(--theme-primary)] hover:underline">
+            Expandir todo
+          </button>
+          <button type="button" onClick={() => setRamasPlegadas(new Set(ramas.map(([k]) => k)))} className="text-[10px] text-gray-500 hover:text-[color:var(--theme-primary)] hover:underline">
+            Colapsar todo
+          </button>
+        </div>
+      )}
+
       {/* Tabla de Expedientes */}
       <div className="overflow-hidden border border-gray-300 bg-white">
         <table className="w-full border-collapse">
@@ -850,7 +1177,9 @@ export function ExpedientesElectronicos({ isView = false, clienteId, mode = 'nue
                   />
                 </th>
               )}
-              <th className="border-b border-gray-300 px-2 py-1.5 text-left text-xs font-medium text-gray-700">Fecha de Carga</th>
+              <th className="border-b border-gray-300 px-2 py-1.5 text-left text-xs font-medium text-gray-700">Versión</th>
+              <th className="border-b border-gray-300 px-2 py-1.5 text-left text-xs font-medium text-gray-700">Fecha Creación</th>
+              <th className="border-b border-gray-300 px-2 py-1.5 text-left text-xs font-medium text-gray-700">Fecha Actualización</th>
               <th className="border-b border-gray-300 px-2 py-1.5 text-left text-xs font-medium text-gray-700">Usuario</th>
               <th className="border-b border-gray-300 px-2 py-1.5 text-left text-xs font-medium text-gray-700">Archivo</th>
               <th className="border-b border-gray-300 px-2 py-1.5 text-left text-xs font-medium text-gray-700 w-16">KB</th>
@@ -858,154 +1187,69 @@ export function ExpedientesElectronicos({ isView = false, clienteId, mode = 'nue
               <th className="border-b border-gray-300 px-2 py-1.5 text-left text-xs font-medium text-gray-700">Descripción</th>
               <th className="border-b border-gray-300 px-2 py-1.5 text-left text-xs font-medium text-gray-700">Estatus</th>
               <th className="border-b border-gray-300 px-2 py-1.5 text-left text-xs font-medium text-gray-700">Observaciones</th>
-              <th className="border-b border-gray-300 px-2 py-1.5 text-center text-xs font-medium text-gray-700 w-28">Acciones</th>
+              <th className="border-b border-gray-300 px-2 py-1.5 text-center text-xs font-medium text-gray-700 w-32">Acciones</th>
             </tr>
           </thead>
           <tbody>
             {allExpedientes.length === 0 ? (
               <tr>
-                <td colSpan={isView ? 9 : 10} className="px-4 py-6 text-center text-xs text-gray-500 italic">
+                <td colSpan={COLUMNAS} className="px-4 py-6 text-center text-xs text-gray-500 italic">
                   No hay expedientes registrados.{!isView && ' Haga clic en "Nuevo" para agregar un expediente.'}
                 </td>
               </tr>
             ) : (
-              allExpedientes.map(expediente => (
-                <tr
-                  key={expediente.id}
-                  className={`hover:bg-gray-50 ${selectedExpedientes.includes(expediente.id) ? 'bg-blue-50' : ''}`}
-                >
-                  {!isView && (
-                    <td className="border-b border-gray-200 px-2 py-1.5 text-center">
-                      <input
-                        type="checkbox"
-                        checked={selectedExpedientes.includes(expediente.id)}
-                        onChange={(e) => handleSelectExpediente(expediente.id, e.target.checked)}
-                        className="cursor-pointer"
-                        onClick={(e) => e.stopPropagation()}
-                      />
+              ramas.map(([rama, items]) => {
+                const plegada = ramasPlegadas.has(rama);
+                const docs = new Set(items.map(raizExp)).size;
+                return [
+                  <tr key={`rama-${rama}`} className="bg-gray-100/80">
+                    <td colSpan={COLUMNAS} className="border-b border-gray-300 px-2 py-1.5">
+                      <button type="button" onClick={() => toggleRama(rama)} aria-expanded={!plegada}
+                        className="flex items-center gap-2 text-xs font-semibold text-gray-800 hover:text-[color:var(--theme-primary)]">
+                        <ChevronDown className={`w-3.5 h-3.5 transition-transform ${plegada ? '-rotate-90' : ''}`} />
+                        <span>{rama}</span>
+                        <span className="font-normal text-gray-500">· {docs} documento{docs !== 1 ? 's' : ''}{items.length > docs ? ` · ${items.length} versiones` : ''}</span>
+                      </button>
                     </td>
-                  )}
-                  <td className="border-b border-gray-200 px-2 py-1.5 text-xs text-gray-700">
-                    {expediente.fechaCarga || <span className="text-gray-400 italic">—</span>}
-                  </td>
-                  <td className="border-b border-gray-200 px-2 py-1.5 text-xs text-gray-700">
-                    {expediente.usuarioCarga || <span className="text-gray-400 italic">—</span>}
-                  </td>
-                  <td className="border-b border-gray-200 px-2 py-1.5 text-xs text-gray-700">
-                    <div className="flex items-center gap-1">
-                      {expediente._pendingFile && (
-                        <span className="inline-block w-2 h-2 bg-amber-400 rounded-full flex-shrink-0" title="Pendiente de subir" />
-                      )}
-                      {expediente.storagePath && (
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-green-600 flex-shrink-0" title="En Supabase Storage">
-                          <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8M16 17H8M10 9H8"/>
-                        </svg>
-                      )}
-                      <span className="truncate max-w-[160px]" title={expediente.nombre}>
-                        {expediente.nombre || <span className="text-gray-400 italic">—</span>}
-                      </span>
-                    </div>
-                  </td>
-                  <td className="border-b border-gray-200 px-2 py-1.5 text-xs text-gray-500">
-                    {expediente.tamanoKB > 0 ? expediente.tamanoKB : '—'}
-                  </td>
-                  <td className="border-b border-gray-200 px-2 py-1.5">
-                    <select
-                      value={expediente.tipoDocumento}
-                      onChange={(e) => {
-                        setExpedientes(prev => prev.map(exp =>
-                          exp.id === expediente.id ? { ...exp, tipoDocumento: e.target.value } : exp
-                        ));
-                      }}
-                      disabled={isView}
-                      className={`w-full px-1 py-0.5 text-xs border border-gray-300 rounded ${isView ? 'bg-gray-100 cursor-not-allowed' : ''}`}
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <option value="">Seleccione...</option>
-                      {tiposDocumento.map(tipo => (
-                        <option key={tipo} value={tipo}>{tipo}</option>
-                      ))}
-                      {/* Mostrar valor guardado si no está en el catálogo (compatibilidad) */}
-                      {expediente.tipoDocumento && !tiposDocumento.includes(expediente.tipoDocumento) && (
-                        <option value={expediente.tipoDocumento}>{expediente.tipoDocumento}</option>
-                      )}
-                    </select>
-                  </td>
-                  <td className="border-b border-gray-200 px-2 py-1.5">
-                    <input
-                      type="text"
-                      value={expediente.descripcion}
-                      onChange={(e) => {
-                        setExpedientes(prev => prev.map(exp =>
-                          exp.id === expediente.id ? { ...exp, descripcion: e.target.value } : exp
-                        ));
-                      }}
-                      disabled={isView}
-                      className={`w-full px-1 py-0.5 text-xs border border-gray-300 rounded ${isView ? 'bg-gray-100 cursor-not-allowed' : ''}`}
-                      onClick={(e) => e.stopPropagation()}
-                    />
-                  </td>
-                  <td className="border-b border-gray-200 px-2 py-1.5">
-                    <select
-                      value={expediente.estatus}
-                      onChange={(e) => {
-                        setExpedientes(prev => prev.map(exp =>
-                          exp.id === expediente.id ? { ...exp, estatus: e.target.value } : exp
-                        ));
-                      }}
-                      disabled={isView}
-                      className={`w-full px-1 py-0.5 text-xs border border-gray-300 rounded ${isView ? 'bg-gray-100 cursor-not-allowed' : ''}`}
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <option>Pendiente</option>
-                      <option>Aprobado</option>
-                      <option>Rechazado</option>
-                    </select>
-                  </td>
-                  <td className="border-b border-gray-200 px-2 py-1.5">
-                    <input
-                      type="text"
-                      value={expediente.observaciones}
-                      onChange={(e) => {
-                        setExpedientes(prev => prev.map(exp =>
-                          exp.id === expediente.id ? { ...exp, observaciones: e.target.value } : exp
-                        ));
-                      }}
-                      disabled={isView}
-                      className={`w-full px-1 py-0.5 text-xs border border-gray-300 rounded ${isView ? 'bg-gray-100 cursor-not-allowed' : ''}`}
-                      onClick={(e) => e.stopPropagation()}
-                    />
-                  </td>
-                  <td className="border-b border-gray-200 px-2 py-1.5 text-center">
-                    <div className="flex items-center justify-center gap-1">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleView(expediente);
-                        }}
-                        className="inline-flex items-center justify-center px-1.5 py-1 btn-accent-theme text-xs rounded hover:bg-accent-hover-theme"
-                        title="Ver archivo"
-                      >
-                        <Eye className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDownload(expediente);
-                        }}
-                        className="inline-flex items-center justify-center px-1.5 py-1 btn-accent-theme text-xs rounded hover:bg-accent-hover-theme"
-                        title="Descargar archivo"
-                      >
-                        <Download className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))
+                  </tr>,
+                  ...(plegada ? [] : filasRama(items).map(info => renderFila(info.exp, info))),
+                ];
+              })
             )}
           </tbody>
         </table>
       </div>
+
+      {/* Modal — Nueva versión */}
+      {versionDe && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded shadow-xl w-full max-w-lg overflow-hidden flex flex-col">
+            <div className="bg-primary-theme px-6 py-4">
+              <h3 className="text-base font-medium text-white">Nueva versión del documento</h3>
+            </div>
+            <div className="p-6 space-y-3 text-xs text-gray-700">
+              <p><span className="text-gray-500">Documento:</span> <strong>{versionDe.tipoDocumento || 'Sin tipo de documento'}</strong></p>
+              <p><span className="text-gray-500">Versión actual:</span> v{versionExp(versionDe)} — {versionDe.nombre}</p>
+              <p><span className="text-gray-500">Nueva versión:</span> <strong>v{Math.floor(expedientes.filter(e => raizExp(e) === raizExp(versionDe)).reduce((m, e) => Math.max(m, numVersionExp(e)), 0)) + 1}.0</strong> (se copian tipo, descripción y observaciones)</p>
+              <label className="block">
+                <span className="block font-medium mb-1">Archivo actualizado <span className="text-red-600">*</span></span>
+                <input type="file" accept={ALLOWED_EXTENSIONS} onChange={e => setVersionFile(e.target.files?.[0] || null)} disabled={subiendoVersion}
+                  className="block w-full text-xs file:mr-3 file:px-3 file:py-1.5 file:border-0 file:rounded file:bg-gray-200 file:text-gray-700" />
+              </label>
+              <p className="text-[11px] text-gray-500">Es obligatorio reemplazar el archivo; no se acepta el mismo contenido de la versión anterior.</p>
+            </div>
+            <div className="border-t border-gray-200 px-6 py-3 bg-gray-50 flex justify-end gap-2">
+              <button type="button" onClick={() => { setVersionDe(null); setVersionFile(null); }} disabled={subiendoVersion}
+                className="px-4 py-1.5 text-sm bg-gray-500 text-white rounded hover:bg-gray-600 disabled:opacity-50">Cancelar</button>
+              <button type="button" onClick={handleConfirmarVersion} disabled={!versionFile || subiendoVersion}
+                className="px-4 py-1.5 text-sm btn-primary-theme rounded hover:bg-primary-hover-theme disabled:opacity-50 inline-flex items-center gap-1.5">
+                {subiendoVersion && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                Crear versión
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal Web */}
       {showWmdModal && (
@@ -1013,7 +1257,7 @@ export function ExpedientesElectronicos({ isView = false, clienteId, mode = 'nue
           <div className="bg-white rounded shadow-xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
             <div className="bg-primary-theme px-6 py-4 flex items-center justify-between">
               <h3 className="text-base font-medium text-white">Agregar Documento desde Web</h3>
-              <button onClick={() => { setShowWmdModal(false); setWmdUrl(''); }} className="text-white hover:text-gray-200">
+              <button type="button" aria-label="Cerrar" title="Cerrar" onClick={() => { setShowWmdModal(false); setWmdUrl(''); }} className="text-white hover:text-gray-200">
                 <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
                   <path d="M10 8.586L2.929 1.515 1.515 2.929 8.586 10l-7.071 7.071 1.414 1.414L10 11.414l7.071 7.071 1.414-1.414L11.414 10l7.071-7.071-1.414-1.414L10 8.586z"/>
                 </svg>
@@ -1067,7 +1311,7 @@ export function ExpedientesElectronicos({ isView = false, clienteId, mode = 'nue
                   <Eye className="w-4 h-4 text-accent-theme" />
                   <h3 className="text-sm font-semibold text-gray-800">Visualizador de Documento</h3>
                 </div>
-                <button onClick={() => { setShowViewer(false); setCurrentFile(null); }} className="text-gray-500 hover:text-gray-700">
+                <button type="button" aria-label="Cerrar" title="Cerrar" onClick={() => { setShowViewer(false); setCurrentFile(null); }} className="text-gray-500 hover:text-gray-700">
                   <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
                     <path d="M10 8.586L2.929 1.515 1.515 2.929 8.586 10l-7.071 7.071 1.414 1.414L10 11.414l7.071 7.071 1.414-1.414L11.414 10l7.071-7.071-1.414-1.414L10 8.586z"/>
                   </svg>

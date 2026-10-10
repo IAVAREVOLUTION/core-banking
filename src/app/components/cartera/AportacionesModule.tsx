@@ -4,7 +4,8 @@
  * Calendario de Pagos, Avisos de Aportaciones, Movimientos
  */
 import { useState, useCallback, useEffect, useMemo } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
+import { useOrdenTabla, coincideBusqueda } from '@/app/lib/ordenTabla';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 
@@ -145,7 +146,7 @@ function AportDashboard({ rows, loading, refetch, onVer }: { rows: AportacionCre
       </div>
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         {[
-          { label: 'Total Aportaciones', value: kpis.total,  sub: 'En cartera captación', color: '#2E5C91' },
+          { label: 'Total Aportaciones', value: kpis.total,  sub: 'En cartera captación', color: 'var(--theme-secondary)' },
           { label: 'Activas',            value: kpis.activas, sub: `${kpis.total > 0 ? ((kpis.activas/kpis.total)*100).toFixed(1) : 0}% del total`, color: '#10B981' },
           { label: 'Pendientes',         value: kpis.pendientes, sub: `${kpis.total > 0 ? ((kpis.pendientes/kpis.total)*100).toFixed(1) : 0}% del total`, color: '#F59E0B' },
           { label: 'Monto Total',        value: fmtMoney(kpis.monto), sub: 'Captación autorizada', color: '#7C3AED' },
@@ -168,7 +169,7 @@ function AportDashboard({ rows, loading, refetch, onVer }: { rows: AportacionCre
               <thead className="bg-gray-50 border-b border-gray-300">
                 <tr>
                   <th className="text-left px-3 py-2 font-medium text-gray-700">No. Sol.</th>
-                  <th className="text-left px-3 py-2 font-medium text-gray-700">Cliente</th>
+                  <th className="text-left px-3 py-2 font-medium text-gray-700">Nombre Interlocutor</th>
                   <th className="text-right px-3 py-2 font-medium text-gray-700">Monto</th>
                   <th className="text-left px-3 py-2 font-medium text-gray-700">Estatus</th>
                 </tr>
@@ -176,7 +177,7 @@ function AportDashboard({ rows, loading, refetch, onVer }: { rows: AportacionCre
               <tbody>
                 {rows.slice(0, 8).map((c, idx) => (
                   <tr key={c.id} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                    <td className="px-3 py-2 text-[#0066CC] cursor-pointer hover:underline font-mono" onClick={() => onVer(c)}>{c.noSol}</td>
+                    <td className="px-3 py-2 text-[color:var(--theme-link)] cursor-pointer hover:underline font-mono" onClick={() => onVer(c)}>{c.noSol}</td>
                     <td className="px-3 py-2 text-gray-800">{c.cliente}</td>
                     <td className="px-3 py-2 text-gray-700 text-right">{fmtMoney(c.montoAut)}</td>
                     <td className="px-3 py-2 text-gray-600">{c.estatus}</td>
@@ -224,14 +225,29 @@ function AportLista({ rows, loading, error, refetch, onVer }: { rows: Aportacion
   const [page, setPage] = useState(1);
   const PER_PAGE = 10;
 
-  const filtered = useMemo(() => {
-    if (!search) return rows;
-    const q = search.toLowerCase();
-    return rows.filter(r => r.noSol.toLowerCase().includes(q) || r.cliente.toLowerCase().includes(q) || r.productoNombre.toLowerCase().includes(q));
-  }, [rows, search]);
+  const filtered = useMemo(() => rows.filter(r => coincideBusqueda(search, [
+    r.noSol, r.cliente, r.productoNombre, r.lineaProducto, r.estatus, r.noCuenta,
+  ])), [rows, search]);
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PER_PAGE));
-  const pageRows = filtered.slice((page-1)*PER_PAGE, page*PER_PAGE);
+  // Los registros no traen fecha: el más reciente es el de número de solicitud más alto.
+  const orden = useOrdenTabla(filtered, {
+    id: 'aportaciones',
+    columnas: {
+      noSol: r => r.noSol,
+      cliente: r => r.cliente,
+      producto: r => r.productoNombre,
+      linea: r => r.lineaProducto,
+      monto: r => r.montoAut,
+      tasa: r => r.tasa,
+      plazo: r => r.plazo,
+      estatus: r => r.estatus,
+    },
+    porDefecto: { campo: 'noSol', dir: 'desc' },
+    alCambiar: () => setPage(1),
+  });
+
+  const totalPages = Math.max(1, Math.ceil(orden.filas.length / PER_PAGE));
+  const pageRows = orden.filas.slice((page-1)*PER_PAGE, page*PER_PAGE);
 
   return (
     <div className="bg-white min-h-screen">
@@ -240,7 +256,7 @@ function AportLista({ rows, loading, error, refetch, onVer }: { rows: Aportacion
           <div className="flex items-center gap-3">
             <svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="#666" strokeWidth="1.5"><path d="M4 6h14M4 10h14M4 14h10"/></svg>
             <h2 className="text-lg font-normal text-gray-800">Lista de Aportaciones / Captación</h2>
-            <button onClick={refetch} disabled={loading} className="p-1 text-gray-400 hover:text-gray-600">
+            <button type="button" aria-label="Actualizar" title="Actualizar" onClick={refetch} disabled={loading} className="p-1 text-gray-400 hover:text-gray-600">
               <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M2 7A5 5 0 1 0 4 3"/><path d="M2 3v4h4"/></svg>
             </button>
           </div>
@@ -255,14 +271,14 @@ function AportLista({ rows, loading, error, refetch, onVer }: { rows: Aportacion
             <thead>
               <tr className="bg-[#D0D0D0] border-b border-gray-300">
                 <th className="px-3 py-2.5 text-left font-normal text-gray-700">Ver</th>
-                <th className="px-3 py-2.5 text-left font-normal text-gray-700">NO. SOL.</th>
-                <th className="px-3 py-2.5 text-left font-normal text-gray-700">CLIENTE</th>
-                <th className="px-3 py-2.5 text-left font-normal text-gray-700">PRODUCTO</th>
-                <th className="px-3 py-2.5 text-left font-normal text-gray-700">LÍNEA</th>
-                <th className="px-3 py-2.5 text-right font-normal text-gray-700">MONTO AUT.</th>
-                <th className="px-3 py-2.5 text-center font-normal text-gray-700">TASA</th>
-                <th className="px-3 py-2.5 text-center font-normal text-gray-700">PLAZO</th>
-                <th className="px-3 py-2.5 text-left font-normal text-gray-700">ESTATUS</th>
+                <th className="px-3 py-2.5 text-left font-normal text-gray-700" {...orden.th('noSol')}>NO. SOL.{orden.flecha('noSol')}</th>
+                <th className="px-3 py-2.5 text-left font-normal text-gray-700" {...orden.th('cliente')}>NOMBRE INTERLOCUTOR{orden.flecha('cliente')}</th>
+                <th className="px-3 py-2.5 text-left font-normal text-gray-700" {...orden.th('producto')}>PRODUCTO{orden.flecha('producto')}</th>
+                <th className="px-3 py-2.5 text-left font-normal text-gray-700" {...orden.th('linea')}>LÍNEA{orden.flecha('linea')}</th>
+                <th className="px-3 py-2.5 text-right font-normal text-gray-700" {...orden.th('monto')}>MONTO AUT.{orden.flecha('monto')}</th>
+                <th className="px-3 py-2.5 text-center font-normal text-gray-700" {...orden.th('tasa')}>TASA{orden.flecha('tasa')}</th>
+                <th className="px-3 py-2.5 text-center font-normal text-gray-700" {...orden.th('plazo')}>PLAZO{orden.flecha('plazo')}</th>
+                <th className="px-3 py-2.5 text-left font-normal text-gray-700" {...orden.th('estatus')}>ESTATUS{orden.flecha('estatus')}</th>
               </tr>
             </thead>
             <tbody>
@@ -278,9 +294,9 @@ function AportLista({ rows, loading, error, refetch, onVer }: { rows: Aportacion
                   onMouseLeave={e => e.currentTarget.style.backgroundColor = idx % 2 === 1 ? '#EEEEEE' : '#FFFFFF'}
                 >
                   <td className="px-3 py-2.5 text-xs">
-                    <button className="text-[#0066CC] hover:underline" onClick={() => onVer(c)}>Ver</button>
+                    <button className="text-[color:var(--theme-link)] hover:underline" onClick={() => onVer(c)}>Ver</button>
                   </td>
-                  <td className="px-3 py-2.5 text-[#0066CC] cursor-pointer hover:underline font-mono" onClick={() => onVer(c)}>{c.noSol}</td>
+                  <td className="px-3 py-2.5 text-[color:var(--theme-link)] cursor-pointer hover:underline font-mono" onClick={() => onVer(c)}>{c.noSol}</td>
                   <td className="px-3 py-2.5 text-gray-800 font-medium">{c.cliente}</td>
                   <td className="px-3 py-2.5 text-gray-700">{c.productoNombre}</td>
                   <td className="px-3 py-2.5 text-gray-600">{c.lineaProducto}</td>
@@ -296,11 +312,11 @@ function AportLista({ rows, loading, error, refetch, onVer }: { rows: Aportacion
         <div className="flex items-center justify-between mt-3">
           <span className="text-xs text-gray-500">{filtered.length} aportaciones</span>
           <div className="flex items-center gap-2">
-            <button onClick={() => setPage(p=>p-1)} disabled={page===1} className="p-1 hover:bg-gray-100 rounded disabled:opacity-40">
+            <button type="button" aria-label="Página anterior" title="Página anterior" onClick={() => setPage(p=>p-1)} disabled={page===1} className="p-1 hover:bg-gray-100 rounded disabled:opacity-40">
               <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="#555" strokeWidth="1.5"><path d="M8 3L3 7l5 4V3z"/></svg>
             </button>
             <span className="text-xs text-gray-600">Pág. {page} / {totalPages}</span>
-            <button onClick={() => setPage(p=>p+1)} disabled={page===totalPages} className="p-1 hover:bg-gray-100 rounded disabled:opacity-40">
+            <button type="button" aria-label="Página siguiente" title="Página siguiente" onClick={() => setPage(p=>p+1)} disabled={page===totalPages} className="p-1 hover:bg-gray-100 rounded disabled:opacity-40">
               <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="#555" strokeWidth="1.5"><path d="M6 3l5 4-5 4V3z"/></svg>
             </button>
           </div>
@@ -325,7 +341,7 @@ function AportDetalle({ credito, onBack }: { credito: AportacionCredito; onBack:
       <div className="bg-white px-4 py-3 border-b border-gray-300">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <button onClick={onBack} className="text-gray-400 hover:text-gray-700 p-1">
+            <button type="button" aria-label="Regresar" title="Regresar" onClick={onBack} className="text-gray-400 hover:text-gray-700 p-1">
               <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M11 4L6 9l5 5"/></svg>
             </button>
             <svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="#666" strokeWidth="1.5"><circle cx="11" cy="11" r="8"/><path d="M11 7v4l3 2"/></svg>
@@ -339,7 +355,7 @@ function AportDetalle({ credito, onBack }: { credito: AportacionCredito; onBack:
       <div className="px-4 py-2.5 bg-[#F0F2F5] border-b border-gray-300">
         <div className="flex flex-wrap gap-x-8 gap-y-1.5">
           {[
-            { label: 'Cliente',    value: credito.cliente },
+            { label: 'Nombre Interlocutor',    value: credito.cliente },
             { label: 'Producto',   value: credito.productoNombre },
             { label: 'Línea',      value: credito.lineaProducto },
             { label: 'Monto Aut.', value: fmtMoney(credito.montoAut) },
@@ -501,7 +517,7 @@ function CalendarioPagosTab({ solicitudId, moneda = 'MXN' }: { solicitudId: stri
       <div className="border border-gray-200 rounded overflow-x-auto">
         <table className="w-full text-xs">
           <thead>
-            <tr className="bg-[#2E5C91] text-white">
+            <tr className="bg-[color:var(--theme-secondary)] text-white">
               <th className="px-2 py-2 text-center w-8"><input type="checkbox" /></th>
               <th className="px-2 py-2 text-center font-medium w-10">No.</th>
               <th className="px-2 py-2 text-left font-medium">Fecha</th>
@@ -585,7 +601,7 @@ function AvisosAportacionTab({ solicitudId }: { solicitudId: string }) {
       <div className="border border-gray-200 rounded overflow-x-auto">
         <table className="w-full text-xs">
           <thead>
-            <tr className="bg-[#2E5C91] text-white">
+            <tr className="bg-[color:var(--theme-secondary)] text-white">
               <th className="px-3 py-2.5 text-left font-medium">No. Documento</th>
               <th className="px-3 py-2.5 text-left font-medium">Fecha Emisión</th>
               <th className="px-3 py-2.5 text-left font-medium">Tipo</th>
@@ -649,7 +665,7 @@ function MovimientosTab({ solicitudId, clienteId }: { solicitudId: string; clien
       <div className="border border-gray-200 rounded overflow-x-auto">
         <table className="w-full text-xs">
           <thead>
-            <tr className="bg-[#2E5C91] text-white">
+            <tr className="bg-[color:var(--theme-secondary)] text-white">
               <th className="px-3 py-2.5 text-left font-medium">Fecha</th>
               <th className="px-3 py-2.5 text-left font-medium">Concepto</th>
               <th className="px-3 py-2.5 text-left font-medium">Tipo</th>

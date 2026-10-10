@@ -18,7 +18,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 // REQ-24 HU-24.2/24.3 - activar una disposicion enciende el Boton de Panico
 // de su linea y consume el saldo de la garantia.
 import { aplicarActivacionDisposicion } from '../banca-2o-piso/banca2oPisoStore';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 import { createClient } from '@supabase/supabase-js';
 import { avanzarFaseSolicitudDB } from '../../hooks/useSolicitudesDB';
@@ -177,7 +177,7 @@ function DatosGeneralesGrid({ formData, onChange, errors, isRO, canEditEstatus }
         {/* Col 2 */}
         <div className="space-y-1.5">
           {f({ label: 'Número de Documento', field: 'numeroDocumento', forceRO: true })}
-          {f({ label: 'Cliente',             field: 'cliente',         forceRO: true })}
+          {f({ label: 'Nombre Interlocutor',             field: 'cliente',         forceRO: true })}
           {/* Estatus — dropdown in edit mode, badge otherwise */}
           <div className="flex flex-col min-h-[52px]">
             <label className="text-[10px] text-gray-600 mb-0.5">ESTATUS</label>
@@ -419,20 +419,10 @@ export function SolicitudActivacionForm({
       return;
     }
     
-    // SIN callback externo: guardar directamente y avanzar fase
-    try {
-      const solId = formData.solicitud_id || formData.originacionSolicitudId;
-      if (solId) {
-        await supabase.from('EFINANCIANET_DB.J_CUENTAS_CORP_CLIENTES').update({
-          estatus: 'Aprobado',
-          faseId: '3_completada',
-          descripcionFase: 'Completada',
-        }).eq('id', solId);
-        toast.success('¡Solicitud completada!', { description: 'Fase finalizada — Estatus: Aprobado' });
-      }
-    } catch (err) {
-      console.error('Error advancing phase:', err);
-    }
+    // Sin callback externo no hay a dónde guardar: los padres (lista de
+    // activaciones y Originación) siempre lo proveen.
+    console.error('[SolicitudActivacionForm] Activar sin onEnviar/onSave: no se guardó nada.');
+    toast.error('No se pudo activar la solicitud', { description: 'Abra la solicitud desde su lista e intente de nuevo.' });
   };
 
   const esPagado      = formData.estatus === 'Pagado';
@@ -494,7 +484,7 @@ export function SolicitudActivacionForm({
           {!isRO && !esPagado && !yaEnviada && !esLineaCredito && (
             <button
               onClick={handleEnviarSolicitud}
-              className="px-5 py-1.5 bg-[#2E5C91] text-white rounded text-xs hover:bg-[#1E4A75] flex items-center gap-1.5"
+              className="px-5 py-1.5 bg-[color:var(--theme-secondary)] text-white rounded text-xs hover:bg-[color:var(--theme-secondary-hover)] flex items-center gap-1.5"
             >
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" strokeLinejoin="round" strokeLinecap="round"/>
@@ -578,11 +568,9 @@ export function SolicitudActivacionForm({
                   className={`px-3 py-2 text-[10px] whitespace-nowrap border-r border-gray-500/30 ${
                     activeTab === tab.id
                       ? 'bg-secondary-theme text-white font-medium'
-                      : 'text-white/90'
+                      : 'text-white/90 hover:bg-[color:var(--theme-primary-hover)]'
                   }`}
                   style={activeTab !== tab.id ? { transition: 'background-color 0.2s' } : {}}
-                  onMouseEnter={e => { if (activeTab !== tab.id) e.currentTarget.style.backgroundColor = 'var(--theme-primary-hover)'; }}
-                  onMouseLeave={e => { if (activeTab !== tab.id) e.currentTarget.style.backgroundColor = ''; }}
                 >
                   {tab.label}
                 </button>

@@ -14,7 +14,8 @@
  *     de un toast que anuncia una descarga que no ocurre.
  */
 import { useState, useMemo, useRef } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
+import { useOrdenTabla, coincideBusqueda } from '@/app/lib/ordenTabla';
 import { fmtMoneyExacto, norm, type LineaCreditoRow } from './banca2oPisoStore';
 
 interface Props {
@@ -30,7 +31,6 @@ const PER_PAGE = 10;
 export function Banca2oPisoList({ rows, loading, error, refetch, onVer }: Props) {
   const [searchTerm, setSearchTerm] = useState('');
   const [filtroEstatus, setFiltroEstatus] = useState('');
-  const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
   const [currentPage, setCurrentPage] = useState(1);
   const tableRef = useRef<HTMLDivElement>(null);
   const searchBarRef = useRef<HTMLInputElement>(null);
@@ -43,26 +43,33 @@ export function Banca2oPisoList({ rows, loading, error, refetch, onVer }: Props)
   const filtered = useMemo(() => {
     let list = rows;
     if (filtroEstatus) list = list.filter(r => r.estatus === filtroEstatus);
-    if (searchTerm.trim()) {
-      const q = norm(searchTerm);
-      list = list.filter(r =>
-        norm(r.noCuenta).includes(q) ||
-        norm(r.noSol).includes(q) ||
-        norm(r.cliente).includes(q) ||
-        norm(r.productoNombre).includes(q) ||
-        norm(r.gobierno).includes(q) ||
-        norm(r.estatus).includes(q)
-      );
-    }
-    return [...list].sort((a, b) => {
-      const da = new Date(a.fechaSol || 0).getTime();
-      const db = new Date(b.fechaSol || 0).getTime();
-      return sortOrder === 'desc' ? db - da : da - db;
-    });
-  }, [rows, searchTerm, filtroEstatus, sortOrder]);
+    return list.filter(r => coincideBusqueda(searchTerm, [
+      r.noCuenta, r.noSol, r.cliente, r.productoNombre, r.gobierno, r.fechaSol, r.descripcionFase, r.estatus,
+    ]));
+  }, [rows, searchTerm, filtroEstatus]);
 
-  const totalPages = Math.ceil(filtered.length / PER_PAGE);
-  const currentRows = filtered.slice((currentPage - 1) * PER_PAGE, currentPage * PER_PAGE);
+  // Más recientes primero. Antes se ordenaba con new Date(fechaSol), que da
+  // fecha inválida con DD/MM/AAAA y dejaba el orden revuelto.
+  const orden = useOrdenTabla(filtered, {
+    id: 'banca-2o-piso',
+    columnas: {
+      cuenta: r => r.noCuenta,
+      noSol: r => r.noSol,
+      cliente: r => r.cliente,
+      producto: r => r.productoNombre,
+      institucion: r => r.gobierno,
+      fecha: r => r.fechaSol,
+      monto: r => r.montoAut,
+      fase: r => r.descripcionFase,
+      estatus: r => r.estatus,
+    },
+    porDefecto: { campo: 'fecha', dir: 'desc' },
+    desempate: r => r.noSol,
+    alCambiar: () => setCurrentPage(1),
+  });
+
+  const totalPages = Math.ceil(orden.filas.length / PER_PAGE);
+  const currentRows = orden.filas.slice((currentPage - 1) * PER_PAGE, currentPage * PER_PAGE);
 
   const handleListaClick = () => {
     if (tableRef.current) {
@@ -200,8 +207,8 @@ export function Banca2oPisoList({ rows, loading, error, refetch, onVer }: Props)
             <div className="flex items-center gap-2">
               <span>Orden</span>
               <select
-                value={sortOrder}
-                onChange={e => { setSortOrder(e.target.value as 'desc' | 'asc'); setCurrentPage(1); }}
+                value={orden.dir}
+                onChange={e => orden.fijar(orden.campo, e.target.value as 'desc' | 'asc')}
                 className="px-2 py-1 border border-gray-400 rounded text-sm bg-white pr-6 appearance-none"
               >
                 <option value="desc">Descendente</option>
@@ -225,15 +232,15 @@ export function Banca2oPisoList({ rows, loading, error, refetch, onVer }: Props)
             <thead>
               <tr className="bg-gray-100 border-b border-gray-300">
                 <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700">Ver</th>
-                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700">N° CUENTA</th>
-                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700">N° SOLICITUD</th>
-                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700">CLIENTE</th>
-                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700">PRODUCTO</th>
-                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700">INSTITUCIÓN</th>
-                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700">FECHA</th>
-                <th className="px-2 py-2.5 text-right font-medium text-xs text-gray-700">MONTO AUT.</th>
-                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700">FASE</th>
-                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700">ESTATUS</th>
+                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700" {...orden.th('cuenta')}>N° CUENTA{orden.flecha('cuenta')}</th>
+                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700" {...orden.th('noSol')}>N° SOLICITUD{orden.flecha('noSol')}</th>
+                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700" {...orden.th('cliente')}>NOMBRE INTERLOCUTOR{orden.flecha('cliente')}</th>
+                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700" {...orden.th('producto')}>PRODUCTO{orden.flecha('producto')}</th>
+                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700" {...orden.th('institucion')}>INSTITUCIÓN{orden.flecha('institucion')}</th>
+                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700" {...orden.th('fecha')}>FECHA{orden.flecha('fecha')}</th>
+                <th className="px-2 py-2.5 text-right font-medium text-xs text-gray-700" {...orden.th('monto')}>MONTO AUT.{orden.flecha('monto')}</th>
+                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700" {...orden.th('fase')}>FASE{orden.flecha('fase')}</th>
+                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700" {...orden.th('estatus')}>ESTATUS{orden.flecha('estatus')}</th>
               </tr>
             </thead>
             <tbody>
@@ -257,13 +264,13 @@ export function Banca2oPisoList({ rows, loading, error, refetch, onVer }: Props)
                     onMouseLeave={e => { e.currentTarget.style.backgroundColor = idx % 2 === 1 ? '#EEEEEE' : '#FFFFFF'; }}
                   >
                     <td className="px-2 py-2.5 text-xs whitespace-nowrap">
-                      <a
-                        href="#"
-                        className="text-[#0066CC] hover:underline"
-                        onClick={e => { e.preventDefault(); onVer(r); }}
+                      <button
+                        type="button"
+                        className="enlace-accion text-[color:var(--theme-link)] hover:underline"
+                        onClick={() => { onVer(r); }}
                       >
                         Ver
-                      </a>
+                      </button>
                     </td>
                     <td className="px-2 py-2.5 text-xs text-gray-700 max-w-[160px] truncate" title={r.noCuenta || ''}>{r.noCuenta || '—'}</td>
                     <td className="px-2 py-2.5 text-xs text-gray-700 max-w-[180px] truncate" title={r.noSol}>{r.noSol || '—'}</td>
@@ -289,17 +296,17 @@ export function Banca2oPisoList({ rows, loading, error, refetch, onVer }: Props)
       {/* Pagination */}
       <div className="px-4 py-3 border-t border-gray-300">
         <div className="flex items-center justify-end gap-3">
-          <button className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-40" onClick={() => setCurrentPage(1)} disabled={currentPage === 1}>
+          <button type="button" aria-label="Primera página" title="Primera página" className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-40" onClick={() => setCurrentPage(1)} disabled={currentPage === 1}>
             <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#666" strokeWidth="1.5"><path d="M13 4L4 9l9 5V4z" /></svg>
           </button>
-          <button className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-40" onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}>
+          <button type="button" aria-label="Página anterior" title="Página anterior" className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-40" onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}>
             <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#666" strokeWidth="1.5"><path d="M9 4L4 9l5 5V4z" /></svg>
           </button>
           <div className="text-sm text-gray-700 min-w-[100px] text-center">Página {currentPage} de {totalPages || 1}</div>
-          <button className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-40" onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages || totalPages === 0}>
+          <button type="button" aria-label="Página siguiente" title="Página siguiente" className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-40" onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages || totalPages === 0}>
             <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#666" strokeWidth="1.5"><path d="M5 4l5 5-5 5V4z" /></svg>
           </button>
-          <button className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-40" onClick={() => setCurrentPage(totalPages)} disabled={currentPage === totalPages || totalPages === 0}>
+          <button type="button" aria-label="Última página" title="Última página" className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-40" onClick={() => setCurrentPage(totalPages)} disabled={currentPage === totalPages || totalPages === 0}>
             <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#666" strokeWidth="1.5"><path d="M4 4L13 9l-9 5V4z" /></svg>
           </button>
         </div>

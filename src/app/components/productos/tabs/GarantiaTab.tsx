@@ -1,5 +1,5 @@
 import { useState, useEffect, forwardRef, useImperativeHandle } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 import React from 'react';
 
 interface Garantia {
@@ -15,6 +15,8 @@ interface GarantiaTabProps {
   productId?: number | string;
   initialData?: Garantia[];
   persistToStorage?: boolean;
+  /** Prefijo de la clave de sesión; Línea de Crédito usa 'linea_credito' para no mezclarse con Crédito. */
+  storagePrefix?: string;
 }
 
 const defaultGarantiasData: Garantia[] = [];
@@ -26,8 +28,8 @@ const GARANTIAS_MOCK: Garantia[] = [
 ];
 
 export const GarantiaTab = forwardRef<{ getData: () => Garantia[] }, GarantiaTabProps>(
-  ({ mode, productId, initialData, persistToStorage = true }, ref) => {
-    const storageKey = persistToStorage && productId ? `credito_garantias_${productId}` : '';
+  ({ mode, productId, initialData, persistToStorage = true, storagePrefix = 'credito' }, ref) => {
+    const storageKey = persistToStorage && productId ? `${storagePrefix}_garantias_${productId}` : '';
 
     const getInitialData = (): Garantia[] => {
       if (storageKey) {
@@ -434,7 +436,7 @@ function FormModal({ mode, item, onSave, onClose }: FormModalProps) {
         {/* Header */}
         <div className="modal-header-theme px-5 py-3 flex items-center justify-between">
           <h3 className="text-sm font-semibold text-white tracking-wide uppercase">{getTitle()}</h3>
-          <button
+          <button type="button" aria-label="Cerrar" title="Cerrar"
             onClick={onClose}
             className="text-white/80 hover:text-white hover:bg-white/20 rounded-full w-6 h-6 flex items-center justify-center transition-colors"
           >

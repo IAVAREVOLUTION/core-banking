@@ -14,7 +14,7 @@ export function TabSolicitudesExtraordinarias({ mode, creditoId }: TabSolicitude
       <div className="flex items-center justify-between bg-[#E8E8E8] px-3 py-1.5 border-b border-gray-300">
         <span className="text-xs font-medium text-gray-700">Solicitudes Extraordinarias</span>
         <div className="flex gap-2">
-          <button className="px-4 py-1 text-xs bg-[#2E5C91] text-white rounded hover:bg-[#1e3a5f]">
+          <button className="px-4 py-1 text-xs bg-[color:var(--theme-secondary)] text-white rounded hover:bg-[color:var(--theme-secondary-hover)]">
             Nuevo
           </button>
           <button className="px-4 py-1 text-xs bg-white border border-gray-400 rounded text-gray-700 hover:bg-gray-50">
@@ -32,8 +32,8 @@ export function TabSolicitudesExtraordinarias({ mode, creditoId }: TabSolicitude
           <thead>
             <tr className="bg-[#8B8B8B]">
               <th className="text-left px-3 py-2 font-normal text-white border-r border-gray-400">No. Solicitud</th>
-              <th className="text-left px-3 py-2 font-normal text-white border-r border-gray-400">Número de Cliente</th>
-              <th className="text-left px-3 py-2 font-normal text-white border-r border-gray-400">Cliente</th>
+              <th className="text-left px-3 py-2 font-normal text-white border-r border-gray-400">No. Interlocutor</th>
+              <th className="text-left px-3 py-2 font-normal text-white border-r border-gray-400">Nombre Interlocutor</th>
               <th className="text-left px-3 py-2 font-normal text-white border-r border-gray-400">Número de Cuenta</th>
               <th className="text-left px-3 py-2 font-normal text-white border-r border-gray-400">Producto Financiero</th>
               <th className="text-left px-3 py-2 font-normal text-white border-r border-gray-400">Área que Solicita</th>

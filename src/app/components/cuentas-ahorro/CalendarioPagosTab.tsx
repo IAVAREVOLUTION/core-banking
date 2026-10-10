@@ -12,8 +12,9 @@
  *  - Etiquetas en español para ahorro/captación
  */
 import { useState, useEffect } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 import { useAmortizaciones, crearAvisoVencimiento, formatMoney, fmtDate } from '../../hooks/useCarteraDB';
+import { formatearFecha } from '@/app/lib/fechas';
 
 const ESTATUS_COLOR: Record<string, string> = {
   Pendiente: 'bg-amber-50 text-amber-700 border-amber-200',
@@ -170,7 +171,7 @@ export function CalendarioPagosTab({ accountId, cliente = '', noSol, noCuenta, m
       <div className="border border-gray-200 rounded overflow-x-auto">
         <table className="w-full text-xs">
           <thead>
-            <tr className="bg-[#2E5C91] text-white">
+            <tr className="bg-[color:var(--theme-secondary)] text-white">
               <th className="px-2 py-2 text-center w-8">
                 <input type="checkbox" checked={allPendientesSelec} onChange={toggleAll} className="cursor-pointer" />
               </th>
@@ -186,7 +187,7 @@ export function CalendarioPagosTab({ accountId, cliente = '', noSol, noCuenta, m
             {loading ? (
               <tr>
                 <td colSpan={7} className="px-3 py-8 text-center text-gray-400 text-xs">
-                  <svg className="animate-spin h-5 w-5 mx-auto mb-1 text-[#4A6FA5]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <svg className="animate-spin h-5 w-5 mx-auto mb-1 text-[color:var(--theme-primary)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <circle cx="12" cy="12" r="10" strokeOpacity="0.25"/><path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round"/>
                   </svg>
                   Cargando calendario de pagos...
@@ -269,14 +270,14 @@ export function CalendarioPagosTab({ accountId, cliente = '', noSol, noCuenta, m
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg border border-gray-200" onClick={e => e.stopPropagation()}>
 
             {/* Header modal */}
-            <div className="flex items-center justify-between px-5 py-3.5 border-b border-gray-100 bg-[#2E5C91] rounded-t-xl">
+            <div className="flex items-center justify-between px-5 py-3.5 border-b border-gray-100 bg-[color:var(--theme-secondary)] rounded-t-xl">
               <div>
                 <h4 className="text-sm font-bold text-white">Nuevo Aviso de Pago</h4>
                 <p className="text-[11px] text-blue-200 mt-0.5">
                   {selected.size} aportación{selected.size !== 1 ? 'es' : ''} · {moneda}
                 </p>
               </div>
-              <button onClick={() => setShowModal(false)} className="text-white/70 hover:text-white">
+              <button type="button" aria-label="Cerrar" title="Cerrar" onClick={() => setShowModal(false)} className="text-white/70 hover:text-white">
                 <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2">
                   <path d="M3 3l8 8M11 3l-8 8"/>
                 </svg>
@@ -300,7 +301,7 @@ export function CalendarioPagosTab({ accountId, cliente = '', noSol, noCuenta, m
                 ))}
                 <div className="col-span-2 flex justify-between text-xs font-bold border-t border-gray-200 pt-1.5 mt-0.5">
                   <span>Total a Cobrar</span>
-                  <span className="text-[#2E5C91]">{formatMoney(totals.total)}</span>
+                  <span className="text-[color:var(--theme-secondary)]">{formatMoney(totals.total)}</span>
                 </div>
               </div>
 
@@ -324,8 +325,8 @@ export function CalendarioPagosTab({ accountId, cliente = '', noSol, noCuenta, m
                 <div>
                   <label className="block text-[10px] font-medium text-gray-600 mb-1 uppercase tracking-wide">Fecha Compromiso</label>
                   <input
-                    type="date"
-                    value={fechaCompromiso}
+                    type="text"
+                    value={formatearFecha(fechaCompromiso)}
                     readOnly
                     className="w-full px-3 py-1.5 text-xs border border-gray-200 rounded-lg bg-gray-50 text-gray-600 cursor-default"
                   />
@@ -371,7 +372,7 @@ export function CalendarioPagosTab({ accountId, cliente = '', noSol, noCuenta, m
               <button
                 onClick={handleCrearAviso}
                 disabled={enviando}
-                className="px-5 py-1.5 text-xs bg-[#2E5C91] text-white rounded-lg hover:bg-[#245080] disabled:opacity-50 font-medium flex items-center gap-1.5"
+                className="px-5 py-1.5 text-xs bg-[color:var(--theme-secondary)] text-white rounded-lg hover:bg-[color:var(--theme-secondary-hover)] disabled:opacity-50 font-medium flex items-center gap-1.5"
               >
                 {enviando ? (
                   <>

@@ -57,7 +57,7 @@ export function MatrizTasaFijaSubmodulo({ productoId, productoNombre, onBack, is
                   <td className="px-4 py-3 text-sm text-right text-[#3C3C3C]">
                     ${tasa.montoFinal.toLocaleString('es-MX')}
                   </td>
-                  <td className="px-4 py-3 text-sm text-right font-semibold text-[#2E5C91]">
+                  <td className="px-4 py-3 text-sm text-right font-semibold text-[color:var(--theme-secondary)]">
                     {tasa.tasa}%
                   </td>
                 </tr>

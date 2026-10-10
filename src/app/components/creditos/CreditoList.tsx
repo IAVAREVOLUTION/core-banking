@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { Credito } from '@/types/credito';
 import { creditos as creditosData } from '@/data/creditosData';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 
 interface CreditoListProps {
   onNew?: () => void;
@@ -173,7 +173,7 @@ export function CreditoList({ onNew, onEdit, onView }: CreditoListProps) {
               <path d="M7 3v4M17 3v4"/>
             </svg>
             <h2 className="text-lg font-normal text-gray-800">Crédito</h2>
-            <button className="p-1 ml-2">
+            <button type="button" aria-label="Buscar" title="Buscar" className="p-1 ml-2">
               <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#999" strokeWidth="2">
                 <circle cx="8" cy="8" r="6"/>
                 <path d="M13 13l3 3"/>
@@ -181,8 +181,8 @@ export function CreditoList({ onNew, onEdit, onView }: CreditoListProps) {
             </button>
           </div>
           <div className="flex items-center gap-4 text-sm text-gray-700">
-            <span onClick={handleListaClick} className="cursor-pointer hover:text-[#0099CC] transition-colors">Lista</span>
-            <span onClick={handleBuscarClick} className="cursor-pointer hover:text-[#0099CC] transition-colors">Buscar</span>
+            <span onClick={handleListaClick} className="cursor-pointer hover:text-[color:var(--theme-action)] transition-colors">Lista</span>
+            <span onClick={handleBuscarClick} className="cursor-pointer hover:text-[color:var(--theme-action)] transition-colors">Buscar</span>
           </div>
         </div>
       </div>
@@ -199,7 +199,7 @@ export function CreditoList({ onNew, onEdit, onView }: CreditoListProps) {
               <path d="M6 8l-4-4h8z"/>
             </svg>
           </div>
-          <button onClick={handleNuevoCredito} className="px-5 py-1.5 bg-[#0099CC] text-white rounded text-sm hover:bg-[#0088BB] font-medium">
+          <button onClick={handleNuevoCredito} className="px-5 py-1.5 bg-[color:var(--theme-action)] text-white rounded text-sm hover:bg-[color:var(--theme-action-hover)] font-medium">
             Nuevo
           </button>
         </div>
@@ -300,7 +300,7 @@ export function CreditoList({ onNew, onEdit, onView }: CreditoListProps) {
                 </svg>
               </div>
               <button 
-                className="p-0.5 text-[#0099CC] hover:text-[#0088BB] disabled:opacity-40" 
+                className="p-0.5 text-[color:var(--theme-action)] hover:text-[color:var(--theme-action-hover)] disabled:opacity-40" 
                 title="Anterior"
                 onClick={handlePreviousPage}
                 disabled={currentPage === 1}
@@ -310,7 +310,7 @@ export function CreditoList({ onNew, onEdit, onView }: CreditoListProps) {
                 </svg>
               </button>
               <button 
-                className="p-0.5 text-[#0099CC] hover:text-[#0088BB] disabled:opacity-40" 
+                className="p-0.5 text-[color:var(--theme-action)] hover:text-[color:var(--theme-action-hover)] disabled:opacity-40" 
                 title="Siguiente"
                 onClick={handleNextPage}
                 disabled={currentPage === totalPages}
@@ -333,7 +333,7 @@ export function CreditoList({ onNew, onEdit, onView }: CreditoListProps) {
               <tr className="bg-[#D0D0D0] border-b border-gray-300">
                 <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700 whitespace-nowrap">Editar | Ver</th>
                 <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700">NO. DE CRÉDITO</th>
-                <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700">CLIENTE</th>
+                <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700">NOMBRE INTERLOCUTOR</th>
                 <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700">FECHA DE CRÉDITO</th>
                 <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700">MONTO SOLICITADO</th>
                 <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700">MONTO AUTORIZADO</th>
@@ -365,9 +365,9 @@ export function CreditoList({ onNew, onEdit, onView }: CreditoListProps) {
                     onMouseLeave={(e) => e.currentTarget.style.backgroundColor = index % 2 === 1 ? '#EEEEEE' : '#FFFFFF'}
                   >
                     <td className="px-3 py-2.5 text-xs whitespace-nowrap">
-                      <a href="#" className="text-[#0066CC] hover:underline" onClick={(e) => { e.preventDefault(); handleEditar(credito); }}>Editar</a>
+                      <button type="button" className="enlace-accion text-[color:var(--theme-link)] hover:underline" onClick={() => { handleEditar(credito); }}>Editar</button>
                       <span className="text-gray-700"> | </span>
-                      <a href="#" className="text-[#0066CC] hover:underline" onClick={(e) => { e.preventDefault(); handleVer(credito); }}>Ver</a>
+                      <button type="button" className="enlace-accion text-[color:var(--theme-link)] hover:underline" onClick={() => { handleVer(credito); }}>Ver</button>
                     </td>
                     <td className="px-3 py-2.5 text-xs text-gray-700">{credito.nroCredito}</td>
                     <td className="px-3 py-2.5 text-xs text-gray-700">{credito.clienteNombre}</td>

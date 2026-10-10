@@ -29,7 +29,7 @@
 // Esto garantiza que campos existentes no se pierdan
 // INDEPENDIENTEMENTE de si la edge function tiene deep merge o no.
 // ═══════════════════════════════════════════════════════════════════
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 
 const BASE_URL = `https://${projectId}.supabase.co/functions/v1/make-server-7e2d13d9`;
@@ -310,8 +310,8 @@ export async function syncToJProducts(opts: SyncProductoOptions): Promise<string
       result = JSON.parse(text);
     } catch {
       console.error(`[syncToJProducts] Respuesta no-JSON del servidor (HTTP ${res.status}):`, text.substring(0, 300));
-      toast.error('Error al sincronizar con J_PRODUCTOS', {
-        description: `Respuesta inesperada del servidor (HTTP ${res.status})`,
+      toast.error('No se pudieron guardar los cambios', {
+        description: 'Respuesta inesperada del servidor. Intente de nuevo.',
         duration: 5000,
       });
       return existingId ?? null;
@@ -319,8 +319,8 @@ export async function syncToJProducts(opts: SyncProductoOptions): Promise<string
 
     if (!res.ok) {
       console.error(`[syncToJProducts] Error al sincronizar ${displayLabel} con J_PRODUCTOS:`, result);
-      toast.error('Error al sincronizar con J_PRODUCTOS', {
-        description: result.error || `HTTP ${res.status} — ${displayLabel}`,
+      toast.error('No se pudieron guardar los cambios', {
+        description: `${displayLabel}: intente de nuevo. Si el problema persiste, contacte a soporte.`,
         duration: 5000,
       });
       return existingId ?? null;
@@ -335,16 +335,12 @@ export async function syncToJProducts(opts: SyncProductoOptions): Promise<string
     }
 
     console.log(`[syncToJProducts] J_PRODUCTOS — ${existingId ? 'UPDATE' : 'INSERT'} exitoso (${displayLabel}):`, result);
-    toast.success('Sincronizado con J_PRODUCTOS', {
-      description: `ID: ${returnedId ? String(returnedId).substring(0, 8) + '...' : 'N/A'} — Type: ${tipo}`,
-      duration: 4000,
-    });
 
     return returnedId;
   } catch (err) {
     console.error(`[syncToJProducts] Error de red al sincronizar ${displayLabel} con J_PRODUCTOS:`, err);
-    toast.error('Error de conexión al sincronizar con J_PRODUCTOS', {
-      description: `${displayLabel}: ${String(err)}`,
+    toast.error('Sin conexión con el servidor', {
+      description: `${displayLabel}: no se guardaron los cambios. Verifique su conexión e intente de nuevo.`,
       duration: 5000,
     });
     return null;

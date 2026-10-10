@@ -13,10 +13,11 @@
  * Cuenta / SWIFT, típico en operaciones internacionales).
  */
 import { useState } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 import { useCuentasBancariasDB } from '@/app/hooks/useCuentasBancariasDB';
 import type { CuentaBancaria, CuentaBancariaData } from '@/app/hooks/useCuentasBancariasDB';
 import { useCatalogoBancario } from '@/app/hooks/useCatalogoBancario';
+import { nombrePersona, esPersonaMoral } from '@/app/lib/nombrePersona';
 
 interface CuentasBancariasTabProps {
   mode: 'nuevo' | 'editar' | 'ver';
@@ -63,8 +64,8 @@ export function CuentasBancariasTab({ mode, clienteId, personasRelacionadas = []
   const opcionesBeneficiario = (personasRelacionadas || [])
     .map((p: any) => {
       const nombre = String(
-        p?.nombreCompleto || p?.nombreCliente
-        || [p?.nombre, p?.apellidoPaterno, p?.apellidoMaterno].filter(Boolean).join(' ')
+        (esPersonaMoral(p) ? nombrePersona(p) : '') || p?.nombreCompleto || p?.nombreCliente
+        || nombrePersona(p)
         || '',
       ).trim();
       return { id: String(p?.clienteUuid || p?.id || ''), clave: String(p?.claveCliente || ''), nombre };
@@ -171,7 +172,7 @@ export function CuentasBancariasTab({ mode, clienteId, personasRelacionadas = []
           {!isView && cid && (
             <button
               onClick={openNew}
-              className="px-3 py-1 bg-[#0099CC] text-white rounded text-xs hover:bg-[#0088BB]"
+              className="px-3 py-1 bg-[color:var(--theme-action)] text-white rounded text-xs hover:bg-[color:var(--theme-action-hover)]"
             >
               + Agregar Cuenta
             </button>
@@ -187,11 +188,11 @@ export function CuentasBancariasTab({ mode, clienteId, personasRelacionadas = []
 
       {cid && loading && (
         <div className="flex items-center justify-center py-12">
-          <svg className="animate-spin h-6 w-6 text-[#4A6FA5] mr-2" viewBox="0 0 24 24" fill="none">
+          <svg className="animate-spin h-6 w-6 text-[color:var(--theme-primary)] mr-2" viewBox="0 0 24 24" fill="none">
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
           </svg>
-          <span className="text-xs text-gray-500">Consultando J_CUENTAS_CORP_CLIENTES...</span>
+          <span className="text-xs text-gray-500">Cargando...</span>
         </div>
       )}
 
@@ -239,7 +240,7 @@ export function CuentasBancariasTab({ mode, clienteId, personasRelacionadas = []
                     </td>
                     {!isView && (
                       <td className="px-3 py-2 text-center">
-                        <button onClick={() => openEdit(c)} className="text-[#0066CC] hover:underline text-[10px] mr-2">Editar</button>
+                        <button onClick={() => openEdit(c)} className="text-[color:var(--theme-link)] hover:underline text-[10px] mr-2">Editar</button>
                         <button onClick={() => setConfirmDeleteId(c.id)} className="text-red-500 hover:underline text-[10px]">Eliminar</button>
                       </td>
                     )}
@@ -256,9 +257,9 @@ export function CuentasBancariasTab({ mode, clienteId, personasRelacionadas = []
         <div className="fixed inset-0 z-[9999] flex items-center justify-center" onClick={() => setShowModal(false)}>
           <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px]" />
           <div className="relative bg-white shadow-2xl w-full max-w-lg mx-4 overflow-hidden" onClick={e => e.stopPropagation()}>
-            <div className="bg-[#4A6FA5] px-5 py-3 flex items-center justify-between">
+            <div className="bg-[color:var(--theme-primary)] px-5 py-3 flex items-center justify-between">
               <span className="text-sm font-semibold text-white">{editingId ? 'Editar Cuenta Bancaria' : 'Nueva Cuenta Bancaria'}</span>
-              <button onClick={() => setShowModal(false)} className="text-white/80 hover:text-white">
+              <button type="button" aria-label="Cerrar" title="Cerrar" onClick={() => setShowModal(false)} className="text-white/80 hover:text-white">
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
                   <path d="M2 2l12 12M14 2L2 14" />
                 </svg>
@@ -280,7 +281,7 @@ export function CuentasBancariasTab({ mode, clienteId, personasRelacionadas = []
                       beneficiario: sel?.nombre || '',
                     }));
                   }}
-                  disabled={opcionesBeneficiario.length === 0}
+                  disabled={opcionesBeneficiario.length === 0 && !form.beneficiarioId}
                   className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded disabled:bg-gray-100"
                 >
                   <option value="">Seleccione...</option>
@@ -289,8 +290,18 @@ export function CuentasBancariasTab({ mode, clienteId, personasRelacionadas = []
                       {o.clave ? `${o.clave} — ${o.nombre}` : o.nombre}
                     </option>
                   ))}
+                  {/* Cuenta guardada cuyo beneficiario ya no figura en Personas
+                      Relacionadas (lo quitaron despues). Sin esta opcion el
+                      combo se veia vacio y parecia que la cuenta no tenia
+                      beneficiario, cuando si lo tiene guardado. */}
+                  {form.beneficiarioId
+                    && !opcionesBeneficiario.some(o => o.id === form.beneficiarioId) && (
+                    <option value={form.beneficiarioId}>
+                      {form.beneficiario || form.beneficiarioId} — ya no está en Personas Relacionadas
+                    </option>
+                  )}
                 </select>
-                {opcionesBeneficiario.length === 0 && (
+                {opcionesBeneficiario.length === 0 && !form.beneficiarioId && (
                   <span className="block text-[10px] text-amber-700 mt-1">
                     El cliente no tiene Personas Relacionadas. Agréguelas en esa subpestaña
                     para poder elegir un beneficiario (el titular también puede agregarse).
@@ -398,7 +409,7 @@ export function CuentasBancariasTab({ mode, clienteId, personasRelacionadas = []
               <button
                 onClick={handleSubmit}
                 disabled={saving}
-                className="px-4 py-1.5 bg-[#0099CC] text-white text-xs rounded hover:bg-[#0088BB] disabled:opacity-50"
+                className="px-4 py-1.5 bg-[color:var(--theme-action)] text-white text-xs rounded hover:bg-[color:var(--theme-action-hover)] disabled:opacity-50"
               >
                 {saving ? 'Guardando...' : 'Guardar'}
               </button>

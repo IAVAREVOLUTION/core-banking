@@ -1,5 +1,5 @@
 import { useState, useEffect, forwardRef, useImperativeHandle } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 import { useTabPersistence } from '@/app/hooks/useProductoPersistence';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 
@@ -85,10 +85,11 @@ function useCatalogoDocumentos() {
         // FIX: Re-extraer promptIA para manejar cache antiguo o datos anidados
         return items.map((d: CatalogoDocItem) => {
           // Si el item tiene promptIA como objeto anidado (estructura J_CATALOGOS), re-extraer
-          if (typeof d.promptIA === 'object' && d.promptIA !== null && typeof d.promptIA.promptIA === 'string') {
+          const anidado = (d as any).promptIA;
+          if (typeof anidado === 'object' && anidado !== null && typeof anidado.promptIA === 'string') {
             return {
               ...d,
-              promptIA: d.promptIA.promptIA || '',
+              promptIA: anidado.promptIA || '',
             };
           }
           return d;
@@ -406,7 +407,7 @@ export const ExpedientesProductoTab = forwardRef<{ getData: () => ExpedienteProd
             <div className="relative">
               <button 
                 onClick={() => setShowMenu(!showMenu)}
-                className="px-3 py-1 bg-[#4A6FA5] text-white text-xs hover:bg-[#3E5C91] border border-[#3E5C91] rounded flex items-center gap-1"
+                className="px-3 py-1 bg-[color:var(--theme-primary)] text-white text-xs hover:bg-[color:var(--theme-secondary)] border border-[color:var(--theme-secondary)] rounded flex items-center gap-1"
               >
                 Menú
                 <svg width="10" height="6" viewBox="0 0 10 6" fill="white"><path d="M0 0l5 6 5-6z"/></svg>
@@ -742,7 +743,7 @@ function ExpedienteFormModal({ mode, item, onSave, onClose, catalogoDocumentos, 
         <div className="p-5">
           <form onSubmit={handleSubmit}>
             <div className="mb-4">
-              <div className="bg-[#E7E6E6] px-3 py-1.5 mb-4 border-l-4 border-[#2E5C91] rounded-r">
+              <div className="bg-[#E7E6E6] px-3 py-1.5 mb-4 border-l-4 border-[color:var(--theme-secondary)] rounded-r">
                 <span className="text-[11px] font-semibold text-gray-700 uppercase tracking-wide">Información del Documento</span>
               </div>
 

@@ -98,6 +98,8 @@ export interface KYCData {
 export interface ParametrosPLD {
   factorRiesgo: string;
   montoMaxOperacionUSD: string;
+  /** Tipo de cambio MXN/USD para los umbrales en dólares del monitoreo. */
+  tipoCambioUSD?: string;
   montoMaxPersonaFisica: string;
   montoMaxPersonaMoral: string;
   aplicaPersonaFisica: string;
@@ -177,7 +179,7 @@ const SEED_KYC: KYCData = {
 };
 
 const SEED_PARAMETROS: ParametrosPLD = {
-  factorRiesgo: '100', montoMaxOperacionUSD: '10,000', montoMaxPersonaFisica: '500,000',
+  factorRiesgo: '100', montoMaxOperacionUSD: '10,000', tipoCambioUSD: '18.50', montoMaxPersonaFisica: '500,000',
   montoMaxPersonaMoral: '5,000,000', aplicaPersonaFisica: 'Sí', aplicaPersonaMoral: 'Sí',
   sujetoObligado: 'SOFOM ENR', organoSupervisor: 'CNBV',
   diasActualizacionKYC: '365', porcentajeDesviacion: '20', diasRetencion: '1825',

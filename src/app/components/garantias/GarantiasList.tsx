@@ -1,8 +1,10 @@
 import { useState, useRef, useEffect } from 'react';
 import { Garantia } from '@/types/garantia';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
+import { useOrdenTabla, coincideBusqueda } from '@/app/lib/ordenTabla';
 import type { GarantiaBackendStatus } from '@/app/hooks/useGarantiasDB';
 import { useCategoriaBienDB } from '@/app/hooks/useCategoriaBienDB';
+import { formatearFecha } from '@/app/lib/fechas';
 
 interface GarantiasListProps {
   garantias: Garantia[];
@@ -15,7 +17,6 @@ interface GarantiasListProps {
 
 export function GarantiasList({ garantias, loading, backendStatus, onNew, onEdit, onView }: GarantiasListProps) {
   const [searchTerm, setSearchTerm] = useState('');
-  const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 8;
   const tableRef = useRef<HTMLDivElement>(null);
@@ -48,12 +49,9 @@ export function GarantiasList({ garantias, loading, backendStatus, onNew, onEdit
     categoriasBien.find(c => c.clave === clave)?.nombre || clave || '—';
 
   const formatDate = (dateString: string) => {
+    // Formato único del sistema (lib/fechas): dd/mm/aaaa, sin corrimiento de un día en fechas ISO.
     if (!dateString) return '—';
-    return new Date(dateString).toLocaleDateString('es-MX', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-    });
+    return formatearFecha(dateString);
   };
 
   const formatCurrency = (value: number) => {
@@ -118,29 +116,37 @@ export function GarantiasList({ garantias, loading, backendStatus, onNew, onEdit
     }
   };
 
-  const filteredGarantias = garantias
-    .filter(garantia => {
-      const searchLower = searchTerm.toLowerCase();
-      return (
-        (garantia.garantia || '').toLowerCase().includes(searchLower) ||
-        String(garantia.id).toLowerCase().includes(searchLower) ||
-        (garantia.tipo || '').toLowerCase().includes(searchLower) ||
-        (garantia.subtipo || '').toLowerCase().includes(searchLower) ||
-        (garantia.ubicacion || '').toLowerCase().includes(searchLower) ||
-        (garantia.cliente_id || '').toLowerCase().includes(searchLower)
-      );
-    })
-    .sort((a, b) => {
-      const dateA = new Date(a.fechaRegistro || 0).getTime();
-      const dateB = new Date(b.fechaRegistro || 0).getTime();
-      return sortOrder === 'desc' ? dateB - dateA : dateA - dateB;
-    });
+  const filteredGarantias = garantias.filter(g => coincideBusqueda(searchTerm, [
+    g.id, categoriaLabel(g.categoria), g.garantia, g.tipo, g.subtipo, g.ubicacion,
+    formatDate(g.fechaRegistro), g.cliente_id,
+  ]));
+
+  // Más recientes primero (fecha de registro; a igual fecha, el ID).
+  const orden = useOrdenTabla(filteredGarantias, {
+    id: 'bienes',
+    columnas: {
+      id: g => g.id,
+      categoria: g => categoriaLabel(g.categoria),
+      bien: g => g.garantia,
+      tipo: g => g.tipo,
+      subtipo: g => g.subtipo,
+      ubicacion: g => g.ubicacion,
+      valor: g => g.valorNominal,
+      montoCubrir: g => g.montoCubrirGarantia,
+      aforo: g => g.porcentajeAforo,
+      fecha: g => g.fechaRegistro,
+      cliente: g => g.cliente_id,
+    },
+    porDefecto: { campo: 'fecha', dir: 'desc' },
+    desempate: g => g.id,
+    alCambiar: () => setCurrentPage(1),
+  });
 
   // Paginación
   const totalPages = Math.max(1, Math.ceil(filteredGarantias.length / itemsPerPage));
   const startIndex = (currentPage - 1) * itemsPerPage;
   const endIndex = startIndex + itemsPerPage;
-  const currentGarantias = filteredGarantias.slice(startIndex, endIndex);
+  const currentGarantias = orden.filas.slice(startIndex, endIndex);
 
   const handlePreviousPage = () => {
     if (currentPage > 1) {
@@ -169,8 +175,7 @@ export function GarantiasList({ garantias, loading, backendStatus, onNew, onEdit
   };
 
   const handleSortChange = (value: 'desc' | 'asc') => {
-    setSortOrder(value);
-    setCurrentPage(1);
+    orden.fijar(orden.campo, value);
   };
 
   const handleResizeStart = (e: React.MouseEvent, column: string) => {
@@ -221,7 +226,7 @@ export function GarantiasList({ garantias, loading, backendStatus, onNew, onEdit
     if (backendStatus === 'error') {
       return (
         <div className="mx-4 mt-2 px-3 py-2 bg-red-50 border border-red-300 rounded text-xs text-red-800">
-          Error de conexión con J_GARANTIAS. Revisar consola para más detalles.
+          No se pudieron cargar los bienes. Intente de nuevo en unos momentos.
         </div>
       );
     }
@@ -246,7 +251,7 @@ export function GarantiasList({ garantias, loading, backendStatus, onNew, onEdit
               <path d="M4 9h16M9 4v16" stroke="currentColor" strokeWidth="1.5"/>
             </svg>
             <h2 className="text-lg font-normal text-gray-800">Bienes</h2>
-            <button className="p-1 ml-2">
+            <button type="button" aria-label="Buscar" title="Buscar" className="p-1 ml-2">
               <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#999" strokeWidth="2">
                 <circle cx="8" cy="8" r="6"/>
                 <path d="M13 13l3 3"/>
@@ -254,8 +259,8 @@ export function GarantiasList({ garantias, loading, backendStatus, onNew, onEdit
             </button>
           </div>
           <div className="flex items-center gap-4 text-sm text-gray-700">
-            <span onClick={handleListaClick} className="cursor-pointer hover:text-[#0099CC] transition-colors">Lista</span>
-            <span onClick={handleBuscarClick} className="cursor-pointer hover:text-[#0099CC] transition-colors">Buscar</span>
+            <span onClick={handleListaClick} className="cursor-pointer hover:text-[color:var(--theme-action)] transition-colors">Lista</span>
+            <span onClick={handleBuscarClick} className="cursor-pointer hover:text-[color:var(--theme-action)] transition-colors">Buscar</span>
           </div>
         </div>
       </div>
@@ -272,7 +277,7 @@ export function GarantiasList({ garantias, loading, backendStatus, onNew, onEdit
               <path d="M6 8l-4-4h8z"/>
             </svg>
           </div>
-          <button onClick={onNew} className="px-5 py-1.5 bg-[#0099CC] text-white rounded text-sm hover:bg-[#0088BB] font-medium">
+          <button onClick={onNew} className="px-5 py-1.5 bg-[color:var(--theme-action)] text-white rounded text-sm hover:bg-[color:var(--theme-action-hover)] font-medium">
             Nuevo
           </button>
         </div>
@@ -349,7 +354,7 @@ export function GarantiasList({ garantias, loading, backendStatus, onNew, onEdit
               <span>Orden Rápido</span>
               <div className="relative">
                 <select 
-                  value={sortOrder} 
+                  value={orden.dir} 
                   onChange={(e) => handleSortChange(e.target.value as 'desc' | 'asc')}
                   className="px-2 py-1 border border-gray-400 rounded text-sm bg-white pr-6 appearance-none"
                 >
@@ -363,7 +368,7 @@ export function GarantiasList({ garantias, loading, backendStatus, onNew, onEdit
             </div>
             <div className="flex items-center gap-2">
               <button 
-                className="p-0.5 text-[#0099CC] hover:text-[#0088BB] disabled:opacity-40" 
+                className="p-0.5 text-[color:var(--theme-action)] hover:text-[color:var(--theme-action-hover)] disabled:opacity-40" 
                 title="Anterior"
                 onClick={handlePreviousPage}
                 disabled={currentPage === 1}
@@ -373,7 +378,7 @@ export function GarantiasList({ garantias, loading, backendStatus, onNew, onEdit
                 </svg>
               </button>
               <button 
-                className="p-0.5 text-[#0099CC] hover:text-[#0088BB] disabled:opacity-40" 
+                className="p-0.5 text-[color:var(--theme-action)] hover:text-[color:var(--theme-action-hover)] disabled:opacity-40" 
                 title="Siguiente"
                 onClick={handleNextPage}
                 disabled={currentPage === totalPages}
@@ -400,82 +405,93 @@ export function GarantiasList({ garantias, loading, backendStatus, onNew, onEdit
                 <th className="relative px-3 py-2.5 text-left font-normal text-xs text-gray-700" style={{ width: `${columnWidths.actions}px` }}>
                   Editar | Ver
                   <div
-                    className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-[#0099CC] transition-colors"
+                    className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-[color:var(--theme-action)] transition-colors"
+                    onClick={(e) => e.stopPropagation()}
                     onMouseDown={(e) => handleResizeStart(e, 'actions')}
                   />
                 </th>
-                <th className="relative px-3 py-2.5 text-left font-normal text-xs text-gray-700" style={{ width: `${columnWidths.id}px` }}>
-                  ID
+                <th className="relative px-3 py-2.5 text-left font-normal text-xs text-gray-700" {...orden.th('id', { width: `${columnWidths.id}px` })}>
+                  ID{orden.flecha('id')}
                   <div
-                    className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-[#0099CC] transition-colors"
+                    className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-[color:var(--theme-action)] transition-colors"
+                    onClick={(e) => e.stopPropagation()}
                     onMouseDown={(e) => handleResizeStart(e, 'id')}
                   />
                 </th>
-                <th className="relative px-3 py-2.5 text-left font-normal text-xs text-gray-700" style={{ width: `${columnWidths.categoria}px` }}>
-                  CATEGORÍA
+                <th className="relative px-3 py-2.5 text-left font-normal text-xs text-gray-700" {...orden.th('categoria', { width: `${columnWidths.categoria}px` })}>
+                  CATEGORÍA{orden.flecha('categoria')}
                   <div
-                    className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-[#0099CC] transition-colors"
+                    className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-[color:var(--theme-action)] transition-colors"
+                    onClick={(e) => e.stopPropagation()}
                     onMouseDown={(e) => handleResizeStart(e, 'categoria')}
                   />
                 </th>
-                <th className="relative px-3 py-2.5 text-left font-normal text-xs text-gray-700" style={{ width: `${columnWidths.garantia}px` }}>
-                  BIEN
+                <th className="relative px-3 py-2.5 text-left font-normal text-xs text-gray-700" {...orden.th('bien', { width: `${columnWidths.garantia}px` })}>
+                  BIEN{orden.flecha('bien')}
                   <div
-                    className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-[#0099CC] transition-colors"
+                    className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-[color:var(--theme-action)] transition-colors"
+                    onClick={(e) => e.stopPropagation()}
                     onMouseDown={(e) => handleResizeStart(e, 'garantia')}
                   />
                 </th>
-                <th className="relative px-3 py-2.5 text-left font-normal text-xs text-gray-700" style={{ width: `${columnWidths.tipo}px` }}>
-                  TIPO
+                <th className="relative px-3 py-2.5 text-left font-normal text-xs text-gray-700" {...orden.th('tipo', { width: `${columnWidths.tipo}px` })}>
+                  TIPO{orden.flecha('tipo')}
                   <div
-                    className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-[#0099CC] transition-colors"
+                    className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-[color:var(--theme-action)] transition-colors"
+                    onClick={(e) => e.stopPropagation()}
                     onMouseDown={(e) => handleResizeStart(e, 'tipo')}
                   />
                 </th>
-                <th className="relative px-3 py-2.5 text-left font-normal text-xs text-gray-700" style={{ width: `${columnWidths.subtipo}px` }}>
-                  SUBTIPO
+                <th className="relative px-3 py-2.5 text-left font-normal text-xs text-gray-700" {...orden.th('subtipo', { width: `${columnWidths.subtipo}px` })}>
+                  SUBTIPO{orden.flecha('subtipo')}
                   <div
-                    className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-[#0099CC] transition-colors"
+                    className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-[color:var(--theme-action)] transition-colors"
+                    onClick={(e) => e.stopPropagation()}
                     onMouseDown={(e) => handleResizeStart(e, 'subtipo')}
                   />
                 </th>
-                <th className="relative px-3 py-2.5 text-left font-normal text-xs text-gray-700" style={{ width: `${columnWidths.ubicacion}px` }}>
-                  UBICACIÓN
+                <th className="relative px-3 py-2.5 text-left font-normal text-xs text-gray-700" {...orden.th('ubicacion', { width: `${columnWidths.ubicacion}px` })}>
+                  UBICACIÓN{orden.flecha('ubicacion')}
                   <div
-                    className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-[#0099CC] transition-colors"
+                    className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-[color:var(--theme-action)] transition-colors"
+                    onClick={(e) => e.stopPropagation()}
                     onMouseDown={(e) => handleResizeStart(e, 'ubicacion')}
                   />
                 </th>
-                <th className="relative px-3 py-2.5 text-left font-normal text-xs text-gray-700" style={{ width: `${columnWidths.valorNominal}px` }}>
-                  VALOR NOMINAL
+                <th className="relative px-3 py-2.5 text-left font-normal text-xs text-gray-700" {...orden.th('valor', { width: `${columnWidths.valorNominal}px` })}>
+                  VALOR NOMINAL{orden.flecha('valor')}
                   <div
-                    className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-[#0099CC] transition-colors"
+                    className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-[color:var(--theme-action)] transition-colors"
+                    onClick={(e) => e.stopPropagation()}
                     onMouseDown={(e) => handleResizeStart(e, 'valorNominal')}
                   />
                 </th>
-                <th className="relative px-3 py-2.5 text-left font-normal text-xs text-gray-700" style={{ width: `${columnWidths.montoCubrir}px` }}>
-                  MONTO A CUBRIR
+                <th className="relative px-3 py-2.5 text-left font-normal text-xs text-gray-700" {...orden.th('montoCubrir', { width: `${columnWidths.montoCubrir}px` })}>
+                  MONTO A CUBRIR{orden.flecha('montoCubrir')}
                   <div
-                    className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-[#0099CC] transition-colors"
+                    className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-[color:var(--theme-action)] transition-colors"
+                    onClick={(e) => e.stopPropagation()}
                     onMouseDown={(e) => handleResizeStart(e, 'montoCubrir')}
                   />
                 </th>
-                <th className="relative px-3 py-2.5 text-left font-normal text-xs text-gray-700" style={{ width: `${columnWidths.porcentajeAforo}px` }}>
-                  % AFORO
+                <th className="relative px-3 py-2.5 text-left font-normal text-xs text-gray-700" {...orden.th('aforo', { width: `${columnWidths.porcentajeAforo}px` })}>
+                  % AFORO{orden.flecha('aforo')}
                   <div
-                    className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-[#0099CC] transition-colors"
+                    className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-[color:var(--theme-action)] transition-colors"
+                    onClick={(e) => e.stopPropagation()}
                     onMouseDown={(e) => handleResizeStart(e, 'porcentajeAforo')}
                   />
                 </th>
-                <th className="relative px-3 py-2.5 text-left font-normal text-xs text-gray-700" style={{ width: `${columnWidths.fechaRegistro}px` }}>
-                  FECHA REGISTRO
+                <th className="relative px-3 py-2.5 text-left font-normal text-xs text-gray-700" {...orden.th('fecha', { width: `${columnWidths.fechaRegistro}px` })}>
+                  FECHA REGISTRO{orden.flecha('fecha')}
                   <div
-                    className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-[#0099CC] transition-colors"
+                    className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-[color:var(--theme-action)] transition-colors"
+                    onClick={(e) => e.stopPropagation()}
                     onMouseDown={(e) => handleResizeStart(e, 'fechaRegistro')}
                   />
                 </th>
-                <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700" style={{ width: `${columnWidths.clienteId}px` }}>
-                  CLIENTE ID
+                <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700" {...orden.th('cliente', { width: `${columnWidths.clienteId}px` })}>
+                  CLIENTE ID{orden.flecha('cliente')}
                 </th>
               </tr>
             </thead>
@@ -484,11 +500,11 @@ export function GarantiasList({ garantias, loading, backendStatus, onNew, onEdit
                 <tr>
                   <td colSpan={12} className="px-3 py-12 text-center text-gray-500">
                     <div className="flex flex-col items-center gap-2">
-                      <svg className="animate-spin h-6 w-6 text-[#0099CC]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <svg className="animate-spin h-6 w-6 text-[color:var(--theme-action)]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
                       </svg>
-                      <span className="text-sm">Cargando desde J_GARANTIAS...</span>
+                      <span className="text-sm">Cargando...</span>
                     </div>
                   </td>
                 </tr>
@@ -503,7 +519,7 @@ export function GarantiasList({ garantias, loading, backendStatus, onNew, onEdit
                       <span className="text-sm">
                         {searchTerm
                           ? 'No se encontraron bienes con ese criterio de búsqueda'
-                          : 'No hay registros en J_GARANTIAS. Haz clic en "Nuevo" para crear un bien.'}
+                          : 'No hay bienes registrados. Haz clic en "Nuevo" para crear uno.'}
                       </span>
                     </div>
                   </td>
@@ -520,9 +536,9 @@ export function GarantiasList({ garantias, loading, backendStatus, onNew, onEdit
                     onMouseLeave={(e) => e.currentTarget.style.backgroundColor = index % 2 === 1 ? '#EEEEEE' : '#FFFFFF'}
                   >
                     <td className="px-3 py-2.5 text-xs overflow-hidden text-ellipsis">
-                      <a href="#" onClick={(e) => { e.preventDefault(); onEdit(garantia); }} className="text-[#0066CC] hover:underline">Editar</a>
+                      <button type="button" onClick={() => { onEdit(garantia); }} className="enlace-accion text-[color:var(--theme-link)] hover:underline">Editar</button>
                       <span className="text-gray-700"> | </span>
-                      <a href="#" onClick={(e) => { e.preventDefault(); onView(garantia); }} className="text-[#0066CC] hover:underline">Ver</a>
+                      <button type="button" onClick={() => { onView(garantia); }} className="enlace-accion text-[color:var(--theme-link)] hover:underline">Ver</button>
                     </td>
                     <td className="px-3 py-2.5 overflow-hidden">
                       <div className="text-xs text-gray-700" title={String(garantia.id)}>

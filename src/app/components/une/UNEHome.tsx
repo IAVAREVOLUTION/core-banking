@@ -80,11 +80,11 @@ export function UNEHome() {
       </div>
 
       {/* Tabs */}
-      <div className="flex items-stretch bg-[#2E5C91]">
+      <div className="flex items-stretch bg-[color:var(--theme-secondary)]">
         {TABS.map(t => (
           <button key={t.id} onClick={() => { setTabActivo(t.id); if (t.id !== 'casos') setCasoAbierto(null); }}
             className={`flex items-center gap-2 px-5 py-2.5 text-xs border-r border-white/20 last:border-0 transition-colors ${
-              tabActivo === t.id ? 'bg-[#1d3f6b] text-white' : 'text-white/75 hover:bg-white/10 hover:text-white'}`}>
+              tabActivo === t.id ? 'bg-[color:var(--theme-secondary-hover)] text-white' : 'text-white/75 hover:bg-white/10 hover:text-white'}`}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
               <path d={t.icon}/>
             </svg>

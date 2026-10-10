@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
+import { useOrdenTabla, coincideBusqueda } from '@/app/lib/ordenTabla';
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { DatePicker } from '../clientes/DatePicker';
 import {
@@ -12,6 +13,7 @@ import {
   CAT_DESPACHO, CAT_TIPO_CONVENIO, CAT_PERIODICIDAD, CAT_ESTATUS_CONVENIO,
   CAT_TIPO_PAGO,
 } from './cobranzaStore';
+import { CampoMonto } from '@/app/components/ui/CampoMonto';
 
 type ViewState =
   | { type: 'inicio' }
@@ -177,7 +179,7 @@ function DashboardScreen({ items, onVer }: {
               <tbody>
                 {registrosRecientes.map((c, idx) => (
                   <tr key={c.id} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                    <td className="px-3 py-2 text-[#0066CC] cursor-pointer hover:underline" onClick={() => onVer(c)}>{c.noCaso}</td>
+                    <td className="px-3 py-2 text-[color:var(--theme-link)] cursor-pointer hover:underline" onClick={() => onVer(c)}>{c.noCaso}</td>
                     <td className="px-3 py-2 text-gray-900">{c.nombreCompleto}</td>
                     <td className="px-3 py-2 text-gray-700">{c.tipo}</td>
                     <td className="px-3 py-2 text-gray-700">{c.fechaSolicitud}</td>
@@ -294,29 +296,37 @@ function ListScreen({ items, onNuevo, onEditar, onVer }: {
   onVer: (i: CasoCobranzaListItem) => void;
 }) {
   const [searchTerm, setSearchTerm] = useState('');
-  const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 8;
   const tableRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
-  const filtered = useMemo(() => {
-    if (!searchTerm) return items;
-    const s = searchTerm.toLowerCase();
-    return items.filter(i =>
-      i.noCaso.toLowerCase().includes(s) || i.nombreCompleto.toLowerCase().includes(s) ||
-      i.tipo.toLowerCase().includes(s) || i.resumen.toLowerCase().includes(s) ||
-      i.estatus.toLowerCase().includes(s) || i.subEstatus.toLowerCase().includes(s)
-    );
-  }, [items, searchTerm]);
+  const filtered = useMemo(() => items.filter(i => coincideBusqueda(searchTerm, [
+    i.noCaso, i.tipo, i.propietario, i.estatus, i.prioridad, i.area, i.nombreCompleto,
+    i.nombreDespacho, i.subEstatus, i.fechaSolicitud, i.resumen,
+  ])), [items, searchTerm]);
 
-  const sorted = useMemo(() => {
-    return [...filtered].sort((a, b) => {
-      const da = new Date(a.fechaSolicitud).getTime();
-      const db = new Date(b.fechaSolicitud).getTime();
-      return sortOrder === 'desc' ? db - da : da - db;
-    });
-  }, [filtered, sortOrder]);
+  // Más recientes primero (fecha de solicitud; a igual fecha, el número de caso).
+  const orden = useOrdenTabla(filtered, {
+    id: 'casos-cobranza',
+    columnas: {
+      noCaso: i => i.noCaso,
+      tipo: i => i.tipo,
+      propietario: i => i.propietario,
+      estatus: i => i.estatus,
+      prioridad: i => i.prioridad,
+      area: i => i.area,
+      nombre: i => i.nombreCompleto,
+      despacho: i => i.nombreDespacho,
+      subEstatus: i => i.subEstatus,
+      fecha: i => i.fechaSolicitud,
+      resumen: i => i.resumen,
+    },
+    porDefecto: { campo: 'fecha', dir: 'desc' },
+    desempate: i => i.noCaso,
+    alCambiar: () => setCurrentPage(1),
+  });
+  const sorted = orden.filas;
 
   const totalPages = Math.max(1, Math.ceil(sorted.length / itemsPerPage));
   const currentItems = sorted.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
@@ -329,11 +339,11 @@ function ListScreen({ items, onNuevo, onEditar, onVer }: {
           <div className="flex items-center gap-3">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#666" strokeWidth="1.5"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18"/><path d="M8 5V3M16 5V3"/></svg>
             <h2 className="text-lg font-normal text-gray-800">Casos de Cobranza</h2>
-            <button className="p-1 ml-2"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#999" strokeWidth="2"><circle cx="8" cy="8" r="6"/><path d="M13 13l3 3"/></svg></button>
+            <button type="button" aria-label="Buscar" title="Buscar" className="p-1 ml-2"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#999" strokeWidth="2"><circle cx="8" cy="8" r="6"/><path d="M13 13l3 3"/></svg></button>
           </div>
           <div className="flex items-center gap-4 text-sm text-gray-700">
-            <span onClick={() => tableRef.current?.scrollIntoView({ behavior: 'smooth' })} className="cursor-pointer hover:text-[#0099CC] transition-colors">Lista</span>
-            <span onClick={() => searchRef.current?.focus()} className="cursor-pointer hover:text-[#0099CC] transition-colors">Buscar</span>
+            <span onClick={() => tableRef.current?.scrollIntoView({ behavior: 'smooth' })} className="cursor-pointer hover:text-[color:var(--theme-action)] transition-colors">Lista</span>
+            <span onClick={() => searchRef.current?.focus()} className="cursor-pointer hover:text-[color:var(--theme-action)] transition-colors">Buscar</span>
           </div>
         </div>
       </div>
@@ -348,7 +358,7 @@ function ListScreen({ items, onNuevo, onEditar, onVer }: {
             </select>
             <svg className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" width="12" height="12" viewBox="0 0 12 12" fill="#666"><path d="M6 8l-4-4h8z"/></svg>
           </div>
-          <button onClick={onNuevo} className="px-5 py-1.5 bg-[#0099CC] text-white rounded text-sm hover:bg-[#0088BB] font-medium">Nuevo</button>
+          <button onClick={onNuevo} className="px-5 py-1.5 bg-[color:var(--theme-action)] text-white rounded text-sm hover:bg-[color:var(--theme-action-hover)] font-medium">Nuevo</button>
         </div>
       </div>
 
@@ -374,17 +384,17 @@ function ListScreen({ items, onNuevo, onEditar, onVer }: {
             <div className="flex items-center gap-2">
               <span>Orden Rápido</span>
               <div className="relative">
-                <select value={sortOrder} onChange={e => { setSortOrder(e.target.value as any); setCurrentPage(1); }} className="px-2 py-1 border border-gray-400 rounded text-sm bg-white pr-6 appearance-none">
+                <select value={orden.dir} onChange={e => orden.fijar(orden.campo, e.target.value as 'desc' | 'asc')} className="px-2 py-1 border border-gray-400 rounded text-sm bg-white pr-6 appearance-none">
                   <option value="desc">Descendente</option><option value="asc">Ascendente</option>
                 </select>
                 <svg className="absolute right-1 top-1/2 -translate-y-1/2 pointer-events-none" width="10" height="10" viewBox="0 0 10 10" fill="#666"><path d="M5 7l-3-3h6z"/></svg>
               </div>
             </div>
             <div className="flex items-center gap-1">
-              <button className="p-0.5 text-[#0099CC] hover:text-[#0088BB] disabled:opacity-40" onClick={() => setCurrentPage(p => p - 1)} disabled={currentPage === 1}>
+              <button type="button" aria-label="Página anterior" title="Página anterior" className="p-0.5 text-[color:var(--theme-action)] hover:text-[color:var(--theme-action-hover)] disabled:opacity-40" onClick={() => setCurrentPage(p => p - 1)} disabled={currentPage === 1}>
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M10 3L5 8l5 5V3z"/></svg>
               </button>
-              <button className="p-0.5 text-[#0099CC] hover:text-[#0088BB] disabled:opacity-40" onClick={() => setCurrentPage(p => p + 1)} disabled={currentPage === totalPages}>
+              <button type="button" aria-label="Página siguiente" title="Página siguiente" className="p-0.5 text-[color:var(--theme-action)] hover:text-[color:var(--theme-action-hover)] disabled:opacity-40" onClick={() => setCurrentPage(p => p + 1)} disabled={currentPage === totalPages}>
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M6 3l5 5-5 5V3z"/></svg>
               </button>
             </div>
@@ -400,17 +410,17 @@ function ListScreen({ items, onNuevo, onEditar, onVer }: {
             <thead>
               <tr className="bg-[#D0D0D0] border-b border-gray-300">
                 <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700">Editar | Ver</th>
-                <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700">NO. CASO</th>
-                <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700">TIPO</th>
-                <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700">PROPIETARIO</th>
-                <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700">ESTATUS</th>
-                <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700">PRIORIDAD</th>
-                <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700">ÁREA</th>
-                <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700">NOMBRE COMPLETO</th>
-                <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700">NOMBRE DESPACHO</th>
-                <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700">SUB ESTATUS</th>
-                <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700">FECHA SOLICITUD</th>
-                <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700">RESUMEN</th>
+                <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700" {...orden.th('noCaso')}>NO. CASO{orden.flecha('noCaso')}</th>
+                <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700" {...orden.th('tipo')}>TIPO{orden.flecha('tipo')}</th>
+                <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700" {...orden.th('propietario')}>PROPIETARIO{orden.flecha('propietario')}</th>
+                <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700" {...orden.th('estatus')}>ESTATUS{orden.flecha('estatus')}</th>
+                <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700" {...orden.th('prioridad')}>PRIORIDAD{orden.flecha('prioridad')}</th>
+                <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700" {...orden.th('area')}>ÁREA{orden.flecha('area')}</th>
+                <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700" {...orden.th('nombre')}>NOMBRE COMPLETO{orden.flecha('nombre')}</th>
+                <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700" {...orden.th('despacho')}>NOMBRE DESPACHO{orden.flecha('despacho')}</th>
+                <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700" {...orden.th('subEstatus')}>SUB ESTATUS{orden.flecha('subEstatus')}</th>
+                <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700" {...orden.th('fecha')}>FECHA SOLICITUD{orden.flecha('fecha')}</th>
+                <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700" {...orden.th('resumen')}>RESUMEN{orden.flecha('resumen')}</th>
               </tr>
             </thead>
             <tbody>
@@ -423,11 +433,11 @@ function ListScreen({ items, onNuevo, onEditar, onVer }: {
                   onMouseLeave={e => e.currentTarget.style.backgroundColor = idx % 2 === 1 ? '#EEEEEE' : '#FFFFFF'}
                 >
                   <td className="px-3 py-2.5 text-xs">
-                    <a href="#" className="text-[#0066CC] hover:underline" onClick={e => { e.preventDefault(); onEditar(c); }}>Editar</a>
+                    <button type="button" className="enlace-accion text-[color:var(--theme-link)] hover:underline" onClick={() => { onEditar(c); }}>Editar</button>
                     <span className="text-gray-700"> | </span>
-                    <a href="#" className="text-[#0066CC] hover:underline" onClick={e => { e.preventDefault(); onVer(c); }}>Ver</a>
+                    <button type="button" className="enlace-accion text-[color:var(--theme-link)] hover:underline" onClick={() => { onVer(c); }}>Ver</button>
                   </td>
-                  <td className="px-3 py-2.5 text-xs text-[#0066CC] cursor-pointer hover:underline" onClick={() => onVer(c)}>{c.noCaso}</td>
+                  <td className="px-3 py-2.5 text-xs text-[color:var(--theme-link)] cursor-pointer hover:underline" onClick={() => onVer(c)}>{c.noCaso}</td>
                   <td className="px-3 py-2.5 text-xs text-gray-700">{c.tipo}</td>
                   <td className="px-3 py-2.5 text-xs text-gray-700">{c.propietario}</td>
                   <td className="px-3 py-2.5 text-xs text-gray-700">{c.estatus}</td>
@@ -528,7 +538,7 @@ function DetalleScreen({ mode, casoId, onCancel, onSave }: {
             <h2 className="text-lg font-normal text-gray-800">
               {mode === 'nuevo' ? 'Alta Caso de Cobranza' : mode === 'editar' ? `Editar Caso ${form.noCaso}` : `Caso ${form.noCaso}`}
             </h2>
-            <button className="p-1 ml-2"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#999" strokeWidth="2"><circle cx="8" cy="8" r="6"/><path d="M13 13l3 3"/></svg></button>
+            <button type="button" aria-label="Buscar" title="Buscar" className="p-1 ml-2"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#999" strokeWidth="2"><circle cx="8" cy="8" r="6"/><path d="M13 13l3 3"/></svg></button>
           </div>
         </div>
       </div>
@@ -537,7 +547,7 @@ function DetalleScreen({ mode, casoId, onCancel, onSave }: {
       <div className="px-4 py-2.5 bg-white border-b border-gray-300">
         <div className="flex items-center gap-2">
           {!readOnly && (
-            <button onClick={handleSubmit} className="px-5 py-1.5 bg-[#0099CC] text-white rounded text-sm hover:bg-[#0088BB] font-medium">Guardar</button>
+            <button onClick={handleSubmit} className="px-5 py-1.5 bg-[color:var(--theme-action)] text-white rounded text-sm hover:bg-[color:var(--theme-action-hover)] font-medium">Guardar</button>
           )}
           <button onClick={onCancel} className="px-5 py-1.5 bg-white border border-gray-400 rounded text-sm hover:bg-gray-50 text-gray-700">
             {readOnly ? 'Volver' : 'Cancelar'}
@@ -674,11 +684,9 @@ function DetalleScreen({ mode, casoId, onCancel, onSave }: {
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
                   className={`px-4 py-2.5 text-xs whitespace-nowrap transition-colors ${
-                    activeTab === tab.id ? 'bg-secondary-theme text-white font-medium' : 'text-white/90'
+                    activeTab === tab.id ? 'bg-secondary-theme text-white font-medium' : 'text-white/90 hover:bg-[color:var(--theme-primary-hover)]'
                   }`}
                   style={activeTab !== tab.id ? { transition: 'background-color 0.2s' } : {}}
-                  onMouseEnter={e => { if (activeTab !== tab.id) e.currentTarget.style.backgroundColor = 'var(--theme-primary-hover)'; }}
-                  onMouseLeave={e => { if (activeTab !== tab.id) e.currentTarget.style.backgroundColor = ''; }}
                 >
                   {tab.label}
                 </button>
@@ -868,7 +876,7 @@ function ConveniosTab({ convenios, setConvenios, readOnly, totalConvenios, onOpe
       {/* Barra de acciones */}
       <div className="flex items-center gap-3 mb-3">
         {!readOnly && (
-          <button onClick={() => onOpenModal('nuevo')} className="px-4 py-1.5 bg-[#0099CC] text-white rounded text-xs hover:bg-[#0088BB] font-medium">Nuevo</button>
+          <button onClick={() => onOpenModal('nuevo')} className="px-4 py-1.5 bg-[color:var(--theme-action)] text-white rounded text-xs hover:bg-[color:var(--theme-action-hover)] font-medium">Nuevo</button>
         )}
         <span className="text-xs text-gray-500">Resultados de la consulta</span>
         <span className="ml-auto text-xs text-gray-500">{convenios.length} de {convenios.length}</span>
@@ -908,14 +916,14 @@ function ConveniosTab({ convenios, setConvenios, readOnly, totalConvenios, onOpe
               >
                 {!readOnly && (
                   <td className="px-2 py-2 text-[10px] whitespace-nowrap">
-                    <a href="#" className="text-[#0066CC] hover:underline" onClick={e => { e.preventDefault(); onOpenModal('editar', c); }}>Editar</a>
+                    <button type="button" className="enlace-accion text-[color:var(--theme-link)] hover:underline" onClick={() => { onOpenModal('editar', c); }}>Editar</button>
                     <span className="text-gray-400"> | </span>
-                    <a href="#" className="text-[#CC3333] hover:underline" onClick={e => { e.preventDefault(); handleEliminar(c.id); }}>Eliminar</a>
+                    <button type="button" className="enlace-accion text-[#CC3333] hover:underline" onClick={() => { handleEliminar(c.id); }}>Eliminar</button>
                   </td>
                 )}
                 <td className="px-2 py-2 text-[10px] text-gray-700 whitespace-nowrap">{c.fechaCreacion}</td>
                 <td className="px-2 py-2 text-[10px] text-gray-700">{c.creadoPor}</td>
-                <td className="px-2 py-2 text-[10px] text-[#0066CC] cursor-pointer hover:underline" onClick={() => onOpenModal(readOnly ? 'ver' : 'editar', c)}>{c.noConvenio}</td>
+                <td className="px-2 py-2 text-[10px] text-[color:var(--theme-link)] cursor-pointer hover:underline" onClick={() => onOpenModal(readOnly ? 'ver' : 'editar', c)}>{c.noConvenio}</td>
                 <td className="px-2 py-2 text-[10px] text-gray-700">{c.tipoConvenio}</td>
                 <td className="px-2 py-2 text-[10px] text-gray-700">{c.aprobadoPorMEF}</td>
                 <td className="px-2 py-2 text-[10px] text-gray-700">{c.fechaConvenio}</td>
@@ -1025,7 +1033,7 @@ function ConvenioModal({ mode, convenio, onClose, onSave }: {
             </ModalRow>
             <ModalRow label="MONTO" required>
               {readOnly ? <div className="flex-1 px-2 py-1 text-xs text-gray-700 text-right">{formatCurrency(conv.monto)}</div> : (
-                <input type="text" value={conv.monto === 0 && mode === 'nuevo' ? '' : String(conv.monto)}
+                <CampoMonto value={conv.monto === 0 && mode === 'nuevo' ? '' : String(conv.monto)}
                   onChange={e => { const v = e.target.value.replace(/[^0-9.]/g, ''); update('monto', parseFloat(v) || 0); }}
                   className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded text-right" />
               )}
@@ -1087,7 +1095,7 @@ function ConvenioModal({ mode, convenio, onClose, onSave }: {
         {/* Footer */}
         <div className="px-4 py-3 border-t border-gray-200 flex items-center justify-end gap-2">
           {!readOnly && (
-            <button onClick={handleSave} className="px-5 py-1.5 bg-[#0099CC] text-white rounded text-sm hover:bg-[#0088BB] font-medium">Guardar</button>
+            <button onClick={handleSave} className="px-5 py-1.5 bg-[color:var(--theme-action)] text-white rounded text-sm hover:bg-[color:var(--theme-action-hover)] font-medium">Guardar</button>
           )}
           <button onClick={onClose} className="px-5 py-1.5 bg-white border border-gray-400 rounded text-sm hover:bg-gray-50 text-gray-700">
             {readOnly ? 'Cerrar' : 'Cancelar'}

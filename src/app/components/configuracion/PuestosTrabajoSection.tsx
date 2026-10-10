@@ -3,10 +3,10 @@ import {
   ChevronRight, ChevronDown, Briefcase, Menu, Plus, Search, Trash2, GitBranch, X, Users, Building2, Save, RotateCcw,
   FileSpreadsheet, FileText, FileDown, Printer, AlertTriangle,
 } from 'lucide-react';
-import { toast } from 'sonner';
-import * as XLSX from 'xlsx';
-import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
+import { toast } from '@/app/lib/notificaciones';
+import { cargarXLSX, cargarPDF } from '@/app/lib/librerias';
+import { DatePicker } from '@/app/components/ui/DatePicker';
+import { formatearFecha } from '@/app/lib/fechas';
 
 // ═══════════════════════════════════════════════════════════════════
 // TIPOS
@@ -84,17 +84,20 @@ function emptyPuesto(): Omit<PuestoTrabajo, 'id'> {
 // ═══════════════════════════════════════════════════════════════════
 // EXPORTACIÓN
 // ═══════════════════════════════════════════════════════════════════
-function exportExcelPT(data: PuestoTrabajo[]) {
+async function exportExcelPT(data: PuestoTrabajo[]) {
+  const XLSX = await cargarXLSX();
   const rows = data.map((d) => ({ 'Row ID': d.rowIdBase, 'Puesto': d.puestoTrabajo, 'Superior': d.puestoSuperiorNombre, 'Tipo': d.tipoPuesto, 'Sucursal': d.sucursal, 'Territorio': d.territorio, 'Apellidos': d.apellidos, 'Nombre': d.nombre, 'Cargo': d.cargo }));
   const ws = XLSX.utils.json_to_sheet(rows); const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Puestos'); XLSX.writeFile(wb, 'puestos_trabajo.xlsx'); toast.success('Exportado a Excel');
 }
-function exportCSVPT(data: PuestoTrabajo[]) {
+async function exportCSVPT(data: PuestoTrabajo[]) {
+  const XLSX = await cargarXLSX();
   const rows = data.map((d) => ({ 'Puesto': d.puestoTrabajo, 'Superior': d.puestoSuperiorNombre, 'Tipo': d.tipoPuesto, 'Sucursal': d.sucursal, 'Apellidos': d.apellidos, 'Nombre': d.nombre }));
   const ws = XLSX.utils.json_to_sheet(rows); const csv = XLSX.utils.sheet_to_csv(ws);
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' }); const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = 'puestos_trabajo.csv'; link.click(); toast.success('Exportado a CSV');
 }
-function exportPDFPT(data: PuestoTrabajo[]) {
-  const doc = new jsPDF({ orientation: 'landscape' }); doc.setFontSize(14); doc.text('Puestos de Trabajo', 14, 18); doc.setFontSize(9); doc.text(`Generado: ${new Date().toLocaleDateString('es-MX')}`, 14, 24);
+async function exportPDFPT(data: PuestoTrabajo[]) {
+  const { jsPDF, autoTable } = await cargarPDF();
+  const doc = new jsPDF({ orientation: 'landscape' }); doc.setFontSize(14); doc.text('Puestos de Trabajo', 14, 18); doc.setFontSize(9); doc.text(`Generado: ${formatearFecha(new Date())}`, 14, 24);
   autoTable(doc, { startY: 30, head: [['Row ID', 'Puesto', 'Superior', 'Tipo', 'Sucursal', 'Territorio', 'Cargo']], body: data.map((d) => [d.rowIdBase, d.puestoTrabajo, d.puestoSuperiorNombre, d.tipoPuesto, d.sucursal, d.territorio, d.cargo]), styles: { fontSize: 7 }, headStyles: { fillColor: [74, 111, 165] }, alternateRowStyles: { fillColor: [245, 245, 245] } });
   doc.save('puestos_trabajo.pdf'); toast.success('Exportado a PDF');
 }
@@ -161,7 +164,7 @@ function HierarchyModal({ data, onClose }: { data: PuestoTrabajo[]; onClose: () 
       <div className="bg-white rounded-lg shadow-2xl flex flex-col" style={{ width: '92vw', maxWidth: '1300px', maxHeight: '85vh' }} onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between px-5 py-3 bg-primary-theme rounded-t-lg">
           <div className="flex items-center gap-2"><GitBranch size={16} className="text-white" /><span className="text-white text-sm" style={{ fontWeight: 600 }}>Relaciones Jerárquicas — Puestos de Trabajo</span></div>
-          <button onClick={onClose} className="text-white/80 hover:text-white p-0.5 rounded hover:bg-white/10"><X size={18} /></button>
+          <button aria-label="Cerrar" title="Cerrar" onClick={onClose} className="text-white/80 hover:text-white p-0.5 rounded hover:bg-white/10"><X size={18} /></button>
         </div>
         <div className="px-5 py-2 border-b border-gray-200 bg-gray-50 flex items-center gap-6 text-[10px] text-gray-500">
           <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded bg-primary-theme border border-primary-theme" /><span>Superior (virtual)</span></div>
@@ -218,8 +221,7 @@ const FormFieldPT = React.memo(function FormFieldPT({ label, value, name, requir
           <option value="">-- Seleccionar --</option>{options?.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
       ) : type === 'date' ? (
-        <input type="date" value={value ?? ''} readOnly={!editable} onChange={editable ? (e) => onChange!(name!, e.target.value) : undefined}
-          className={`flex-1 text-[11px] px-1.5 py-1 border border-gray-300 rounded bg-white text-gray-800 min-w-0 ${editable ? 'focus:border-primary-theme focus:ring-1 focus:ring-accent-theme outline-none' : 'read-only:bg-gray-50'}`} />
+        <DatePicker formato="iso" value={value ?? ''} onChange={(__v: string) => onChange?.(name!, __v)} disabled={!editable} className="text-[11px] min-w-0" />
       ) : (
         <input type="text" value={value ?? ''} readOnly={!editable} onChange={editable ? (e) => onChange!(name!, e.target.value) : undefined}
           className={`flex-1 text-[11px] px-1.5 py-1 border border-gray-300 rounded bg-white text-gray-800 min-w-0 ${editable ? 'focus:border-primary-theme focus:ring-1 focus:ring-accent-theme outline-none' : 'read-only:bg-gray-50'}`} />
@@ -289,7 +291,7 @@ function CreateModalPT({ nextRowId, puestoOptions, onSave, onCancel }: {
         <label className={`text-[11px] w-[160px] flex-shrink-0 text-right ${errors[name] ? 'text-red-600' : 'text-gray-600'}`}>{label}{o.required && <span className="text-red-500 ml-0.5">*</span>}{':'}</label>
         {o.type === 'checkbox' ? <input type="checkbox" checked={(form as any)[name] as boolean} onChange={(e) => handleCheck(name, e.target.checked)} className="h-3.5 w-3.5 accent-primary-theme" />
         : o.type === 'select' ? <select value={String((form as any)[name] ?? '')} onChange={(e) => handleChange(name, e.target.value)} className={`flex-1 text-[11px] px-1.5 py-1 border rounded bg-white text-gray-800 min-w-0 focus:border-primary-theme focus:ring-1 focus:ring-accent-theme outline-none ${errors[name] ? 'border-red-400' : 'border-gray-300'}`}><option value="">-- Seleccionar --</option>{o.options?.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}</select>
-        : o.type === 'date' ? <input type="date" value={String((form as any)[name] ?? '')} onChange={(e) => handleChange(name, e.target.value)} className={`flex-1 text-[11px] px-1.5 py-1 border rounded bg-white text-gray-800 min-w-0 focus:border-primary-theme focus:ring-1 focus:ring-accent-theme outline-none ${errors[name] ? 'border-red-400' : 'border-gray-300'}`} />
+        : o.type === 'date' ? <DatePicker formato="iso" value={String((form as any)[name] ?? '')} onChange={(__v: string) => handleChange(name, __v)} />
         : <input type="text" value={String((form as any)[name] ?? '')} onChange={(e) => handleChange(name, e.target.value)} className={`flex-1 text-[11px] px-1.5 py-1 border rounded bg-white text-gray-800 min-w-0 focus:border-primary-theme focus:ring-1 focus:ring-accent-theme outline-none ${errors[name] ? 'border-red-400' : 'border-gray-300'}`} />}
       </div>
     );
@@ -299,7 +301,7 @@ function CreateModalPT({ nextRowId, puestoOptions, onSave, onCancel }: {
       <div className="bg-white rounded-lg shadow-2xl flex flex-col" style={{ width: '780px', maxHeight: '88vh' }} onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between px-5 py-3 bg-primary-theme rounded-t-lg">
           <div className="flex items-center gap-2"><Plus size={15} className="text-white" /><span className="text-white text-sm" style={{ fontWeight: 600 }}>Nuevo Puesto de Trabajo</span><span className="text-white/60 text-xs ml-2">{nextRowId}</span></div>
-          <button onClick={onCancel} className="text-white/80 hover:text-white p-0.5 rounded hover:bg-white/10"><X size={18} /></button>
+          <button aria-label="Cerrar" title="Cerrar" onClick={onCancel} className="text-white/80 hover:text-white p-0.5 rounded hover:bg-white/10"><X size={18} /></button>
         </div>
         <div className="flex-1 overflow-y-auto p-5">
           <div className="grid grid-cols-2 gap-x-8 gap-y-2.5">
@@ -325,7 +327,7 @@ function CreateModalPT({ nextRowId, puestoOptions, onSave, onCancel }: {
         </div>
         <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-gray-200 bg-gray-50 rounded-b-lg">
           <button onClick={onCancel} className="px-4 py-1.5 text-[11px] border border-gray-400 rounded bg-white hover:bg-gray-100 text-gray-700">Cancelar</button>
-          <button onClick={handleSave} className="flex items-center gap-1.5 px-4 py-1.5 text-[11px] bg-[#0099CC] text-white rounded hover:bg-[#0088BB]" style={{ fontWeight: 500 }}><Save size={12} />Crear puesto</button>
+          <button onClick={handleSave} className="flex items-center gap-1.5 px-4 py-1.5 text-[11px] bg-[color:var(--theme-action)] text-white rounded hover:bg-[color:var(--theme-action-hover)]" style={{ fontWeight: 500 }}><Save size={12} />Crear puesto</button>
         </div>
       </div>
     </div>
@@ -431,7 +433,7 @@ export function PuestosTrabajoSection() {
             {showSearch && (
               <div className="ml-2 flex items-center gap-1">
                 <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Buscar..." className="text-[11px] px-2 py-1 border border-gray-300 rounded w-[200px] focus:border-primary-theme outline-none" autoFocus />
-                {searchQuery && <button onClick={() => setSearchQuery('')} className="text-gray-400 hover:text-gray-600 p-0.5"><X size={12} /></button>}
+                {searchQuery && <button aria-label="Cerrar" title="Cerrar" onClick={() => setSearchQuery('')} className="text-gray-400 hover:text-gray-600 p-0.5"><X size={12} /></button>}
                 <span className="text-[10px] text-gray-400">{filteredData.length}/{data.length}</span>
               </div>
             )}
@@ -501,7 +503,7 @@ export function PuestosTrabajoSection() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2 mt-4 pt-3 border-t border-gray-200">
-                  <button onClick={handleSaveForm} className="flex items-center gap-1.5 px-4 py-1.5 text-[11px] bg-[#0099CC] text-white rounded hover:bg-[#0088BB]" style={{ fontWeight: 500 }}><Save size={12} />Guardar cambios</button>
+                  <button onClick={handleSaveForm} className="flex items-center gap-1.5 px-4 py-1.5 text-[11px] bg-[color:var(--theme-action)] text-white rounded hover:bg-[color:var(--theme-action-hover)]" style={{ fontWeight: 500 }}><Save size={12} />Guardar cambios</button>
                   <button onClick={handleResetForm} className="flex items-center gap-1.5 px-4 py-1.5 text-[11px] bg-white border border-gray-400 text-gray-700 rounded hover:bg-gray-50" style={{ fontWeight: 500 }}><RotateCcw size={12} />Descartar cambios</button>
                 </div>
               </div>

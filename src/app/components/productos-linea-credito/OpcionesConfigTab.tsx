@@ -14,7 +14,7 @@
  * de la Solicitud solo muestran las opciones con estatus='ACTIVO'.
  */
 import { useState, useEffect, useRef, useImperativeHandle, forwardRef } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 import { useTabPersistence } from '@/app/hooks/useProductoPersistence';
 
 export interface OpcionConfig {
@@ -205,7 +205,7 @@ export const OpcionesConfigTab = forwardRef<{ getData: () => OpcionConfig[] }, O
                     </td>
                     {!isViewMode && (
                       <td className="px-3 py-1.5 border-b border-gray-200 text-center">
-                        <button onClick={() => openEdit(item)} className="text-[#0066CC] hover:underline text-[10px] mr-2">Editar</button>
+                        <button onClick={() => openEdit(item)} className="text-[color:var(--theme-link)] hover:underline text-[10px] mr-2">Editar</button>
                         <button onClick={() => setConfirmDeleteId(item.id)} className="text-red-500 hover:underline text-[10px]">Eliminar</button>
                       </td>
                     )}

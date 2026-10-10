@@ -39,7 +39,7 @@ export function ProductoLineaCreditoFormDatosProducto({
   }
 
   const viewFieldClass = 'w-full px-2.5 py-1.5 text-xs bg-gray-50 border border-transparent rounded text-gray-800 cursor-default';
-  const inputClass = 'w-full px-2.5 py-1.5 text-xs border border-gray-300 rounded focus:border-[#4A6FA5] focus:ring-1 focus:ring-[#4A6FA5]/20 outline-none transition-colors';
+  const inputClass = 'w-full px-2.5 py-1.5 text-xs border border-gray-300 rounded focus:border-[color:var(--theme-primary)] focus:ring-1 focus:ring-[color:var(--theme-primary)]/20 outline-none transition-colors';
   const labelClass = 'block text-[11px] font-medium text-gray-600 mb-1';
   const requiredStar = <span className="text-red-500 ml-0.5">*</span>;
 
@@ -48,7 +48,7 @@ export function ProductoLineaCreditoFormDatosProducto({
       {/* ═══ Sección 1: Identificación del Producto ═══ */}
       <div>
         <div className="flex items-center gap-2 mb-3">
-          <div className="w-1.5 h-1.5 rounded-full bg-[#4A6FA5]" />
+          <div className="w-1.5 h-1.5 rounded-full bg-[color:var(--theme-primary)]" />
           <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Identificación del Producto</span>
         </div>
         <div className="grid grid-cols-4 gap-x-4 gap-y-3">
@@ -195,7 +195,7 @@ export function ProductoLineaCreditoFormDatosProducto({
       {/* ═══ Sección 2: Vigencia y Plazos ═══ */}
       <div>
         <div className="flex items-center gap-2 mb-3">
-          <div className="w-1.5 h-1.5 rounded-full bg-[#4A6FA5]" />
+          <div className="w-1.5 h-1.5 rounded-full bg-[color:var(--theme-primary)]" />
           <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Vigencia y Plazos</span>
         </div>
         <div className="grid grid-cols-4 gap-x-4 gap-y-3">
@@ -268,7 +268,7 @@ export function ProductoLineaCreditoFormDatosProducto({
       {/* ═══ Sección 3: Sobregiros ═══ */}
       <div>
         <div className="flex items-center gap-2 mb-3">
-          <div className="w-1.5 h-1.5 rounded-full bg-[#4A6FA5]" />
+          <div className="w-1.5 h-1.5 rounded-full bg-[color:var(--theme-primary)]" />
           <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Sobregiros y Control</span>
         </div>
         <div className="grid grid-cols-4 gap-x-4 gap-y-3">
@@ -286,7 +286,7 @@ export function ProductoLineaCreditoFormDatosProducto({
                     onChange={(e) => handleChange('permiteSobregiros', e.target.checked)}
                     className="sr-only peer"
                   />
-                  <div className="w-8 h-[18px] bg-gray-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:rounded-full after:h-[14px] after:w-[14px] after:transition-all peer-checked:bg-[#4A6FA5]"></div>
+                  <div className="w-8 h-[18px] bg-gray-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:rounded-full after:h-[14px] after:w-[14px] after:transition-all peer-checked:bg-[color:var(--theme-primary)]"></div>
                 </label>
                 <span className="text-xs text-gray-600">{formData.permiteSobregiros ? 'Sí' : 'No'}</span>
               </div>
@@ -350,7 +350,7 @@ export function ProductoLineaCreditoFormDatosProducto({
                     onChange={(e) => handleChange('verificacionCleanUp', e.target.checked)}
                     className="sr-only peer"
                   />
-                  <div className="w-8 h-[18px] bg-gray-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:rounded-full after:h-[14px] after:w-[14px] after:transition-all peer-checked:bg-[#4A6FA5]"></div>
+                  <div className="w-8 h-[18px] bg-gray-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:rounded-full after:h-[14px] after:w-[14px] after:transition-all peer-checked:bg-[color:var(--theme-primary)]"></div>
                 </label>
                 <span className="text-xs text-gray-600">{formData.verificacionCleanUp ? 'Sí' : 'No'}</span>
               </div>

@@ -1,9 +1,10 @@
 import { useState, useMemo } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 import { DatePicker } from '@/app/components/ui/DatePicker';
 import type { AlertaInterna } from './pldStore';
 import { usePLDAlertasInternas } from './usePLDData';
 import { usePLDClientes } from './usePLDClientes';
+import { formatearFecha } from '@/app/lib/fechas';
 
 interface Props { onBack?: () => void; }
 
@@ -54,7 +55,7 @@ export function PLDAlertasInternas({ onBack }: Props) {
   const paged = filtered.slice((page - 1) * perPage, page * perPage);
 
   const openNew = () => {
-    setCurrent({ ...EMPTY, id: 0, noAlerta: `AI-${Date.now()}`, fecha: new Date().toLocaleDateString('es-MX') });
+    setCurrent({ ...EMPTY, id: 0, noAlerta: `AI-${Date.now()}`, fecha: formatearFecha(new Date()) });
     setClienteSearch('');
     setModal('nuevo');
   };
@@ -91,7 +92,7 @@ export function PLDAlertasInternas({ onBack }: Props) {
           </div>
           <div className="flex items-center gap-4 text-sm text-gray-700">
             <span>Lista</span>
-            <span className="cursor-pointer hover:text-[#0066CC] transition-colors" onClick={openNew}>Nueva Alerta</span>
+            <span className="cursor-pointer hover:text-[color:var(--theme-link)] transition-colors" onClick={openNew}>Nueva Alerta</span>
           </div>
         </div>
       </div>
@@ -106,7 +107,7 @@ export function PLDAlertasInternas({ onBack }: Props) {
             </select>
             <svg className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" width="12" height="12" viewBox="0 0 12 12" fill="#666"><path d="M6 8l-4-4h8z"/></svg>
           </div>
-          <button onClick={openNew} className="px-4 py-1.5 bg-white border border-gray-400 text-gray-700 rounded text-sm hover:bg-gray-50">+ Nueva Alerta</button>
+          <button onClick={openNew} className="px-4 py-1.5 rounded text-sm text-white bg-[color:var(--theme-action)] hover:bg-[color:var(--theme-action-hover)]">+ Nueva Alerta</button>
         </div>
       </div>
 
@@ -145,10 +146,10 @@ export function PLDAlertasInternas({ onBack }: Props) {
           <div className="flex items-center gap-4 text-sm text-gray-700">
             <span className="font-medium">Total: {filtered.length}</span>
             <div className="flex items-center gap-1">
-              <button onClick={() => setPage(p => Math.max(1,p-1))} disabled={page===1} className="p-0.5 text-[#0066CC] disabled:opacity-40">
+              <button type="button" aria-label="Página anterior" title="Página anterior" onClick={() => setPage(p => Math.max(1,p-1))} disabled={page===1} className="p-0.5 text-[color:var(--theme-link)] disabled:opacity-40">
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M10 3L5 8l5 5V3z"/></svg>
               </button>
-              <button onClick={() => setPage(p => Math.min(totalPages,p+1))} disabled={page===totalPages} className="p-0.5 text-[#0066CC] disabled:opacity-40">
+              <button type="button" aria-label="Página siguiente" title="Página siguiente" onClick={() => setPage(p => Math.min(totalPages,p+1))} disabled={page===totalPages} className="p-0.5 text-[color:var(--theme-link)] disabled:opacity-40">
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M6 3l5 5-5 5V3z"/></svg>
               </button>
             </div>
@@ -165,7 +166,7 @@ export function PLDAlertasInternas({ onBack }: Props) {
                 <th className="px-3 py-2.5 text-left text-xs text-gray-700">Editar | Ver</th>
                 <th className="px-3 py-2.5 text-left text-xs text-gray-700">No. Alerta</th>
                 <th className="px-3 py-2.5 text-left text-xs text-gray-700">Fecha</th>
-                <th className="px-3 py-2.5 text-left text-xs text-gray-700">Cliente</th>
+                <th className="px-3 py-2.5 text-left text-xs text-gray-700">Nombre Interlocutor</th>
                 <th className="px-3 py-2.5 text-left text-xs text-gray-700">Tipo</th>
                 <th className="px-3 py-2.5 text-left text-xs text-gray-700">Descripción</th>
                 <th className="px-3 py-2.5 text-left text-xs text-gray-700">Estatus</th>
@@ -178,14 +179,14 @@ export function PLDAlertasInternas({ onBack }: Props) {
               ) : paged.map((a, idx) => (
                 <tr key={a.id} className="border-b border-gray-200 transition-colors duration-150"
                   style={{ backgroundColor: idx % 2 === 1 ? '#EEEEEE' : '#FFFFFF' }}
-                  onMouseEnter={e => e.currentTarget.style.backgroundColor = '#E8F4F8'}
+                  onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--theme-tint-soft)'}
                   onMouseLeave={e => e.currentTarget.style.backgroundColor = idx % 2 === 1 ? '#EEEEEE' : '#FFFFFF'}>
                   <td className="px-3 py-2.5 text-xs whitespace-nowrap">
-                    <span className="text-[#0066CC] cursor-pointer hover:underline" onClick={() => openEdit(a)}>Editar</span>
+                    <span className="text-[color:var(--theme-link)] cursor-pointer hover:underline" onClick={() => openEdit(a)}>Editar</span>
                     <span className="text-gray-400 mx-1">|</span>
-                    <span className="text-[#0066CC] cursor-pointer hover:underline" onClick={() => openView(a)}>Ver</span>
+                    <span className="text-[color:var(--theme-link)] cursor-pointer hover:underline" onClick={() => openView(a)}>Ver</span>
                   </td>
-                  <td className="px-3 py-2.5 text-xs text-[#0066CC]" style={{ fontWeight: 500 }}>{a.noAlerta}</td>
+                  <td className="px-3 py-2.5 text-xs text-[color:var(--theme-link)]" style={{ fontWeight: 500 }}>{a.noAlerta}</td>
                   <td className="px-3 py-2.5 text-xs">{a.fecha}</td>
                   <td className="px-3 py-2.5 text-xs max-w-[160px] truncate">{a.cliente}</td>
                   <td className="px-3 py-2.5 text-xs">
@@ -208,7 +209,7 @@ export function PLDAlertasInternas({ onBack }: Props) {
           <div className="flex items-center gap-1">
             <button onClick={() => setPage(1)} disabled={page===1} className="px-2 py-1 border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-40">&laquo;</button>
             <button onClick={() => setPage(p => Math.max(1,p-1))} disabled={page===1} className="px-2 py-1 border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-40">&lsaquo;</button>
-            <span className="px-3 py-1 bg-[#4A6FA5] text-white rounded">{page}</span>
+            <span className="px-3 py-1 bg-[color:var(--theme-primary)] text-white rounded">{page}</span>
             <button onClick={() => setPage(p => Math.min(totalPages,p+1))} disabled={page===totalPages} className="px-2 py-1 border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-40">&rsaquo;</button>
             <button onClick={() => setPage(totalPages)} disabled={page===totalPages} className="px-2 py-1 border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-40">&raquo;</button>
           </div>
@@ -220,7 +221,7 @@ export function PLDAlertasInternas({ onBack }: Props) {
         <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center" onClick={() => setModal(null)}>
           <div className="bg-white rounded shadow-xl w-[660px] max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
 
-            <div className="bg-[#4A6FA5] px-6 py-4 rounded-t flex items-center justify-between flex-shrink-0">
+            <div className="bg-[color:var(--theme-primary)] px-6 py-4 rounded-t flex items-center justify-between flex-shrink-0">
               <h3 className="text-base text-white" style={{ fontWeight: 500 }}>
                 {modal === 'nuevo' ? 'Nueva Alerta Interna' : modal === 'editar' ? `Editar — ${current.noAlerta}` : `Detalle — ${current.noAlerta}`}
               </h3>
@@ -241,7 +242,7 @@ export function PLDAlertasInternas({ onBack }: Props) {
                       : <DatePicker value={current.fecha} onChange={v => setCurrent(c => ({ ...c, fecha: v }))} />}
                   </div>
                   <div className="flex items-center gap-2">
-                    <label className={labelCls}>CLIENTE <span className="text-red-600">*</span></label>
+                    <label className={labelCls}>NOMBRE INTERLOCUTOR <span className="text-red-600">*</span></label>
                     {isView ? <div className={viewCls}>{current.cliente}</div> : (
                       <div className="flex-1 relative">
                         <input type="text"
@@ -253,7 +254,7 @@ export function PLDAlertasInternas({ onBack }: Props) {
                         {showClienteDrop && clientesFiltrados.length > 0 && (
                           <div className="absolute left-0 top-full z-50 bg-white border border-gray-300 shadow-lg w-full max-h-40 overflow-auto">
                             {clientesFiltrados.map(c => (
-                              <div key={c.id} className="px-3 py-1.5 text-xs cursor-pointer hover:bg-[#E8F4F8] border-b border-gray-100"
+                              <div key={c.id} className="px-3 py-1.5 text-xs cursor-pointer hover:bg-[color:var(--theme-tint-soft)] border-b border-gray-100"
                                 onMouseDown={() => { setCurrent(cur => ({ ...cur, cliente: c.nombre })); setClienteSearch(''); setShowClienteDrop(false); }}>
                                 <span style={{ fontWeight: 500 }}>{c.nombre}</span>
                                 {c.rfc && <span className="text-gray-400 ml-2 font-mono text-[10px]">{c.rfc}</span>}
@@ -300,7 +301,7 @@ export function PLDAlertasInternas({ onBack }: Props) {
               </div>
               <div className="flex items-center gap-2">
                 {!isView && (
-                  <button onClick={handleSave} className="px-5 py-1.5 bg-[#0099CC] text-white text-sm rounded hover:bg-[#0088BB]" style={{ fontWeight: 500 }}>
+                  <button onClick={handleSave} className="px-5 py-1.5 bg-[color:var(--theme-action)] text-white text-sm rounded hover:bg-[color:var(--theme-action-hover)]" style={{ fontWeight: 500 }}>
                     {modal === 'nuevo' ? 'Crear Alerta' : 'Guardar Cambios'}
                   </button>
                 )}

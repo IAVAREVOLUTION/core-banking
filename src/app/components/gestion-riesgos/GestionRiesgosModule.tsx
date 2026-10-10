@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 
 // ── Tipos ──────────────────────────────────────────────────────────
 interface AlertaRiesgo {
@@ -161,10 +161,10 @@ export function GestionRiesgosModule() {
       </div>
 
       {/* Tabs */}
-      <div className="flex items-stretch bg-[#2E5C91] border-b border-gray-300">
+      <div className="flex items-stretch bg-[color:var(--theme-secondary)] border-b border-gray-300">
         {tabs.map(t => (
           <button key={t.id} onClick={() => setActiveTab(t.id)}
-            className={`px-5 py-2 text-xs border-r border-white/20 last:border-0 transition-colors ${activeTab === t.id ? 'bg-[#1d3f6b] text-white' : 'text-white/75 hover:bg-white/10 hover:text-white'}`}>
+            className={`px-5 py-2 text-xs border-r border-white/20 last:border-0 transition-colors ${activeTab === t.id ? 'bg-[color:var(--theme-secondary-hover)] text-white' : 'text-white/75 hover:bg-white/10 hover:text-white'}`}>
             {t.label}
           </button>
         ))}
@@ -281,7 +281,7 @@ export function GestionRiesgosModule() {
                     <td className="px-3 py-2 text-center">
                       {a.estatus !== 'Cerrada' ? (
                         <button onClick={() => handleCerrarAlerta(a.id)}
-                          className="text-[10px] text-[#2E5C91] hover:underline">
+                          className="text-[10px] text-[color:var(--theme-secondary)] hover:underline">
                           Cerrar
                         </button>
                       ) : (
@@ -326,7 +326,7 @@ export function GestionRiesgosModule() {
                   className={`w-full py-1.5 text-xs font-medium border transition-colors ${
                     conectando ? 'bg-gray-100 text-gray-400 border-gray-300 cursor-wait' :
                     conectado  ? 'bg-red-50 text-red-700 border-red-300 hover:bg-red-100' :
-                                 'bg-[#2E5C91] text-white border-[#2E5C91] hover:bg-[#1d3f6b]'
+                                 'bg-[color:var(--theme-secondary)] text-white border-[color:var(--theme-secondary)] hover:bg-[color:var(--theme-secondary-hover)]'
                   }`}>
                   {conectando ? 'Conectando...' : conectado ? 'Desconectar' : 'Conectar'}
                 </button>
@@ -369,11 +369,11 @@ export function GestionRiesgosModule() {
                 <div className="space-y-1 mb-3">
                   {ENDPOINTS.map(ep => (
                     <label key={ep.id}
-                      className={`flex items-start gap-2 px-3 py-2 border cursor-pointer text-xs transition-colors ${endpointSel === ep.id ? 'border-[#2E5C91] bg-blue-50' : 'border-gray-200 hover:bg-gray-50'}`}>
+                      className={`flex items-start gap-2 px-3 py-2 border cursor-pointer text-xs transition-colors ${endpointSel === ep.id ? 'border-[color:var(--theme-secondary)] bg-blue-50' : 'border-gray-200 hover:bg-gray-50'}`}>
                       <input type="radio" name="endpoint" value={ep.id} checked={endpointSel === ep.id}
-                        onChange={() => setEndpointSel(ep.id)} className="mt-0.5 accent-[#2E5C91]"/>
+                        onChange={() => setEndpointSel(ep.id)} className="mt-0.5 accent-[color:var(--theme-secondary)]"/>
                       <div>
-                        <p className="font-mono text-[10px] text-[#2E5C91]">{ep.label}</p>
+                        <p className="font-mono text-[10px] text-[color:var(--theme-secondary)]">{ep.label}</p>
                         <p className="text-gray-500 text-[10px]">{ep.desc}</p>
                       </div>
                     </label>
@@ -381,7 +381,7 @@ export function GestionRiesgosModule() {
                 </div>
                 <button onClick={handleConsultar}
                   disabled={!conectado}
-                  className="w-full py-1.5 text-xs bg-[#2E5C91] text-white hover:bg-[#1d3f6b] disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                  className="w-full py-1.5 text-xs bg-[color:var(--theme-secondary)] text-white hover:bg-[color:var(--theme-secondary-hover)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
                   Ejecutar consulta
                 </button>
               </div>

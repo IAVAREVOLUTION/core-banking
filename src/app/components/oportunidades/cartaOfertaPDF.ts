@@ -17,6 +17,7 @@ import { projectId } from '/utils/supabase/info';
 import { decodificarArchivoData, htmlToPdfBlobUrl } from '@/app/hooks/generarDocumentosFase4';
 import type { PlantillaInstitucional } from '@/app/types/product';
 import type { CotizacionCredito } from '../cotizaciones/cotizacionCreditoTypes';
+import { formatearFecha } from '@/app/lib/fechas';
 
 const BUCKET_EXPEDIENTES = 'make-7e2d13d9-expedientes-electronicos-prospectos';
 
@@ -45,7 +46,7 @@ export function construirDatosCartaOferta(o: CotizacionCredito): Record<string, 
 
   return {
     ID_OPORTUNIDAD: o.no_cotiza || '',
-    FECHA: new Date().toLocaleDateString('es-MX'),
+    FECHA: formatearFecha(new Date()),
     FECHA_HORA: new Date().toLocaleString('es-MX'),
     ESTATUS: o.estatus_cotiza || '',
     CLIENTE_EMISOR: d.cliente?.nombreCompleto || '',

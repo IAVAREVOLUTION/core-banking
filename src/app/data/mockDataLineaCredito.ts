@@ -94,22 +94,18 @@ export const mockProductosLineaCredito: ProductoLineaCredito[] = [
         montoSga: 250000,
       },
     ],
-    comites: [
+    comiteEscalamiento: [
       {
         id: 1,
-        comiteInterno: 'Comité A',
-        desdeMonto: 1.00,
-        hastaMonto: 500000.00,
-        activo: true,
-        renovaciones: 2,
+        comiteAsignado: 'Comité A',
+        montoDesde: 1.00,
+        montoHasta: 500000.00,
       },
       {
         id: 2,
-        comiteInterno: 'Comité de Crédito',
-        desdeMonto: 500001.00,
-        hastaMonto: 5000000.00,
-        activo: true,
-        renovaciones: 1,
+        comiteAsignado: 'Comité de Crédito',
+        montoDesde: 500001.00,
+        montoHasta: 5000000.00,
       },
     ],
     periodicidades: [
@@ -296,22 +292,18 @@ export const mockProductosLineaCredito: ProductoLineaCredito[] = [
         montoSga: '',
       },
     ],
-    comites: [
+    comiteEscalamiento: [
       {
         id: 1,
-        comiteInterno: 'Comité A',
-        desdeMonto: 1.00,
-        hastaMonto: 500000.00,
-        activo: true,
-        renovaciones: 2,
+        comiteAsignado: 'Comité A',
+        montoDesde: 1.00,
+        montoHasta: 500000.00,
       },
       {
         id: 2,
-        comiteInterno: 'Comité de Crédito',
-        desdeMonto: 500001.00,
-        hastaMonto: 5000000.00,
-        activo: true,
-        renovaciones: 1,
+        comiteAsignado: 'Comité de Crédito',
+        montoDesde: 500001.00,
+        montoHasta: 5000000.00,
       },
     ],
     periodicidades: [
@@ -447,14 +439,12 @@ export const mockProductosLineaCredito: ProductoLineaCredito[] = [
         aforo: '100.00',
       },
     ],
-    comites: [
+    comiteEscalamiento: [
       {
         id: 1,
-        comiteInterno: 'Comité Automotriz',
-        desdeMonto: 1.00,
-        hastaMonto: 2000000.00,
-        activo: true,
-        renovaciones: 1,
+        comiteAsignado: 'Comité Automotriz',
+        montoDesde: 1.00,
+        montoHasta: 2000000.00,
       },
     ],
     fases: [
@@ -683,7 +673,7 @@ export const mockProductosLineaCredito: ProductoLineaCredito[] = [
     montoMaximo: 5000000,
     permiteSobregiros: true,
     tipoSobregiro: 'Monto',
-    montoOPorcentaje: 50000,
+    montoOPorcentaje: '50000',
     numDisposicionesAbiertas: 10,
     intervaloCleanUp: 30,
     verificacionCleanUp: true,

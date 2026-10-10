@@ -33,6 +33,7 @@ export interface Amortizacion {
 }
 
 export interface Factura {
+  sub_tipo?: string;
   id: string;
   solicitud_id: string;
   amortiza_id: string | null;

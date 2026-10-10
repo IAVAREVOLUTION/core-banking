@@ -72,7 +72,7 @@ export function ProspectosDashboard({ prospectos, onNew, onEdit, onView, onProsp
         <div className="bg-white border border-gray-300 rounded p-4">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs text-gray-600 mb-1">Total de Prospectos</p>
+              <p className="text-xs text-gray-600 mb-1">Total de Tipos Interlocutor</p>
               <p className="text-2xl font-semibold text-gray-900">{totalProspectos}</p>
             </div>
             <div className="w-12 h-12 bg-blue-50 rounded-full flex items-center justify-center">
@@ -84,7 +84,7 @@ export function ProspectosDashboard({ prospectos, onNew, onEdit, onView, onProsp
             </div>
           </div>
           <div className="mt-2 text-xs text-gray-600">
-            Prospectos activos en sistema
+            Tipos Interlocutor activos en sistema
           </div>
         </div>
 
@@ -154,13 +154,13 @@ export function ProspectosDashboard({ prospectos, onNew, onEdit, onView, onProsp
         <div className="bg-white border border-gray-300 rounded">
           <div className="bg-white border-b border-gray-300 px-4 py-3">
             <h2 className="text-base font-medium text-gray-900">Registros Recientes</h2>
-            <p className="text-xs text-gray-600 mt-0.5">Últimos prospectos registrados en el sistema</p>
+            <p className="text-xs text-gray-600 mt-0.5">Últimos tipos interlocutor registrados en el sistema</p>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
               <thead className="bg-gray-50 border-b border-gray-300">
                 <tr>
-                  <th className="text-left px-3 py-2 font-medium text-gray-700">ID</th>
+                  <th className="text-left px-3 py-2 font-medium text-gray-700">No. Interlocutor</th>
                   <th className="text-left px-3 py-2 font-medium text-gray-700">Nombre</th>
                   <th className="text-left px-3 py-2 font-medium text-gray-700">Sucursal</th>
                   <th className="text-left px-3 py-2 font-medium text-gray-700">Fecha</th>
@@ -184,7 +184,7 @@ export function ProspectosDashboard({ prospectos, onNew, onEdit, onView, onProsp
         <div className="bg-white border border-gray-300 rounded">
           <div className="bg-white border-b border-gray-300 px-4 py-3">
             <h2 className="text-base font-medium text-gray-900">Distribución por Estatus SIC</h2>
-            <p className="text-xs text-gray-600 mt-0.5">Clasificación de prospectos por estatus crediticio</p>
+            <p className="text-xs text-gray-600 mt-0.5">Clasificación de tipos interlocutor por estatus crediticio</p>
           </div>
           <div className="p-4 flex items-center justify-center">
             <div className="w-full">
@@ -228,8 +228,8 @@ export function ProspectosDashboard({ prospectos, onNew, onEdit, onView, onProsp
         {/* KPI 1: Nuevos Prospectos por Mes */}
         <div className="bg-white border border-gray-300 rounded">
           <div className="bg-white border-b border-gray-300 px-4 py-3">
-            <h2 className="text-base font-medium text-gray-900">Nuevos Prospectos por Mes</h2>
-            <p className="text-xs text-gray-600 mt-0.5">Evolución de captación de prospectos</p>
+            <h2 className="text-base font-medium text-gray-900">Nuevos Tipos Interlocutor por Mes</h2>
+            <p className="text-xs text-gray-600 mt-0.5">Evolución de captación de tipos interlocutor</p>
           </div>
           <div className="p-4">
             <ResponsiveContainer width="100%" height={240}>
@@ -239,7 +239,7 @@ export function ProspectosDashboard({ prospectos, onNew, onEdit, onView, onProsp
                 <YAxis tick={{ fontSize: 11 }} stroke="#6B7280" />
                 <Tooltip 
                   contentStyle={{ fontSize: '12px', border: '1px solid #D1D5DB', borderRadius: '4px' }}
-                  formatter={(value: any) => [value, 'Prospectos']}
+                  formatter={(value: any) => [value, 'Tipos Interlocutor']}
                 />
                 <Bar dataKey="prospectos" fill="#2E5C91" radius={[4, 4, 0, 0]} />
               </BarChart>
@@ -250,8 +250,8 @@ export function ProspectosDashboard({ prospectos, onNew, onEdit, onView, onProsp
         {/* KPI 2: Prospectos por Sucursal */}
         <div className="bg-white border border-gray-300 rounded">
           <div className="bg-white border-b border-gray-300 px-4 py-3">
-            <h2 className="text-base font-medium text-gray-900">Prospectos por Sucursal</h2>
-            <p className="text-xs text-gray-600 mt-0.5">Distribución geográfica de prospectos</p>
+            <h2 className="text-base font-medium text-gray-900">Tipos Interlocutor por Sucursal</h2>
+            <p className="text-xs text-gray-600 mt-0.5">Distribución geográfica de tipos interlocutor</p>
           </div>
           <div className="p-4">
             <ResponsiveContainer width="100%" height={240}>
@@ -261,7 +261,7 @@ export function ProspectosDashboard({ prospectos, onNew, onEdit, onView, onProsp
                 <YAxis dataKey="sucursal" type="category" tick={{ fontSize: 11 }} stroke="#6B7280" width={80} />
                 <Tooltip 
                   contentStyle={{ fontSize: '12px', border: '1px solid #D1D5DB', borderRadius: '4px' }}
-                  formatter={(value: any) => [value, 'Prospectos']}
+                  formatter={(value: any) => [value, 'Tipos Interlocutor']}
                 />
                 <Bar dataKey="cantidad" fill="#4A6FA5" radius={[0, 4, 4, 0]} />
               </BarChart>
@@ -273,7 +273,7 @@ export function ProspectosDashboard({ prospectos, onNew, onEdit, onView, onProsp
         <div className="bg-white border border-gray-300 rounded">
           <div className="bg-white border-b border-gray-300 px-4 py-3">
             <h2 className="text-base font-medium text-gray-900">Tasa de Conversión a Cliente</h2>
-            <p className="text-xs text-gray-600 mt-0.5">Porcentaje de prospectos convertidos mensualmente</p>
+            <p className="text-xs text-gray-600 mt-0.5">Porcentaje de tipos interlocutor convertidos mensualmente</p>
           </div>
           <div className="p-4">
             <ResponsiveContainer width="100%" height={240}>
@@ -302,7 +302,7 @@ export function ProspectosDashboard({ prospectos, onNew, onEdit, onView, onProsp
         <div className="bg-white border border-gray-300 rounded">
           <div className="bg-white border-b border-gray-300 px-4 py-3">
             <h2 className="text-base font-medium text-gray-900">Resumen de Estatus</h2>
-            <p className="text-xs text-gray-600 mt-0.5">Estado actual de la cartera de prospectos</p>
+            <p className="text-xs text-gray-600 mt-0.5">Estado actual de la cartera de tipos interlocutor</p>
           </div>
           <div className="p-4">
             <div className="space-y-4">

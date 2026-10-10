@@ -9,7 +9,7 @@ import {
 } from '@/app/data/mockData';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 import { ProductoLineaCreditoFormDefaultTab } from './ProductoLineaCreditoFormDefaultTab';
 import { ProductoLineaCreditoFormDatosProducto } from './ProductoLineaCreditoFormDatosProducto';
 import { ComitesCreditoLineaCreditoTab } from './ComitesCreditoLineaCreditoTab';
@@ -656,7 +656,7 @@ export function ProductoLineaCreditoForm({
                 Modo Consulta
               </span>
             )}
-            <button className="p-1 ml-2">
+            <button type="button" aria-label="Buscar" title="Buscar" className="p-1 ml-2">
               <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#999" strokeWidth="2">
                 <circle cx="8" cy="8" r="6"/>
                 <path d="M13 13l3 3"/>
@@ -672,7 +672,7 @@ export function ProductoLineaCreditoForm({
           {!isView && (
             <button 
               onClick={handleSubmit}
-              className="px-5 py-1.5 bg-[#0099CC] text-white rounded text-sm hover:bg-[#0088BB] font-medium"
+              className="px-5 py-1.5 bg-[color:var(--theme-action)] text-white rounded text-sm hover:bg-[color:var(--theme-action-hover)] font-medium"
             >
               Guardar
             </button>
@@ -691,8 +691,8 @@ export function ProductoLineaCreditoForm({
         <div className="px-6 py-2 bg-blue-50 border-b border-blue-100 flex items-center justify-between">
           <div className="flex items-center gap-6 text-xs text-gray-700">
             <div className="flex items-center gap-1.5">
-              <span className="font-medium text-gray-500">TYPE (J_PRODUCTOS):</span>
-              <span className="font-semibold text-gray-800">ProductoLineaCredito</span>
+              <span className="font-medium text-gray-500">Tipo:</span>
+              <span className="font-semibold text-gray-800">Línea de Crédito</span>
             </div>
             {product?.dbUuid && (
               <div className="flex items-center gap-1.5">
@@ -710,7 +710,7 @@ export function ProductoLineaCreditoForm({
         <div className="bg-white border border-gray-300">
           {/* Datos Producto - Siempre visible */}
           <div className="p-4 border-b border-gray-300">
-            <div className="bg-[#D9E2F3] px-3 py-1.5 mb-3 text-sm font-medium text-gray-800 border-l-4 border-[#4A6FA5]">
+            <div className="bg-[color:var(--theme-tint)] px-3 py-1.5 mb-3 text-sm font-medium text-gray-800 border-l-4 border-[color:var(--theme-primary)]">
               Datos Producto
             </div>
             
@@ -732,7 +732,7 @@ export function ProductoLineaCreditoForm({
                   className={`px-4 py-2.5 text-xs whitespace-nowrap border-r border-gray-500/30 transition-all ${
                     activeTab === tab.id
                       ? 'bg-secondary-theme text-white font-medium'
-                      : 'bg-primary-theme text-white/90 hover:bg-[#5A7FB5]'
+                      : 'bg-primary-theme text-white/90 hover:bg-[color:var(--theme-primary)]'
                   }`}
                 >
                   {tab.label}
@@ -990,7 +990,7 @@ export function ProductoLineaCreditoForm({
 
             {/* Tabs con forwardRef + persistToStorage: montados siempre con style display */}
             <div style={{ display: activeTab === 'matriz-tasa-fija' ? 'block' : 'none' }}>
-              <MatrizTasaFijaTab ref={matrizTasaFijaRef} mode={mode} productId={productId} periodos={periodos} initialData={product?.matrizTasaFija} persistToStorage storagePrefix="linea_credito" />
+              <MatrizTasaFijaTab ref={matrizTasaFijaRef} mode={mode} productId={productId} periodos={periodos} initialData={product?.matrizTasaFija as any} persistToStorage storagePrefix="linea_credito" />
             </div>
 
             <div style={{ display: activeTab === 'matriz-tasa-variable' ? 'block' : 'none' }}>
@@ -1006,7 +1006,7 @@ export function ProductoLineaCreditoForm({
             </div>
 
             <div style={{ display: activeTab === 'fases' ? 'block' : 'none' }}>
-              <FasesTab ref={fasesRef} mode={mode} productId={productId} initialData={product?.fases} persistToStorage storagePrefix="linea_credito" />
+              <FasesTab ref={fasesRef} mode={mode} productId={productId} initialData={product?.fases as any} persistToStorage storagePrefix="linea_credito" />
             </div>
 
             <div style={{ display: activeTab === 'garantias' ? 'block' : 'none' }}>
@@ -1048,8 +1048,7 @@ export function ProductoLineaCreditoForm({
                 ref={comisionesRef}
                 mode={mode}
                 productId={productId}
-                initialData={product?.comisiones}
-                persistToStorage
+                initialData={product?.comisiones as any}
                 storagePrefix="linea_credito"
               />
             </div>
@@ -1134,6 +1133,7 @@ export function ProductoLineaCreditoForm({
                 lineaProducto={formData.lineaProducto}
                 sublinea={formData.sublineaProducto}
                 initialData={product?.cargos}
+                fasesProducto={product?.fases}
                 persistToStorage
                 storagePrefix="linea_credito"
                 titulo="Cargos Permitidos"
@@ -1148,7 +1148,7 @@ export function ProductoLineaCreditoForm({
                 persistToStorage
                 storagePrefix="linea_credito"
                 initialData={product?.expedientes}
-                fases={product?.fases}
+                fases={product?.fases as any}
               />
             </div>
 

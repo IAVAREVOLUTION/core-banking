@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 import {
   CotizacionRow, saveToSession, loadFromSession, loadFromSavedStore, generateId,
   MOCK_COTIZACIONES, formatCurrency, parseCurrency,
@@ -208,7 +208,7 @@ export function CotizacionTab({ mode, solicitudId, formContext }: Props) {
   return (
     <div className="border border-gray-300 border-t-0 px-4 py-4 bg-gray-50">
       <div className="flex items-center justify-between mb-3">
-        <div className="bg-[#D9E2F3] border-l-4 border-[#4A6FA5] px-3 py-1.5">
+        <div className="bg-[color:var(--theme-tint)] border-l-4 border-[color:var(--theme-primary)] px-3 py-1.5">
           <span className="text-xs text-gray-800">TABLA DE AMORTIZACIÓN</span>
         </div>
         {!isRO && (
@@ -271,7 +271,7 @@ export function CotizacionTab({ mode, solicitudId, formContext }: Props) {
                   </tr>
                 ))}
                 {/* Fila de totales */}
-                <tr className="bg-[#D9E2F3] border-t-2 border-[#4A6FA5]">
+                <tr className="bg-[color:var(--theme-tint)] border-t-2 border-[color:var(--theme-primary)]">
                   <td colSpan={3} className="px-3 py-2 text-xs text-gray-800 text-right border-r border-gray-300">TOTALES</td>
                   <td className="px-3 py-2 text-xs text-right border-r border-gray-300 text-gray-800">{formatCurrency(totales.capital)}</td>
                   <td className="px-3 py-2 text-xs text-right border-r border-gray-300 text-gray-800">{formatCurrency(totales.interes)}</td>

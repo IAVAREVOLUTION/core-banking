@@ -172,17 +172,35 @@ export function EstructuraOperativa2oPisoTab({
     setDatos(prev => ({ ...prev, [campo]: valor }));
   };
 
+  /**
+   * Número de Fideicomiso provisional: "F/" + fecha y consecutivo del folio de la
+   * Solicitud (BAN-DIGITAL-20261007-000004 → F/20261007-000004). El número real lo
+   * asigna la Institución Fiduciaria al constituir el fideicomiso; éste sirve para
+   * avanzar y se puede reemplazar cuando llegue el definitivo.
+   */
+  const generarNumeroFideicomiso = (): string => {
+    const m = String(folioSolicitudLOS || '').match(/(\d{8})-(\d+)\s*$/);
+    if (m) return `F/${m[1]}-${m[2]}`;
+    const d = new Date();
+    const p2 = (n: number) => String(n).padStart(2, '0');
+    return `F/${d.getFullYear()}${p2(d.getMonth() + 1)}${p2(d.getDate())}-${String(Math.floor(Math.random() * 1e6)).padStart(6, '0')}`;
+  };
+
   const elegirParte = (destino: 'fiduciario' | 'representante', p: ParteRelacionada) => {
     const id = p.personaId || p.clienteId || '';
     if (destino === 'fiduciario') {
-      setDatos(prev => ({ ...prev, institucionFiduciaria: nombreDeParte(p), institucionFiduciariaId: id }));
+      // Al elegir la fiduciaria, si aún no hay número se propone el provisional.
+      setDatos(prev => ({
+        ...prev, institucionFiduciaria: nombreDeParte(p), institucionFiduciariaId: id,
+        numeroFideicomisoFuentePago: prev.numeroFideicomisoFuentePago || generarNumeroFideicomiso(),
+      }));
     } else {
       setDatos(prev => ({ ...prev, representanteComun: nombreDeParte(p), representanteComunId: id }));
     }
   };
 
   const roClass = 'w-full px-2 py-1.5 text-xs bg-gray-100 border border-gray-200 rounded text-gray-600';
-  const inputClass = 'w-full px-2 py-1.5 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-[#4A6FA5]/30 focus:border-[#4A6FA5]';
+  const inputClass = 'w-full px-2 py-1.5 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-[color:var(--theme-primary)]/30 focus:border-[color:var(--theme-primary)]';
 
   const faltantes = faltantesEstructura2oPiso(datos);
 
@@ -212,7 +230,7 @@ export function EstructuraOperativa2oPisoTab({
           {!isRO && (
             <button
               onClick={() => setModalAbierto(destino)}
-              className="px-3 py-1.5 bg-[#4A6FA5] text-white rounded text-xs hover:bg-[#3A5A8A] whitespace-nowrap"
+              className="px-3 py-1.5 bg-[color:var(--theme-primary)] text-white rounded text-xs hover:bg-[color:var(--theme-primary-hover)] whitespace-nowrap"
             >
               Buscar
             </button>
@@ -246,15 +264,15 @@ export function EstructuraOperativa2oPisoTab({
 
       {/* ═══ Bloque A — heredados del CRM (solo lectura) ═══ */}
       <div className="bg-primary-light-theme px-3 py-2 mb-3 text-sm font-medium text-gray-800 border-l-4 border-primary-theme">
-        DATOS HEREDADOS DEL CRM
+        Datos de la Oportunidad de Origen
       </div>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-x-4 gap-y-3 mb-5">
         <div>
-          <label className="block text-xs text-gray-700 mb-1">Folio Solicitud LOS</label>
+          <label className="block text-xs text-gray-700 mb-1">Folio de Solicitud</label>
           <input type="text" value={folioSolicitudLOS || '—'} disabled className={roClass} />
         </div>
         <div>
-          <label className="block text-xs text-gray-700 mb-1">Folio de Origen CRM</label>
+          <label className="block text-xs text-gray-700 mb-1">Folio de Oportunidad de Origen</label>
           <input type="text" value={folioOrigenCRM || '—'} disabled className={roClass} />
         </div>
         <div>
@@ -300,14 +318,31 @@ export function EstructuraOperativa2oPisoTab({
           <label className="block text-xs text-gray-700 mb-1">
             Número de Fideicomiso de Fuente de Pago <span className="text-red-500">*</span>
           </label>
-          <input
-            type="text"
-            value={datos.numeroFideicomisoFuentePago}
-            onChange={e => set('numeroFideicomisoFuentePago', e.target.value)}
-            disabled={isRO}
-            placeholder="Ej. F/482910"
-            className={isRO ? roClass : inputClass}
-          />
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={datos.numeroFideicomisoFuentePago}
+              onChange={e => set('numeroFideicomisoFuentePago', e.target.value)}
+              disabled={isRO}
+              placeholder="Ej. F/482910"
+              className={isRO ? roClass : inputClass}
+            />
+            {!isRO && (
+              <button
+                type="button"
+                onClick={() => set('numeroFideicomisoFuentePago', generarNumeroFideicomiso())}
+                title="Generar un número provisional a partir del folio de la Solicitud"
+                className="px-3 py-1.5 text-xs text-white rounded bg-[color:var(--theme-primary)] hover:bg-[color:var(--theme-primary-hover)] whitespace-nowrap"
+              >
+                Generar
+              </button>
+            )}
+          </div>
+          {!isRO && (
+            <span className="text-[10px] text-gray-400">
+              Provisional: reemplácelo por el número que asigne la Institución Fiduciaria.
+            </span>
+          )}
         </div>
         {renderBuscador({
           destino: 'representante',
@@ -346,7 +381,7 @@ export function EstructuraOperativa2oPisoTab({
         return (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={cerrar}>
             <div className="bg-white rounded-2xl shadow-2xl max-w-xl w-full max-h-[80vh] overflow-hidden border border-gray-200/50 flex flex-col" onClick={e => e.stopPropagation()}>
-              <div className="flex items-center justify-between px-5 py-4 bg-gradient-to-r from-[#4A6FA5] to-[#607698]">
+              <div className="flex items-center justify-between px-5 py-4 bg-gradient-to-r from-[color:var(--theme-primary)] to-[#607698]">
                 <div>
                   <h3 className="text-sm font-bold text-white">
                     {modalAbierto === 'fiduciario' ? 'Institución Fiduciaria' : 'Representante Común de Tenedores'}
@@ -364,7 +399,7 @@ export function EstructuraOperativa2oPisoTab({
                   value={filtroModal}
                   onChange={e => setFiltroModal(e.target.value)}
                   placeholder="Buscar por nombre o RFC..."
-                  className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#4A6FA5]/30 focus:border-[#4A6FA5]"
+                  className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:ring-2 focus:ring-[color:var(--theme-primary)]/30 focus:border-[color:var(--theme-primary)]"
                 />
               </div>
 

@@ -15,7 +15,7 @@
  */
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Search, X, Building2, AlertTriangle, Shield, Calculator, CalendarDays, CheckCircle2 } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 import { format, parse, isValid } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { DayPicker } from 'react-day-picker';
@@ -44,6 +44,8 @@ import { useProductosLineaCreditoDB } from '../../hooks/useProductosLineaCredito
 import { useProductosSeguros } from '../../hooks/useProductosSeguros';
 import { CampoInstitucionGobierno } from '../ui/CatalogoInstitucionGobierno';
 import type { InstitucionGobiernoSeleccion } from '../ui/CatalogoInstitucionGobierno';
+import { CampoMonto } from '@/app/components/ui/CampoMonto';
+import { DatePicker } from '@/app/components/ui/DatePicker';
 
 type FormMode = 'create' | 'edit' | 'view';
 type LineaProducto = 'Crédito' | 'Línea de Crédito';
@@ -190,11 +192,11 @@ export function CotizacionCreditoForm({ mode, lineaProducto, cotizacion, onSave,
                   : Array.isArray(pk.matrizTasaFija) ? pk.matrizTasaFija : [];
 
                 // 2. Cross-reference con el Producto Seguro real de BD (por UUID o nombre)
+                const segProd = productosSegurosDB.find((sp: any) =>
+                  (sp.dbUuid && sp.dbUuid === pkId) ||
+                  (sp.nombre && sp.nombre.trim().toLowerCase() === pkNombre.toLowerCase())
+                );
                 if (rawMC.length === 0 && productosSegurosDB.length > 0) {
-                  const segProd = productosSegurosDB.find((sp: any) =>
-                    (sp.dbUuid && sp.dbUuid === pkId) ||
-                    (sp.nombre && sp.nombre.trim().toLowerCase() === pkNombre.toLowerCase())
-                  );
                   if (segProd && Array.isArray((segProd as any).matrizTasaFija)) {
                     rawMC = (segProd as any).matrizTasaFija;
                     console.log(`[CotizCredito] Cross-ref seguro "${pkNombre}" → matrizTasaFija del Producto Seguro (${rawMC.length} filas)`);
@@ -222,8 +224,11 @@ export function CotizacionCreditoForm({ mode, lineaProducto, cotizacion, onSave,
 
                 return {
                   id: pk.id ?? idx + 1,
-                  nombre: pkNombre,
+                  // Nombre vigente del Producto Seguro (el paquete puede traer una copia vieja)
+                  nombre: String((segProd as any)?.nombre || '').trim() || pkNombre,
+                  nombreAnterior: pkNombre,
                   tipo: 'Seguro',
+                  productoSeguroId: String((segProd as any)?.dbUuid || pkId || ''),
                   montosYCoberturas,
                 };
               });
@@ -429,7 +434,7 @@ export function CotizacionCreditoForm({ mode, lineaProducto, cotizacion, onSave,
       // Reset garantía
       tipoGarantia: '', subtipoGarantia: '', aforo: 0, montoGarantia: 0, montoCubrirGarantia: 0,
       // Reset seguro
-      seguroFinanciado: false, seguroNombre: '', montoSeguro: 0, tasaSeguro: 0, totalSeguro: 0,
+      seguroFinanciado: false, seguroNombre: '', seguroProductoId: '', montoSeguro: 0, tasaSeguro: 0, totalSeguro: 0,
     });
     setForm(prev => ({ ...prev, producto_id: prod.id }));
   };
@@ -551,6 +556,14 @@ export function CotizacionCreditoForm({ mode, lineaProducto, cotizacion, onSave,
   const garantiaRows = selectedProducto?.garantias || [];
 
   const seguroRows = (selectedProducto?.seguros || []).filter(s => s.tipo === 'Seguro');
+
+  // Cotizaciones guardadas con el nombre anterior del seguro → nombre vigente.
+  useEffect(() => {
+    if (!data.seguroNombre || seguroRows.some(s => s.nombre === data.seguroNombre)) return;
+    const s = seguroRows.find(r => r.nombreAnterior === data.seguroNombre);
+    if (s) setData({ seguroNombre: s.nombre, ...(s.productoSeguroId ? { seguroProductoId: s.productoSeguroId } : {}) });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seguroRows.map(s => s.nombre).join('|'), data.seguroNombre]);
 
   // Validaciones en tiempo real — spec §9
   const plazoErr = data.plazoMinimo > 0 && data.plazo > 0 && (data.plazo < data.plazoMinimo || data.plazo > data.plazoMaximo);
@@ -677,10 +690,8 @@ export function CotizacionCreditoForm({ mode, lineaProducto, cotizacion, onSave,
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
                   className={`px-3 py-2 text-[10px] whitespace-nowrap border-r border-gray-500/30 ${
-                    activeTab === tab.id ? 'bg-secondary-theme text-white font-medium' : 'text-white/90'
+                    activeTab === tab.id ? 'bg-secondary-theme text-white font-medium' : 'text-white/90 hover:bg-[color:var(--theme-primary-hover)]'
                   }`}
-                  onMouseEnter={(e) => { if (activeTab !== tab.id) e.currentTarget.style.backgroundColor = 'var(--theme-primary-hover)'; }}
-                  onMouseLeave={(e) => { if (activeTab !== tab.id) e.currentTarget.style.backgroundColor = ''; }}
                 >
                   {tab.label}
                 </button>
@@ -695,11 +706,11 @@ export function CotizacionCreditoForm({ mode, lineaProducto, cotizacion, onSave,
               {/* ── §2.1 Prospecto/Cliente ── */}
               <div className="border-t border-gray-300">
                 <div className="border-l-4 border-primary-theme px-3 py-1.5">
-                  <span className="text-xs font-medium text-gray-800 uppercase">Prospecto / Cliente</span>
+                  <span className="text-xs font-medium text-gray-800 uppercase">Tipo Interlocutor / Cliente</span>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4">
                   <div className="flex flex-col">
-                    <label className="text-[10px] text-gray-600 mb-1">Clave Cliente</label>
+                    <label className="text-[10px] text-gray-600 mb-1">No. Interlocutor</label>
                     <input value={data.cliente.claveCliente} disabled className={readonlyClass} />
                   </div>
                   <div className="flex flex-col">
@@ -875,8 +886,7 @@ export function CotizacionCreditoForm({ mode, lineaProducto, cotizacion, onSave,
                             Monto Solicitado <span className="text-red-500">*</span>
                             <span className="text-gray-400 ml-1">({formatMoney(data.montoMinimo)}–{formatMoney(data.montoMaximo)})</span>
                           </label>
-                          <input
-                            type="number"
+                          <CampoMonto
                             value={data.montoSolicitado || ''}
                             disabled={isView}
                             onChange={e => setData({ montoSolicitado: parseFloat(e.target.value) || 0 })}
@@ -1005,76 +1015,8 @@ export function CotizacionCreditoForm({ mode, lineaProducto, cotizacion, onSave,
                       <label className="text-[10px] text-gray-600 mb-1">
                         Fecha Primer Pago <span className="text-red-500">*</span>
                       </label>
-                      <div className="relative" ref={datePickerRef}>
-                        <button
-                          type="button"
-                          disabled={isView}
-                          onClick={() => !isView && setShowDatePicker(prev => !prev)}
-                          className={`${fieldClass} text-left flex items-center justify-between cursor-pointer ${
-                            !isView && !data.fechaPrimerPago ? 'border-red-400 bg-red-50' : ''
-                          }`}
-                        >
-                          <span className={data.fechaPrimerPago ? 'text-gray-800' : 'text-gray-400'}>
-                            {data.fechaPrimerPago
-                              ? format(parse(data.fechaPrimerPago, 'yyyy-MM-dd', new Date()), "dd 'de' MMMM 'de' yyyy", { locale: es })
-                              : 'Seleccionar fecha...'}
-                          </span>
-                          <CalendarDays className="w-4 h-4 text-gray-400 shrink-0" />
-                        </button>
-
-                        {showDatePicker && !isView && (
-                          <div className="absolute top-full left-0 mt-1 z-50 bg-white border border-gray-300 rounded-lg shadow-xl p-3">
-                            <DayPicker
-                              mode="single"
-                              locale={es}
-                              captionLayout="dropdown-buttons"
-                              fromYear={2020}
-                              toYear={2040}
-                              defaultMonth={
-                                data.fechaPrimerPago
-                                  ? parse(data.fechaPrimerPago, 'yyyy-MM-dd', new Date())
-                                  : new Date()
-                              }
-                              selected={
-                                data.fechaPrimerPago
-                                  ? parse(data.fechaPrimerPago, 'yyyy-MM-dd', new Date())
-                                  : undefined
-                              }
-                              onSelect={(date) => {
-                                if (date && isValid(date)) {
-                                  setData({ fechaPrimerPago: format(date, 'yyyy-MM-dd') });
-                                }
-                                setShowDatePicker(false);
-                              }}
-                              styles={{
-                                caption: { color: 'var(--theme-primary)' },
-                                day: { borderRadius: '6px' },
-                              }}
-                              modifiersStyles={{
-                                selected: { backgroundColor: 'var(--theme-primary)', color: 'white' },
-                                today: { fontWeight: 'bold', border: '1px solid var(--theme-primary)', borderRadius: '6px' },
-                              }}
-                            />
-                            <div className="border-t border-gray-200 pt-2 mt-1 flex items-center justify-between px-1">
-                              <button
-                                type="button"
-                                onClick={() => { setData({ fechaPrimerPago: format(new Date(), 'yyyy-MM-dd') }); setShowDatePicker(false); }}
-                                className="text-[10px] text-blue-600 hover:text-blue-800"
-                              >
-                                Hoy
-                              </button>
-                              {data.fechaPrimerPago && (
-                                <button
-                                  type="button"
-                                  onClick={() => { setData({ fechaPrimerPago: '' }); setShowDatePicker(false); }}
-                                  className="text-[10px] text-red-500 hover:text-red-700"
-                                >
-                                  Limpiar
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                        )}
+                      <div ref={datePickerRef}>
+                        <DatePicker formato="iso" value={data.fechaPrimerPago || ''} onChange={(__v: string) => setData({ fechaPrimerPago: __v })} disabled={isView} />
                       </div>
                     </div>
 
@@ -1095,7 +1037,7 @@ export function CotizacionCreditoForm({ mode, lineaProducto, cotizacion, onSave,
                   {/* §7 Seguro Financiado — Montos y Coberturas del Producto Seguro (tabla seleccionable) */}
                   <div className="border-2 border-gray-400 bg-[#FAFBFC]">
                     {/* Header */}
-                    <div className="bg-gradient-to-r from-[#2E5C91] to-[#4A6FA5] px-3 py-1.5 flex items-center gap-2">
+                    <div className="bg-gradient-to-r from-[color:var(--theme-secondary)] to-[color:var(--theme-primary)] px-3 py-1.5 flex items-center gap-2">
                       <Shield className="w-4 h-4 text-white" />
                       <span className="text-[11px] font-semibold text-white uppercase tracking-wider">Seguro Financiado</span>
                       <label className="flex items-center gap-1.5 ml-auto cursor-pointer">
@@ -1130,6 +1072,7 @@ export function CotizacionCreditoForm({ mode, lineaProducto, cotizacion, onSave,
                                 // Solo setear nombre, resetear valores — el usuario debe seleccionar fila de M&C
                                 setData({
                                   seguroNombre: nombre,
+                                  seguroProductoId: seguroRows.find(s => s.nombre === nombre)?.productoSeguroId || '',
                                   montoSeguro: 0,
                                   tasaSeguro: 0,
                                   totalSeguro: 0,
@@ -1181,7 +1124,7 @@ export function CotizacionCreditoForm({ mode, lineaProducto, cotizacion, onSave,
                               <div className="overflow-x-auto border-2 border-gray-400">
                                 <table className="w-full text-[10px]">
                                   <thead>
-                                    <tr className="bg-[#2E5C91] text-white">
+                                    <tr className="bg-[color:var(--theme-secondary)] text-white">
                                       <th className="px-2 py-1.5 text-center w-8"></th>
                                       <th className="px-2 py-1.5 text-center">Periodo</th>
                                       <th className="px-2 py-1.5 text-center">Plazo Min</th>
@@ -1269,13 +1212,7 @@ export function CotizacionCreditoForm({ mode, lineaProducto, cotizacion, onSave,
                               </div>
                               <div className="flex flex-col">
                                 <label className="text-[11px] text-gray-600 mb-1 uppercase tracking-wider font-medium">Fecha Primer Pago <span className="text-red-500">*</span></label>
-                                <input
-                                  type="date"
-                                  value={data.fechaPrimerPago || ''}
-                                  disabled={isView}
-                                  onChange={e => setData({ fechaPrimerPago: e.target.value })}
-                                  className={fieldClass}
-                                />
+                                <DatePicker formato="iso" value={data.fechaPrimerPago || ''} onChange={(__v: string) => setData({ fechaPrimerPago: __v })} disabled={isView} />
                                 <span className="text-[9px] text-gray-400 mt-0.5">Base para las fechas de pago del seguro</span>
                               </div>
                             </div>
@@ -1432,7 +1369,7 @@ export function CotizacionCreditoForm({ mode, lineaProducto, cotizacion, onSave,
                 <Building2 className="w-5 h-5 text-gray-500" />
                 <h3 className="text-sm font-medium text-gray-800">Seleccionar Cliente</h3>
               </div>
-              <button onClick={() => setShowClienteModal(false)} className="p-1 hover:bg-gray-100 rounded">
+              <button aria-label="Cerrar" title="Cerrar" onClick={() => setShowClienteModal(false)} className="p-1 hover:bg-gray-100 rounded">
                 <X className="w-4 h-4 text-gray-500" />
               </button>
             </div>

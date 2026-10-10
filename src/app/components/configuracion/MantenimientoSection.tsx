@@ -12,7 +12,7 @@
 // Logging: [Mantenimiento]
 // ═══════════════════════════════════════════════════════════════════
 import { useState, useEffect } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 import {
   Wrench, Trash2, RefreshCw, Shield, CheckCircle, AlertTriangle,
   Database, Link2, FileWarning, Loader2, Copy, Terminal, ChevronDown,
@@ -164,10 +164,10 @@ export function MantenimientoSection() {
       if (result.success) {
         updateTask('repairProspectos', {
           status: 'success',
-          message: `${result.repaired} prospecto(s) reparados`,
+          message: `${result.repaired} tipo(s) interlocutor reparados`,
           details: result.records,
         });
-        toast.success(`${result.repaired} prospectos legacy reparados`);
+        toast.success(`${result.repaired} tipos interlocutor legacy reparados`);
       } else {
         throw new Error(result.error || 'Error desconocido');
       }
@@ -340,7 +340,7 @@ export function MantenimientoSection() {
     },
     {
       key: 'diagnosticoDB',
-      label: 'Diagnóstico crudo de J_CLIENTES',
+      label: 'Diagnóstico de registros de personas',
       description: 'Conteo directo por type, subtipo y estatus — sin filtros',
       icon: <Activity size={16} />,
       action: handleDiagnosticoDB,
@@ -358,7 +358,7 @@ export function MantenimientoSection() {
     },
     {
       key: 'repairProspectos',
-      label: 'Reparar Prospectos Legacy (v3.5)',
+      label: 'Reparar Tipos Interlocutor Legacy (v3.5)',
       description: 'Restaura campos perdidos por compactación v3.5 desde nodo "default"',
       icon: <Database size={16} />,
       action: handleRepairProspectos,

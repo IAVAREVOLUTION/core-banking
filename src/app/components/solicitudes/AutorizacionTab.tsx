@@ -10,7 +10,7 @@
  *   - El botón "Auto-cargar" genera autorizaciones desde el catálogo de puestos
  */
 import { useState, useEffect, useMemo } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 import {
   Autorizacion, saveToSession, loadFromSession, loadFromSavedStore, generateId,
   CAT_ESTATUS_AUTORIZACION,
@@ -152,7 +152,7 @@ export function AutorizacionTab({ mode, solicitudId, montoSolicitado, productoId
         {!loadingPuestos && puestos.length > 0 && (
           <div className="border border-gray-300 overflow-hidden rounded">
             <table className="w-full text-xs">
-              <thead className="bg-[#2E5C91] text-white">
+              <thead className="bg-[color:var(--theme-secondary)] text-white">
                 <tr>
                   <th className="px-3 py-2 text-left font-medium">Puesto</th>
                   <th className="px-3 py-2 text-left font-medium">Nombre</th>

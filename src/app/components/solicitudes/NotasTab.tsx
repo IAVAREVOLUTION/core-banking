@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
+import { getUsuarioSesion, getPuestoSesion } from '../../lib/sesion';
 import {
   Nota, saveToSession, loadFromSession, loadFromSavedStore, generateId, MOCK_NOTAS,
 } from './solicitudCreditoStore';
@@ -49,9 +50,8 @@ export function NotasTab({ mode, solicitudId, allowAddNotes = false }: Props) {
       id: generateId(),
       fecha,
       fechaCreacion: now.toISOString(),
-      // TODO: reemplazar con usuario real de sesión cuando se implemente auth
-      usuario: '(sesión pendiente)',
-      puesto: '(puesto pendiente)',
+      usuario: getUsuarioSesion(),
+      puesto: getPuestoSesion(),
       nota: newNota.trim(),
       archivoAdjunto: newArchivo,
     };
@@ -101,7 +101,7 @@ export function NotasTab({ mode, solicitudId, allowAddNotes = false }: Props) {
               rows={3}
               maxLength={1024}
               placeholder="Escriba su nota aquí..."
-              className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-[#4A6FA5] focus:outline-none resize-none"
+              className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-[color:var(--theme-primary)] focus:outline-none resize-none"
             />
             <div className="text-right text-[10px] text-gray-400 mt-0.5">{newNota.length}/1024</div>
           </div>
@@ -144,7 +144,7 @@ export function NotasTab({ mode, solicitudId, allowAddNotes = false }: Props) {
                   <span>{nota.puesto}</span>
                 </div>
                 {!isRO && (
-                  <button onClick={() => handleDelete(nota.id)} className="text-red-500 hover:text-red-700 text-xs">
+                  <button type="button" aria-label="Eliminar nota" title="Eliminar nota" onClick={() => handleDelete(nota.id)} className="text-red-500 hover:text-red-700 text-xs">
                     <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5">
                       <path d="M2 4h10M5 4V2h4v2M4 4v7a1 1 0 001 1h4a1 1 0 001-1V4" />
                     </svg>

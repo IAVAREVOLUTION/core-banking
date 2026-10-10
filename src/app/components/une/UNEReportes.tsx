@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 import type { CasoUNE } from './uneStore';
 import { diasRestantes } from './uneStore';
 
@@ -84,13 +84,13 @@ export function UNEReportes({ casos }: Props) {
         <div className="flex items-center gap-3">
           <label className="text-xs text-gray-600 font-medium">Período del reporte:</label>
           <select value={periodoSel} onChange={e => setPeriodoSel(e.target.value)}
-            className="px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-[#2E5C91]">
+            className="px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-[color:var(--theme-secondary)]">
             {PERIODOS.map(p => <option key={p} value={p}>{p}</option>)}
           </select>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={handleGenerar} disabled={generando}
-            className="flex items-center gap-1.5 px-4 py-1.5 bg-[#2E5C91] text-white text-xs rounded hover:bg-[#1d3f6b] disabled:opacity-50">
+            className="flex items-center gap-1.5 px-4 py-1.5 bg-[color:var(--theme-secondary)] text-white text-xs rounded hover:bg-[color:var(--theme-secondary-hover)] disabled:opacity-50">
             {generando ? (
               <svg className="animate-spin w-3 h-3" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2">
                 <circle cx="6" cy="6" r="4" strokeOpacity="0.25"/><path d="M6 2a4 4 0 014 4" strokeLinecap="round"/>
@@ -162,7 +162,7 @@ export function UNEReportes({ casos }: Props) {
                   <span className="text-gray-800 font-medium">{n} ({pct}%)</span>
                 </div>
                 <div className="w-full bg-gray-100 h-1.5 rounded-full">
-                  <div className="h-1.5 rounded-full bg-[#2E5C91]" style={{ width: `${pct}%` }}/>
+                  <div className="h-1.5 rounded-full bg-[color:var(--theme-secondary)]" style={{ width: `${pct}%` }}/>
                 </div>
               </div>
             );

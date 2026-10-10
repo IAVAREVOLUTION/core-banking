@@ -16,10 +16,10 @@ import {
   X,
   AlertTriangle,
 } from 'lucide-react';
-import { toast } from 'sonner';
-import * as XLSX from 'xlsx';
-import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
+import { toast } from '@/app/lib/notificaciones';
+import { cargarXLSX, cargarPDF } from '@/app/lib/librerias';
+import { DatePicker } from '@/app/components/ui/DatePicker';
+import { formatearFecha } from '@/app/lib/fechas';
 
 // ═══════════════════════════════════════════════════════════════════
 // TIPOS
@@ -569,7 +569,8 @@ function emptyInstitucion(): Omit<InstitucionFinanciera, 'id' | 'institucionNume
 // ═══════════════════════════════════════════════════════════════════
 // UTILIDADES EXPORTACIÓN
 // ═══════════════════════════════════════════════════════════════════
-function exportToExcel(data: InstitucionFinanciera[]) {
+async function exportToExcel(data: InstitucionFinanciera[]) {
+  const XLSX = await cargarXLSX();
   const rows = data.map((d) => ({
     'Institución #': d.institucionNumero,
     'Nombre': d.nombre,
@@ -592,7 +593,8 @@ function exportToExcel(data: InstitucionFinanciera[]) {
   toast.success('Exportado a Excel correctamente');
 }
 
-function exportToCSV(data: InstitucionFinanciera[]) {
+async function exportToCSV(data: InstitucionFinanciera[]) {
+  const XLSX = await cargarXLSX();
   const rows = data.map((d) => ({
     'Institución #': d.institucionNumero,
     'Nombre': d.nombre,
@@ -618,12 +620,13 @@ function exportToCSV(data: InstitucionFinanciera[]) {
   toast.success('Exportado a CSV correctamente');
 }
 
-function exportToPDF(data: InstitucionFinanciera[]) {
+async function exportToPDF(data: InstitucionFinanciera[]) {
+  const { jsPDF, autoTable } = await cargarPDF();
   const doc = new jsPDF({ orientation: 'landscape' });
   doc.setFontSize(14);
   doc.text('Instituciones Financieras', 14, 18);
   doc.setFontSize(9);
-  doc.text(`Generado: ${new Date().toLocaleDateString('es-MX')}`, 14, 24);
+  doc.text(`Generado: ${formatearFecha(new Date())}`, 14, 24);
 
   autoTable(doc, {
     startY: 30,
@@ -660,7 +663,7 @@ function handlePrint(data: InstitucionFinanciera[]) {
       .date { color: #888; font-size: 9px; margin-bottom: 12px; }
     </style></head><body>
     <h2>Instituciones Financieras</h2>
-    <div class="date">Generado: ${new Date().toLocaleDateString('es-MX')}</div>
+    <div class="date">Generado: ${formatearFecha(new Date())}</div>
     <table>
       <tr><th>#</th><th>Nombre</th><th>Tipo</th><th>Ubicación</th><th>Ciudad</th><th>Región</th><th>Teléfono</th><th>Moneda</th></tr>
       ${data.map((d) => `<tr><td>${d.institucionNumero}</td><td>${d.nombre}</td><td>${d.tipoInstitucion}</td><td>${d.ubicacion}</td><td>${d.ciudad}</td><td>${d.region}</td><td>${d.telefono}</td><td>${d.moneda}</td></tr>`).join('')}
@@ -810,17 +813,7 @@ const FormFieldIF = React.memo(function FormFieldIF({
           ))}
         </select>
       ) : type === 'date' ? (
-        <input
-          type="date"
-          value={value ?? ''}
-          readOnly={!isEditable}
-          onChange={isEditable ? (e) => onChange!(name!, e.target.value) : undefined}
-          className={`flex-1 text-[11px] px-1.5 py-1 border border-gray-300 rounded bg-white text-gray-800 min-w-0 ${
-            isEditable
-              ? 'focus:border-primary-theme focus:ring-1 focus:ring-accent-theme outline-none'
-              : 'read-only:bg-gray-50'
-          }`}
-        />
+        <DatePicker formato="iso" value={value ?? ''} onChange={(__v: string) => onChange?.(name!, __v)} disabled={!isEditable} className="text-[11px] min-w-0" />
       ) : (
         <input
           type={inputType ?? 'text'}
@@ -1020,14 +1013,7 @@ function CreateModal({
             ))}
           </select>
         ) : o.type === 'date' ? (
-          <input
-            type="date"
-            value={String(form[name] ?? '')}
-            onChange={(e) => handleChange(name, e.target.value)}
-            className={`flex-1 text-[11px] px-1.5 py-1 border rounded bg-white text-gray-800 min-w-0 focus:border-primary-theme focus:ring-1 focus:ring-accent-theme outline-none ${
-              errors[name] ? 'border-red-400 bg-red-50/30' : 'border-gray-300'
-            }`}
-          />
+          <DatePicker formato="iso" value={String(form[name] ?? '')} onChange={(__v: string) => handleChange(name, __v)} />
         ) : (
           <input
             type="text"
@@ -1061,7 +1047,7 @@ function CreateModal({
             </span>
             <span className="text-white/60 text-xs ml-2">{nextNumber}</span>
           </div>
-          <button onClick={onCancel} className="text-white/80 hover:text-white p-0.5 rounded hover:bg-white/10">
+          <button aria-label="Cerrar" title="Cerrar" onClick={onCancel} className="text-white/80 hover:text-white p-0.5 rounded hover:bg-white/10">
             <X size={18} />
           </button>
         </div>
@@ -1128,7 +1114,7 @@ function CreateModal({
           </button>
           <button
             onClick={handleSave}
-            className="flex items-center gap-1.5 px-4 py-1.5 text-[11px] bg-[#0099CC] text-white rounded hover:bg-[#0088BB] transition-colors"
+            className="flex items-center gap-1.5 px-4 py-1.5 text-[11px] bg-[color:var(--theme-action)] text-white rounded hover:bg-[color:var(--theme-action-hover)] transition-colors"
             style={{ fontWeight: 500 }}
           >
             <Save size={12} />
@@ -1437,7 +1423,7 @@ export function InstitucionesFinancierasSection() {
                   autoFocus
                 />
                 {searchQuery && (
-                  <button
+                  <button aria-label="Cerrar" title="Cerrar"
                     onClick={() => setSearchQuery('')}
                     className="text-gray-400 hover:text-gray-600 p-0.5"
                   >
@@ -1716,7 +1702,7 @@ export function InstitucionesFinancierasSection() {
                 <div className="flex items-center gap-2 mt-4 pt-3 border-t border-gray-200">
                   <button
                     onClick={handleSaveForm}
-                    className="flex items-center gap-1.5 px-4 py-1.5 text-[11px] bg-[#0099CC] text-white rounded hover:bg-[#0088BB] transition-colors"
+                    className="flex items-center gap-1.5 px-4 py-1.5 text-[11px] bg-[color:var(--theme-action)] text-white rounded hover:bg-[color:var(--theme-action-hover)] transition-colors"
                     style={{ fontWeight: 500 }}
                   >
                     <Save size={12} />

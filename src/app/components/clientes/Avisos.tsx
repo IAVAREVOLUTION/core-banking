@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 import { DatePicker } from './DatePicker';
+import { CampoMonto } from '@/app/components/ui/CampoMonto';
 
 interface AvisosProps {
   onBack: () => void;
@@ -338,7 +339,7 @@ export function Avisos({ onBack, mode, clienteId }: AvisosProps) {
               <h3 className="text-base font-medium text-white">
                 {editingId !== null ? 'Editar Aviso' : 'Nuevo Aviso'}
               </h3>
-              <button
+              <button type="button" aria-label="Cerrar" title="Cerrar"
                 onClick={() => setShowModal(false)}
                 className="text-white hover:text-gray-200"
               >
@@ -406,8 +407,7 @@ export function Avisos({ onBack, mode, clienteId }: AvisosProps) {
                       <label className="block text-xs text-gray-700 mb-1 font-medium">
                         Monto Total <span className="text-red-600">*</span>
                       </label>
-                      <input
-                        type="text"
+                      <CampoMonto
                         value={formData.montoTotal}
                         onChange={(e) => setFormData(prev => ({ ...prev, montoTotal: e.target.value }))}
                         placeholder="$ 0.00"

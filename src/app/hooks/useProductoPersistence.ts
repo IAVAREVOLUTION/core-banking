@@ -50,7 +50,7 @@ export function useProductoPersistence<T extends Record<string, any> | any[]>(
       try {
         const persistedData = JSON.parse(saved);
         if (Array.isArray(initialData)) {
-          setData(Array.isArray(persistedData) ? persistedData : initialData);
+          setData((Array.isArray(persistedData) ? persistedData : initialData) as T);
         } else {
           setData({ ...initialData, ...persistedData });
         }

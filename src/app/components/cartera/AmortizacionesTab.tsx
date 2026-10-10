@@ -1,9 +1,12 @@
 import { useState, useEffect } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 import {
   useAmortizaciones, crearAvisoVencimiento,
   formatMoney, fmtDate, type Amortizacion,
 } from '../../hooks/useCarteraDB';
+import { formatearFecha } from '@/app/lib/fechas';
+import { conceptosAmortizacion } from '@/app/lib/prelacionCargos';
+import { cargarPrelacionProducto } from '@/app/lib/aplicacionPagosCartera';
 
 const ESTATUS_COLOR: Record<string, string> = {
   Pendiente: 'bg-amber-50 text-amber-700 border-amber-200',
@@ -20,9 +23,14 @@ interface Props {
   noCuenta?: string;
   moneda?: string;
   tipoProducto?: string;
+  /**
+   * Cartera de Crédito Individual: producto cuya "Prelación de cargos" ordena
+   * los conceptos del aviso. Sin él, el aviso se arma como siempre.
+   */
+  productoIdPrelacion?: string;
 }
 
-export function AmortizacionesTab({ solicitudId, cliente, noSol, noCuenta, moneda = 'MXN', tipoProducto }: Props) {
+export function AmortizacionesTab({ solicitudId, cliente, noSol, noCuenta, moneda = 'MXN', tipoProducto, productoIdPrelacion }: Props) {
   const isCaptacion = (tipoProducto || '').toLowerCase().includes('captaci') ||
                       (tipoProducto || '').toLowerCase().includes('ahorro') ||
                       (tipoProducto || '').toLowerCase().includes('aportaci');
@@ -105,9 +113,16 @@ export function AmortizacionesTab({ solicitudId, cliente, noSol, noCuenta, moned
   const handleAvisoVencimiento = async () => {
     if (selected.size === 0) { toast.error('Seleccione al menos una amortización'); return; }
     setEnviando(true);
+    // Crédito Individual: las líneas del aviso se registran en el orden de la
+    // "Prelación de cargos" del producto (es el orden en que se pagarán).
+    let amortizaciones: any[] = selectedRows;
+    if (productoIdPrelacion) {
+      const prelacion = await cargarPrelacionProducto(productoIdPrelacion);
+      amortizaciones = selectedRows.map(r => ({ ...r, conceptos: conceptosAmortizacion(r, prelacion) }));
+    }
     const result = await crearAvisoVencimiento({
       solicitud_id: solicitudId,
-      amortizaciones: selectedRows,
+      amortizaciones,
       sub_tipo: 'Amortizacion',
       cliente,
       forma_pago: formaPago,
@@ -161,7 +176,7 @@ export function AmortizacionesTab({ solicitudId, cliente, noSol, noCuenta, moned
       <div className="border border-gray-200 rounded overflow-x-auto">
         <table className="w-full text-xs">
           <thead>
-            <tr className="bg-[#2E5C91] text-white">
+            <tr className="bg-[color:var(--theme-secondary)] text-white">
               <th className="px-2 py-2 text-center w-8">
                 <input type="checkbox" checked={allPendientesSelected} onChange={toggleAll} className="cursor-pointer" />
               </th>
@@ -180,7 +195,7 @@ export function AmortizacionesTab({ solicitudId, cliente, noSol, noCuenta, moned
           <tbody>
             {loading ? (
               <tr><td colSpan={isCaptacion ? 7 : 11} className="px-3 py-8 text-center text-gray-400 text-xs">
-                <svg className="animate-spin h-5 w-5 mx-auto mb-1 text-[#4A6FA5]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10" strokeOpacity="0.25"/><path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round"/></svg>
+                <svg className="animate-spin h-5 w-5 mx-auto mb-1 text-[color:var(--theme-primary)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10" strokeOpacity="0.25"/><path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round"/></svg>
                 Cargando amortizaciones...
               </td></tr>
             ) : rows.length === 0 ? (
@@ -256,12 +271,12 @@ export function AmortizacionesTab({ solicitudId, cliente, noSol, noCuenta, moned
       {showAvisoModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setShowAvisoModal(false)}>
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg border border-gray-200" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-5 py-3.5 border-b border-gray-100 bg-[#2E5C91] rounded-t-xl">
+            <div className="flex items-center justify-between px-5 py-3.5 border-b border-gray-100 bg-[color:var(--theme-secondary)] rounded-t-xl">
               <div>
                 <h4 className="text-sm font-bold text-white">Nuevo Aviso de Vencimiento</h4>
                 <p className="text-[11px] text-blue-200 mt-0.5">{selected.size} amortización{selected.size !== 1 ? 'es' : ''} · {moneda}</p>
               </div>
-              <button onClick={() => setShowAvisoModal(false)} className="text-white/70 hover:text-white">
+              <button type="button" aria-label="Cerrar" title="Cerrar" onClick={() => setShowAvisoModal(false)} className="text-white/70 hover:text-white">
                 <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 3l8 8M11 3l-8 8"/></svg>
               </button>
             </div>
@@ -283,7 +298,7 @@ export function AmortizacionesTab({ solicitudId, cliente, noSol, noCuenta, moned
                 ))}
                 <div className="col-span-2 flex justify-between text-xs font-bold border-t border-gray-200 pt-1.5 mt-0.5">
                   <span>Total a Cobrar</span>
-                  <span className="text-[#2E5C91]">{formatMoney(totals.total)}</span>
+                  <span className="text-[color:var(--theme-secondary)]">{formatMoney(totals.total)}</span>
                 </div>
               </div>
 
@@ -301,7 +316,7 @@ export function AmortizacionesTab({ solicitudId, cliente, noSol, noCuenta, moned
                 </div>
                 <div>
                   <label className="block text-[10px] font-medium text-gray-600 mb-1 uppercase tracking-wide">Fecha Compromiso</label>
-                  <input type="date" value={fechaCompromiso} readOnly className="w-full px-3 py-1.5 text-xs border border-gray-200 rounded-lg bg-gray-50 text-gray-600 cursor-default" />
+                  <input type="text" value={formatearFecha(fechaCompromiso)} readOnly className="w-full px-3 py-1.5 text-xs border border-gray-200 rounded-lg bg-gray-50 text-gray-600 cursor-default" />
                 </div>
                 <div>
                   <label className="block text-[10px] font-medium text-gray-600 mb-1 uppercase tracking-wide">No. Solicitud</label>
@@ -322,7 +337,7 @@ export function AmortizacionesTab({ solicitudId, cliente, noSol, noCuenta, moned
               <button onClick={() => setShowAvisoModal(false)} className="px-4 py-1.5 text-xs border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-100">
                 Cancelar
               </button>
-              <button onClick={handleAvisoVencimiento} disabled={enviando} className="px-5 py-1.5 text-xs bg-[#2E5C91] text-white rounded-lg hover:bg-[#245080] disabled:opacity-50 font-medium flex items-center gap-1.5">
+              <button onClick={handleAvisoVencimiento} disabled={enviando} className="px-5 py-1.5 text-xs bg-[color:var(--theme-secondary)] text-white rounded-lg hover:bg-[color:var(--theme-secondary-hover)] disabled:opacity-50 font-medium flex items-center gap-1.5">
                 {enviando
                   ? <><svg className="animate-spin h-3 w-3" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="6" cy="6" r="5" strokeOpacity="0.25"/><path d="M6 1a5 5 0 0 1 5 5" strokeLinecap="round"/></svg> Creando...</>
                   : <>

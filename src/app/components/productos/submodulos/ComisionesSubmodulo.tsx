@@ -42,7 +42,7 @@ export function ComisionesSubmodulo({ productoId, productoNombre, onBack, isView
                 <tr key={comision.id} className="hover:bg-[#F5F5F7]">
                   <td className="px-4 py-3 text-sm font-medium text-[#3C3C3C]">{comision.concepto}</td>
                   <td className="px-4 py-3 text-sm text-[#9E9E9E]">{comision.tipo}</td>
-                  <td className="px-4 py-3 text-sm text-right font-semibold text-[#2E5C91]">
+                  <td className="px-4 py-3 text-sm text-right font-semibold text-[color:var(--theme-secondary)]">
                     {comision.tipo === 'Porcentaje'
                       ? `${comision.monto}%`
                       : `$${comision.monto.toLocaleString('es-MX')}`}

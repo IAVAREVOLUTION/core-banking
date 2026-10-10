@@ -9,7 +9,7 @@ export function GarantiasSection({ onOpenModal }: GarantiasSectionProps) {
       <div className="flex gap-2 mb-3">
         <button 
           onClick={onOpenModal}
-          className="px-4 py-1.5 bg-[#5B9BD5] text-white text-xs font-normal rounded hover:bg-[#4A8BC2]"
+          className="px-4 py-1.5 bg-[color:var(--theme-accent)] text-white text-xs font-normal rounded hover:bg-[color:var(--theme-accent-hover)]"
         >
           Nuevo
         </button>

@@ -6,9 +6,47 @@ interface DatePickerProps {
   disabled?: boolean;
   placeholder?: string;
   className?: string;
+  /**
+   * Formato del VALOR que recibe y entrega el componente (la pantalla siempre
+   * muestra dd/mm/aaaa):
+   *  - 'dmy' (default): "dd/mm/aaaa"
+   *  - 'iso': "aaaa-mm-dd" — reemplaza a <input type="date"> sin cambiar lo que se guarda.
+   */
+  formato?: 'dmy' | 'iso';
+  /** Fecha mínima / máxima seleccionable, en el mismo formato que `value`. */
+  min?: string;
+  max?: string;
+  id?: string;
+  name?: string;
+  title?: string;
+  required?: boolean;
+  'aria-label'?: string;
 }
 
-export function DatePicker({ value = '', onChange, disabled = false, placeholder = 'dd/mm/aaaa', className = '' }: DatePickerProps) {
+const RE_DMY = /^(\d{2})\/(\d{2})\/(\d{4})$/;
+/** "aaaa-mm-dd" (o ISO con hora) → "dd/mm/aaaa". */
+export function isoADmy(v: string): string {
+  const m = String(v || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : '';
+}
+/** "dd/mm/aaaa" → "aaaa-mm-dd" ('' si no es una fecha válida). */
+export function dmyAIso(v: string): string {
+  const m = String(v || '').match(RE_DMY);
+  if (!m) return '';
+  const d = new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]));
+  if (d.getDate() !== Number(m[1]) || d.getMonth() !== Number(m[2]) - 1) return '';
+  return `${m[3]}-${m[2]}-${m[1]}`;
+}
+
+export function DatePicker({ value = '', onChange, disabled = false, placeholder = 'dd/mm/aaaa', className = '', formato = 'dmy', min, max, id, name, title, required, 'aria-label': ariaLabel }: DatePickerProps) {
+  const esIso = formato === 'iso';
+  const valorDmy = esIso ? isoADmy(value) : value;
+  // En modo ISO lo tecleado se conserva local hasta que forma una fecha completa.
+  const [texto, setTexto] = useState(valorDmy);
+  const [enfocado, setEnfocado] = useState(false);
+  useEffect(() => { if (!enfocado) setTexto(valorDmy); }, [valorDmy, enfocado]);
+  const minDmy = esIso ? isoADmy(min || '') : (min || '');
+  const maxDmy = esIso ? isoADmy(max || '') : (max || '');
   const [showCalendar, setShowCalendar] = useState(false);
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [showYearSelector, setShowYearSelector] = useState(false);
@@ -74,9 +112,19 @@ export function DatePicker({ value = '', onChange, disabled = false, placeholder
 
   const handleDateSelect = (day: number) => {
     const selectedDate = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), day);
-    onChange(formatDate(selectedDate));
+    const dmy = formatDate(selectedDate);
+    setTexto(dmy);
+    onChange(esIso ? dmyAIso(dmy) : dmy);
     setShowCalendar(false);
   };
+
+  // Al abrir, mostrar el mes de la fecha elegida (o el actual).
+  useEffect(() => {
+    if (!showCalendar) return;
+    const sel = parseDate(valorDmy);
+    setCurrentMonth(sel && !Number.isNaN(sel.getTime()) ? new Date(sel.getFullYear(), sel.getMonth(), 1) : new Date());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showCalendar]);
 
   const getDaysInMonth = (date: Date): number => {
     return new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
@@ -112,8 +160,14 @@ export function DatePicker({ value = '', onChange, disabled = false, placeholder
     }
 
     // Días del mes
-    const selectedDate = parseDate(value);
+    const selectedDate = parseDate(valorDmy);
+    const fMin = parseDate(minDmy);
+    const fMax = parseDate(maxDmy);
+    const hoy = new Date();
     for (let day = 1; day <= daysInMonth; day++) {
+      const fecha = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), day);
+      const fueraDeRango = (fMin && fecha < fMin) || (fMax && fecha > fMax);
+      const esHoy = fecha.toDateString() === hoy.toDateString();
       const isSelected = selectedDate && 
         selectedDate.getDate() === day && 
         selectedDate.getMonth() === currentMonth.getMonth() &&
@@ -123,9 +177,14 @@ export function DatePicker({ value = '', onChange, disabled = false, placeholder
         <button
           key={day}
           type="button"
-          onClick={() => handleDateSelect(day)}
-          className={`h-7 text-xs rounded hover:bg-gray-200 transition-colors ${
-            isSelected ? 'bg-blue-500 text-white hover:bg-blue-600' : 'text-gray-700'
+          onClick={() => !fueraDeRango && handleDateSelect(day)}
+          disabled={!!fueraDeRango}
+          className={`h-7 text-xs rounded transition-colors ${
+            isSelected
+              ? 'bg-[color:var(--theme-primary)] text-white'
+              : fueraDeRango
+                ? 'text-gray-300 cursor-not-allowed'
+                : `text-gray-700 hover:bg-gray-200 ${esHoy ? 'ring-1 ring-[color:var(--theme-primary)] font-semibold' : ''}`
           }`}
         >
           {day}
@@ -150,7 +209,7 @@ export function DatePicker({ value = '', onChange, disabled = false, placeholder
           type="button"
           onClick={() => handleYearChange(year)}
           className={`px-3 py-1.5 text-xs rounded hover:bg-gray-200 transition-colors text-center ${
-            year === currentYear ? 'bg-blue-500 text-white hover:bg-blue-600' : 'text-gray-700'
+            year === currentYear ? 'bg-[color:var(--theme-primary)] text-white' : 'text-gray-700'
           }`}
         >
           {year}
@@ -166,16 +225,28 @@ export function DatePicker({ value = '', onChange, disabled = false, placeholder
       <div className="relative" ref={buttonRef}>
         <input
           type="text"
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          onFocus={() => !disabled && setShowCalendar(true)}
+          id={id}
+          name={name}
+          title={title}
+          required={required}
+          aria-label={ariaLabel}
+          value={esIso ? texto : value}
+          onChange={(e) => {
+            if (!esIso) { onChange(e.target.value); return; }
+            const t = e.target.value;
+            setTexto(t);
+            if (t.trim() === '') onChange('');
+            else { const iso = dmyAIso(t.trim()); if (iso) onChange(iso); }
+          }}
+          onFocus={() => { setEnfocado(true); if (!disabled) setShowCalendar(true); }}
+          onBlur={() => setEnfocado(false)}
           placeholder={placeholder}
           disabled={disabled}
-          className={`w-full pl-2 py-1 pr-8 text-xs border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-[#4A6FA5] ${
+          className={`w-full pl-2 py-1 pr-8 text-xs border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-[color:var(--theme-primary)] ${
             disabled ? 'bg-gray-100 text-gray-600 cursor-not-allowed' : 'bg-white'
           } ${className}`}
         />
-        <button
+        <button aria-label="Abrir calendario" title="Abrir calendario"
           type="button"
           onClick={() => !disabled && setShowCalendar(!showCalendar)}
           disabled={disabled}
@@ -212,7 +283,7 @@ export function DatePicker({ value = '', onChange, disabled = false, placeholder
               <>
                 {/* Header del calendario */}
                 <div className="flex items-center justify-between mb-2">
-                  <button
+                  <button aria-label="Mes anterior" title="Mes anterior"
                     type="button"
                     onClick={previousMonth}
                     className="p-1 hover:bg-gray-100 rounded"
@@ -228,7 +299,7 @@ export function DatePicker({ value = '', onChange, disabled = false, placeholder
                   >
                     {monthNames[currentMonth.getMonth()]} {currentMonth.getFullYear()}
                   </button>
-                  <button
+                  <button aria-label="Mes siguiente" title="Mes siguiente"
                     type="button"
                     onClick={nextMonth}
                     className="p-1 hover:bg-gray-100 rounded"

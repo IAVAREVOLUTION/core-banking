@@ -28,8 +28,9 @@
 // Tabla:   "EFINANCIANET_DB"."J_CUENTAS_CORP_CLIENTES"
 // Tabla:   "EFINANCIANET_DB"."J_NOTIFICACIONES" (notificaciones institucionales)
 // ════════════════════════════════════════════════════════
+import { buscarCuentaEjeExistente } from './useCuentaEjeGenerator';
 import { useState, useCallback } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 import { supabase } from '@/app/lib/supabaseClient';
 import type { InsertCuentaAhorroPayload } from './useCuentasAhorroDB';
@@ -346,7 +347,7 @@ function compactData(data: Record<string, any>): Record<string, any> {
 
   // 7. Slim down expedientes (conservar solo metadata de Storage)
   if (Array.isArray(compact.expedientesElectronicos)) {
-    const EXP_KEEP = ['id', 'nombre', 'tipo', 'tipoDocumento', 'estatus', 'fecha', 'fechaCarga', 'storagePath', 'mime', 'tamanoKB', 'bucket'];
+    const EXP_KEEP = ['id', 'nombre', 'tipo', 'tipoDocumento', 'estatus', 'fecha', 'fechaCarga', 'storagePath', 'mime', 'tamanoKB', 'bucket', 'usuarioCarga', 'version', 'fechaActualizacion', 'versionDe', 'versionRaiz'];
     compact.expedientesElectronicos = compact.expedientesElectronicos.map((item: any) => {
       if (typeof item !== 'object' || item === null) return item;
       const slim: Record<string, any> = {};
@@ -518,6 +519,12 @@ function generateNoReferencia(): string {
  */
 async function generarCuentaEje(prospectoUuid: string, nombreProspecto: string): Promise<{ id: string; noCuenta: string } | null> {
   const LOG_CE = '[CORE:CuentaEje]';
+  // Una sola cuenta EJE por persona: si ya existe se devuelve esa.
+  const existente = await buscarCuentaEjeExistente(prospectoUuid);
+  if (existente) {
+    console.log(`${LOG_CE} El interlocutor ya tiene cuenta EJE (${existente.noCuenta}); no se genera otra.`);
+    return existente;
+  }
   const noSol = generateNoSol();
   const noCuenta = generateNoCuenta(prospectoUuid);
   const noRef = generateNoReferencia();
@@ -836,11 +843,11 @@ export async function activarProspectoCORE(
 
   // ── 7.7 Validar que el ID sea valido ──
   if (!idProspecto || typeof idProspecto !== 'string' || idProspecto.trim() === '') {
-    const msg = 'ID del Prospecto no es valido o esta vacio.';
+    const msg = 'ID del Tipo Interlocutor no es valido o esta vacio.';
     console.error('[CORE:ActivarProspecto] RECHAZO:', msg);
     return {
       estatusOperacion: 'ERROR',
-      mensaje: 'No se puede activar el prospecto. Validar datos y estatus SIC/Listas Negras.',
+      mensaje: 'No se puede activar el tipo interlocutor. Validar datos y estatus SIC/Listas Negras.',
       errores: [msg],
     };
   }
@@ -880,7 +887,7 @@ export async function activarProspectoCORE(
 
     return {
       estatusOperacion: 'ERROR',
-      mensaje: 'No se puede activar el prospecto. Validar datos y estatus SIC/Listas Negras.',
+      mensaje: 'No se puede activar el tipo interlocutor. Validar datos y estatus SIC/Listas Negras.',
       errores: erroresAcumulados,
     };
   }
@@ -927,18 +934,18 @@ export async function activarProspectoCORE(
         } as InsertCuentaAhorroPayload, nombreCompleto0);
         await crearNotificacion({
           dirigidoA: 'Empleados', tipoCobertura: 'Empresa',
-          mensaje: `El prospecto ${nombreCompleto0} ha sido activado.`,
+          mensaje: `El tipo interlocutor ${nombreCompleto0} ha sido activado.`,
           idReferencia: idProspecto, fecha: new Date().toISOString(),
           estatusNotificacion: 'Pendiente',
         });
         return {
           estatusOperacion: 'OK',
-          mensaje: `El prospecto ${nombreCompleto0} ha sido activado exitosamente.`,
+          mensaje: `El tipo interlocutor ${nombreCompleto0} ha sido activado exitosamente.`,
           cuentaEjeId: json0.cuentaEjeId,
           numeroCuenta: json0.noCuenta,
         };
       } else if (json0.ya_tiene_cuenta_eje) {
-        return { estatusOperacion: 'OK', mensaje: 'El prospecto ya fue activado previamente (ya tiene cuenta eje).', errores: [json0.error] };
+        return { estatusOperacion: 'OK', mensaje: 'El tipo interlocutor ya fue activado previamente (ya tiene cuenta eje).', errores: [json0.error] };
       }
       console.warn('[CORE:ActivarProspecto] Edge /activar-prospecto retornó ok=false:', json0.error);
     } else {
@@ -1023,7 +1030,7 @@ export async function activarProspectoCORE(
         // Crear notificaciones (no bloquean)
         await crearNotificacion({
           dirigidoA: 'Empleados', tipoCobertura: 'Empresa',
-          mensaje: `El prospecto ${nombreCompleto} ha sido activado.`,
+          mensaje: `El tipo interlocutor ${nombreCompleto} ha sido activado.`,
           idReferencia: idProspecto, fecha: new Date().toISOString(),
           estatusNotificacion: 'Pendiente',
         });
@@ -1038,7 +1045,7 @@ export async function activarProspectoCORE(
 
         return {
           estatusOperacion: 'OK',
-          mensaje: `El prospecto ${nombreCompleto} ha sido activado exitosamente.`,
+          mensaje: `El tipo interlocutor ${nombreCompleto} ha sido activado exitosamente.`,
           cuentaEjeId: cuentaEje?.id,
           numeroCuenta: cuentaEje?.noCuenta,
         };
@@ -1047,7 +1054,7 @@ export async function activarProspectoCORE(
         console.warn('[CORE:ActivarProspecto] RPC: cliente ya tiene cuenta eje');
         return {
           estatusOperacion: 'OK',
-          mensaje: `El prospecto ya fue activado previamente (ya tiene cuenta eje).`,
+          mensaje: `El tipo interlocutor ya fue activado previamente (ya tiene cuenta eje).`,
           errores: [result.error],
         };
       } else if (result.ya_es_cliente) {
@@ -1214,8 +1221,8 @@ export async function activarProspectoCORE(
       console.error('[CORE:ActivarProspecto] Respuesta no-JSON de UPDATE:', text.substring(0, 300));
       return {
         estatusOperacion: 'ERROR',
-        mensaje: 'No se puede activar el prospecto. Validar datos y estatus SIC/Listas Negras.',
-        errores: [`Error de servidor al actualizar J_CLIENTES (HTTP ${res.status})`],
+        mensaje: 'No se puede activar el tipo interlocutor. Validar datos y estatus SIC/Listas Negras.',
+        errores: ['Error del servidor al activar. Intente de nuevo.'],
       };
     }
 
@@ -1223,8 +1230,8 @@ export async function activarProspectoCORE(
       console.error('[CORE:ActivarProspecto] Error HTTP en UPDATE:', res.status, result);
       return {
         estatusOperacion: 'ERROR',
-        mensaje: 'No se puede activar el prospecto. Validar datos y estatus SIC/Listas Negras.',
-        errores: [result.error || `HTTP ${res.status} al actualizar J_CLIENTES`],
+        mensaje: 'No se puede activar el tipo interlocutor. Validar datos y estatus SIC/Listas Negras.',
+        errores: ['No se pudo activar. Intente de nuevo.'],
       };
     }
 
@@ -1233,8 +1240,8 @@ export async function activarProspectoCORE(
     console.error('[CORE:ActivarProspecto] Error de red en UPDATE:', err);
     return {
       estatusOperacion: 'ERROR',
-      mensaje: 'No se puede activar el prospecto. Validar datos y estatus SIC/Listas Negras.',
-      errores: [`Error de conexion al actualizar J_CLIENTES: ${String(err)}`],
+      mensaje: 'No se puede activar el tipo interlocutor. Validar datos y estatus SIC/Listas Negras.',
+      errores: ['Sin conexión con el servidor. Intente de nuevo.'],
     };
   }
 
@@ -1260,7 +1267,7 @@ export async function activarProspectoCORE(
   await crearNotificacion({
     dirigidoA: 'Empleados',
     tipoCobertura: 'Empresa',
-    mensaje: `El prospecto ${nombreCompleto} ha sido activado.`,
+    mensaje: `El tipo interlocutor ${nombreCompleto} ha sido activado.`,
     idReferencia: idProspecto,
     fecha: new Date().toISOString(),
     estatusNotificacion: 'Pendiente',
@@ -1270,7 +1277,7 @@ export async function activarProspectoCORE(
   await crearNotificacion({
     dirigidoA: 'Empleados',
     tipoCobertura: 'Sucursal',
-    mensaje: `El prospecto ${nombreCompleto} ha sido activado en sucursal ${datosProspecto.sucursal || datosProspecto.entidadFederativa || 'N/A'}.`,
+    mensaje: `El tipo interlocutor ${nombreCompleto} ha sido activado en sucursal ${datosProspecto.sucursal || datosProspecto.entidadFederativa || 'N/A'}.`,
     idReferencia: idProspecto,
     fecha: new Date().toISOString(),
     estatusNotificacion: 'Pendiente',
@@ -1283,7 +1290,7 @@ export async function activarProspectoCORE(
   // ════════════════════════════════════════════════════════
   const respuesta: ActivacionProspectoResponse = {
     estatusOperacion: 'OK',
-    mensaje: `El prospecto ${nombreCompleto} se ha mandado para su validacion.`,
+    mensaje: `El tipo interlocutor ${nombreCompleto} se ha mandado para su validacion.`,
     cuentaEjeId: cuentaEjeId?.id || undefined,
     numeroCuenta: cuentaEjeId?.noCuenta || undefined,
   };
@@ -1325,7 +1332,7 @@ export function useActivacionProspecto(): UseActivacionProspectoReturn {
 
       // Feedback visual via toast
       if (response.estatusOperacion === 'OK') {
-        toast.success('Prospecto Activado', {
+        toast.success('Tipo Interlocutor Activado', {
           description: response.mensaje,
           duration: 6000,
         });
@@ -1348,7 +1355,7 @@ export function useActivacionProspecto(): UseActivacionProspectoReturn {
     } catch (err) {
       const errorResponse: ActivacionProspectoResponse = {
         estatusOperacion: 'ERROR',
-        mensaje: 'No se puede activar el prospecto. Validar datos y estatus SIC/Listas Negras.',
+        mensaje: 'No se puede activar el tipo interlocutor. Validar datos y estatus SIC/Listas Negras.',
         errores: [`Error inesperado: ${String(err)}`],
       };
       setResultado(errorResponse);

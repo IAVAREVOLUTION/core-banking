@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Loader2, Play, Download, CheckCircle, AlertCircle, Paperclip, Brain, X, Search, Eye, FileText } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
+import { useOrdenTabla, coincideBusqueda } from '@/app/lib/ordenTabla';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 
 // ═══════════════════════════════════════════════════════════════════
@@ -408,11 +409,11 @@ function CatalogoModal({ catalogo, onSelect, onClose }: CatalogoModalProps) {
         className="bg-white w-full max-w-2xl max-h-[75vh] flex flex-col rounded shadow-2xl"
         onClick={e => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between px-4 py-3 bg-[#2E5C91] rounded-t">
+        <div className="flex items-center justify-between px-4 py-3 bg-[color:var(--theme-secondary)] rounded-t">
           <span className="text-white font-medium text-sm flex items-center gap-2">
             <Search size={14} /> Seleccionar Reporte
           </span>
-          <button onClick={onClose} className="text-white/80 hover:text-white transition-colors">
+          <button aria-label="Cerrar" title="Cerrar" onClick={onClose} className="text-white/80 hover:text-white transition-colors">
             <X size={18} />
           </button>
         </div>
@@ -426,7 +427,7 @@ function CatalogoModal({ catalogo, onSelect, onClose }: CatalogoModalProps) {
               onChange={e => setSearch(e.target.value)}
               placeholder="Buscar por clave o nombre..."
               autoFocus
-              className="w-full pl-8 pr-3 py-1.5 text-sm border border-gray-400 rounded bg-white focus:border-[#0099CC] outline-none"
+              className="w-full pl-8 pr-3 py-1.5 text-sm border border-gray-400 rounded bg-white focus:border-[color:var(--theme-action)] outline-none"
             />
           </div>
         </div>
@@ -490,7 +491,7 @@ function ArchivoModal({ archivo, onClose, onDownload }: { archivo: Archivo; onCl
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 bg-[#2E5C91] rounded-t flex-shrink-0">
+        <div className="flex items-center justify-between px-4 py-3 bg-[color:var(--theme-secondary)] rounded-t flex-shrink-0">
           <span className="text-white font-medium text-sm flex items-center gap-2 truncate">
             <FileText size={14} className="flex-shrink-0" /> {archivo.nombre}
           </span>
@@ -501,7 +502,7 @@ function ArchivoModal({ archivo, onClose, onDownload }: { archivo: Archivo; onCl
                 Guardado
               </span>
             )}
-            <button onClick={onClose} className="text-white/80 hover:text-white transition-colors">
+            <button aria-label="Cerrar" title="Cerrar" onClick={onClose} className="text-white/80 hover:text-white transition-colors">
               <X size={18} />
             </button>
           </div>
@@ -516,9 +517,6 @@ function ArchivoModal({ archivo, onClose, onDownload }: { archivo: Archivo; onCl
             &nbsp;·&nbsp;
             Generado: <strong>{formatDateDMY(archivo.generadoEn)}</strong>
           </span>
-          {archivo.modelo && (
-            <span className="font-mono text-gray-400 text-[10px]">{archivo.modelo}</span>
-          )}
         </div>
 
         {/* Content */}
@@ -568,23 +566,32 @@ export function EjecReportesModule() {
   const [view, setView] = useState<ViewState>({ type: 'lista' });
 
   const [searchTerm, setSearchTerm] = useState('');
-  const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
   const [estatusFilter, setEstatusFilter] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const searchBarRef = useRef<HTMLInputElement>(null);
   const tableRef = useRef<HTMLDivElement>(null);
 
-  const filtered = useMemo(() => db.data.filter(r => {
-    const q = searchTerm.toLowerCase();
-    return (!q || r.nombre_reporte.toLowerCase().includes(q) || r.periodicidad.toLowerCase().includes(q))
-      && (!estatusFilter || r.estatus === estatusFilter);
-  }).sort((a, b) => sortOrder === 'desc'
-    ? b.fecha_creacion.localeCompare(a.fecha_creacion)
-    : a.fecha_creacion.localeCompare(b.fecha_creacion)
-  ), [db.data, searchTerm, estatusFilter, sortOrder]);
+  const filtered = useMemo(() => db.data.filter(r =>
+    (!estatusFilter || r.estatus === estatusFilter) &&
+    coincideBusqueda(searchTerm, [formatDateDMY(r.fecha_creacion), r.periodicidad, r.nombre_reporte, r.estatus])
+  ), [db.data, searchTerm, estatusFilter]);
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / ITEMS_PER_PAGE));
-  const pageData = filtered.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
+  // Más recientes primero (fecha de creación).
+  const orden = useOrdenTabla(filtered, {
+    id: 'ejec-reportes',
+    columnas: {
+      fecha: r => r.fecha_creacion,
+      periodicidad: r => r.periodicidad,
+      nombre: r => r.nombre_reporte,
+      estatus: r => r.estatus,
+    },
+    porDefecto: { campo: 'fecha', dir: 'desc' },
+    desempate: r => r.id,
+    alCambiar: () => setCurrentPage(1),
+  });
+
+  const totalPages = Math.max(1, Math.ceil(orden.filas.length / ITEMS_PER_PAGE));
+  const pageData = orden.filas.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
 
   const goNuevo = () => { catalogHook.load(); setView({ type: 'form', mode: 'create' }); };
   const goEdit  = (r: ReporteEjecucion) => { catalogHook.load(); setView({ type: 'form', mode: 'edit', record: r }); };
@@ -632,8 +639,8 @@ export function EjecReportesModule() {
             <h2 className="text-lg font-normal text-gray-800">Ejec. Reportes Regulatorios</h2>
           </div>
           <div className="flex items-center gap-4 text-sm text-gray-700">
-            <span onClick={() => tableRef.current?.scrollIntoView({ behavior: 'smooth' })} className="cursor-pointer hover:text-[#0099CC] transition-colors">Lista</span>
-            <span onClick={() => searchBarRef.current?.focus()} className="cursor-pointer hover:text-[#0099CC] transition-colors">Buscar</span>
+            <span onClick={() => tableRef.current?.scrollIntoView({ behavior: 'smooth' })} className="cursor-pointer hover:text-[color:var(--theme-action)] transition-colors">Lista</span>
+            <span onClick={() => searchBarRef.current?.focus()} className="cursor-pointer hover:text-[color:var(--theme-action)] transition-colors">Buscar</span>
           </div>
         </div>
       </div>
@@ -648,7 +655,7 @@ export function EjecReportesModule() {
             </select>
             <svg className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" width="12" height="12" viewBox="0 0 12 12" fill="#666"><path d="M6 8l-4-4h8z"/></svg>
           </div>
-          <button onClick={goNuevo} className="px-5 py-1.5 bg-[#0099CC] text-white rounded text-sm hover:bg-[#0088BB] font-medium">
+          <button onClick={goNuevo} className="px-5 py-1.5 bg-[color:var(--theme-action)] text-white rounded text-sm hover:bg-[color:var(--theme-action-hover)] font-medium">
             Nuevo
           </button>
         </div>
@@ -661,7 +668,7 @@ export function EjecReportesModule() {
           <input ref={searchBarRef} type="text" value={searchTerm}
             onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
             placeholder="Buscar por nombre o periodicidad..."
-            className="px-3 py-1 border border-gray-400 rounded text-sm w-72 bg-white focus:border-[#0099CC] outline-none"
+            className="px-3 py-1 border border-gray-400 rounded text-sm w-72 bg-white focus:border-[color:var(--theme-action)] outline-none"
           />
         </div>
       </div>
@@ -687,7 +694,7 @@ export function EjecReportesModule() {
             <div className="flex items-center gap-2">
               <span>Orden Rápido</span>
               <div className="relative">
-                <select value={sortOrder} onChange={(e) => { setSortOrder(e.target.value as 'desc' | 'asc'); setCurrentPage(1); }}
+                <select value={orden.dir} onChange={(e) => orden.fijar(orden.campo, e.target.value as 'desc' | 'asc')}
                   className="px-2 py-1 border border-gray-400 rounded text-sm bg-white pr-6 appearance-none">
                   <option value="desc">Más reciente</option>
                   <option value="asc">Más antiguo</option>
@@ -705,10 +712,10 @@ export function EjecReportesModule() {
                 </select>
                 <svg className="absolute right-1 top-1/2 -translate-y-1/2 pointer-events-none" width="10" height="10" viewBox="0 0 10 10" fill="#0099CC"><path d="M5 7l-3-3h6z"/></svg>
               </div>
-              <button className="p-0.5 text-[#0099CC] disabled:opacity-40" onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}>
+              <button type="button" aria-label="Página anterior" title="Página anterior" className="p-0.5 text-[color:var(--theme-action)] disabled:opacity-40" onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}>
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M10 3L5 8l5 5V3z"/></svg>
               </button>
-              <button className="p-0.5 text-[#0099CC] disabled:opacity-40" onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages}>
+              <button type="button" aria-label="Página siguiente" title="Página siguiente" className="p-0.5 text-[color:var(--theme-action)] disabled:opacity-40" onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages}>
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M6 3l5 5-5 5V3z"/></svg>
               </button>
             </div>
@@ -721,7 +728,7 @@ export function EjecReportesModule() {
       <div className="px-4 py-4" ref={tableRef}>
         {db.loading ? (
           <div className="flex items-center justify-center py-16 text-gray-400 gap-2">
-            <Loader2 size={20} className="animate-spin text-[#0099CC]" />
+            <Loader2 size={20} className="animate-spin text-[color:var(--theme-action)]" />
             <span className="text-sm">Cargando registros...</span>
           </div>
         ) : (
@@ -730,10 +737,10 @@ export function EjecReportesModule() {
               <thead>
                 <tr className="bg-[#D0D0D0] border-b border-gray-300">
                   <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700 w-28">Editar | Ver</th>
-                  <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700 w-32">FECHA CREACIÓN</th>
-                  <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700 w-32">PERIODICIDAD</th>
-                  <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700">NOMBRE REPORTE</th>
-                  <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700 w-28">ESTATUS</th>
+                  <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700 w-32" {...orden.th('fecha')}>FECHA CREACIÓN{orden.flecha('fecha')}</th>
+                  <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700 w-32" {...orden.th('periodicidad')}>PERIODICIDAD{orden.flecha('periodicidad')}</th>
+                  <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700" {...orden.th('nombre')}>NOMBRE REPORTE{orden.flecha('nombre')}</th>
+                  <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700 w-28" {...orden.th('estatus')}>ESTATUS{orden.flecha('estatus')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -752,9 +759,9 @@ export function EjecReportesModule() {
                     className="transition-colors cursor-pointer"
                   >
                     <td className="px-3 py-2 border-b border-gray-200 text-xs">
-                      <span className="text-[#0066CC] hover:underline cursor-pointer mr-2" onClick={() => goEdit(r)}>Editar</span>
+                      <span className="text-[color:var(--theme-link)] hover:underline cursor-pointer mr-2" onClick={() => goEdit(r)}>Editar</span>
                       <span className="text-gray-300">|</span>
-                      <span className="text-[#0066CC] hover:underline cursor-pointer ml-2" onClick={() => goView(r)}>Ver</span>
+                      <span className="text-[color:var(--theme-link)] hover:underline cursor-pointer ml-2" onClick={() => goView(r)}>Ver</span>
                     </td>
                     <td className="px-3 py-2 border-b border-gray-200 text-xs text-gray-700">{formatDateDMY(r.fecha_creacion)}</td>
                     <td className="px-3 py-2 border-b border-gray-200 text-xs text-gray-700">{r.periodicidad}</td>
@@ -772,17 +779,17 @@ export function EjecReportesModule() {
 
       {/* Pagination footer */}
       <div className="px-4 py-3 border-t border-gray-300 flex items-center justify-end gap-2">
-        <button className="p-0.5 text-[#0099CC] disabled:opacity-40" onClick={() => setCurrentPage(1)} disabled={currentPage === 1}>
+        <button type="button" aria-label="Primera página" title="Primera página" className="p-0.5 text-[color:var(--theme-action)] disabled:opacity-40" onClick={() => setCurrentPage(1)} disabled={currentPage === 1}>
           <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M11 3L6 8l5 5V3zM6 3L1 8l5 5V3z"/></svg>
         </button>
-        <button className="p-0.5 text-[#0099CC] disabled:opacity-40" onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}>
+        <button type="button" aria-label="Página anterior" title="Página anterior" className="p-0.5 text-[color:var(--theme-action)] disabled:opacity-40" onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}>
           <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M10 3L5 8l5 5V3z"/></svg>
         </button>
         <span className="text-sm text-gray-700 mx-1">Página {currentPage} de {totalPages}</span>
-        <button className="p-0.5 text-[#0099CC] disabled:opacity-40" onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages}>
+        <button type="button" aria-label="Página siguiente" title="Página siguiente" className="p-0.5 text-[color:var(--theme-action)] disabled:opacity-40" onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages}>
           <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M6 3l5 5-5 5V3z"/></svg>
         </button>
-        <button className="p-0.5 text-[#0099CC] disabled:opacity-40" onClick={() => setCurrentPage(totalPages)} disabled={currentPage === totalPages}>
+        <button type="button" aria-label="Última página" title="Última página" className="p-0.5 text-[color:var(--theme-action)] disabled:opacity-40" onClick={() => setCurrentPage(totalPages)} disabled={currentPage === totalPages}>
           <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M5 3l5 5-5 5V3zM10 3l5 5-5 5V3z"/></svg>
         </button>
       </div>
@@ -960,7 +967,7 @@ function ReporteForm({ mode, record, catalogo, catalogLoading, onCreate, onUpdat
     }
   };
 
-  const inputCls    = `w-full px-3 py-1.5 text-sm border border-gray-400 rounded bg-white focus:border-[#0099CC] outline-none transition-colors`;
+  const inputCls    = `w-full px-3 py-1.5 text-sm border border-gray-400 rounded bg-white focus:border-[color:var(--theme-action)] outline-none transition-colors`;
   const inputDisCls = `w-full px-3 py-1.5 text-sm border border-gray-200 bg-gray-50 text-gray-700 rounded`;
 
   // ─── Campos Datos Generales (compartidos entre sección y tab Default) ──
@@ -1020,7 +1027,7 @@ function ReporteForm({ mode, record, catalogo, catalogLoading, onCreate, onUpdat
             <button
               type="button"
               onClick={() => setShowCatalog(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 border border-gray-400 rounded text-sm text-gray-700 hover:bg-gray-50 hover:border-[#0099CC] hover:text-[#0099CC] transition-colors whitespace-nowrap"
+              className="flex items-center gap-1.5 px-3 py-1.5 border border-gray-400 rounded text-sm text-gray-700 hover:bg-gray-50 hover:border-[color:var(--theme-action)] hover:text-[color:var(--theme-action)] transition-colors whitespace-nowrap"
             >
               <Search size={13} /> Buscar
             </button>
@@ -1028,7 +1035,7 @@ function ReporteForm({ mode, record, catalogo, catalogLoading, onCreate, onUpdat
         </div>
         {selectedCatalogo && (
           <div className="mt-2 flex items-start gap-2 p-2.5 bg-[#F0F0F0] border border-gray-200 rounded">
-            <Brain size={12} className="text-[#0099CC] mt-0.5 flex-shrink-0" />
+            <Brain size={12} className="text-[color:var(--theme-action)] mt-0.5 flex-shrink-0" />
             <p className="text-[11px] text-gray-600 font-mono leading-relaxed line-clamp-3">{selectedCatalogo.prompt_ia}</p>
           </div>
         )}
@@ -1038,18 +1045,18 @@ function ReporteForm({ mode, record, catalogo, catalogLoading, onCreate, onUpdat
 
   const TABS = [
     { id: 'default'  as const, label: 'Default' },
-    { id: 'adjuntos' as const, label: 'Archivos Adjuntos' },
+    { id: 'adjuntos' as const, label: 'KM Digital' },
   ];
 
   const sectionHeader = (label: string, icon?: React.ReactNode) => (
-    <div className="flex items-center gap-2.5 bg-[#D9E2F3] px-4 py-2 mb-4 rounded border-l-4 border-[#4A6FA5] shadow-sm">
+    <div className="flex items-center gap-2.5 bg-[color:var(--theme-tint)] px-4 py-2 mb-4 rounded border-l-4 border-[color:var(--theme-primary)] shadow-sm">
       {icon ?? (
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#4A6FA5" strokeWidth="1.5">
           <rect x="2" y="2" width="12" height="12" rx="2"/>
           <path d="M5 6h6M5 8.5h4M5 11h5"/>
         </svg>
       )}
-      <span className="text-sm font-semibold text-[#2E5C91] tracking-wide uppercase">{label}</span>
+      <span className="text-sm font-semibold text-[color:var(--theme-secondary)] tracking-wide uppercase">{label}</span>
     </div>
   );
 
@@ -1099,7 +1106,7 @@ function ReporteForm({ mode, record, catalogo, catalogLoading, onCreate, onUpdat
                 <button
                   onClick={handleGuardar}
                   disabled={saving}
-                  className="px-5 py-1.5 bg-[#0099CC] text-white rounded text-sm hover:bg-[#0088BB] font-medium disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-1.5"
+                  className="px-5 py-1.5 bg-[color:var(--theme-action)] text-white rounded text-sm hover:bg-[color:var(--theme-action-hover)] font-medium disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-1.5"
                 >
                   {saving && <Loader2 size={13} className="animate-spin" />}
                   {saving ? 'Guardando...' : 'Guardar'}
@@ -1123,7 +1130,7 @@ function ReporteForm({ mode, record, catalogo, catalogLoading, onCreate, onUpdat
               onClick={handleEjecutar}
               disabled={ejecutando || isCreate}
               title={isCreate ? 'Guarde el registro primero' : 'Generar reporte con IA'}
-              className="flex items-center gap-2 px-5 py-1.5 bg-[#2E5C91] text-white text-sm font-medium rounded hover:bg-[#253f6a] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex items-center gap-2 px-5 py-1.5 bg-[color:var(--theme-secondary)] text-white text-sm font-medium rounded hover:bg-[color:var(--theme-secondary-hover)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {ejecutando ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
               {ejecutando ? 'Generando...' : 'Ejecutar Reporte'}
@@ -1140,23 +1147,23 @@ function ReporteForm({ mode, record, catalogo, catalogLoading, onCreate, onUpdat
               {sectionHeader('Datos Generales')}
               {catalogLoading ? (
                 <div className="flex items-center gap-2 text-sm text-gray-400 py-2">
-                  <Loader2 size={14} className="animate-spin text-[#0099CC]" /> Cargando catálogo...
+                  <Loader2 size={14} className="animate-spin text-[color:var(--theme-action)]" /> Cargando catálogo...
                 </div>
               ) : renderDatosGeneralesGrid()}
             </div>
 
             {/* ── Subtabs ───────────────────────────────────────── */}
-            <div className="bg-[#2E5C91] text-white">
+            <div className="bg-[color:var(--theme-secondary)] text-white">
               <div className="flex items-center overflow-x-auto">
                 {TABS.map(tab => (
                   <button key={tab.id} onClick={() => setActiveTab(tab.id)}
                     className={`px-4 py-2.5 text-xs whitespace-nowrap border-r border-gray-500/30 transition-all flex items-center gap-1.5 ${
                       activeTab === tab.id
-                        ? 'bg-[#4A6FA5] text-white font-medium'
-                        : 'bg-[#2E5C91] text-white/90 hover:bg-[#3d6fa5]'
+                        ? 'bg-[color:var(--theme-primary)] text-white font-medium'
+                        : 'bg-[color:var(--theme-secondary)] text-white/90 hover:bg-[color:var(--theme-primary)]'
                     }`}>
                     {tab.id === 'adjuntos' && archivo !== null && (
-                      <span className={`inline-flex items-center justify-center w-4 h-4 rounded-full text-[9px] font-bold ${activeTab === tab.id ? 'bg-white text-[#4A6FA5]' : 'bg-white/30 text-white'}`}>
+                      <span className={`inline-flex items-center justify-center w-4 h-4 rounded-full text-[9px] font-bold ${activeTab === tab.id ? 'bg-white text-[color:var(--theme-primary)]' : 'bg-white/30 text-white'}`}>
                         1
                       </span>
                     )}
@@ -1175,7 +1182,7 @@ function ReporteForm({ mode, record, catalogo, catalogLoading, onCreate, onUpdat
                   {sectionHeader('Datos Generales')}
                   {catalogLoading ? (
                     <div className="flex items-center gap-2 text-sm text-gray-400 py-2">
-                      <Loader2 size={14} className="animate-spin text-[#0099CC]" /> Cargando catálogo...
+                      <Loader2 size={14} className="animate-spin text-[color:var(--theme-action)]" /> Cargando catálogo...
                     </div>
                   ) : renderDatosGeneralesGrid()}
 
@@ -1184,7 +1191,7 @@ function ReporteForm({ mode, record, catalogo, catalogLoading, onCreate, onUpdat
                       <Play size={14} />
                       {isCreate
                         ? 'Guarde el registro y use "Ejecutar Reporte" para generar el archivo.'
-                        : 'Use "Ejecutar Reporte" (arriba a la derecha) para generar el reporte. El archivo quedará en Archivos Adjuntos.'}
+                        : 'Use "Ejecutar Reporte" (arriba a la derecha) para generar el reporte. El archivo quedará en KM Digital.'}
                     </div>
                   )}
                 </div>
@@ -1193,7 +1200,7 @@ function ReporteForm({ mode, record, catalogo, catalogLoading, onCreate, onUpdat
               {/* ARCHIVOS ADJUNTOS */}
               {activeTab === 'adjuntos' && (
                 <div>
-                  {sectionHeader('Archivos Adjuntos', <Paperclip size={14} className="text-[#4A6FA5]" />)}
+                  {sectionHeader('KM Digital', <Paperclip size={14} className="text-[color:var(--theme-primary)]" />)}
 
                   {archivo === null ? (
                     <div className="flex flex-col items-center justify-center py-14 text-gray-400 gap-3">
@@ -1228,14 +1235,14 @@ function ReporteForm({ mode, record, catalogo, catalogLoading, onCreate, onUpdat
                           >
                             <td className="px-3 py-2 border-b border-gray-200 text-xs">
                               <span
-                                className="text-[#0066CC] hover:underline cursor-pointer mr-2 inline-flex items-center gap-0.5"
+                                className="text-[color:var(--theme-link)] hover:underline cursor-pointer mr-2 inline-flex items-center gap-0.5"
                                 onClick={() => setViewArchivo(archivo)}
                               >
                                 <Eye size={11} /> Ver
                               </span>
                               <span className="text-gray-300">|</span>
                               <span
-                                className="text-[#0066CC] hover:underline cursor-pointer ml-2 inline-flex items-center gap-0.5"
+                                className="text-[color:var(--theme-link)] hover:underline cursor-pointer ml-2 inline-flex items-center gap-0.5"
                                 onClick={() => downloadArchivoSmart(archivo)}
                               >
                                 <Download size={11} /> Descargar
@@ -1243,7 +1250,7 @@ function ReporteForm({ mode, record, catalogo, catalogLoading, onCreate, onUpdat
                             </td>
                             <td className="px-3 py-2 border-b border-gray-200 text-xs text-gray-800 font-mono">
                               <div className="flex items-center gap-1.5">
-                                <FileText size={12} className="text-[#0099CC] flex-shrink-0" />
+                                <FileText size={12} className="text-[color:var(--theme-action)] flex-shrink-0" />
                                 {archivo.nombre}
                               </div>
                             </td>

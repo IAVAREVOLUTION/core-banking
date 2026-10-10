@@ -18,11 +18,11 @@
 import { useState, useEffect, useRef } from 'react';
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { FileText, DollarSign, Clock, CheckCircle } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 
 import { CotizacionCaptacionList } from './CotizacionCaptacionList';
 import { CotizacionCaptacionForm } from './CotizacionCaptacionForm';
-import type { CotizacionCaptacion } from './cotizacionCaptacionTypes';
+import { montoANumero, type CotizacionCaptacion } from './cotizacionCaptacionTypes';
 import { useCotizacionesCaptacionDB } from '../../hooks/useCotizacionesCaptacionDB';
 import { CotizacionCreditoList } from './CotizacionCreditoList';
 import { CotizacionCreditoForm } from './CotizacionCreditoForm';
@@ -47,7 +47,7 @@ function CotizacionesDashboard({ cotizaciones, onNew, onViewList }: {
   const total = cotizaciones.length;
   const pendientes = cotizaciones.filter(c => c.estatus_cotiza === 'Pendiente').length;
   const aprobadas = cotizaciones.filter(c => c.estatus_cotiza === 'Aprobada').length;
-  const montoTotal = cotizaciones.reduce((s, c) => s + (c.data.montoCotizado || 0), 0);
+  const montoTotal = cotizaciones.reduce((s, c) => s + montoANumero(c.data.montoCotizado), 0);
 
   const estatusData = Object.entries(
     cotizaciones.reduce((acc, c) => { acc[c.estatus_cotiza] = (acc[c.estatus_cotiza] || 0) + 1; return acc; }, {} as Record<string, number>)
@@ -64,7 +64,7 @@ function CotizacionesDashboard({ cotizaciones, onNew, onViewList }: {
   const montoByProducto = Object.entries(
     cotizaciones.reduce((acc, c) => {
       const key = c.data.producto?.nombreProducto || 'Otro';
-      acc[key] = (acc[key] || 0) + (c.data.montoCotizado || 0);
+      acc[key] = (acc[key] || 0) + montoANumero(c.data.montoCotizado);
       return acc;
     }, {} as Record<string, number>)
   ).map(([prod, monto]) => ({ prod, monto: monto / 1000 }));
@@ -155,7 +155,7 @@ function CotizacionesDashboard({ cotizaciones, onNew, onViewList }: {
             <thead>
               <tr className="bg-gray-50 border-b">
                 <th className="text-left px-3 py-2">ID Cotiza</th>
-                <th className="text-left px-3 py-2">Cliente</th>
+                <th className="text-left px-3 py-2">Nombre Interlocutor</th>
                 <th className="text-left px-3 py-2">Producto</th>
                 <th className="text-right px-3 py-2">Monto</th>
                 <th className="text-center px-3 py-2">Estatus</th>
@@ -167,7 +167,7 @@ function CotizacionesDashboard({ cotizaciones, onNew, onViewList }: {
                   <td className="px-3 py-2 text-blue-600">{c.no_cotiza}</td>
                   <td className="px-3 py-2">{c.data.cliente?.nombreCompleto || '—'}</td>
                   <td className="px-3 py-2">{c.data.producto?.nombreProducto || '—'}</td>
-                  <td className="px-3 py-2 text-right">{formatMoney(c.data.montoCotizado || 0)}</td>
+                  <td className="px-3 py-2 text-right">{formatMoney(montoANumero(c.data.montoCotizado))}</td>
                   <td className="px-3 py-2 text-center">{renderEstatus(c.estatus_cotiza)}</td>
                 </tr>
               ))}
@@ -287,7 +287,7 @@ export function CotizacionesModule({ deepLinkCotizacionId, deepLinkLinea, onDeep
       const foundInLC = cotizacionesLC.find(c => c.id === targetId);
       if (foundInLC) return { found: true, type: 'cre', data: foundInLC };
 
-      return { found: false };
+      return { found: false, type: 'cap' as const };
     };
 
     const result = searchAllSources();
@@ -418,7 +418,7 @@ export function CotizacionesModule({ deepLinkCotizacionId, deepLinkLinea, onDeep
       nombreProducto: c.data.producto?.nombreProducto || '',
       montoSolicitado: String(parseFloat(String(c.data.montoCotizado || '0').replace(/[^0-9.-]/g, '')) || 0),
       // Cliente — requerido para Solicitud de Activación (Fase 6)
-      _clienteId: c.cliente_id || c.data?.cliente?.id || '',
+      _clienteId: c.cliente_id || (c.data?.cliente as any)?.id || '',
       // Fechas derivadas del calendario de aportaciones — convertir YYYY-MM-DD → DD/MM/YYYY
       fechaInicio: isoToDMY(c.data.calendarioAportaciones?.[0]?.fecha || ''),
       fechaFin: c.data.calendarioAportaciones?.length > 0
@@ -504,7 +504,7 @@ export function CotizacionesModule({ deepLinkCotizacionId, deepLinkLinea, onDeep
       nombreProducto: c.data.producto?.nombreProducto || '',
       montoSolicitado: Number(c.data.montoSolicitado || 0).toFixed(2),
       // Cliente — requerido para Solicitud de Activación (Fase 6)
-      _clienteId: c.cliente_id || c.data?.cliente?.id || '',
+      _clienteId: c.cliente_id || (c.data?.cliente as any)?.id || '',
       // Fechas derivadas de la tabla de amortización
       fechaInicio: isoToDMY(c.data.fechaPrimerPago || (c.data.tablaAmortizacion?.[0] as any)?.fechaPago || ''),
       fechaFin: (() => {
@@ -530,8 +530,27 @@ export function CotizacionesModule({ deepLinkCotizacionId, deepLinkLinea, onDeep
         tipoCalculo: c.data.tipoCalculoAmortizacion || 'Francés',
         moneda: c.data.moneda || 'MXN',
         montoGarantia: Number(c.data.montoGarantia || 0).toFixed(2),
+        // Bien elegido en la cotización. La cotización guarda el aforo como
+        // fracción (1.0 = 100%) y Términos de la Solicitud lo espera en %.
+        ...(c.data.tipoGarantia ? {
+          _garantiaActiva: true,
+          tipoGarantia: c.data.tipoGarantia,
+          subtipoGarantia: c.data.subtipoGarantia || '',
+          porcentajeAforo: (() => {
+            const a = Number(c.data.aforo || 0);
+            return a > 0 && a <= 10 ? Math.round(a * 10000) / 100 : a;
+          })(),
+          montoCubrirGarantia: Number(c.data.montoCubrirGarantia || 0),
+        } : {}),
         seguroFinanciado: c.data.seguroFinanciado || false,
         montoSeguro: Number(c.data.montoSeguro || 0).toFixed(2),
+        // Seguro elegido: la cotización lo identifica por nombre.
+        ...(c.data.seguroFinanciado && c.data.seguroNombre ? {
+          seguroNombre: c.data.seguroNombre,
+          seguroProductoIdCot: (c.data as any).seguroProductoId || '',
+          seguroMontoDefaultCot: Number(c.data.montoSeguro || 0),
+          tasaSeguro: c.data.tasaSeguro || 0,
+        } : {}),
         // Línea de Crédito — campos específicos (homologados §4)
         ...(c.data.lineaProducto === 'Línea de Crédito' ? {
           tipoLinea: c.data.tipoLinea || '',

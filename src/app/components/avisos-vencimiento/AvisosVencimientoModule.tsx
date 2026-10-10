@@ -1,7 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
+import { useOrdenTabla, coincideBusqueda } from '@/app/lib/ordenTabla';
 import { BarChart, Bar, PieChart, Pie, Cell, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { DatePicker } from '@/app/components/ui/DatePicker';
+import { CampoMonto } from '@/app/components/ui/CampoMonto';
 
 // ═══════════════════════════════════════════════════════════════════
 // STORE (inline — prefix: aviso_venc_)
@@ -428,7 +430,6 @@ function AvisosList({ items, onNuevo, onEditar, onVer }: {
   onVer: (i: AvisoListItem) => void;
 }) {
   const [searchTerm, setSearchTerm] = useState('');
-  const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
   const [currentPage, setCurrentPage] = useState(1);
   const [fEstatus, setFEstatus] = useState('');
   const [fSubEstatus, setFSubEstatus] = useState('');
@@ -441,22 +442,34 @@ function AvisosList({ items, onNuevo, onEditar, onVer }: {
   const handleExportPDF = () => { toast.success('Exportando a PDF', { description: 'El archivo PDF se está descargando...', duration: 3000 }); };
   const handlePrint = () => { toast.success('Imprimiendo', { description: 'Enviando documento a la impresora...', duration: 3000 }); };
 
-  const filtered = items.filter(i => {
-    if (fEstatus && i.estatus !== fEstatus) return false;
-    if (fSubEstatus && i.subEstatus !== fSubEstatus) return false;
-    if (searchTerm) {
-      const s = searchTerm.toLowerCase();
-      return i.noAviso.toLowerCase().includes(s) || i.cliente.toLowerCase().includes(s) || i.noCredito.toLowerCase().includes(s) || i.noCliente.toLowerCase().includes(s);
-    }
-    return true;
-  }).sort((a, b) => {
-    const da = parseDate(a.fechaAviso).getTime();
-    const db = parseDate(b.fechaAviso).getTime();
-    return sortOrder === 'desc' ? db - da : da - db;
+  const filtered = items.filter(i =>
+    (!fEstatus || i.estatus === fEstatus) &&
+    (!fSubEstatus || i.subEstatus === fSubEstatus) &&
+    coincideBusqueda(searchTerm, [
+      i.noAviso, i.noCredito, i.noCliente, i.cliente, i.fechaAviso, i.fechaVencimiento, i.estatus, i.subEstatus, i.responsable,
+    ]));
+
+  // Más recientes primero (fecha del aviso; a igual fecha, el número de aviso).
+  const orden = useOrdenTabla(filtered, {
+    id: 'avisos-vencimiento',
+    columnas: {
+      noAviso: i => i.noAviso,
+      noCredito: i => i.noCredito,
+      cliente: i => i.cliente,
+      fecha: i => parseDate(i.fechaAviso),
+      vencimiento: i => parseDate(i.fechaVencimiento),
+      monto: i => i.montoTotal,
+      estatus: i => i.estatus,
+      subEstatus: i => i.subEstatus,
+      responsable: i => i.responsable,
+    },
+    porDefecto: { campo: 'fecha', dir: 'desc' },
+    desempate: i => i.noAviso,
+    alCambiar: () => setCurrentPage(1),
   });
 
-  const totalPages = Math.ceil(filtered.length / itemsPerPage);
-  const paginated = filtered.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+  const totalPages = Math.ceil(orden.filas.length / itemsPerPage);
+  const paginated = orden.filas.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
   const seBadge = (se: string) => {
     const m: Record<string, string> = { 'Integración': 'bg-blue-100 text-blue-800', 'Análisis': 'bg-yellow-100 text-yellow-800', 'Jurídico': 'bg-purple-100 text-purple-800', 'Liberación': 'bg-green-100 text-green-800' };
@@ -471,7 +484,7 @@ function AvisosList({ items, onNuevo, onEditar, onVer }: {
           <div className="flex items-center gap-3">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#666" strokeWidth="1.5"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
             <h2 className="text-lg text-gray-800">Avisos de Vencimiento</h2>
-            <button className="p-1 ml-2"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#999" strokeWidth="2"><circle cx="8" cy="8" r="6"/><path d="M13 13l3 3"/></svg></button>
+            <button type="button" aria-label="Buscar" title="Buscar" className="p-1 ml-2"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#999" strokeWidth="2"><circle cx="8" cy="8" r="6"/><path d="M13 13l3 3"/></svg></button>
           </div>
           <div className="flex items-center gap-4 text-sm text-gray-700">
             <span className="cursor-pointer hover:text-secondary-theme transition-colors" onClick={() => { if (tableRef.current) { tableRef.current.classList.add('animate-highlight'); setTimeout(() => tableRef.current?.classList.remove('animate-highlight'), 1000); } }}>Lista</span>
@@ -527,7 +540,7 @@ function AvisosList({ items, onNuevo, onEditar, onVer }: {
             <div className="flex items-center gap-2">
               <span>Orden Rápido</span>
               <div className="relative">
-                <select value={sortOrder} onChange={e => { setSortOrder(e.target.value as 'desc' | 'asc'); setCurrentPage(1); }} className="px-2 py-1 border border-gray-400 rounded text-sm bg-white pr-6 appearance-none">
+                <select value={orden.dir} onChange={e => orden.fijar(orden.campo, e.target.value as 'desc' | 'asc')} className="px-2 py-1 border border-gray-400 rounded text-sm bg-white pr-6 appearance-none">
                   <option value="desc">Descendente</option>
                   <option value="asc">Ascendente</option>
                 </select>
@@ -554,15 +567,15 @@ function AvisosList({ items, onNuevo, onEditar, onVer }: {
             <thead>
               <tr className="bg-gray-100 border-b border-gray-300">
                 <th className="px-3 py-2.5 text-left text-xs text-gray-700">Editar | Ver</th>
-                <th className="px-3 py-2.5 text-left text-xs text-gray-700">N° AVISO</th>
-                <th className="px-3 py-2.5 text-left text-xs text-gray-700">N° CRÉDITO</th>
-                <th className="px-3 py-2.5 text-left text-xs text-gray-700">CLIENTE</th>
-                <th className="px-3 py-2.5 text-left text-xs text-gray-700">FECHA AVISO</th>
-                <th className="px-3 py-2.5 text-left text-xs text-gray-700">VENCIMIENTO</th>
-                <th className="px-3 py-2.5 text-left text-xs text-gray-700">MONTO TOTAL</th>
-                <th className="px-3 py-2.5 text-left text-xs text-gray-700">ESTATUS</th>
-                <th className="px-3 py-2.5 text-left text-xs text-gray-700">SUB ESTATUS</th>
-                <th className="px-3 py-2.5 text-left text-xs text-gray-700">RESPONSABLE</th>
+                <th className="px-3 py-2.5 text-left text-xs text-gray-700" {...orden.th('noAviso')}>N° AVISO{orden.flecha('noAviso')}</th>
+                <th className="px-3 py-2.5 text-left text-xs text-gray-700" {...orden.th('noCredito')}>N° CRÉDITO{orden.flecha('noCredito')}</th>
+                <th className="px-3 py-2.5 text-left text-xs text-gray-700" {...orden.th('cliente')}>NOMBRE INTERLOCUTOR{orden.flecha('cliente')}</th>
+                <th className="px-3 py-2.5 text-left text-xs text-gray-700" {...orden.th('fecha')}>FECHA AVISO{orden.flecha('fecha')}</th>
+                <th className="px-3 py-2.5 text-left text-xs text-gray-700" {...orden.th('vencimiento')}>VENCIMIENTO{orden.flecha('vencimiento')}</th>
+                <th className="px-3 py-2.5 text-left text-xs text-gray-700" {...orden.th('monto')}>MONTO TOTAL{orden.flecha('monto')}</th>
+                <th className="px-3 py-2.5 text-left text-xs text-gray-700" {...orden.th('estatus')}>ESTATUS{orden.flecha('estatus')}</th>
+                <th className="px-3 py-2.5 text-left text-xs text-gray-700" {...orden.th('subEstatus')}>SUB ESTATUS{orden.flecha('subEstatus')}</th>
+                <th className="px-3 py-2.5 text-left text-xs text-gray-700" {...orden.th('responsable')}>RESPONSABLE{orden.flecha('responsable')}</th>
               </tr>
             </thead>
             <tbody>
@@ -574,9 +587,9 @@ function AvisosList({ items, onNuevo, onEditar, onVer }: {
                   onMouseEnter={e => e.currentTarget.style.backgroundColor = '#E8F4F8'}
                   onMouseLeave={e => e.currentTarget.style.backgroundColor = idx % 2 === 1 ? '#EEEEEE' : '#FFFFFF'}>
                   <td className="px-3 py-2.5 text-xs">
-                    <a href="#" className="text-[#0066CC] hover:underline" onClick={e => { e.preventDefault(); onEditar(i); }}>Editar</a>
+                    <button type="button" className="enlace-accion text-[color:var(--theme-link)] hover:underline" onClick={() => { onEditar(i); }}>Editar</button>
                     <span className="text-gray-700"> | </span>
-                    <a href="#" className="text-[#0066CC] hover:underline" onClick={e => { e.preventDefault(); onVer(i); }}>Ver</a>
+                    <button type="button" className="enlace-accion text-[color:var(--theme-link)] hover:underline" onClick={() => { onVer(i); }}>Ver</button>
                   </td>
                   <td className="px-3 py-2.5 text-xs text-gray-700">{i.noAviso}</td>
                   <td className="px-3 py-2.5 text-xs text-gray-700">{i.noCredito}</td>
@@ -743,7 +756,7 @@ function AvisoForm({ mode, avisoId, onCancel, onSave }: {
           <div className="space-y-3">
             <div><Lbl req>N° Aviso</Lbl><input type="text" value={fd.noAviso} disabled className={ic(false, true)} /></div>
             <div><Lbl req error={errors.noCredito}>N° Crédito</Lbl><select value={fd.noCredito} onChange={e => set('noCredito', e.target.value)} disabled={isRO} className={sc(!!errors.noCredito)}><option value="">Seleccionar...</option>{CAT_CREDITOS.map(c => <option key={c} value={c}>{c}</option>)}</select>{errors.noCredito && <span className="text-[10px] text-red-500">{errors.noCredito}</span>}</div>
-            <div><Lbl req error={errors.cliente}>Cliente</Lbl><select value={fd.noCliente} onChange={e => { const cl = CAT_CLIENTES.find(c => c.value === e.target.value); set('noCliente', e.target.value); set('cliente', cl?.label.split(' - ')[1] || ''); }} disabled={isRO} className={sc(!!errors.cliente)}><option value="">Seleccionar...</option>{CAT_CLIENTES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}</select>{errors.cliente && <span className="text-[10px] text-red-500">{errors.cliente}</span>}</div>
+            <div><Lbl req error={errors.cliente}>Nombre Interlocutor</Lbl><select value={fd.noCliente} onChange={e => { const cl = CAT_CLIENTES.find(c => c.value === e.target.value); set('noCliente', e.target.value); set('cliente', cl?.label.split(' - ')[1] || ''); }} disabled={isRO} className={sc(!!errors.cliente)}><option value="">Seleccionar...</option>{CAT_CLIENTES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}</select>{errors.cliente && <span className="text-[10px] text-red-500">{errors.cliente}</span>}</div>
           </div>
           <div className="space-y-3">
             <div><Lbl req error={errors.fechaAviso}>Fecha Aviso</Lbl><DatePicker value={fd.fechaAviso} onChange={v => set('fechaAviso', v)} disabled={isRO} placeholder="dd/mm/aaaa" className={`px-2 py-1 ${errors.fechaAviso ? 'border-red-400' : ''}`} />{errors.fechaAviso && <span className="text-[10px] text-red-500">{errors.fechaAviso}</span>}</div>
@@ -845,11 +858,11 @@ function AvisoForm({ mode, avisoId, onCancel, onSave }: {
                         <input type="number" min="1" value={d.cantidad} onChange={e => updateDetalle(d.id, 'cantidad', Math.max(1, +e.target.value || 1))} disabled={isRO} className={`w-full px-1 py-0.5 text-xs border border-gray-300 rounded text-center ${isRO ? 'bg-gray-100' : 'bg-white'}`} />
                       </td>
                       <td className="px-2 py-1.5 border-r border-gray-200">
-                        <input type="number" step="0.01" min="0" value={d.monto} onChange={e => updateDetalle(d.id, 'monto', +e.target.value || 0)} disabled={isRO} className={`w-full px-1 py-0.5 text-xs border border-gray-300 rounded text-right ${isRO ? 'bg-gray-100' : 'bg-white'}`} />
+                        <CampoMonto min="0" value={d.monto} onChange={e => updateDetalle(d.id, 'monto', +e.target.value || 0)} disabled={isRO} className={`w-full px-1 py-0.5 text-xs border border-gray-300 rounded text-right ${isRO ? 'bg-gray-100' : 'bg-white'}`} />
                       </td>
                       <td className="px-2 py-1.5 text-xs text-right border-r border-gray-200 bg-gray-50">{fmt(d.subtotal)}</td>
                       <td className="px-2 py-1.5 border-r border-gray-200">
-                        <input type="number" step="0.01" min="0" value={d.pagado} onChange={e => updateDetalle(d.id, 'pagado', Math.max(0, +e.target.value || 0))} disabled={isRO} className={`w-full px-1 py-0.5 text-xs border border-gray-300 rounded text-right ${isRO ? 'bg-gray-100' : 'bg-white'}`} />
+                        <CampoMonto min="0" value={d.pagado} onChange={e => updateDetalle(d.id, 'pagado', Math.max(0, +e.target.value || 0))} disabled={isRO} className={`w-full px-1 py-0.5 text-xs border border-gray-300 rounded text-right ${isRO ? 'bg-gray-100' : 'bg-white'}`} />
                       </td>
                       <td className="px-2 py-1.5 text-xs text-right border-r border-gray-200 bg-gray-50">{fmt(d.saldo)}</td>
                       <td className={`px-2 py-1.5 text-xs border-r border-gray-200 ${d.estatusConcepto === 'Pagado' ? 'text-green-700' : d.estatusConcepto === 'Parcial' ? 'text-yellow-700' : 'text-gray-500'}`}>{d.estatusConcepto}</td>

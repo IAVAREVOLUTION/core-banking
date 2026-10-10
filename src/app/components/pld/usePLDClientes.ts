@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
+import { repararDataSolicitud } from '@/app/lib/repararDataSolicitud';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-7e2d13d9`;
 const HDR = { Authorization: `Bearer ${publicAnonKey}` };
@@ -14,10 +15,14 @@ export interface PLDCliente {
   sucursal: string;
   estatus: string;
   tipo: string;
+  /** No. Interlocutor (consecutivo de 10 dígitos). */
+  idCliente: string;
+  /** data completo de la persona (para la calificación de riesgo). */
+  raw: Record<string, any>;
 }
 
 function mapRow(row: any, idx: number): PLDCliente {
-  const d = row.data || {};
+  const d = repararDataSolicitud(row.data);
   const def = d.default || {};
   const g = (k: string) => (d[k] || def[k] || '') as string;
 
@@ -38,6 +43,8 @@ function mapRow(row: any, idx: number): PLDCliente {
     sucursal:    g('sucursal') || 'Matriz',
     estatus:     row.estatus || 'Activo',
     tipo:        row.type || '',
+    idCliente:   g('idCliente') || g('idProspecto'),
+    raw:         d,
   };
 }
 

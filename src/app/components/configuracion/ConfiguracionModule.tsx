@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Settings, Building2, MapPin, Briefcase, UserCheck, Landmark, Store, Wrench, BookOpen, ChevronRight, ClipboardList, Calculator } from 'lucide-react';
+import { Settings, Building2, MapPin, Briefcase, UserCheck, Landmark, Store, Wrench, BookOpen, ChevronRight, ClipboardList, Calculator, LayoutGrid } from 'lucide-react';
 import { SucursalesSection } from './SucursalesSection';
 import { InstitucionesFinancierasSection } from './InstitucionesFinancierasSection';
 import { PuestosTrabajoSection } from './PuestosTrabajoSection';
@@ -11,11 +11,13 @@ import { MantenimientoSection } from './MantenimientoSection';
 import { CatalogoDocumentosSection } from './CatalogoDocumentosSection';
 import { ReportesRegulariosSection } from './ReportesRegulariosSection';
 import { CatalogosContablesSection } from './CatalogosContablesSection';
+import { ModulosVisiblesSection } from './ModulosVisiblesSection';
 
 // ═══════════════════════════════════════════════════════════════════
 // TIPOS
 // ═══════════════════════════════════════════════════════════════════
 type ConfigTab =
+  | 'modulos-visibles'
   | 'parametros-generales'
   | 'parametros-institucion'
   | 'parametros-sucursales'
@@ -67,6 +69,7 @@ const CONFIG_TAB_GROUPS: TabGroup[] = [
       { id: 'catalogo-documentos', label: 'Catálogos', icon: <BookOpen size={14} /> },
       { id: 'reportes-regulatorios', label: 'Reportes Regulatorios', icon: <ClipboardList size={14} /> },
       { id: 'catalogos-contables', label: 'Catálogos Contables', icon: <Calculator size={14} /> },
+      { id: 'modulos-visibles', label: 'Módulos visibles', icon: <LayoutGrid size={14} /> },
     ],
   },
 ];
@@ -99,8 +102,8 @@ export function ConfiguracionModule() {
                       onClick={() => setActiveTab(tab.id)}
                       className={`flex items-center gap-1.5 px-3 py-1.5 text-[12px] font-medium rounded-sm transition-all duration-150 border ${
                         isActive
-                          ? 'bg-[#2E5C91] text-white border-[#2E5C91] shadow-sm'
-                          : 'bg-white text-gray-600 border-gray-300 hover:bg-[#E8EDF3] hover:text-[#2E5C91] hover:border-[#2E5C91]/40'
+                          ? 'bg-[color:var(--theme-secondary)] text-white border-[color:var(--theme-secondary)] shadow-sm'
+                          : 'bg-white text-gray-600 border-gray-300 hover:bg-[#E8EDF3] hover:text-[color:var(--theme-secondary)] hover:border-[color:var(--theme-secondary)]/40'
                       }`}
                     >
                       <span className={isActive ? 'text-white/80' : 'text-gray-400'}>{tab.icon}</span>
@@ -126,6 +129,7 @@ export function ConfiguracionModule() {
       {activeTab === 'catalogo-documentos' && <CatalogoDocumentosSection />}
       {activeTab === 'reportes-regulatorios' && <ReportesRegulariosSection />}
       <div style={{ display: activeTab === 'catalogos-contables' ? 'block' : 'none' }}><CatalogosContablesSection /></div>
+      {activeTab === 'modulos-visibles' && <ModulosVisiblesSection />}
     </>
   );
 }

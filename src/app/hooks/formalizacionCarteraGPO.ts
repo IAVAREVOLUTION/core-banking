@@ -31,6 +31,8 @@
  * agravarlo.
  */
 import { GL_JOURNAL_URL, GL_HEADERS } from './usePolizasContablesDB';
+import { repararDataSolicitud } from '@/app/lib/repararDataSolicitud';
+import { projectId, publicAnonKey } from '/utils/supabase/info';
 
 export const EVENT_CODE_APERTURA_GARANTIA_GPO = 'APERTURA_GARANTIA_GPO';
 
@@ -128,6 +130,32 @@ export function leerGuiaContabilizadora(
     const alterno = norm(ev.nombre);
     return buscados.some(b => codigo === b || nombre === b || alterno === b);
   });
+}
+
+/**
+ * Motor Contable del producto. Primero el que ya está en memoria; si viene
+ * vacío (la lista de productos no siempre lo trae, o su `data` llegó como
+ * texto JSON), se consulta el producto completo. Sin esto la guía
+ * GPO-FORMAL-001 "desaparecía" de forma intermitente y la póliza salía sin
+ * desglose por componente.
+ */
+export async function obtenerMotorContableProducto(productoId: string, enMemoria?: any[] | null): Promise<any[]> {
+  if (Array.isArray(enMemoria) && enMemoria.length > 0) return enMemoria;
+  if (!productoId) return [];
+  try {
+    const res = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-7e2d13d9/productos/${productoId}`, {
+      headers: { Authorization: `Bearer ${publicAnonKey}` },
+    });
+    if (!res.ok) return [];
+    const json = await res.json();
+    const fila = json?.data ?? json;
+    const data = repararDataSolicitud(fila?.data ?? fila);
+    const motor = data?.motorContable ?? data?.motor_contable;
+    return Array.isArray(motor) ? motor : [];
+  } catch (e) {
+    console.warn('[GPO] No se pudo leer el Motor Contable del producto:', e);
+    return [];
+  }
 }
 
 export interface DetallePolizaArmado {

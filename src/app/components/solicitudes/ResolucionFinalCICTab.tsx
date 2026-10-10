@@ -20,13 +20,14 @@
  *          está pasando de verdad.
  */
 import { useState, useEffect, useRef } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 import {
   loadFromSession, loadFromSavedStore, saveToSession, formatCurrency, parseCurrency,
 } from './solicitudCreditoStore';
 import {
   leerVotacionCPC, conteoVotosCPC, CAT_DECISION_VOTO, type VotoCPC,
 } from './VotacionCPCTab';
+import { DatePicker } from '@/app/components/ui/DatePicker';
 
 export const SUBTAB_RESOLUCION_CIC = 'resolucionCIC';
 
@@ -188,7 +189,7 @@ export function ResolucionFinalCICTab({
   };
 
   const roClass = 'w-full px-2 py-1.5 text-xs bg-gray-100 border border-gray-200 rounded text-gray-600';
-  const inputClass = 'w-full px-2 py-1.5 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-[#4A6FA5]/30 focus:border-[#4A6FA5]';
+  const inputClass = 'w-full px-2 py-1.5 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-[color:var(--theme-primary)]/30 focus:border-[color:var(--theme-primary)]';
   const faltantes = faltantesResolucionCIC(datos);
 
   return (
@@ -268,13 +269,7 @@ export function ResolucionFinalCICTab({
           <label className="block text-xs text-gray-700 mb-1">
             Fecha de Sesión CIC <span className="text-red-500">*</span>
           </label>
-          <input
-            type="date"
-            value={datos.fechaSesionCIC}
-            onChange={e => set('fechaSesionCIC', e.target.value)}
-            disabled={isRO}
-            className={isRO ? roClass : inputClass}
-          />
+          <DatePicker formato="iso" value={datos.fechaSesionCIC} onChange={(__v: string) => set('fechaSesionCIC', __v)} disabled={isRO} />
         </div>
         <div>
           <label className="block text-xs text-gray-700 mb-1">

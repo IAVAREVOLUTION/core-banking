@@ -16,7 +16,7 @@ interface DatosGeneralesTabProps {
 }
 
 export function DatosGeneralesTab({ formData, updateFormData, isView }: DatosGeneralesTabProps) {
-  const isPersonaMoral = formData.personalidad === 'Moral';
+  const isPersonaMoral = formData.personalidad === 'Persona Moral' || (formData.personalidad as string | undefined) === 'Moral';
 
   if (isView) {
     // Vista de solo lectura - texto plano sin fondos
@@ -122,7 +122,7 @@ export function DatosGeneralesTab({ formData, updateFormData, isView }: DatosGen
                 value={formData.personalidad}
                 onValueChange={(value) => updateFormData('personalidad', value)}
               >
-                <SelectTrigger className="border-[#E0E0E0] focus:border-[#2E5C91]">
+                <SelectTrigger className="border-[#E0E0E0] focus:border-[color:var(--theme-secondary)]">
                   <SelectValue placeholder="Seleccione..." />
                 </SelectTrigger>
                 <SelectContent>
@@ -144,7 +144,7 @@ export function DatosGeneralesTab({ formData, updateFormData, isView }: DatosGen
                 value={formData.moneda}
                 onValueChange={(value) => updateFormData('moneda', value)}
               >
-                <SelectTrigger className="border-[#E0E0E0] focus:border-[#2E5C91]">
+                <SelectTrigger className="border-[#E0E0E0] focus:border-[color:var(--theme-secondary)]">
                   <SelectValue placeholder="Seleccione..." />
                 </SelectTrigger>
                 <SelectContent>
@@ -177,7 +177,7 @@ export function DatosGeneralesTab({ formData, updateFormData, isView }: DatosGen
                     id="nombreEmpresa"
                     value={formData.nombreEmpresa || ''}
                     onChange={(e) => updateFormData('nombreEmpresa', e.target.value)}
-                    className="border-[#E0E0E0] focus:border-[#2E5C91]"
+                    className="border-[#E0E0E0] focus:border-[color:var(--theme-secondary)]"
                     placeholder="Nombre completo de la empresa"
                   />
                 )}
@@ -193,7 +193,7 @@ export function DatosGeneralesTab({ formData, updateFormData, isView }: DatosGen
                     id="rfc"
                     value={formData.rfc || ''}
                     onChange={(e) => updateFormData('rfc', e.target.value)}
-                    className="border-[#E0E0E0] focus:border-[#2E5C91]"
+                    className="border-[#E0E0E0] focus:border-[color:var(--theme-secondary)]"
                     placeholder="RFC de la empresa"
                   />
                 )}
@@ -212,7 +212,7 @@ export function DatosGeneralesTab({ formData, updateFormData, isView }: DatosGen
                     id="nombre"
                     value={formData.nombre || ''}
                     onChange={(e) => updateFormData('nombre', e.target.value)}
-                    className="border-[#E0E0E0] focus:border-[#2E5C91]"
+                    className="border-[#E0E0E0] focus:border-[color:var(--theme-secondary)]"
                   />
                 )}
               </div>
@@ -228,7 +228,7 @@ export function DatosGeneralesTab({ formData, updateFormData, isView }: DatosGen
                     id="apellidoPaterno"
                     value={formData.apellidoPaterno || ''}
                     onChange={(e) => updateFormData('apellidoPaterno', e.target.value)}
-                    className="border-[#E0E0E0] focus:border-[#2E5C91]"
+                    className="border-[#E0E0E0] focus:border-[color:var(--theme-secondary)]"
                   />
                 )}
               </div>
@@ -244,7 +244,7 @@ export function DatosGeneralesTab({ formData, updateFormData, isView }: DatosGen
                     id="apellidoMaterno"
                     value={formData.apellidoMaterno || ''}
                     onChange={(e) => updateFormData('apellidoMaterno', e.target.value)}
-                    className="border-[#E0E0E0] focus:border-[#2E5C91]"
+                    className="border-[#E0E0E0] focus:border-[color:var(--theme-secondary)]"
                   />
                 )}
               </div>
@@ -261,7 +261,7 @@ export function DatosGeneralesTab({ formData, updateFormData, isView }: DatosGen
                     type="date"
                     value={formData.fechaNacimiento?.split('T')[0] || ''}
                     onChange={(e) => updateFormData('fechaNacimiento', e.target.value)}
-                    className="border-[#E0E0E0] focus:border-[#2E5C91]"
+                    className="border-[#E0E0E0] focus:border-[color:var(--theme-secondary)]"
                   />
                 )}
               </div>
@@ -289,7 +289,7 @@ export function DatosGeneralesTab({ formData, updateFormData, isView }: DatosGen
                     value={formData.sexo}
                     onValueChange={(value) => updateFormData('sexo', value)}
                   >
-                    <SelectTrigger className="border-[#E0E0E0] focus:border-[#2E5C91]">
+                    <SelectTrigger className="border-[#E0E0E0] focus:border-[color:var(--theme-secondary)]">
                       <SelectValue placeholder="Seleccione..." />
                     </SelectTrigger>
                     <SelectContent>
@@ -311,7 +311,7 @@ export function DatosGeneralesTab({ formData, updateFormData, isView }: DatosGen
                     value={formData.estadoCivil}
                     onValueChange={(value) => updateFormData('estadoCivil', value)}
                   >
-                    <SelectTrigger className="border-[#E0E0E0] focus:border-[#2E5C91]">
+                    <SelectTrigger className="border-[#E0E0E0] focus:border-[color:var(--theme-secondary)]">
                       <SelectValue placeholder="Seleccione..." />
                     </SelectTrigger>
                     <SelectContent>
@@ -336,7 +336,7 @@ export function DatosGeneralesTab({ formData, updateFormData, isView }: DatosGen
                     id="entidadNacimiento"
                     value={formData.entidadNacimiento || ''}
                     onChange={(e) => updateFormData('entidadNacimiento', e.target.value)}
-                    className="border-[#E0E0E0] focus:border-[#2E5C91]"
+                    className="border-[#E0E0E0] focus:border-[color:var(--theme-secondary)]"
                   />
                 )}
               </div>
@@ -352,7 +352,7 @@ export function DatosGeneralesTab({ formData, updateFormData, isView }: DatosGen
                     value={formData.nivelEstudios}
                     onValueChange={(value) => updateFormData('nivelEstudios', value)}
                   >
-                    <SelectTrigger className="border-[#E0E0E0] focus:border-[#2E5C91]">
+                    <SelectTrigger className="border-[#E0E0E0] focus:border-[color:var(--theme-secondary)]">
                       <SelectValue placeholder="Seleccione..." />
                     </SelectTrigger>
                     <SelectContent>
@@ -378,7 +378,7 @@ export function DatosGeneralesTab({ formData, updateFormData, isView }: DatosGen
                     id="rfc"
                     value={formData.rfc || ''}
                     onChange={(e) => updateFormData('rfc', e.target.value)}
-                    className="border-[#E0E0E0] focus:border-[#2E5C91]"
+                    className="border-[#E0E0E0] focus:border-[color:var(--theme-secondary)]"
                   />
                 )}
               </div>
@@ -394,7 +394,7 @@ export function DatosGeneralesTab({ formData, updateFormData, isView }: DatosGen
                     id="curp"
                     value={formData.curp || ''}
                     onChange={(e) => updateFormData('curp', e.target.value)}
-                    className="border-[#E0E0E0] focus:border-[#2E5C91]"
+                    className="border-[#E0E0E0] focus:border-[color:var(--theme-secondary)]"
                   />
                 )}
               </div>

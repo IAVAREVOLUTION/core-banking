@@ -70,7 +70,7 @@ export function TabAutorizacion({
       {/* ENCABEZADO CON TÍTULO Y BOTÓN ASISTENTE */}
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-sm text-gray-700">Autorización</h3>
-        <button className="px-4 py-1 bg-[#5B9BD5] text-white rounded text-xs hover:bg-[#4A8BC5]">
+        <button className="px-4 py-1 bg-[color:var(--theme-accent)] text-white rounded text-xs hover:bg-[color:var(--theme-accent-hover)]">
           Asistente
         </button>
       </div>

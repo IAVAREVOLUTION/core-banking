@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { CampoMonto } from '@/app/components/ui/CampoMonto';
+import { DatePicker } from '@/app/components/ui/DatePicker';
 
 interface TabCargosProps {
   mode: 'nuevo' | 'editar' | 'ver';
@@ -114,7 +116,7 @@ export function TabCargos({ mode, camposEditables }: TabCargosProps) {
         <button 
           onClick={handleNuevo}
           disabled={isReadOnly}
-          className="px-4 py-1.5 bg-[#5B9BD5] text-white text-xs font-normal rounded hover:bg-[#4A8BC2] disabled:opacity-50 disabled:cursor-not-allowed"
+          className="px-4 py-1.5 bg-[color:var(--theme-accent)] text-white text-xs font-normal rounded hover:bg-[color:var(--theme-accent-hover)] disabled:opacity-50 disabled:cursor-not-allowed"
         >
           Nuevo
         </button>
@@ -241,7 +243,7 @@ export function TabCargos({ mode, camposEditables }: TabCargosProps) {
             }}
           >
             {/* Header */}
-            <div className="bg-[#4A6FA5] px-3 py-1.5 flex items-center justify-between">
+            <div className="bg-[color:var(--theme-primary)] px-3 py-1.5 flex items-center justify-between">
               <h3 className="text-xs font-normal text-white">Nuevo Cargo</h3>
               <button 
                 onClick={() => setMostrarModal(false)}
@@ -290,8 +292,7 @@ export function TabCargos({ mode, camposEditables }: TabCargosProps) {
                   <label className="block text-xs font-normal text-gray-700 mb-1">
                     Monto <span className="text-red-500">*</span>
                   </label>
-                  <input 
-                    type="text"
+                  <CampoMonto
                     value={nuevoCargo.monto}
                     onChange={(e) => setNuevoCargo(prev => ({ ...prev, monto: e.target.value }))}
                     className="w-full px-2 py-1.5 text-xs border border-gray-300 bg-white"
@@ -303,12 +304,7 @@ export function TabCargos({ mode, camposEditables }: TabCargosProps) {
                   <label className="block text-xs font-normal text-gray-700 mb-1">
                     Fecha de Cargo <span className="text-red-500">*</span>
                   </label>
-                  <input 
-                    type="date"
-                    value={nuevoCargo.fechaCargo}
-                    onChange={(e) => setNuevoCargo(prev => ({ ...prev, fechaCargo: e.target.value }))}
-                    className="w-full px-2 py-1.5 text-xs border border-gray-300 bg-white"
-                  />
+                  <DatePicker formato="iso" value={nuevoCargo.fechaCargo} onChange={(__v: string) => setNuevoCargo(prev => ({ ...prev, fechaCargo: __v }))} className="w-full text-xs" />
                 </div>
 
                 <div>
@@ -370,7 +366,7 @@ export function TabCargos({ mode, camposEditables }: TabCargosProps) {
               boxShadow: '0 4px 20px rgba(0,0,0,0.3)'
             }}
           >
-            <div className="bg-[#4A6FA5] px-3 py-1.5">
+            <div className="bg-[color:var(--theme-primary)] px-3 py-1.5">
               <h3 className="text-xs font-normal text-white">Confirmar Eliminación</h3>
             </div>
             <div className="p-4 bg-gray-50">

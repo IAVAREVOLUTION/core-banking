@@ -17,7 +17,7 @@
  * qué cifra se instruyó cada vez.
  */
 import { useState, useMemo } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 import { useProductosLineaCreditoDB } from '../../hooks/useProductosLineaCreditoDB';
 import { currentUser } from '../../data/mockData';
 import {
@@ -240,7 +240,7 @@ export function EnvioPrelacionTab({
     // no es auditable, y este archivo se manda fuera del sistema.
     const meta: string[][] = [
       ['Línea', row.noCuenta || row.noSol || String(row.id)],
-      ['Cliente', row.cliente],
+      ['Nombre Interlocutor', row.cliente],
       ['Producto', producto?.nombre || ''],
       ['Escenario', esGenerada ? ultima!.escenario : subEstatus],
       ['Origen', esGenerada ? 'Prelación generada' : 'Cascada configurada en el producto (sin generar)'],
@@ -397,7 +397,7 @@ export function EnvioPrelacionTab({
                 <tr key={i} className="border-b border-gray-100" style={{ backgroundColor: i % 2 === 1 ? '#F9F9F9' : '#FFF' }}>
                   <td className="px-3 py-1.5 text-gray-700">{r.seq}</td>
                   <td className="px-3 py-1.5 text-gray-700">{r.concepto}</td>
-                  <td className={`px-3 py-1.5 text-right font-mono ${r.calculado ? 'font-bold text-[#2E5C91]' : 'text-gray-600'}`}>
+                  <td className={`px-3 py-1.5 text-right font-mono ${r.calculado ? 'font-bold text-[color:var(--theme-secondary)]' : 'text-gray-600'}`}>
                     {r.valor || '—'}
                   </td>
                 </tr>

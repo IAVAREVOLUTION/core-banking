@@ -83,7 +83,7 @@ export function FlujoTrabajo({ faseActual, faseActualSeq, subEstatus, fases, com
               <div className="flex flex-col items-center">
                 <div className={`w-20 h-10 rounded-lg flex items-center justify-center border-2 transition-all ${
                   idx === currentPhaseIndex && !completada
-                    ? 'bg-[#4A6FA5] text-white border-[#4A6FA5] shadow-md scale-105'
+                    ? 'bg-[color:var(--theme-primary)] text-white border-[color:var(--theme-primary)] shadow-md scale-105'
                     : idx < currentPhaseIndex || (idx === currentPhaseIndex && completada)
                     ? 'bg-green-50 text-green-700 border-green-400'
                     : 'bg-gray-50 text-gray-400 border-gray-200'
@@ -94,7 +94,7 @@ export function FlujoTrabajo({ faseActual, faseActualSeq, subEstatus, fases, com
                   </div>
                 </div>
                 {idx === currentPhaseIndex && !completada && (
-                  <div className="mt-0.5 text-[8px] text-[#4A6FA5] font-semibold">▲ Actual</div>
+                  <div className="mt-0.5 text-[8px] text-[color:var(--theme-primary)] font-semibold">▲ Actual</div>
                 )}
                 {(idx < currentPhaseIndex || (idx === currentPhaseIndex && completada)) && (
                   <div className="mt-0.5 text-[8px] text-green-600">✓</div>
@@ -110,7 +110,7 @@ export function FlujoTrabajo({ faseActual, faseActualSeq, subEstatus, fases, com
           {/* Fin */}
           <div className="flex flex-col items-center">
             <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white ${
-              currentPhaseIndex >= phases.length - 1 && completada ? 'bg-green-500' : currentPhaseIndex >= phases.length - 1 ? 'bg-[#4A6FA5]' : 'bg-gray-300'
+              currentPhaseIndex >= phases.length - 1 && completada ? 'bg-green-500' : currentPhaseIndex >= phases.length - 1 ? 'bg-[color:var(--theme-primary)]' : 'bg-gray-300'
             }`}>
               <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
                 <path d="M3 8l3 3 7-7" />
@@ -131,7 +131,7 @@ export function FlujoTrabajo({ faseActual, faseActualSeq, subEstatus, fases, com
             key={`leg-${phase.seq}-${idx}`}
             className={`border rounded p-1.5 ${
               idx === currentPhaseIndex && !completada
-                ? 'border-[#4A6FA5] bg-[#D9E2F3]/30'
+                ? 'border-[color:var(--theme-primary)] bg-[color:var(--theme-tint)]/30'
                 : idx < currentPhaseIndex || (idx === currentPhaseIndex && completada)
                 ? 'border-green-200 bg-green-50'
                 : 'border-gray-200 bg-gray-50'
@@ -154,7 +154,7 @@ export function FlujoTrabajo({ faseActual, faseActualSeq, subEstatus, fases, com
                 idx < currentPhaseIndex || (idx === currentPhaseIndex && completada)
                   ? 'bg-green-500 w-full'
                   : idx === currentPhaseIndex
-                  ? 'bg-[#4A6FA5] w-1/2'
+                  ? 'bg-[color:var(--theme-primary)] w-1/2'
                   : 'w-0'
               }`} />
             </div>

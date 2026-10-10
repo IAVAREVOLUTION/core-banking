@@ -153,6 +153,11 @@ export interface InsertCuentaAhorroPayload {
   p_cta_eje_chec?: string | boolean | null;
   p_fases?: string | null;
   p_data?: Record<string, unknown> | null;
+  // Los envía la activación de prospecto. La versión del RPC guardada en el repo no los
+  // declara: verificar en la BD que insert_cuenta_ahorro los acepte.
+  p_estatus_sol?: string | null;
+  p_estatus_cuen?: string | null;
+  p_estatus_cart?: string | null;
 }
 
 // ═══════════════════════════════════════════════════════════════════

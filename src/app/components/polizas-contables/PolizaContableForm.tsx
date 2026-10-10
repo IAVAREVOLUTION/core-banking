@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
 import { Search, Plus, Trash2, X } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 import { GL_JOURNAL_URL, GL_BASE_URL, GL_HEADERS } from '../../hooks/usePolizasContablesDB';
 import type { PolizaContable } from './PolizasContablesModule';
 import { CuentaFinancieraPickerModal } from './CuentaFinancieraPickerModal';
+import { DatePicker } from '@/app/components/ui/DatePicker';
 
 type FormMode = 'create' | 'edit' | 'view';
 
@@ -219,8 +220,8 @@ export function PolizaContableForm({ mode, poliza, onSave, onCancel }: Props) {
     isView ? 'bg-gray-50 border-gray-200 text-gray-700 cursor-default' : 'border-gray-300 bg-white'
   }`;
   const labelCls = 'block text-[11px] font-semibold text-gray-600 uppercase tracking-wide mb-1.5';
-  const modalSelectCls = 'w-full text-xs border border-gray-300 rounded px-2 py-1.5 focus:outline-none focus:border-[#2E5C91]';
-  const modalInputCls  = 'w-full text-xs border border-gray-300 rounded px-2 py-1.5 focus:outline-none focus:border-[#2E5C91]';
+  const modalSelectCls = 'w-full text-xs border border-gray-300 rounded px-2 py-1.5 focus:outline-none focus:border-[color:var(--theme-secondary)]';
+  const modalInputCls  = 'w-full text-xs border border-gray-300 rounded px-2 py-1.5 focus:outline-none focus:border-[color:var(--theme-secondary)]';
 
   return (
     <div className="bg-[#F0F0F0] min-h-screen">
@@ -252,7 +253,7 @@ export function PolizaContableForm({ mode, poliza, onSave, onCancel }: Props) {
             <button
               onClick={handleSave}
               disabled={saving}
-              className="px-5 py-1.5 bg-[#0099CC] text-white rounded text-sm hover:bg-[#0088BB] font-medium disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-1.5"
+              className="px-5 py-1.5 bg-[color:var(--theme-action)] text-white rounded text-sm hover:bg-[color:var(--theme-action-hover)] font-medium disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-1.5"
             >
               {saving && (
                 <svg className="animate-spin" width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2">
@@ -286,12 +287,12 @@ export function PolizaContableForm({ mode, poliza, onSave, onCancel }: Props) {
 
           {/* ── DATOS GENERALES ─────────────────────────────────── */}
           <div className="px-5 pt-5 pb-4 border-b border-gray-200 bg-gradient-to-b from-gray-50/60 to-white">
-            <div className="flex items-center gap-2.5 bg-[#D9E2F3] px-4 py-2 mb-4 rounded border-l-4 border-[#4A6FA5] shadow-sm">
+            <div className="flex items-center gap-2.5 bg-[color:var(--theme-tint)] px-4 py-2 mb-4 rounded border-l-4 border-[color:var(--theme-primary)] shadow-sm">
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#4A6FA5" strokeWidth="1.5">
                 <rect x="2" y="2" width="12" height="12" rx="2"/>
                 <path d="M2 5h12M5 2v12M2 8h12M2 11h12"/>
               </svg>
-              <span className="text-sm font-semibold text-[#2E5C91] tracking-wide uppercase">
+              <span className="text-sm font-semibold text-[color:var(--theme-secondary)] tracking-wide uppercase">
                 Datos Generales
               </span>
             </div>
@@ -311,7 +312,7 @@ export function PolizaContableForm({ mode, poliza, onSave, onCancel }: Props) {
                   <label className={labelCls}>
                     Fecha Valor <span className="text-red-500 normal-case font-normal">*</span>
                   </label>
-                  <input type="date" value={journalDate} onChange={e => setJournalDate(e.target.value)} readOnly={isView} className={inputCls} />
+                  <DatePicker formato="iso" value={journalDate} onChange={(__v: string) => setJournalDate(__v)} disabled={isView} />
                 </div>
                 <div>
                   <label className={labelCls}>
@@ -335,7 +336,7 @@ export function PolizaContableForm({ mode, poliza, onSave, onCancel }: Props) {
                     <input value={accountId} readOnly placeholder={isView ? '—' : '(seleccionar cuenta...)'} title={accountId} className={`${readonlyCls} font-mono flex-1 min-w-0 truncate`} />
                     {!isView && (
                       <button type="button" onClick={() => setCuentaModalOpen(true)} title="Seleccionar cuenta financiera"
-                        className="px-2.5 py-1.5 bg-[#4A6FA5] text-white rounded text-xs hover:bg-[#3A5F95] transition-colors flex items-center shrink-0">
+                        className="px-2.5 py-1.5 bg-[color:var(--theme-primary)] text-white rounded text-xs hover:bg-[color:var(--theme-primary-hover)] transition-colors flex items-center shrink-0">
                         <Search size={12} />
                       </button>
                     )}
@@ -393,7 +394,7 @@ export function PolizaContableForm({ mode, poliza, onSave, onCancel }: Props) {
                   className={`px-4 py-2.5 text-xs border-r border-gray-500/30 transition-all ${
                     activeTab === tab
                       ? 'bg-secondary-theme text-white font-medium'
-                      : 'bg-primary-theme text-white/90 hover:bg-[#5A7FB5]'
+                      : 'bg-primary-theme text-white/90 hover:bg-[color:var(--theme-primary)]'
                   }`}
                 >
                   {tab === 'default' ? 'Default' : 'Detalle'}
@@ -417,7 +418,7 @@ export function PolizaContableForm({ mode, poliza, onSave, onCancel }: Props) {
                 <div className="grid grid-cols-3 gap-4">
                   <div>
                     <label className={labelCls}>Fecha Valor <span className="text-red-500 normal-case font-normal">*</span></label>
-                    <input type="date" value={journalDate} onChange={e => setJournalDate(e.target.value)} readOnly={isView} className={inputCls} />
+                    <DatePicker formato="iso" value={journalDate} onChange={(__v: string) => setJournalDate(__v)} disabled={isView} />
                   </div>
                   <div>
                     <label className={labelCls}>Moneda</label>
@@ -438,7 +439,7 @@ export function PolizaContableForm({ mode, poliza, onSave, onCancel }: Props) {
                       <input value={accountId} readOnly placeholder={isView ? '—' : '(seleccionar cuenta...)'} title={accountId} className={`${readonlyCls} font-mono flex-1 min-w-0 truncate`} />
                       {!isView && (
                         <button type="button" onClick={() => setCuentaModalOpen(true)} title="Seleccionar cuenta financiera"
-                          className="px-2.5 py-1.5 bg-[#4A6FA5] text-white rounded text-xs hover:bg-[#3A5F95] transition-colors flex items-center shrink-0">
+                          className="px-2.5 py-1.5 bg-[color:var(--theme-primary)] text-white rounded text-xs hover:bg-[color:var(--theme-primary-hover)] transition-colors flex items-center shrink-0">
                           <Search size={12} />
                         </button>
                       )}
@@ -491,7 +492,7 @@ export function PolizaContableForm({ mode, poliza, onSave, onCancel }: Props) {
                 {!isView && (
                   <button
                     onClick={openDetModal}
-                    className="flex items-center gap-1 px-3 py-1 bg-[#2E5C91] text-white text-[10px] hover:bg-[#24497A] rounded font-medium transition-colors"
+                    className="flex items-center gap-1 px-3 py-1 bg-[color:var(--theme-secondary)] text-white text-[10px] hover:bg-[color:var(--theme-secondary-hover)] rounded font-medium transition-colors"
                   >
                     <Plus size={11} /> Nuevo
                   </button>
@@ -535,7 +536,7 @@ export function PolizaContableForm({ mode, poliza, onSave, onCancel }: Props) {
                           </td>
                           {!isView && (
                             <td className="px-2 py-1.5 border-b border-gray-200 text-center">
-                              <button onClick={() => removeDetalleRow(i)} className="text-red-400 hover:text-red-600">
+                              <button aria-label="Eliminar" title="Eliminar" onClick={() => removeDetalleRow(i)} className="text-red-400 hover:text-red-600">
                                 <Trash2 size={12} />
                               </button>
                             </td>
@@ -566,7 +567,7 @@ export function PolizaContableForm({ mode, poliza, onSave, onCancel }: Props) {
           <div className="bg-white rounded shadow-xl w-[480px] max-w-full">
             <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
               <span className="text-sm font-semibold text-gray-800">Nueva línea contable</span>
-              <button onClick={() => setDetModalOpen(false)} className="text-gray-400 hover:text-gray-600">
+              <button aria-label="Cerrar" title="Cerrar" onClick={() => setDetModalOpen(false)} className="text-gray-400 hover:text-gray-600">
                 <X size={16} />
               </button>
             </div>
@@ -673,7 +674,7 @@ export function PolizaContableForm({ mode, poliza, onSave, onCancel }: Props) {
               <button
                 disabled={!canAddDetalle}
                 onClick={addDetalleRow}
-                className="px-3 py-1.5 text-xs bg-[#2E5C91] text-white rounded hover:bg-[#24497A] disabled:opacity-40 disabled:cursor-not-allowed"
+                className="px-3 py-1.5 text-xs bg-[color:var(--theme-secondary)] text-white rounded hover:bg-[color:var(--theme-secondary-hover)] disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 Agregar
               </button>

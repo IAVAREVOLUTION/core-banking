@@ -453,7 +453,7 @@ function validarFase1Integracion(context: OriginacionContext): ReglaValidacionRe
     .filter(d => d.fase === fase && d.aplicaPersona.includes(tipoPersona))
     .map(d => d.tipoDocumento);
 
-  // Sección 2: documentos cargados en el Expediente Electrónico con estatus = 'Validado' (IA)
+  // Sección 2: documentos cargados en el KM Digital con estatus = 'Validado' (IA)
   // `documentos` ya viene pre-filtrado por estatus === 'Validado' desde FaseActionBar
   const faltantesOSinValidar = requeridosSec1.filter(doc => !documentos.includes(doc));
 
@@ -464,7 +464,7 @@ function validarFase1Integracion(context: OriginacionContext): ReglaValidacionRe
       faseDestino: null,
       motivos: [
         `Documentos obligatorios pendientes para ${tipoPersona}: ${faltantesOSinValidar.join(', ')}.`,
-        'Asegúrese de que todos los documentos estén cargados en el Expediente Electrónico con estatus "Validado" (validación IA).',
+        'Asegúrese de que todos los documentos estén cargados en el KM Digital con estatus "Validado" (validación IA).',
       ],
       validaciones: {
         documentosCompletos: false,

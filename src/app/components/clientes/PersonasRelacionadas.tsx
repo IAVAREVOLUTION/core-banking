@@ -36,9 +36,10 @@
  * ═══════════════════════════════════════════════════════════════════
  */
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 import { Search, UserPlus, Trash2, X, Users, AlertCircle, Loader2, Star } from 'lucide-react';
 import { supabase } from '../../lib/supabaseClient';
+import { nombrePersona, esPersonaMoral } from '@/app/lib/nombrePersona';
 
 // ═══════════════════════════════════════════════════════════════════
 // TIPOS
@@ -132,6 +133,21 @@ const TIPOS_RELACION = [
 async function fetchClientesDisponibles(): Promise<ClienteDisponible[]> {
   const TAG = '[PersonasRelacionadasDB]';
 
+  // RPC primero: la llave anon no puede leer J_CLIENTES directo (42501).
+  // ── INTENTO 2: Supabase RPC ──
+  try {
+    console.log(`${TAG} INTENTO 2: RPC get_all_jclientes`);
+    const { data, error } = await supabase.rpc('get_all_jclientes');
+
+    if (!error && data && data.length > 0) {
+      console.log(`${TAG} INTENTO 2 ÉXITO: ${data.length} registros`);
+      return mapRowsToClientes(data);
+    }
+    if (error) console.debug(`${TAG} INTENTO 2 falló:`, error.message);
+  } catch (err) {
+    console.debug(`${TAG} INTENTO 2 excepción:`, err);
+  }
+
   // ── INTENTO 1: Supabase schema directo ──
   try {
     console.log(`${TAG} INTENTO 1: schema directo`);
@@ -147,20 +163,6 @@ async function fetchClientesDisponibles(): Promise<ClienteDisponible[]> {
     if (error) console.debug(`${TAG} INTENTO 1 falló:`, error.message);
   } catch (err) {
     console.debug(`${TAG} INTENTO 1 excepción:`, err);
-  }
-
-  // ── INTENTO 2: Supabase RPC ──
-  try {
-    console.log(`${TAG} INTENTO 2: RPC get_all_jclientes`);
-    const { data, error } = await supabase.rpc('get_all_jclientes');
-
-    if (!error && data && data.length > 0) {
-      console.log(`${TAG} INTENTO 2 ÉXITO: ${data.length} registros`);
-      return mapRowsToClientes(data);
-    }
-    if (error) console.debug(`${TAG} INTENTO 2 falló:`, error.message);
-  } catch (err) {
-    console.debug(`${TAG} INTENTO 2 excepción:`, err);
   }
 
   // ── INTENTO 3: sessionStorage ──
@@ -210,15 +212,16 @@ async function fetchClientesDisponibles(): Promise<ClienteDisponible[]> {
           if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
             const nombre = parsed.nombre || parsed.denominacionRazonSocial || parsed.razonSocial || '';
             if (!nombre) continue;
-            const apellidoPaterno = parsed.apellidoPaterno || '';
-            const apellidoMaterno = parsed.apellidoMaterno || '';
+            const moral = esPersonaMoral(parsed);
+            const apellidoPaterno = moral ? '' : (parsed.apellidoPaterno || '');
+            const apellidoMaterno = moral ? '' : (parsed.apellidoMaterno || '');
             clientes.push({
               dbUuid: key.replace('cliente_', ''),
               idCliente: parsed.idCliente || '',
               nombre,
               apellidoPaterno,
               apellidoMaterno,
-              nombreCompleto: [nombre, apellidoPaterno, apellidoMaterno].filter(Boolean).join(' ') || 'Sin nombre',
+              nombreCompleto: nombrePersona(parsed) || 'Sin nombre',
               rfc: parsed.rfc || '',
               curp: parsed.curp || '',
               personalidad: parsed.personalidad || '',
@@ -287,16 +290,17 @@ async function fetchClienteByUuid(uuid: string): Promise<ClienteDisponible | nul
     if (!saved) return null;
     const parsed = JSON.parse(saved);
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && parsed.nombre) {
+      const moral = esPersonaMoral(parsed);
       const nombre = parsed.nombre || '';
-      const apellidoPaterno = parsed.apellidoPaterno || '';
-      const apellidoMaterno = parsed.apellidoMaterno || '';
+      const apellidoPaterno = moral ? '' : (parsed.apellidoPaterno || '');
+      const apellidoMaterno = moral ? '' : (parsed.apellidoMaterno || '');
       return {
         dbUuid: key.replace('cliente_', ''),
         idCliente: parsed.idCliente || '',
         nombre,
         apellidoPaterno,
         apellidoMaterno,
-        nombreCompleto: [nombre, apellidoPaterno, apellidoMaterno].filter(Boolean).join(' ') || 'Sin nombre',
+        nombreCompleto: nombrePersona(parsed) || 'Sin nombre',
         rfc: parsed.rfc || '',
         curp: parsed.curp || '',
         personalidad: parsed.personalidad || '',
@@ -334,12 +338,14 @@ function mapRowsToClientes(rows: any[]): ClienteDisponible[] {
       return '';
     };
 
+    // Persona Moral: se ignoran apellidos que hayan quedado guardados (ver lib/nombrePersona)
+    const moral = esPersonaMoral({ ...def, ...d }, row.subtipo);
     const nombre = g('nombre');
-    const apellidoPaterno = g('apellidoPaterno');
-    const apellidoMaterno = g('apellidoMaterno');
+    const apellidoPaterno = moral ? '' : g('apellidoPaterno');
+    const apellidoMaterno = moral ? '' : g('apellidoMaterno');
     // Para Persona Moral, el nombre puede estar en denominacionRazonSocial
     const razonSocial = g('denominacionRazonSocial', 'razonSocial');
-    const displayNombre = nombre || razonSocial;
+    const displayNombre = moral ? (razonSocial || nombre) : (nombre || razonSocial);
 
     return {
       dbUuid: row.id,
@@ -676,6 +682,7 @@ export function PersonasRelacionadas({
   // RENDER HELPERS
   // ═══════════════════════════════════════════════════════════════════
   const displayName = (p: PersonaRelacionada) => {
+    if (esPersonaMoral(p as any)) return nombrePersona(p as any) || p.nombreCliente || 'Sin nombre';
     if (p.nombreCliente) return p.nombreCliente;
     return [p.nombre, p.apellidoPaterno, p.apellidoMaterno].filter(Boolean).join(' ') || 'Sin nombre';
   };
@@ -722,7 +729,7 @@ export function PersonasRelacionadas({
             {resolvedParCliente && (
               <> — <strong>{resolvedParCliente.nombreCompleto}</strong></>
             )}
-            {' '}| FK directa en J_CLIENTES. Use la estrella
+            {' '}| Use la estrella
             <Star className="w-3 h-3 inline mx-0.5 text-amber-600 fill-amber-600" />
             para cambiar la relación principal.
           </span>
@@ -751,7 +758,7 @@ export function PersonasRelacionadas({
                   <Star className="w-3.5 h-3.5 mx-auto text-gray-500" />
                 </th>
               )}
-              <th className="px-3 py-2 text-left font-medium text-xs text-gray-800 border-r border-gray-300">Clave Cliente</th>
+              <th className="px-3 py-2 text-left font-medium text-xs text-gray-800 border-r border-gray-300">No. Interlocutor</th>
               <th className="px-3 py-2 text-left font-medium text-xs text-gray-800 border-r border-gray-300">RFC</th>
               <th className="px-3 py-2 text-left font-medium text-xs text-gray-800 border-r border-gray-300">Nombre</th>
               <th className="px-3 py-2 text-left font-medium text-xs text-gray-800 border-r border-gray-300">Personalidad</th>
@@ -869,12 +876,12 @@ export function PersonasRelacionadas({
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[9999]" onClick={() => setShowModal(false)}>
           <div className="bg-white rounded-lg shadow-2xl w-full max-w-3xl mx-4 overflow-hidden animate-in fade-in zoom-in-95" onClick={e => e.stopPropagation()}>
             {/* Header */}
-            <div className="bg-[#4A6FA5] px-5 py-3 flex items-center justify-between">
+            <div className="bg-[color:var(--theme-primary)] px-5 py-3 flex items-center justify-between">
               <h2 className="text-white text-sm font-semibold flex items-center gap-2">
                 <UserPlus className="w-4 h-4" />
                 Agregar Persona Relacionada
               </h2>
-              <button
+              <button aria-label="Cerrar" title="Cerrar"
                 onClick={() => setShowModal(false)}
                 className="text-white/80 hover:text-white hover:bg-white/20 rounded-full w-6 h-6 flex items-center justify-center transition-colors"
               >
@@ -896,7 +903,7 @@ export function PersonasRelacionadas({
                 <select
                   value={filterTipo}
                   onChange={(e) => setFilterTipo(e.target.value)}
-                  className="px-3 py-2 text-xs border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-[#4A6FA5]"
+                  className="px-3 py-2 text-xs border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-[color:var(--theme-primary)]"
                 >
                   <option>-Todos-</option>
                   <option>Persona Física</option>
@@ -910,7 +917,7 @@ export function PersonasRelacionadas({
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                     placeholder="Buscar por nombre, RFC, CURP o clave..."
-                    className="w-full pl-9 pr-3 py-2 text-xs border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-[#4A6FA5]"
+                    className="w-full pl-9 pr-3 py-2 text-xs border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-[color:var(--theme-primary)]"
                     autoFocus
                   />
                 </div>
@@ -934,7 +941,7 @@ export function PersonasRelacionadas({
             <div className="max-h-[400px] overflow-auto">
               {loadingClientes ? (
                 <div className="flex items-center justify-center py-16 text-gray-500">
-                  <Loader2 className="w-8 h-8 animate-spin mr-3 text-[#4A6FA5]" />
+                  <Loader2 className="w-8 h-8 animate-spin mr-3 text-[color:var(--theme-primary)]" />
                   <span className="text-sm">Cargando clientes disponibles...</span>
                 </div>
               ) : clientesFiltrados.length === 0 ? (
@@ -957,7 +964,7 @@ export function PersonasRelacionadas({
                 <table className="w-full text-xs">
                   <thead className="bg-gray-100 sticky top-0">
                     <tr>
-                      <th className="px-4 py-2 text-left font-semibold text-gray-600">Clave</th>
+                      <th className="px-4 py-2 text-left font-semibold text-gray-600">No. Interlocutor</th>
                       <th className="px-4 py-2 text-left font-semibold text-gray-600">Nombre Completo</th>
                       <th className="px-4 py-2 text-left font-semibold text-gray-600">RFC</th>
                       <th className="px-4 py-2 text-left font-semibold text-gray-600">Tipo</th>
@@ -1008,7 +1015,7 @@ export function PersonasRelacionadas({
                               className={`px-4 py-1.5 rounded text-xs font-medium transition-all ${
                                 isDisabled
                                   ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                                  : 'bg-[#4A6FA5] text-white hover:bg-[#3E5C91] shadow-sm hover:shadow'
+                                  : 'bg-[color:var(--theme-primary)] text-white hover:bg-[color:var(--theme-secondary)] shadow-sm hover:shadow'
                               }`}
                             >
                               {isAlreadyRelated ? 'Ya agregado' : isSelf ? '+ Agregar (titular)' : '+ Agregar'}

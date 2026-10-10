@@ -48,12 +48,12 @@ export function TasasTab({ mode, solicitudId }: Props) {
   const ic = (disabled = false, outOfRange = false) => {
     const base = 'w-full px-2 py-1 text-xs border rounded focus:outline-none';
     const border = outOfRange ? 'border-orange-400' : 'border-gray-300';
-    return `${base} ${border} ${disabled || isRO ? 'bg-gray-100 text-gray-600' : 'bg-white focus:ring-2 focus:ring-[#4A6FA5]'}`;
+    return `${base} ${border} ${disabled || isRO ? 'bg-gray-100 text-gray-600' : 'bg-white focus:ring-2 focus:ring-[color:var(--theme-primary)]'}`;
   };
 
   return (
     <div className="border border-gray-300 border-t-0 px-4 py-4 bg-gray-50">
-      <div className="bg-[#D9E2F3] border-l-4 border-[#4A6FA5] px-3 py-1.5 mb-4">
+      <div className="bg-[color:var(--theme-tint)] border-l-4 border-[color:var(--theme-primary)] px-3 py-1.5 mb-4">
         <span className="text-xs text-gray-800">TASAS DE INTERÉS</span>
       </div>
       <div className="grid grid-cols-2 gap-x-8 gap-y-4">

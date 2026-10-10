@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 import { DatePicker } from '@/app/components/ui/DatePicker';
 import type {
   InversionCompleta, InversionFormData, Cotitular, Beneficiario,
@@ -7,6 +7,7 @@ import type {
   DocumentoValor, MovimientoInv, BloqueoInv, SolicitudExtra,
 } from '@/types/inversion';
 import * as store from './inversionesStore';
+import { formatearFecha } from '@/app/lib/fechas';
 
 // ═══════════════════════════════════════════════════════════════════
 // PROPS
@@ -78,7 +79,7 @@ const TABS: { id: TabId; label: string }[] = [
   { id: 'rendimientos', label: 'Rendimientos' },
   { id: 'impuestos', label: 'Impuestos' },
   { id: 'cargos', label: 'Cargos' },
-  { id: 'expedientes', label: 'Expedientes Electrónicos' },
+  { id: 'expedientes', label: 'KM Digital' },
   { id: 'documentos', label: 'Documentos/Valor' },
   { id: 'movimientos', label: 'Movimientos' },
   { id: 'bloqueos', label: 'Bloqueos' },
@@ -274,7 +275,7 @@ export function InversionForm({ mode, inversionId, onCancel, onSave }: Props) {
             checked={o.checked}
             onChange={(e) => o.onCheck?.(e.target.checked)}
             disabled={ro}
-            className="w-3.5 h-3.5 accent-[#4A6FA5]"
+            className="w-3.5 h-3.5 accent-[color:var(--theme-primary)]"
           />
         </div>
       );
@@ -359,7 +360,7 @@ export function InversionForm({ mode, inversionId, onCancel, onSave }: Props) {
     <>
       {/* DEFAULT Section Header */}
       <div className="mb-4">
-        <div className="bg-[#D9E2F3] px-3 py-2 mb-3 text-sm text-gray-800 border-l-4 border-[#4A6FA5]" style={{ fontWeight: 500 }}>
+        <div className="bg-[color:var(--theme-tint)] px-3 py-2 mb-3 text-sm text-gray-800 border-l-4 border-[color:var(--theme-primary)]" style={{ fontWeight: 500 }}>
           DEFAULT
         </div>
         <div className="grid grid-cols-3 gap-x-4">
@@ -394,11 +395,11 @@ export function InversionForm({ mode, inversionId, onCancel, onSave }: Props) {
     addLabel: string,
   ) => (
     <div className="space-y-3">
-      <div className="bg-[#D9E2F3] px-3 py-2 text-sm text-gray-800 border-l-4 border-[#4A6FA5] flex items-center justify-between" style={{ fontWeight: 500 }}>
+      <div className="bg-[color:var(--theme-tint)] px-3 py-2 text-sm text-gray-800 border-l-4 border-[color:var(--theme-primary)] flex items-center justify-between" style={{ fontWeight: 500 }}>
         <span>{addLabel}</span>
         {!isView && (
           <div className="flex items-center gap-2">
-            <button onClick={onAdd} className="px-3 py-1 bg-[#0099CC] text-white text-[10px] rounded hover:bg-[#0088BB]">Nuevo</button>
+            <button onClick={onAdd} className="px-3 py-1 bg-[color:var(--theme-action)] text-white text-[10px] rounded hover:bg-[color:var(--theme-action-hover)]">Nuevo</button>
             {items.length > 0 && (
               <button
                 onClick={() => updateList(key, (items as any[]).slice(0, -1) as any)}
@@ -469,7 +470,7 @@ export function InversionForm({ mode, inversionId, onCancel, onSave }: Props) {
   const renderCotitulares = () => renderTable<Cotitular>(
     data.cotitulares, 'cotitulares',
     [
-      { label: 'ID Cliente', field: 'idCliente', readOnly: true },
+      { label: 'No. Interlocutor', field: 'idCliente', readOnly: true },
       { label: 'Nombre', field: 'nombre', readOnly: true },
       { label: 'Apellido Paterno', field: 'apellidoPaterno', readOnly: true },
       { label: 'Apellido Materno', field: 'apellidoMaterno', readOnly: true },
@@ -483,7 +484,7 @@ export function InversionForm({ mode, inversionId, onCancel, onSave }: Props) {
 
   const renderBeneficiarios = () => (
     <div className="space-y-3">
-      <div className="bg-[#D9E2F3] px-3 py-2 text-sm text-gray-800 border-l-4 border-[#4A6FA5] flex items-center justify-between" style={{ fontWeight: 500 }}>
+      <div className="bg-[color:var(--theme-tint)] px-3 py-2 text-sm text-gray-800 border-l-4 border-[color:var(--theme-primary)] flex items-center justify-between" style={{ fontWeight: 500 }}>
         <div className="flex items-center gap-3">
           <span>Beneficiarios</span>
           {data.beneficiarios.length > 0 && (
@@ -497,7 +498,7 @@ export function InversionForm({ mode, inversionId, onCancel, onSave }: Props) {
         </div>
         {!isView && (
           <div className="flex items-center gap-2">
-            <button onClick={() => setShowClientModal('beneficiario')} className="px-3 py-1 bg-[#0099CC] text-white text-[10px] rounded hover:bg-[#0088BB]">Nuevo</button>
+            <button onClick={() => setShowClientModal('beneficiario')} className="px-3 py-1 bg-[color:var(--theme-action)] text-white text-[10px] rounded hover:bg-[color:var(--theme-action-hover)]">Nuevo</button>
             {data.beneficiarios.length > 0 && (
               <button onClick={() => updateList('beneficiarios', data.beneficiarios.slice(0, -1))} className="px-3 py-1 border border-gray-400 text-gray-700 text-[10px] rounded hover:bg-gray-50 bg-white">Eliminar último</button>
             )}
@@ -508,7 +509,7 @@ export function InversionForm({ mode, inversionId, onCancel, onSave }: Props) {
         <table className="w-full text-xs">
           <thead>
             <tr>
-              <TH>Clave Cliente</TH><TH>Nombre</TH><TH>Ap. Paterno</TH><TH>Ap. Materno</TH>
+              <TH>No. Interlocutor</TH><TH>Nombre</TH><TH>Ap. Paterno</TH><TH>Ap. Materno</TH>
               <TH>F. Nacimiento</TH><TH>Parentesco</TH><TH>% Participación</TH><TH>Notas</TH>
             </tr>
           </thead>
@@ -521,7 +522,7 @@ export function InversionForm({ mode, inversionId, onCancel, onSave }: Props) {
                 <td className="px-2 py-1 border-r border-gray-200"><input value={b.nombre} readOnly className="w-full px-1 py-0.5 text-[10px] bg-gray-100 border border-gray-300 rounded" /></td>
                 <td className="px-2 py-1 border-r border-gray-200"><input value={b.apellidoPaterno} readOnly className="w-full px-1 py-0.5 text-[10px] bg-gray-100 border border-gray-300 rounded" /></td>
                 <td className="px-2 py-1 border-r border-gray-200"><input value={b.apellidoMaterno} readOnly className="w-full px-1 py-0.5 text-[10px] bg-gray-100 border border-gray-300 rounded" /></td>
-                <td className="px-2 py-1 border-r border-gray-200"><input type="date" value={b.fechaNacimiento} readOnly className="w-full px-1 py-0.5 text-[10px] bg-gray-100 border border-gray-300 rounded" /></td>
+                <td className="px-2 py-1 border-r border-gray-200"><input type="text" value={formatearFecha(b.fechaNacimiento)} readOnly className="w-full px-1 py-0.5 text-[10px] bg-gray-100 border border-gray-300 rounded" /></td>
                 <td className="px-2 py-1 border-r border-gray-200">
                   <select value={b.parentesco} disabled={isView} onChange={(e) => updateList('beneficiarios', data.beneficiarios.map((x) => x.id === b.id ? { ...x, parentesco: e.target.value } : x))} className="w-full px-1 py-0.5 text-[10px] border border-gray-300 rounded bg-white disabled:bg-gray-100">
                     <option value="">—</option>
@@ -592,11 +593,11 @@ export function InversionForm({ mode, inversionId, onCancel, onSave }: Props) {
 
   const renderExpedientes = () => (
     <div className="space-y-3">
-      <div className="bg-[#D9E2F3] px-3 py-2 text-sm text-gray-800 border-l-4 border-[#4A6FA5] flex items-center justify-between" style={{ fontWeight: 500 }}>
-        <span>Expediente Electrónico</span>
+      <div className="bg-[color:var(--theme-tint)] px-3 py-2 text-sm text-gray-800 border-l-4 border-[color:var(--theme-primary)] flex items-center justify-between" style={{ fontWeight: 500 }}>
+        <span>KM Digital</span>
         {!isView && (
           <div className="flex items-center gap-2">
-            <button onClick={() => setShowExpNuevo(!showExpNuevo)} className="px-3 py-1 bg-[#0099CC] text-white text-[10px] rounded hover:bg-[#0088BB]">Nuevo</button>
+            <button onClick={() => setShowExpNuevo(!showExpNuevo)} className="px-3 py-1 bg-[color:var(--theme-action)] text-white text-[10px] rounded hover:bg-[color:var(--theme-action-hover)]">Nuevo</button>
             <button onClick={handleDeleteDocs} className="px-3 py-1 border border-gray-400 text-gray-700 text-[10px] rounded hover:bg-gray-50 bg-white">Eliminar</button>
           </div>
         )}
@@ -629,7 +630,7 @@ export function InversionForm({ mode, inversionId, onCancel, onSave }: Props) {
                 </td>
                 <td className="px-2 py-1 border-r border-gray-200 text-[10px] text-gray-600">{doc.fechaRegistro}</td>
                 <td className="px-2 py-1 border-r border-gray-200 text-[10px] text-gray-600">{doc.usuarioRegistro}</td>
-                <td className="px-2 py-1 border-r border-gray-200 text-[10px] text-[#0066CC]">{doc.archivo}</td>
+                <td className="px-2 py-1 border-r border-gray-200 text-[10px] text-[color:var(--theme-link)]">{doc.archivo}</td>
                 <td className="px-2 py-1 border-r border-gray-200">
                   {isView ? <span className="text-[10px]">{doc.tipoDocumento}</span> : (
                     <select value={doc.tipoDocumento} onChange={(e) => updateList('expedientes', data.expedientes.map((d) => d.id === doc.id ? { ...d, tipoDocumento: e.target.value } : d))} className="w-full px-1 py-0.5 text-[10px] border border-gray-300 rounded">
@@ -712,7 +713,7 @@ export function InversionForm({ mode, inversionId, onCancel, onSave }: Props) {
     data.solicitudesExtra, 'solicitudesExtra',
     [
       { label: 'No. Solicitud', field: 'noSolicitud', readOnly: true },
-      { label: 'Cliente', field: 'cliente' },
+      { label: 'Nombre Interlocutor', field: 'cliente' },
       { label: 'No. Cuenta', field: 'numeroCuenta' },
       { label: 'Producto', field: 'productoFinanciero' },
       { label: 'Área Solicitó', field: 'areaSolicito' },
@@ -778,7 +779,7 @@ export function InversionForm({ mode, inversionId, onCancel, onSave }: Props) {
       <div className="px-4 py-2 bg-white border-b border-gray-300">
         <div className="flex items-center gap-3">
           {!isView && (
-            <button onClick={handleSave} className="px-5 py-1.5 bg-[#0099CC] text-white rounded text-sm hover:bg-[#0088BB]" style={{ fontWeight: 500 }}>
+            <button onClick={handleSave} className="px-5 py-1.5 bg-[color:var(--theme-action)] text-white rounded text-sm hover:bg-[color:var(--theme-action-hover)]" style={{ fontWeight: 500 }}>
               Guardar
             </button>
           )}
@@ -794,7 +795,7 @@ export function InversionForm({ mode, inversionId, onCancel, onSave }: Props) {
 
           {/* ── INFORMACIÓN PRINCIPAL ── */}
           <div className="mb-4">
-            <div className="bg-[#D9E2F3] px-3 py-2 mb-3 text-sm text-gray-800 border-l-4 border-[#4A6FA5]" style={{ fontWeight: 500 }}>
+            <div className="bg-[color:var(--theme-tint)] px-3 py-2 mb-3 text-sm text-gray-800 border-l-4 border-[color:var(--theme-primary)]" style={{ fontWeight: 500 }}>
               Información Principal
             </div>
             <div className="grid grid-cols-3 gap-x-4">
@@ -842,19 +843,9 @@ export function InversionForm({ mode, inversionId, onCancel, onSave }: Props) {
                   className={`px-4 py-2.5 text-xs whitespace-nowrap transition-colors ${
                     activeTab === tab.id
                       ? 'bg-secondary-theme text-white'
-                      : 'text-white/90'
+                      : 'text-white/90 hover:bg-[color:var(--theme-primary-hover)]'
                   }`}
                   style={activeTab === tab.id ? { fontWeight: 500 } : { fontWeight: 400 }}
-                  onMouseEnter={(e) => {
-                    if (activeTab !== tab.id) {
-                      e.currentTarget.style.backgroundColor = 'var(--theme-primary-hover)';
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (activeTab !== tab.id) {
-                      e.currentTarget.style.backgroundColor = '';
-                    }
-                  }}
                 >
                   {tab.label}
                 </button>
@@ -888,7 +879,7 @@ export function InversionForm({ mode, inversionId, onCancel, onSave }: Props) {
       {showClientModal && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-white rounded shadow-lg w-[700px] max-h-[550px] flex flex-col">
-            <div className="bg-[#4A6FA5] px-4 py-2.5 rounded-t flex items-center justify-between">
+            <div className="bg-[color:var(--theme-primary)] px-4 py-2.5 rounded-t flex items-center justify-between">
               <h3 className="text-sm text-white" style={{ fontWeight: 600 }}>
                 Buscar Cliente — {showClientModal === 'cotitular' ? 'Co-titular' : 'Beneficiario'}
               </h3>
@@ -912,7 +903,7 @@ export function InversionForm({ mode, inversionId, onCancel, onSave }: Props) {
                         onClick={() => setSelectedModalCliente(cl.clave)}
                         className="cursor-pointer border-b border-gray-200 transition-colors"
                         style={{
-                          backgroundColor: selectedModalCliente === cl.clave ? '#4A6FA5' : i % 2 === 1 ? '#EEEEEE' : '#FFFFFF',
+                          backgroundColor: selectedModalCliente === cl.clave ? 'var(--theme-primary)' : i % 2 === 1 ? '#EEEEEE' : '#FFFFFF',
                           color: selectedModalCliente === cl.clave ? 'white' : 'inherit',
                         }}
                         onMouseEnter={(e) => { if (selectedModalCliente !== cl.clave) e.currentTarget.style.backgroundColor = '#E8F4F8'; }}
@@ -929,7 +920,7 @@ export function InversionForm({ mode, inversionId, onCancel, onSave }: Props) {
               </div>
             </div>
             <div className="px-4 py-3 border-t border-gray-200 flex justify-end gap-2">
-              <button onClick={handleSelectCliente} disabled={!selectedModalCliente} className="px-4 py-1.5 bg-[#0099CC] text-white text-xs rounded hover:bg-[#0088BB] disabled:opacity-50">
+              <button onClick={handleSelectCliente} disabled={!selectedModalCliente} className="px-4 py-1.5 bg-[color:var(--theme-action)] text-white text-xs rounded hover:bg-[color:var(--theme-action-hover)] disabled:opacity-50">
                 Aceptar
               </button>
               <button onClick={() => { setShowClientModal(null); setSelectedModalCliente(null); }} className="px-4 py-1.5 bg-white border border-gray-400 text-gray-700 text-xs rounded hover:bg-gray-50">
@@ -946,7 +937,7 @@ export function InversionForm({ mode, inversionId, onCancel, onSave }: Props) {
       {showWebUrlModal && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-white rounded shadow-lg w-[480px]">
-            <div className="bg-[#4A6FA5] px-4 py-2.5 rounded-t flex items-center justify-between">
+            <div className="bg-[color:var(--theme-primary)] px-4 py-2.5 rounded-t flex items-center justify-between">
               <h3 className="text-sm text-white" style={{ fontWeight: 600 }}>Agregar URL</h3>
               <button onClick={() => { setShowWebUrlModal(false); setWebUrl(''); }} className="text-white/80 hover:text-white">✕</button>
             </div>
@@ -955,12 +946,12 @@ export function InversionForm({ mode, inversionId, onCancel, onSave }: Props) {
               <input
                 type="url" value={webUrl} onChange={(e) => setWebUrl(e.target.value)}
                 placeholder="https://ejemplo.com/archivo.pdf" autoFocus
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-[#4A6FA5]"
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-[color:var(--theme-primary)]"
               />
             </div>
             <div className="px-6 py-3 flex justify-end gap-3 border-t border-gray-200">
               <button onClick={() => { setShowWebUrlModal(false); setWebUrl(''); }} className="px-4 py-1.5 text-xs bg-white border border-gray-400 rounded text-gray-700 hover:bg-gray-50">Cancelar</button>
-              <button onClick={handleWebUrlAdd} className="px-4 py-1.5 text-xs bg-[#0099CC] text-white rounded hover:bg-[#0088BB]">Agregar</button>
+              <button onClick={handleWebUrlAdd} className="px-4 py-1.5 text-xs bg-[color:var(--theme-action)] text-white rounded hover:bg-[color:var(--theme-action-hover)]">Agregar</button>
             </div>
           </div>
         </div>

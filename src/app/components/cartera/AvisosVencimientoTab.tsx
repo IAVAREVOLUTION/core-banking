@@ -29,7 +29,7 @@ export function AvisosVencimientoTab({ solicitudId }: Props) {
       <div className="border border-gray-200 rounded overflow-x-auto">
         <table className="w-full text-xs">
           <thead>
-            <tr className="bg-[#2E5C91] text-white">
+            <tr className="bg-[color:var(--theme-secondary)] text-white">
               <th className="px-2 py-2 text-left font-medium">No. Docto</th>
               <th className="px-2 py-2 text-left font-medium">Fecha</th>
               <th className="px-2 py-2 text-left font-medium">Tipo</th>

@@ -1,5 +1,5 @@
 import { useState, useEffect, forwardRef, useImperativeHandle, useMemo } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 import { useProductosCatalogoDB, type ProductoCatalogo } from '@/app/hooks/useProductosCatalogoDB';
 import { useTabPersistence } from '@/app/hooks/useProductoPersistence';
 import React from 'react';
@@ -20,14 +20,16 @@ interface PaquetesTabProps {
   productId: number | string;
   initialData?: Paquete[];
   persistToStorage?: boolean;
+  /** Prefijo de la clave de sesión; Línea de Crédito usa 'linea_credito' para no mezclarse con Crédito. */
+  storagePrefix?: string;
   isSeguros?: boolean;
 }
 
 const defaultPaquetesData: Paquete[] = [];
 
 export const PaquetesTab = forwardRef<{ getData: () => Paquete[] }, PaquetesTabProps>(
-  ({ mode, productId, initialData, persistToStorage, isSeguros }, ref) => {
-    const storageKey = persistToStorage && productId ? `credito_paquetes_${productId}` : '';
+  ({ mode, productId, initialData, persistToStorage, isSeguros, storagePrefix = 'credito' }, ref) => {
+    const storageKey = persistToStorage && productId ? `${storagePrefix}_paquetes_${productId}` : '';
 
     // ── Pre-seed: si hay initialData (DB) pero sessionStorage tiene [] vacío,
     // limpiar storage ANTES de que useTabPersistence haga lazy init ──
@@ -64,7 +66,18 @@ export const PaquetesTab = forwardRef<{ getData: () => Paquete[] }, PaquetesTabP
       }
     }, [initialData, data.length, setData, storageKey]);
 
-    useImperativeHandle(ref, () => ({ getData: () => data }), [data]);
+    // El paquete guarda una copia del nombre del producto vinculado al momento de
+    // agregarlo. Si luego se renombra ese producto, se muestra (y se guarda) el
+    // nombre vigente del catálogo, ubicándolo por su id.
+    const { productos: catalogoProductos } = useProductosCatalogoDB(true);
+    const nombreVigente = React.useCallback((item: Paquete) => {
+      const p = catalogoProductos.find(x => String(x.id) === String(item.paqueteProductoId));
+      return p?.nombreProducto || item.paqueteProductoNombre;
+    }, [catalogoProductos]);
+
+    useImperativeHandle(ref, () => ({
+      getData: () => data.map(item => ({ ...item, paqueteProductoNombre: nombreVigente(item) })),
+    }), [data, nombreVigente]);
 
     const [selectedRow, setSelectedRow] = useState<number | null>(null);
     const [showConsulta, setShowConsulta] = useState(false);
@@ -171,7 +184,7 @@ export const PaquetesTab = forwardRef<{ getData: () => Paquete[] }, PaquetesTabP
       <>
         <div className="bg-[#FAFBFC] border-2 border-gray-400">
           {/* ── Header institucional ── */}
-          <div className="bg-gradient-to-r from-[#2E5C91] to-[#4A6FA5] px-3 py-2 flex items-center justify-between">
+          <div className="bg-gradient-to-r from-[color:var(--theme-secondary)] to-[color:var(--theme-primary)] px-3 py-2 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <svg className="w-4 h-4 text-white/80" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
@@ -247,7 +260,7 @@ export const PaquetesTab = forwardRef<{ getData: () => Paquete[] }, PaquetesTabP
               </svg>
               <p className="text-[11px] text-gray-400 font-medium uppercase tracking-wider">Sin paquetes configurados</p>
               {!isViewMode && (
-                <p className="text-[10px] text-gray-400 mt-1">Haga clic en <strong className="text-[#2E5C91]">Nuevo</strong> para agregar un producto al paquete</p>
+                <p className="text-[10px] text-gray-400 mt-1">Haga clic en <strong className="text-[color:var(--theme-secondary)]">Nuevo</strong> para agregar un producto al paquete</p>
               )}
             </div>
           ) : (
@@ -255,13 +268,13 @@ export const PaquetesTab = forwardRef<{ getData: () => Paquete[] }, PaquetesTabP
               <table className="w-full text-[11px]">
                 <thead>
                   <tr className="bg-[#E8EDF2] border-b border-gray-400">
-                    <th className="px-2 py-1.5 text-left font-semibold text-[#2E5C91] uppercase tracking-wider border-r border-gray-300 w-8">Sel</th>
-                    <th className="px-2 py-1.5 text-center font-semibold text-[#2E5C91] uppercase tracking-wider border-r border-gray-300 w-8">#</th>
-                    <th className="px-2 py-1.5 text-left font-semibold text-[#2E5C91] uppercase tracking-wider border-r border-gray-300 w-[50px]">Tipo</th>
-                    <th className="px-2 py-1.5 text-left font-semibold text-[#2E5C91] uppercase tracking-wider border-r border-gray-300">Producto</th>
-                    <th className="px-2 py-1.5 text-left font-semibold text-[#2E5C91] uppercase tracking-wider border-r border-gray-300 w-[120px]">Línea</th>
-                    <th className="px-2 py-1.5 text-left font-semibold text-[#2E5C91] uppercase tracking-wider border-r border-gray-300 w-[120px]">Sub-línea</th>
-                    <th className="px-2 py-1.5 text-center font-semibold text-[#2E5C91] uppercase tracking-wider w-[70px]">Acc.</th>
+                    <th className="px-2 py-1.5 text-left font-semibold text-[color:var(--theme-secondary)] uppercase tracking-wider border-r border-gray-300 w-8">Sel</th>
+                    <th className="px-2 py-1.5 text-center font-semibold text-[color:var(--theme-secondary)] uppercase tracking-wider border-r border-gray-300 w-8">#</th>
+                    <th className="px-2 py-1.5 text-left font-semibold text-[color:var(--theme-secondary)] uppercase tracking-wider border-r border-gray-300 w-[50px]">Tipo</th>
+                    <th className="px-2 py-1.5 text-left font-semibold text-[color:var(--theme-secondary)] uppercase tracking-wider border-r border-gray-300">Producto</th>
+                    <th className="px-2 py-1.5 text-left font-semibold text-[color:var(--theme-secondary)] uppercase tracking-wider border-r border-gray-300 w-[120px]">Línea</th>
+                    <th className="px-2 py-1.5 text-left font-semibold text-[color:var(--theme-secondary)] uppercase tracking-wider border-r border-gray-300 w-[120px]">Sub-línea</th>
+                    <th className="px-2 py-1.5 text-center font-semibold text-[color:var(--theme-secondary)] uppercase tracking-wider w-[70px]">Acc.</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -275,7 +288,7 @@ export const PaquetesTab = forwardRef<{ getData: () => Paquete[] }, PaquetesTabP
                         onDoubleClick={() => handleEdit(item)}
                         className={`cursor-pointer border-b border-gray-200 transition-colors ${
                           isSelected
-                            ? 'bg-[#D6E4F0]'
+                            ? 'bg-[color:var(--theme-tint)]'
                             : index % 2 === 0 ? 'bg-white hover:bg-gray-50' : 'bg-[#F8F9FA] hover:bg-gray-50'
                         }`}
                       >
@@ -285,25 +298,25 @@ export const PaquetesTab = forwardRef<{ getData: () => Paquete[] }, PaquetesTabP
                             checked={item.selectBoolean}
                             onChange={() => handleToggleSelect(item.id)}
                             onClick={(e) => e.stopPropagation()}
-                            className="w-3.5 h-3.5 cursor-pointer accent-[#2E5C91]"
+                            className="w-3.5 h-3.5 cursor-pointer accent-[color:var(--theme-secondary)]"
                           />
                         </td>
                         <td className="px-2 py-1.5 border-r border-gray-200 text-center text-gray-500 font-medium">{index + 1}</td>
                         <td className="px-2 py-1.5 border-r border-gray-200">
                           <span className={`inline-block px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ${
-                            isSeguro ? 'bg-amber-100 text-amber-800 border border-amber-200' : 'bg-[#D6E4F0] text-[#2E5C91] border border-[#B8CCE0]'
+                            isSeguro ? 'bg-amber-100 text-amber-800 border border-amber-200' : 'bg-[color:var(--theme-tint)] text-[color:var(--theme-secondary)] border border-[#B8CCE0]'
                           }`}>
                             {isSeguro ? 'SEG' : 'CRE'}
                           </span>
                         </td>
-                        <td className="px-2 py-1.5 border-r border-gray-200 font-medium text-gray-800 truncate max-w-[200px]">{item.paqueteProductoNombre}</td>
+                        <td className="px-2 py-1.5 border-r border-gray-200 font-medium text-gray-800 truncate max-w-[200px]">{nombreVigente(item)}</td>
                         <td className="px-2 py-1.5 border-r border-gray-200 text-gray-600">{displayLinea(item.lineaProducto) || item.tipo || '—'}</td>
                         <td className="px-2 py-1.5 border-r border-gray-200 text-gray-600">{item.sublineaProducto || '—'}</td>
                         <td className="px-2 py-1.5 text-center">
                           <div className="flex items-center justify-center gap-0.5">
                             <button
                               onClick={(e) => { e.stopPropagation(); handleView(item); }}
-                              className="p-1 text-gray-400 hover:text-[#2E5C91] hover:bg-[#E8EDF2] rounded-sm transition-colors"
+                              className="p-1 text-gray-400 hover:text-[color:var(--theme-secondary)] hover:bg-[#E8EDF2] rounded-sm transition-colors"
                               title="Ver detalle"
                             >
                               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -314,7 +327,7 @@ export const PaquetesTab = forwardRef<{ getData: () => Paquete[] }, PaquetesTabP
                             {!isViewMode && (
                               <button
                                 onClick={(e) => { e.stopPropagation(); handleEdit(item); }}
-                                className="p-1 text-gray-400 hover:text-[#2E5C91] hover:bg-[#E8EDF2] rounded-sm transition-colors"
+                                className="p-1 text-gray-400 hover:text-[color:var(--theme-secondary)] hover:bg-[#E8EDF2] rounded-sm transition-colors"
                                 title="Editar"
                               >
                                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -335,7 +348,7 @@ export const PaquetesTab = forwardRef<{ getData: () => Paquete[] }, PaquetesTabP
           {/* ── Footer ── */}
           {data.length > 0 && (
             <div className="px-3 py-1.5 bg-[#E8EDF2] border-t border-gray-400 flex items-center justify-between">
-              <span className="text-[10px] text-[#2E5C91] font-medium">{data.length} paquete(s) configurado(s)</span>
+              <span className="text-[10px] text-[color:var(--theme-secondary)] font-medium">{data.length} paquete(s) configurado(s)</span>
               <span className="text-[10px] text-gray-500">Doble clic para editar · Clic para seleccionar</span>
             </div>
           )}
@@ -477,7 +490,7 @@ function FormModal({ mode, item, productId, onSave, onClose, isSeguros }: FormMo
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
       <div className="bg-white shadow-2xl w-full max-w-[95vw] sm:max-w-2xl lg:max-w-3xl mx-2 max-h-[90vh] overflow-hidden flex flex-col border-2 border-gray-400" onClick={(e) => e.stopPropagation()}>
         {/* ── Header ── */}
-        <div className="bg-[#2E5C91] px-4 py-2.5 border-b-2 border-gray-400 flex items-center justify-between">
+        <div className="bg-[color:var(--theme-secondary)] px-4 py-2.5 border-b-2 border-gray-400 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <div className="w-6 h-6 rounded bg-white/15 flex items-center justify-center">
               {mode === 'create' ? (
@@ -495,7 +508,7 @@ function FormModal({ mode, item, productId, onSave, onClose, isSeguros }: FormMo
               </p>
             </div>
           </div>
-          <button onClick={onClose} className="text-white/60 hover:text-white transition-colors">
+          <button type="button" aria-label="Cerrar" title="Cerrar" onClick={onClose} className="text-white/60 hover:text-white transition-colors">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
           </button>
         </div>
@@ -505,7 +518,7 @@ function FormModal({ mode, item, productId, onSave, onClose, isSeguros }: FormMo
           <form onSubmit={handleSubmit}>
             {/* ═══ Sección: Producto ═══ */}
             <div className="mb-5">
-              <div className="bg-gradient-to-r from-[#2E5C91] to-[#4A6FA5] px-4 py-2 mb-4 rounded-sm flex items-center justify-between">
+              <div className="bg-gradient-to-r from-[color:var(--theme-secondary)] to-[color:var(--theme-primary)] px-4 py-2 mb-4 rounded-sm flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <svg className="w-3.5 h-3.5 text-white/80" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
@@ -549,10 +562,10 @@ function FormModal({ mode, item, productId, onSave, onClose, isSeguros }: FormMo
                             value={prodSearchTerm}
                             onChange={e => setProdSearchTerm(e.target.value)}
                             placeholder="Filtrar productos..."
-                            className="w-full pl-7 pr-8 py-1.5 text-xs border border-gray-300 bg-white focus:border-[#2E5C91] focus:outline-none"
+                            className="w-full pl-7 pr-8 py-1.5 text-xs border border-gray-300 bg-white focus:border-[color:var(--theme-secondary)] focus:outline-none"
                           />
                           {prodSearchTerm && (
-                            <button type="button" onClick={() => setProdSearchTerm('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                            <button aria-label="Limpiar búsqueda" title="Limpiar búsqueda" type="button" onClick={() => setProdSearchTerm('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
                               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                             </button>
                           )}
@@ -564,8 +577,8 @@ function FormModal({ mode, item, productId, onSave, onClose, isSeguros }: FormMo
                     <div className="overflow-y-auto" style={{ maxHeight: '180px' }}>
                       {loadingProductos ? (
                         <div className="flex items-center justify-center gap-2 py-6">
-                          <div className="w-4 h-4 border-2 border-[#4A6FA5] border-t-transparent rounded-full animate-spin" />
-                          <span className="text-xs text-[#4A6FA5]">Consultando J_PRODUCTOS...</span>
+                          <div className="w-4 h-4 border-2 border-[color:var(--theme-primary)] border-t-transparent rounded-full animate-spin" />
+                          <span className="text-xs text-[color:var(--theme-primary)]">Cargando...</span>
                         </div>
                       ) : productosVisibles.length === 0 ? (
                         <div className="py-6 text-center">
@@ -589,14 +602,14 @@ function FormModal({ mode, item, productId, onSave, onClose, isSeguros }: FormMo
                               }}
                               className={`w-full text-left px-3 py-2 flex items-center gap-2 border-b border-gray-100 last:border-b-0 transition-colors ${
                                 isActive
-                                  ? 'bg-[#2E5C91]/8 border-l-[3px] border-l-[#2E5C91]'
+                                  ? 'bg-[color:var(--theme-secondary)]/8 border-l-[3px] border-l-[color:var(--theme-secondary)]'
                                   : isViewMode
                                   ? 'cursor-default'
                                   : 'hover:bg-gray-50 border-l-[3px] border-l-transparent cursor-pointer'
                               }`}
                             >
                               <span className={`flex-shrink-0 inline-block w-[38px] text-center py-px text-[9px] font-bold uppercase tracking-wide ${
-                                isSeguro ? 'bg-amber-100 text-amber-700' : 'bg-[#D6E4F0] text-[#2E5C91]'
+                                isSeguro ? 'bg-amber-100 text-amber-700' : 'bg-[color:var(--theme-tint)] text-[color:var(--theme-secondary)]'
                               }`}>
                                 {isSeguro ? 'SEG' : 'CRE'}
                               </span>
@@ -605,7 +618,7 @@ function FormModal({ mode, item, productId, onSave, onClose, isSeguros }: FormMo
                                 <span className="hidden sm:inline text-[10px] text-gray-400 truncate max-w-[120px]">{p.sublineaProducto}</span>
                               )}
                               {isActive && (
-                                <svg className="w-3.5 h-3.5 text-[#2E5C91] flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <svg className="w-3.5 h-3.5 text-[color:var(--theme-secondary)] flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
                                 </svg>
                               )}
@@ -621,7 +634,7 @@ function FormModal({ mode, item, productId, onSave, onClose, isSeguros }: FormMo
                 {formData.paqueteProductoId !== 0 && (
                   <div className="bg-white border border-gray-200 rounded-sm p-3 shadow-sm">
                     <div className="flex items-center gap-2 mb-2.5">
-                      <div className={`w-1.5 h-1.5 rounded-full ${formData.tipo === 'Seguro' ? 'bg-amber-500' : 'bg-[#2E5C91]'}`} />
+                      <div className={`w-1.5 h-1.5 rounded-full ${formData.tipo === 'Seguro' ? 'bg-amber-500' : 'bg-[color:var(--theme-secondary)]'}`} />
                       <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Detalle del producto</span>
                       <span className="text-[9px] text-gray-400 ml-1">ID: {formData.paqueteProductoId}</span>
                       <span className={`ml-auto px-2 py-0.5 rounded text-[10px] font-medium ${
@@ -685,7 +698,7 @@ function FormModal({ mode, item, productId, onSave, onClose, isSeguros }: FormMo
                   {isViewMode ? 'Cerrar' : 'Cancelar'}
                 </button>
                 {!isViewMode && (
-                  <button type="submit" className="flex items-center gap-1.5 px-5 py-1.5 bg-[#2E5C91] text-white text-xs font-medium hover:bg-[#24497A] rounded-sm transition-colors shadow-sm">
+                  <button type="submit" className="flex items-center gap-1.5 px-5 py-1.5 bg-[color:var(--theme-secondary)] text-white text-xs font-medium hover:bg-[color:var(--theme-secondary-hover)] rounded-sm transition-colors shadow-sm">
                     <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
                     Guardar
                   </button>
@@ -775,7 +788,7 @@ function ProductPickerModal({ onSelect, onClose }: ProductPickerModalProps) {
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[60]" onClick={(e) => { e.stopPropagation(); onClose(); }}>
       <div className="bg-white shadow-2xl max-w-2xl w-full max-h-[80vh] overflow-hidden flex flex-col border-2 border-gray-400" onClick={(e) => e.stopPropagation()}>
         {/* Header */}
-        <div className="bg-[#2E5C91] px-4 py-2.5 border-b-2 border-gray-400 flex items-center justify-between">
+        <div className="bg-[color:var(--theme-secondary)] px-4 py-2.5 border-b-2 border-gray-400 flex items-center justify-between">
           <h3 className="text-sm font-medium text-white">Seleccionar Producto</h3>
           <button onClick={onClose} className="text-white hover:text-gray-300 font-bold text-lg leading-none">×</button>
         </div>
@@ -797,7 +810,7 @@ function ProductPickerModal({ onSelect, onClose }: ProductPickerModalProps) {
           </div>
           <div className="flex items-center justify-between mt-1">
             <p className="text-[10px] text-gray-500">
-              Filtro: <strong>type IN ('Credito', 'Seguro')</strong> sobre J_PRODUCTOS
+              Productos de <strong>Crédito</strong> y <strong>Seguro</strong>
             </p>
             {statusBadge()}
           </div>
@@ -812,13 +825,13 @@ function ProductPickerModal({ onSelect, onClose }: ProductPickerModalProps) {
             <div className="flex items-center justify-center py-12">
               <div className="text-center">
                 <div className="inline-block w-6 h-6 border-2 border-blue-400 border-t-transparent rounded-full animate-spin mb-2" />
-                <p className="text-xs text-gray-500">Consultando J_PRODUCTOS...</p>
+                <p className="text-xs text-gray-500">Cargando...</p>
               </div>
             </div>
           ) : (
             <table className="w-full text-xs">
               <thead className="sticky top-0">
-                <tr className="bg-[#4A6FA5] text-white">
+                <tr className="bg-[color:var(--theme-primary)] text-white">
                   <th className="px-3 py-2 text-left font-medium text-xs border-r border-white/20 whitespace-nowrap">Línea Producto</th>
                   <th className="px-3 py-2 text-left font-medium text-xs border-r border-white/20 whitespace-nowrap">Tipo (Sub-línea)</th>
                   <th className="px-3 py-2 text-left font-medium text-xs whitespace-nowrap">Nombre Producto</th>
@@ -844,7 +857,7 @@ function ProductPickerModal({ onSelect, onClose }: ProductPickerModalProps) {
                         onDoubleClick={() => { setSelectedId(producto.id); onSelect(producto); }}
                         className={`border-b border-gray-200 cursor-pointer transition-colors ${
                           isSelected
-                            ? 'bg-[#D6EAF8] ring-1 ring-inset ring-blue-300'
+                            ? 'bg-[color:var(--theme-tint-soft)] ring-1 ring-inset ring-blue-300'
                             : index % 2 === 0
                             ? 'bg-white hover:bg-[#E8F4F8]'
                             : 'bg-[#F9F9F9] hover:bg-[#E8F4F8]'
@@ -881,7 +894,7 @@ function ProductPickerModal({ onSelect, onClose }: ProductPickerModalProps) {
             <button
               onClick={handleConfirm}
               disabled={selectedId === null}
-              className="px-4 py-1.5 bg-[#4A6FA5] text-white text-xs hover:bg-[#3E5C91] disabled:bg-gray-400 disabled:cursor-not-allowed"
+              className="px-4 py-1.5 bg-[color:var(--theme-primary)] text-white text-xs hover:bg-[color:var(--theme-secondary)] disabled:bg-gray-400 disabled:cursor-not-allowed"
             >
               Seleccionar
             </button>

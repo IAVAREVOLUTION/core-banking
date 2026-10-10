@@ -1,5 +1,5 @@
 ﻿import { useState, useEffect } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 import { DatePicker } from '@/app/components/ui/DatePicker';
 import {
   Impuesto, saveToSession, loadFromSession, generateId,
@@ -58,7 +58,7 @@ export function ImpuestosTab({ mode, accountId }: ImpuestosTabProps) {
 
   return (
     <div className="bg-white">
-      <div className="bg-[#D9E2F3] border-l-4 border-[#4A6FA5] px-3 py-2 mb-3 flex items-center justify-between">
+      <div className="bg-[color:var(--theme-tint)] border-l-4 border-[color:var(--theme-primary)] px-3 py-2 mb-3 flex items-center justify-between">
         <span className="text-sm text-gray-800">IMPUESTOS</span>
         {!isReadOnly && (
           <div className="flex items-center gap-2">

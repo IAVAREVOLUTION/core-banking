@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { Product } from '../../types/product';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
+import { useOrdenTabla, coincideBusqueda } from '@/app/lib/ordenTabla';
+import { formatearFecha } from '@/app/lib/fechas';
 
 interface ProductosListProps {
   products: Product[];
@@ -15,7 +17,6 @@ interface ProductosListProps {
 
 export function ProductosList({ products, onNew, onEdit, onView, tipoProducto, loading, error, onRefetch }: ProductosListProps) {
   const [searchTerm, setSearchTerm] = useState('');
-  const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
   const [currentPage, setCurrentPage] = useState(1);
   const [sublineaFilter, setSublineaFilter] = useState<string>('');
   const itemsPerPage = 8;
@@ -95,11 +96,9 @@ export function ProductosList({ products, onNew, onEdit, onView, tipoProducto, l
   console.log('Total de productos cargados:', products.length);
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('es-MX', {
-      day: '2-digit',
-      month: '2-digit',
-      year: '2-digit',
-    });
+    // Formato único del sistema (lib/fechas): dd/mm/aaaa, sin corrimiento de un día en fechas ISO.
+    if (!dateString) return '—';
+    return formatearFecha(dateString);
   };
 
   const handleExportExcel = () => {
@@ -177,35 +176,54 @@ export function ProductosList({ products, onNew, onEdit, onView, tipoProducto, l
   }, [products]);
 
   // CRÍTICO: Usar useMemo para evitar filtrados y ordenamientos en cada render
-  const filteredProductos = useMemo(() => {
-    return products
-      .filter(producto => {
-        const searchLower = searchTerm.toLowerCase();
-        const matchSearch = (
-          (producto.nombre || '').toLowerCase().includes(searchLower) ||
-          (producto.id?.toString() || '').includes(searchLower) ||
-          (producto.descripcion || '').toLowerCase().includes(searchLower)
-        );
-        
-        const matchSublinea = !sublineaFilter || producto.sublineaProducto === sublineaFilter;
-        
-        return matchSearch && matchSublinea;
-      })
-      .sort((a, b) => {
-        const dateA = new Date(a.fechaRegistro).getTime();
-        const dateB = new Date(b.fechaRegistro).getTime();
-        return sortOrder === 'desc' ? dateB - dateA : dateA - dateB;
-      });
-  }, [products, searchTerm, sortOrder, sublineaFilter]);
+  const filteredProductos = useMemo(() => products.filter(producto =>
+    (!sublineaFilter || producto.sublineaProducto === sublineaFilter) &&
+    coincideBusqueda(searchTerm, [producto.id, producto.nombre, producto.clave, (producto as any).producto, producto.descripcion, producto.tipoProducto, producto.lineaProducto, producto.sublineaProducto, producto.sucursal, producto.estatus])
+  ), [products, searchTerm, sublineaFilter]);
+
+  // Más recientes primero (fecha de registro; a igual fecha, el id).
+  const orden = useOrdenTabla(filteredProductos, {
+    id: 'productos',
+    columnas: {
+      nombre: p => (p as any).nombre,
+      clave: p => (p as any).clave,
+      claveEBS: p => (p as any).claveEBS,
+      vddRowId: p => (p as any).vddRowId,
+      tipoProducto: p => (p as any).tipoProducto,
+      estatus: p => (p as any).estatus,
+      opcionCompra: p => (p as any).opcionCompra,
+      porcentajeOpcionCompra: p => (p as any).porcentajeOpcionCompra,
+      tasaBase: p => (p as any).tasaBase,
+      calculo: p => (p as any).calculo,
+      baseCalculo: p => (p as any).baseCalculo,
+      productoSegu: p => (p as any).productoSegu,
+      referenciaCliente: p => (p as any).referenciaCliente,
+      referenciaProducto: p => (p as any).referenciaProducto,
+      rentabilidad: p => (p as any).rentabilidad,
+      tasa: p => (p as any).tasa,
+      producto: p => (p as any).producto,
+      lineaProducto: p => (p as any).lineaProducto,
+      tipoTasa: p => (p as any).tipoTasa,
+      cuentaEje: p => (p as any).cuentaEje,
+      descripcion: p => (p as any).descripcion,
+      sucursal: p => (p as any).sucursal,
+      idProducto: p => p.id,
+      sublinea: p => p.sublineaProducto,
+      fecha: p => p.fechaRegistro,
+    },
+    porDefecto: { campo: 'fecha', dir: 'desc' },
+    desempate: p => p.id,
+    alCambiar: () => setCurrentPage(1),
+  });
 
   // Paginación con useMemo
   const paginationData = useMemo(() => {
-    const totalPages = Math.ceil(filteredProductos.length / itemsPerPage);
+    const totalPages = Math.ceil(orden.filas.length / itemsPerPage);
     const startIndex = (currentPage - 1) * itemsPerPage;
     const endIndex = startIndex + itemsPerPage;
-    const currentProductos = filteredProductos.slice(startIndex, endIndex);
+    const currentProductos = orden.filas.slice(startIndex, endIndex);
     return { totalPages, currentProductos, startIndex, endIndex };
-  }, [filteredProductos, currentPage, itemsPerPage]);
+  }, [orden.filas, currentPage, itemsPerPage]);
 
   const handlePreviousPage = () => {
     if (currentPage > 1) {
@@ -229,15 +247,14 @@ export function ProductosList({ products, onNew, onEdit, onView, tipoProducto, l
 
   // Reset page when search or sort changes
   const handleSortChange = (value: 'desc' | 'asc') => {
-    setSortOrder(value);
-    setCurrentPage(1);
+    orden.fijar(orden.campo, value);
   };
 
   const handleResizeStart = (e: React.MouseEvent, column: string) => {
     e.preventDefault();
     setResizing(column);
     setStartX(e.clientX);
-    setStartWidth(columnWidths[column as keyof typeof columnWidths]);
+    setStartWidth(columnWidths[column as keyof typeof columnWidths] ?? 100);
   };
 
   useEffect(() => {
@@ -280,7 +297,7 @@ export function ProductosList({ products, onNew, onEdit, onView, tipoProducto, l
               <path d="M4 9h16M9 4v16" stroke="currentColor" strokeWidth="1.5"/>
             </svg>
             <h2 className="text-lg font-normal text-gray-800">{isSeguros ? 'Productos Seguros' : 'Productos'}</h2>
-            <button className="p-1 ml-2">
+            <button type="button" aria-label="Buscar" title="Buscar" className="p-1 ml-2">
               <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#999" strokeWidth="2">
                 <circle cx="8" cy="8" r="6"/>
                 <path d="M13 13l3 3"/>
@@ -288,8 +305,8 @@ export function ProductosList({ products, onNew, onEdit, onView, tipoProducto, l
             </button>
           </div>
           <div className="flex items-center gap-4 text-sm text-gray-700">
-            <span onClick={handleListaClick} className="cursor-pointer hover:text-[#0099CC] transition-colors">Lista</span>
-            <span onClick={handleBuscarClick} className="cursor-pointer hover:text-[#0099CC] transition-colors">Buscar</span>
+            <span onClick={handleListaClick} className="cursor-pointer hover:text-[color:var(--theme-action)] transition-colors">Lista</span>
+            <span onClick={handleBuscarClick} className="cursor-pointer hover:text-[color:var(--theme-action)] transition-colors">Buscar</span>
           </div>
         </div>
       </div>
@@ -306,7 +323,7 @@ export function ProductosList({ products, onNew, onEdit, onView, tipoProducto, l
               <path d="M6 8l-4-4h8z"/>
             </svg>
           </div>
-          <button onClick={onNew} className="px-5 py-1.5 bg-[#0099CC] text-white rounded text-sm hover:bg-[#0088BB] font-medium">
+          <button onClick={onNew} className="px-5 py-1.5 bg-[color:var(--theme-action)] text-white rounded text-sm hover:bg-[color:var(--theme-action-hover)] font-medium">
             Nuevo
           </button>
         </div>
@@ -383,7 +400,7 @@ export function ProductosList({ products, onNew, onEdit, onView, tipoProducto, l
               <span>Orden Rápido</span>
               <div className="relative">
                 <select 
-                  value={sortOrder} 
+                  value={orden.dir}  
                   onChange={(e) => handleSortChange(e.target.value as 'desc' | 'asc')}
                   className="px-2 py-1 border border-gray-400 rounded text-sm bg-white pr-6 appearance-none"
                 >
@@ -417,7 +434,7 @@ export function ProductosList({ products, onNew, onEdit, onView, tipoProducto, l
                 </svg>
               </div>
               <button 
-                className="p-0.5 text-[#0099CC] hover:text-[#0088BB] disabled:opacity-40" 
+                className="p-0.5 text-[color:var(--theme-action)] hover:text-[color:var(--theme-action-hover)] disabled:opacity-40" 
                 title="Anterior"
                 onClick={handlePreviousPage}
                 disabled={currentPage === 1}
@@ -427,7 +444,7 @@ export function ProductosList({ products, onNew, onEdit, onView, tipoProducto, l
                 </svg>
               </button>
               <button 
-                className="p-0.5 text-[#0099CC] hover:text-[#0088BB] disabled:opacity-40" 
+                className="p-0.5 text-[color:var(--theme-action)] hover:text-[color:var(--theme-action-hover)] disabled:opacity-40" 
                 title="Siguiente"
                 onClick={handleNextPage}
                 disabled={currentPage === paginationData.totalPages}
@@ -451,230 +468,261 @@ export function ProductosList({ products, onNew, onEdit, onView, tipoProducto, l
                 <th className="relative px-3 py-2.5 text-left font-normal text-xs text-gray-700" style={{ width: `${columnWidths.actions}px` }}>
                   Editar | Ver
                   <div
-                    className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-[#0099CC] transition-colors"
-                    onMouseDown={(e) => handleResizeStart(e, 'actions')}
+                    className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-[color:var(--theme-action)] transition-colors"
+                    onClick={(e) => e.stopPropagation()}
+                        onMouseDown={(e) => handleResizeStart(e, 'actions')}
                   />
                 </th>
                 {isCredito ? (
                   <>
-                    <th className="relative px-3 py-2.5 text-left font-normal text-xs text-gray-700" style={{ width: `${columnWidths.nombre}px` }}>
-                      NOMBRE
+                    <th className="relative px-3 py-2.5 text-left font-normal text-xs text-gray-700" {...orden.th('nombre', { width: `${columnWidths.nombre}px` })}>
+                      NOMBRE{orden.flecha('nombre')}
                       <div
-                        className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-[#0099CC] transition-colors"
+                        className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-[color:var(--theme-action)] transition-colors"
+                        onClick={(e) => e.stopPropagation()}
                         onMouseDown={(e) => handleResizeStart(e, 'nombre')}
                       />
                     </th>
-                    <th className="relative px-3 py-2.5 text-left font-normal text-xs text-gray-700" style={{ width: `${columnWidths.clave}px` }}>
-                      CLAVE
+                    <th className="relative px-3 py-2.5 text-left font-normal text-xs text-gray-700" {...orden.th('clave', { width: `${columnWidths.clave}px` })}>
+                      CLAVE{orden.flecha('clave')}
                       <div
-                        className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-[#0099CC] transition-colors"
+                        className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-[color:var(--theme-action)] transition-colors"
+                        onClick={(e) => e.stopPropagation()}
                         onMouseDown={(e) => handleResizeStart(e, 'clave')}
                       />
                     </th>
-                    <th className="relative px-3 py-2.5 text-left font-normal text-xs text-gray-700" style={{ width: `${columnWidths.claveEBS}px` }}>
-                      CLAVE EBS
+                    <th className="relative px-3 py-2.5 text-left font-normal text-xs text-gray-700" {...orden.th('claveEBS', { width: `${columnWidths.claveEBS}px` })}>
+                      CLAVE EBS{orden.flecha('claveEBS')}
                       <div
-                        className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-[#0099CC] transition-colors"
+                        className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-[color:var(--theme-action)] transition-colors"
+                        onClick={(e) => e.stopPropagation()}
                         onMouseDown={(e) => handleResizeStart(e, 'claveEBS')}
                       />
                     </th>
-                    <th className="relative px-3 py-2.5 text-left font-normal text-xs text-gray-700" style={{ width: `${columnWidths.vddRowId}px` }}>
-                      VDD ROW ID
+                    <th className="relative px-3 py-2.5 text-left font-normal text-xs text-gray-700" {...orden.th('vddRowId', { width: `${columnWidths.vddRowId}px` })}>
+                      VDD ROW ID{orden.flecha('vddRowId')}
                       <div
-                        className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-[#0099CC] transition-colors"
+                        className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-[color:var(--theme-action)] transition-colors"
+                        onClick={(e) => e.stopPropagation()}
                         onMouseDown={(e) => handleResizeStart(e, 'vddRowId')}
                       />
                     </th>
-                    <th className="relative px-3 py-2.5 text-left font-normal text-xs text-gray-700" style={{ width: `${columnWidths.tipoProducto}px` }}>
-                      TIPO PRODUCTO
+                    <th className="relative px-3 py-2.5 text-left font-normal text-xs text-gray-700" {...orden.th('tipoProducto', { width: `${columnWidths.tipoProducto}px` })}>
+                      TIPO PRODUCTO{orden.flecha('tipoProducto')}
                       <div
-                        className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-[#0099CC] transition-colors"
+                        className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-[color:var(--theme-action)] transition-colors"
+                        onClick={(e) => e.stopPropagation()}
                         onMouseDown={(e) => handleResizeStart(e, 'tipoProducto')}
                       />
                     </th>
-                    <th className="relative px-3 py-2.5 text-left font-normal text-xs text-gray-700" style={{ width: `${columnWidths.estatus}px` }}>
-                      ESTATUS
+                    <th className="relative px-3 py-2.5 text-left font-normal text-xs text-gray-700" {...orden.th('estatus', { width: `${columnWidths.estatus}px` })}>
+                      ESTATUS{orden.flecha('estatus')}
                       <div
-                        className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-[#0099CC] transition-colors"
+                        className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-[color:var(--theme-action)] transition-colors"
+                        onClick={(e) => e.stopPropagation()}
                         onMouseDown={(e) => handleResizeStart(e, 'estatus')}
                       />
                     </th>
-                    <th className="relative px-3 py-2.5 text-left font-normal text-xs text-gray-700" style={{ width: `${columnWidths.opcionCompra}px` }}>
-                      OPCIÓN COMPRA
+                    <th className="relative px-3 py-2.5 text-left font-normal text-xs text-gray-700" {...orden.th('opcionCompra', { width: `${columnWidths.opcionCompra}px` })}>
+                      OPCIÓN COMPRA{orden.flecha('opcionCompra')}
                       <div
-                        className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-[#0099CC] transition-colors"
+                        className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-[color:var(--theme-action)] transition-colors"
+                        onClick={(e) => e.stopPropagation()}
                         onMouseDown={(e) => handleResizeStart(e, 'opcionCompra')}
                       />
                     </th>
-                    <th className="relative px-3 py-2.5 text-left font-normal text-xs text-gray-700" style={{ width: `${columnWidths.porcentajeOpcionCompra}px` }}>
-                      % OPCIÓN COMPRA
+                    <th className="relative px-3 py-2.5 text-left font-normal text-xs text-gray-700" {...orden.th('porcentajeOpcionCompra', { width: `${columnWidths.porcentajeOpcionCompra}px` })}>
+                      % OPCIÓN COMPRA{orden.flecha('porcentajeOpcionCompra')}
                       <div
-                        className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-[#0099CC] transition-colors"
+                        className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-[color:var(--theme-action)] transition-colors"
+                        onClick={(e) => e.stopPropagation()}
                         onMouseDown={(e) => handleResizeStart(e, 'porcentajeOpcionCompra')}
                       />
                     </th>
-                    <th className="relative px-3 py-2.5 text-left font-normal text-xs text-gray-700" style={{ width: `${columnWidths.tasaBase}px` }}>
-                      TASA BASE
+                    <th className="relative px-3 py-2.5 text-left font-normal text-xs text-gray-700" {...orden.th('tasaBase', { width: `${columnWidths.tasaBase}px` })}>
+                      TASA BASE{orden.flecha('tasaBase')}
                       <div
-                        className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-[#0099CC] transition-colors"
+                        className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-[color:var(--theme-action)] transition-colors"
+                        onClick={(e) => e.stopPropagation()}
                         onMouseDown={(e) => handleResizeStart(e, 'tasaBase')}
                       />
                     </th>
-                    <th className="relative px-3 py-2.5 text-left font-normal text-xs text-gray-700" style={{ width: `${columnWidths.calculo}px` }}>
-                      CÁLCULO
+                    <th className="relative px-3 py-2.5 text-left font-normal text-xs text-gray-700" {...orden.th('calculo', { width: `${columnWidths.calculo}px` })}>
+                      CÁLCULO{orden.flecha('calculo')}
                       <div
-                        className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-[#0099CC] transition-colors"
+                        className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-[color:var(--theme-action)] transition-colors"
+                        onClick={(e) => e.stopPropagation()}
                         onMouseDown={(e) => handleResizeStart(e, 'calculo')}
                       />
                     </th>
-                    <th className="relative px-3 py-2.5 text-left font-normal text-xs text-gray-700" style={{ width: `${columnWidths.baseCalculo}px` }}>
-                      BASE CÁLCULO
+                    <th className="relative px-3 py-2.5 text-left font-normal text-xs text-gray-700" {...orden.th('baseCalculo', { width: `${columnWidths.baseCalculo}px` })}>
+                      BASE CÁLCULO{orden.flecha('baseCalculo')}
                       <div
-                        className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-[#0099CC] transition-colors"
+                        className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-[color:var(--theme-action)] transition-colors"
+                        onClick={(e) => e.stopPropagation()}
                         onMouseDown={(e) => handleResizeStart(e, 'baseCalculo')}
                       />
                     </th>
-                    <th className="relative px-3 py-2.5 text-left font-normal text-xs text-gray-700" style={{ width: `${columnWidths.productoSegu}px` }}>
-                      PRODUCTO SEGU
+                    <th className="relative px-3 py-2.5 text-left font-normal text-xs text-gray-700" {...orden.th('productoSegu', { width: `${columnWidths.productoSegu}px` })}>
+                      PRODUCTO SEGU{orden.flecha('productoSegu')}
                       <div
-                        className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-[#0099CC] transition-colors"
+                        className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-[color:var(--theme-action)] transition-colors"
+                        onClick={(e) => e.stopPropagation()}
                         onMouseDown={(e) => handleResizeStart(e, 'productoSegu')}
                       />
                     </th>
-                    <th className="relative px-3 py-2.5 text-left font-normal text-xs text-gray-700" style={{ width: `${columnWidths.referenciaCliente}px` }}>
-                      REFERENCIA CLIENTE
+                    <th className="relative px-3 py-2.5 text-left font-normal text-xs text-gray-700" {...orden.th('referenciaCliente', { width: `${columnWidths.referenciaCliente}px` })}>
+                      REFERENCIA CLIENTE{orden.flecha('referenciaCliente')}
                       <div
-                        className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-[#0099CC] transition-colors"
+                        className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-[color:var(--theme-action)] transition-colors"
+                        onClick={(e) => e.stopPropagation()}
                         onMouseDown={(e) => handleResizeStart(e, 'referenciaCliente')}
                       />
                     </th>
-                    <th className="relative px-3 py-2.5 text-left font-normal text-xs text-gray-700" style={{ width: `${columnWidths.referenciaProducto}px` }}>
-                      REFERENCIA PRODUCTO
+                    <th className="relative px-3 py-2.5 text-left font-normal text-xs text-gray-700" {...orden.th('referenciaProducto', { width: `${columnWidths.referenciaProducto}px` })}>
+                      REFERENCIA PRODUCTO{orden.flecha('referenciaProducto')}
                       <div
-                        className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-[#0099CC] transition-colors"
+                        className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-[color:var(--theme-action)] transition-colors"
+                        onClick={(e) => e.stopPropagation()}
                         onMouseDown={(e) => handleResizeStart(e, 'referenciaProducto')}
                       />
                     </th>
-                    <th className="relative px-3 py-2.5 text-left font-normal text-xs text-gray-700" style={{ width: `${columnWidths.rentabilidad}px` }}>
-                      RENTABILIDAD
+                    <th className="relative px-3 py-2.5 text-left font-normal text-xs text-gray-700" {...orden.th('rentabilidad', { width: `${columnWidths.rentabilidad}px` })}>
+                      RENTABILIDAD{orden.flecha('rentabilidad')}
                       <div
-                        className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-[#0099CC] transition-colors"
+                        className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-[color:var(--theme-action)] transition-colors"
+                        onClick={(e) => e.stopPropagation()}
                         onMouseDown={(e) => handleResizeStart(e, 'rentabilidad')}
                       />
                     </th>
-                    <th className="relative px-3 py-2.5 text-left font-normal text-xs text-gray-700" style={{ width: `${columnWidths.tasa}px` }}>
-                      TASA
+                    <th className="relative px-3 py-2.5 text-left font-normal text-xs text-gray-700" {...orden.th('tasa', { width: `${columnWidths.tasa}px` })}>
+                      TASA{orden.flecha('tasa')}
                       <div
-                        className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-[#0099CC] transition-colors"
+                        className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-[color:var(--theme-action)] transition-colors"
+                        onClick={(e) => e.stopPropagation()}
                         onMouseDown={(e) => handleResizeStart(e, 'tasa')}
                       />
                     </th>
                   </>
                 ) : isCaptacion ? (
                   <>
-                    <th className="relative px-3 py-2.5 text-left font-normal text-xs text-gray-700" style={{ width: `${columnWidths.clave}px` }}>
-                      CLAVE
+                    <th className="relative px-3 py-2.5 text-left font-normal text-xs text-gray-700" {...orden.th('clave', { width: `${columnWidths.clave}px` })}>
+                      CLAVE{orden.flecha('clave')}
                       <div
-                        className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-[#0099CC] transition-colors"
+                        className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-[color:var(--theme-action)] transition-colors"
+                        onClick={(e) => e.stopPropagation()}
                         onMouseDown={(e) => handleResizeStart(e, 'clave')}
                       />
                     </th>
-                    <th className="relative px-3 py-2.5 text-left font-normal text-xs text-gray-700" style={{ width: `${columnWidths.producto}px` }}>
-                      PRODUCTO
+                    <th className="relative px-3 py-2.5 text-left font-normal text-xs text-gray-700" {...orden.th('producto', { width: `${columnWidths.producto}px` })}>
+                      PRODUCTO{orden.flecha('producto')}
                       <div
-                        className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-[#0099CC] transition-colors"
+                        className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-[color:var(--theme-action)] transition-colors"
+                        onClick={(e) => e.stopPropagation()}
                         onMouseDown={(e) => handleResizeStart(e, 'producto')}
                       />
                     </th>
-                    <th className="relative px-3 py-2.5 text-left font-normal text-xs text-gray-700" style={{ width: `${columnWidths.tipoProducto}px` }}>
-                      TIPO DE PRODUCTO
+                    <th className="relative px-3 py-2.5 text-left font-normal text-xs text-gray-700" {...orden.th('tipoProducto', { width: `${columnWidths.tipoProducto}px` })}>
+                      TIPO DE PRODUCTO{orden.flecha('tipoProducto')}
                       <div
-                        className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-[#0099CC] transition-colors"
+                        className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-[color:var(--theme-action)] transition-colors"
+                        onClick={(e) => e.stopPropagation()}
                         onMouseDown={(e) => handleResizeStart(e, 'tipoProducto')}
                       />
                     </th>
-                    <th className="relative px-3 py-2.5 text-left font-normal text-xs text-gray-700" style={{ width: `${columnWidths.lineaProducto}px` }}>
-                      LÍNEA DE PRODUCTO
+                    <th className="relative px-3 py-2.5 text-left font-normal text-xs text-gray-700" {...orden.th('lineaProducto', { width: `${columnWidths.lineaProducto}px` })}>
+                      LÍNEA DE PRODUCTO{orden.flecha('lineaProducto')}
                       <div
-                        className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-[#0099CC] transition-colors"
+                        className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-[color:var(--theme-action)] transition-colors"
+                        onClick={(e) => e.stopPropagation()}
                         onMouseDown={(e) => handleResizeStart(e, 'lineaProducto')}
                       />
                     </th>
-                    <th className="relative px-3 py-2.5 text-left font-normal text-xs text-gray-700" style={{ width: `${columnWidths.tipoTasa}px` }}>
-                      TIPO TASA
+                    <th className="relative px-3 py-2.5 text-left font-normal text-xs text-gray-700" {...orden.th('tipoTasa', { width: `${columnWidths.tipoTasa}px` })}>
+                      TIPO TASA{orden.flecha('tipoTasa')}
                       <div
-                        className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-[#0099CC] transition-colors"
+                        className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-[color:var(--theme-action)] transition-colors"
+                        onClick={(e) => e.stopPropagation()}
                         onMouseDown={(e) => handleResizeStart(e, 'tipoTasa')}
                       />
                     </th>
-                    <th className="relative px-3 py-2.5 text-left font-normal text-xs text-gray-700" style={{ width: `${columnWidths.estatus}px` }}>
-                      ESTATUS
+                    <th className="relative px-3 py-2.5 text-left font-normal text-xs text-gray-700" {...orden.th('estatus', { width: `${columnWidths.estatus}px` })}>
+                      ESTATUS{orden.flecha('estatus')}
                       <div
-                        className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-[#0099CC] transition-colors"
+                        className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-[color:var(--theme-action)] transition-colors"
+                        onClick={(e) => e.stopPropagation()}
                         onMouseDown={(e) => handleResizeStart(e, 'estatus')}
                       />
                     </th>
-                    <th className="relative px-3 py-2.5 text-left font-normal text-xs text-gray-700" style={{ width: `${columnWidths.cuentaEje}px` }}>
-                      CUENTA EJE
+                    <th className="relative px-3 py-2.5 text-left font-normal text-xs text-gray-700" {...orden.th('cuentaEje', { width: `${columnWidths.cuentaEje}px` })}>
+                      CUENTA EJE{orden.flecha('cuentaEje')}
                       <div
-                        className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-[#0099CC] transition-colors"
+                        className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-[color:var(--theme-action)] transition-colors"
+                        onClick={(e) => e.stopPropagation()}
                         onMouseDown={(e) => handleResizeStart(e, 'cuentaEje')}
                       />
                     </th>
                   </>
                 ) : (
                   <>
-                    <th className="relative px-3 py-2.5 text-left font-normal text-xs text-gray-700" style={{ width: `${columnWidths.idProducto}px` }}>
-                      ID PRODUCTO
+                    <th className="relative px-3 py-2.5 text-left font-normal text-xs text-gray-700" {...orden.th('idProducto', { width: `${columnWidths.idProducto}px` })}>
+                      ID PRODUCTO{orden.flecha('idProducto')}
                       <div
-                        className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-[#0099CC] transition-colors"
+                        className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-[color:var(--theme-action)] transition-colors"
+                        onClick={(e) => e.stopPropagation()}
                         onMouseDown={(e) => handleResizeStart(e, 'idProducto')}
                       />
                     </th>
-                    <th className="relative px-3 py-2.5 text-left font-normal text-xs text-gray-700" style={{ width: `${columnWidths.nombre}px` }}>
-                      NOMBRE
+                    <th className="relative px-3 py-2.5 text-left font-normal text-xs text-gray-700" {...orden.th('nombre', { width: `${columnWidths.nombre}px` })}>
+                      NOMBRE{orden.flecha('nombre')}
                       <div
-                        className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-[#0099CC] transition-colors"
+                        className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-[color:var(--theme-action)] transition-colors"
+                        onClick={(e) => e.stopPropagation()}
                         onMouseDown={(e) => handleResizeStart(e, 'nombre')}
                       />
                     </th>
-                    <th className="relative px-3 py-2.5 text-left font-normal text-xs text-gray-700" style={{ width: `${columnWidths.descripcion}px` }}>
-                      DESCRIPCIÓN
+                    <th className="relative px-3 py-2.5 text-left font-normal text-xs text-gray-700" {...orden.th('descripcion', { width: `${columnWidths.descripcion}px` })}>
+                      DESCRIPCIÓN{orden.flecha('descripcion')}
                       <div
-                        className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-[#0099CC] transition-colors"
+                        className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-[color:var(--theme-action)] transition-colors"
+                        onClick={(e) => e.stopPropagation()}
                         onMouseDown={(e) => handleResizeStart(e, 'descripcion')}
                       />
                     </th>
-                    <th className="relative px-3 py-2.5 text-left font-normal text-xs text-gray-700" style={{ width: `${columnWidths.lineaProducto}px` }}>
-                      LÍNEA PRODUCTO
+                    <th className="relative px-3 py-2.5 text-left font-normal text-xs text-gray-700" {...orden.th('lineaProducto', { width: `${columnWidths.lineaProducto}px` })}>
+                      LÍNEA PRODUCTO{orden.flecha('lineaProducto')}
                       <div
-                        className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-[#0099CC] transition-colors"
+                        className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-[color:var(--theme-action)] transition-colors"
+                        onClick={(e) => e.stopPropagation()}
                         onMouseDown={(e) => handleResizeStart(e, 'lineaProducto')}
                       />
                     </th>
-                    <th className="relative px-3 py-2.5 text-left font-normal text-xs text-gray-700" style={{ width: `${columnWidths.sublinea}px` }}>
-                      SUBLÍNEA
+                    <th className="relative px-3 py-2.5 text-left font-normal text-xs text-gray-700" {...orden.th('sublinea', { width: `${columnWidths.sublinea}px` })}>
+                      SUBLÍNEA{orden.flecha('sublinea')}
                       <div
-                        className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-[#0099CC] transition-colors"
+                        className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-[color:var(--theme-action)] transition-colors"
+                        onClick={(e) => e.stopPropagation()}
                         onMouseDown={(e) => handleResizeStart(e, 'sublinea')}
                       />
                     </th>
-                    <th className="relative px-3 py-2.5 text-left font-normal text-xs text-gray-700" style={{ width: `${columnWidths.sucursal}px` }}>
-                      SUCURSAL
+                    <th className="relative px-3 py-2.5 text-left font-normal text-xs text-gray-700" {...orden.th('sucursal', { width: `${columnWidths.sucursal}px` })}>
+                      SUCURSAL{orden.flecha('sucursal')}
                       <div
-                        className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-[#0099CC] transition-colors"
+                        className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-[color:var(--theme-action)] transition-colors"
+                        onClick={(e) => e.stopPropagation()}
                         onMouseDown={(e) => handleResizeStart(e, 'sucursal')}
                       />
                     </th>
-                    <th className="relative px-3 py-2.5 text-left font-normal text-xs text-gray-700" style={{ width: `${columnWidths.estatus}px` }}>
-                      ESTATUS
+                    <th className="relative px-3 py-2.5 text-left font-normal text-xs text-gray-700" {...orden.th('estatus', { width: `${columnWidths.estatus}px` })}>
+                      ESTATUS{orden.flecha('estatus')}
                       <div
-                        className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-[#0099CC] transition-colors"
+                        className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-[color:var(--theme-action)] transition-colors"
+                        onClick={(e) => e.stopPropagation()}
                         onMouseDown={(e) => handleResizeStart(e, 'estatus')}
                       />
                     </th>
-                    <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700" style={{ width: `${columnWidths.fecha}px` }}>
-                      FECHA REGISTRO
+                    <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700" {...orden.th('fecha', { width: `${columnWidths.fecha}px` })}>
+                      FECHA REGISTRO{orden.flecha('fecha')}
                     </th>
                   </>
                 )}
@@ -699,9 +747,9 @@ export function ProductosList({ products, onNew, onEdit, onView, tipoProducto, l
                     onMouseLeave={(e) => e.currentTarget.style.backgroundColor = index % 2 === 1 ? '#EEEEEE' : '#FFFFFF'}
                   >
                     <td className="px-3 py-2.5 text-xs overflow-hidden text-ellipsis">
-                      <a href="#" onClick={(e) => { e.preventDefault(); onEdit(producto); }} className="text-[#0066CC] hover:underline">Editar</a>
+                      <button type="button" onClick={() => { onEdit(producto); }} className="enlace-accion text-[color:var(--theme-link)] hover:underline">Editar</button>
                       <span className="text-gray-700"> | </span>
-                      <a href="#" onClick={(e) => { e.preventDefault(); onView(producto); }} className="text-[#0066CC] hover:underline">Ver</a>
+                      <button type="button" onClick={() => { onView(producto); }} className="enlace-accion text-[color:var(--theme-link)] hover:underline">Ver</button>
                     </td>
                     {isCredito ? (
                       <>

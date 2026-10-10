@@ -11,6 +11,14 @@ interface ThemeColors {
   secondaryHover: string;
   accent: string;
   accentHover: string;
+  /** Botones de acción (Guardar, Nuevo…), antes #0099CC fijo. */
+  action: string;
+  actionHover: string;
+  /** Enlaces y acciones de fila (Editar | Ver), antes #0066CC fijo. */
+  link: string;
+  /** Fondos claros de encabezados de sección y filas resaltadas. */
+  tint: string;
+  tintSoft: string;
   brandDark1: string;
   brandDark2: string;
   brandDark3: string;
@@ -26,6 +34,11 @@ const themes: Record<Theme, ThemeColors> = {
     secondaryHover: '#1E4C81',
     accent: '#5B9BD5',
     accentHover: '#4A8BC2',
+    action: '#0099CC',
+    actionHover: '#0088BB',
+    link: '#0066CC',
+    tint: '#D9E2F3',
+    tintSoft: '#D6EAF8',
     brandDark1: '#4A6FA5',
     brandDark2: '#3A5A85',
     brandDark3: '#2A4565',
@@ -39,6 +52,11 @@ const themes: Record<Theme, ThemeColors> = {
     secondaryHover: '#A00D28',
     accent: '#E07B85',
     accentHover: '#D06B75',
+    action: '#C8102E',
+    actionHover: '#A00D28',
+    link: '#A00D28',
+    tint: '#F6E1E4',
+    tintSoft: '#FBEDEF',
     brandDark1: '#C8102E',
     brandDark2: '#A00D28',
     brandDark3: '#8B0A21',
@@ -52,6 +70,11 @@ const themes: Record<Theme, ThemeColors> = {
     secondaryHover: '#0D3D10',
     accent: '#66BB6A',
     accentHover: '#57A85B',
+    action: '#2E7D32',
+    actionHover: '#1B5E20',
+    link: '#1B5E20',
+    tint: '#DCEEDD',
+    tintSoft: '#EAF5EA',
     brandDark1: '#2E7D32',
     brandDark2: '#1B5E20',
     brandDark3: '#0D3D10',
@@ -88,6 +111,11 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     root.style.setProperty('--theme-secondary-hover', selectedTheme.secondaryHover);
     root.style.setProperty('--theme-accent', selectedTheme.accent);
     root.style.setProperty('--theme-accent-hover', selectedTheme.accentHover);
+    root.style.setProperty('--theme-action', selectedTheme.action);
+    root.style.setProperty('--theme-action-hover', selectedTheme.actionHover);
+    root.style.setProperty('--theme-link', selectedTheme.link);
+    root.style.setProperty('--theme-tint', selectedTheme.tint);
+    root.style.setProperty('--theme-tint-soft', selectedTheme.tintSoft);
     
     // Variable para encabezados de tabla (gris claro siempre, no depende del tema)
     root.style.setProperty('--theme-table-header', '#D0D0D0');

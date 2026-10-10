@@ -1,6 +1,10 @@
 import { useState, useRef, useMemo, useCallback, useEffect } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
+import { useOrdenTabla, coincideBusqueda } from '@/app/lib/ordenTabla';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
+import { formatearFecha } from '@/app/lib/fechas';
+import { DatePicker, dmyAIso } from '@/app/components/ui/DatePicker';
+import { CampoMonto } from '@/app/components/ui/CampoMonto';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-7e2d13d9`;
 const HDR = { 'Content-Type': 'application/json', Authorization: `Bearer ${publicAnonKey}` };
@@ -19,6 +23,7 @@ interface PagoReferenciado {
   procesado: boolean;
   observaciones: string;
   descripcion: string;
+  concepto: string;
   moneda: string;
   tipoPago: string;
   // Resueltos al identificar
@@ -36,8 +41,10 @@ interface CuentaDB {
   no_referenc1: string | null;
   no_sol: string | null;
   cliente_id: string | null;
+  cliente_id_eff?: string | null;
+  cta_eje_chec?: boolean | string | null;
   cliente_nombre: string | null;
-  saldo_actual: number | null;
+  saldo_actual: number | string | null;
   linea_produc: string | null;
   tipo_produc: string | null;
 }
@@ -49,6 +56,13 @@ function fmt(n: number): string {
   return '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+/** Número desde lo que guarde la BD: 1500, "1500.00", "$1,500.00", "-$50,000.00". */
+function aNumero(v: unknown): number {
+  if (typeof v === 'number') return Number.isFinite(v) ? v : 0;
+  const n = parseFloat(String(v ?? '').replace(/[^0-9.-]/g, ''));
+  return Number.isFinite(n) ? n : 0;
+}
+
 function esCaptacion(row: CuentaDB): boolean {
   const lp = (row.linea_produc || '').toLowerCase();
   const tp = (row.tipo_produc || '').toLowerCase();
@@ -57,9 +71,9 @@ function esCaptacion(row: CuentaDB): boolean {
 
 // Genera archivo CSV y dispara descarga
 function descargarCSV(pagos: PagoReferenciado[]) {
-  const cols = ['Banco','Cuenta','Referencia','Fecha','Importe','Identificado','Procesado','Observaciones','Descripcion','Moneda','Tipo Pago'];
+  const cols = ['Banco','Cuenta','Referencia','Concepto','Fecha','Importe','Identificado','Procesado','Observaciones','Descripcion','Moneda','Tipo Pago'];
   const rows = pagos.map(p => [
-    p.banco, p.cuenta, p.referencia, p.fecha, p.importe,
+    p.banco, p.cuenta, p.referencia, p.concepto, p.fecha, p.importe,
     p.identificado ? 'Sí' : 'No', p.procesado ? 'Sí' : 'No',
     p.observaciones, p.descripcion, p.moneda, p.tipoPago,
   ]);
@@ -90,6 +104,23 @@ function useCuentasDB() {
   return { cuentas, loading, recargar: cargar };
 }
 
+const esCuentaEje = (c: CuentaDB) => c.cta_eje_chec === true || c.cta_eje_chec === 'true' || c.cta_eje_chec === 't';
+const clienteDe = (c: CuentaDB) => c.cliente_id || c.cliente_id_eff || null;
+
+/**
+ * Referencia → Persona → su cuenta EJE.
+ * La referencia puede ser la de cualquier cuenta de la persona (no. referencia,
+ * no. solicitud o no. cuenta); con ella se identifica a la persona y se toma
+ * la cuenta EJE de esa persona, que es donde se registra el pago.
+ */
+function resolverCuentaEje(ref: string, cuentas: CuentaDB[]): CuentaDB | undefined {
+  const c = resolverReferencia(ref, cuentas);
+  if (!c) return undefined;
+  if (esCuentaEje(c)) return c;
+  const cli = clienteDe(c);
+  return cli ? cuentas.find(x => clienteDe(x) === cli && esCuentaEje(x)) : undefined;
+}
+
 // Resuelve una referencia contra la lista de cuentas
 function resolverReferencia(ref: string, cuentas: CuentaDB[]): CuentaDB | undefined {
   const r = ref.trim().toLowerCase();
@@ -106,17 +137,63 @@ function resolverReferencia(ref: string, cuentas: CuentaDB[]): CuentaDB | undefi
 export function PagosReferenciadosModule() {
   const [pagos, setPagos]           = useState<PagoReferenciado[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
-  const [sortOrder, setSortOrder]   = useState<'desc' | 'asc'>('desc');
   const [filtroEstatus, setFiltroEstatus] = useState('Todos');
   const [currentPage, setCurrentPage] = useState(1);
   const [aplicando, setAplicando]   = useState(false);
-  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const itemsPerPage = 10;
 
   const tableRef    = useRef<HTMLDivElement>(null);
   const searchRef   = useRef<HTMLInputElement>(null);
 
   const { cuentas, loading: loadingCuentas, recargar } = useCuentasDB();
+
+  // ── Alta manual de un pago referenciado ──
+  const hoyISO = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+  const NUEVO_VACIO = { banco: 'BBVA', referencia: '', concepto: '', fecha: hoyISO(), importe: '', tipoPago: 'SPEI', moneda: 'MXN', observaciones: '' };
+  const [showNuevo, setShowNuevo] = useState(false);
+  const [nuevo, setNuevo] = useState(NUEVO_VACIO);
+  const cuentaNuevo = useMemo(
+    () => (nuevo.referencia.trim() ? resolverReferencia(nuevo.referencia, cuentas) : undefined),
+    [nuevo.referencia, cuentas],
+  );
+  const abrirNuevo = () => { setNuevo({ ...NUEVO_VACIO, fecha: hoyISO() }); setShowNuevo(true); };
+  const handleGuardarNuevo = () => {
+    const importe = aNumero(nuevo.importe);
+    if (!nuevo.referencia.trim()) { toast.error('La referencia es obligatoria'); return; }
+    if (!nuevo.concepto.trim())   { toast.error('El concepto es obligatorio'); return; }
+    if (!nuevo.fecha)             { toast.error('La fecha es obligatoria'); return; }
+    if (importe <= 0)             { toast.error('El importe debe ser mayor a 0'); return; }
+    const c = cuentaNuevo;
+    const esCapt = c ? esCaptacion(c) : false;
+    const pago: PagoReferenciado = {
+      id: Date.now(),
+      banco: nuevo.banco,
+      cuenta: c?.no_cuenta || '',
+      referencia: nuevo.referencia.trim(),
+      fecha: formatearFecha(nuevo.fecha),
+      importe,
+      identificado: !!c,
+      procesado: false,
+      observaciones: nuevo.observaciones.trim() || 'Alta manual',
+      descripcion: 'Pago referenciado (manual)',
+      concepto: nuevo.concepto.trim(),
+      moneda: nuevo.moneda,
+      tipoPago: nuevo.tipoPago,
+      ...(c ? {
+        cuentaDbId: c.id,
+        clienteId: c.cliente_id || undefined,
+        clienteNombre: c.cliente_nombre || undefined,
+        tipoCuenta: esCapt ? 'aportacion' as const : 'credito' as const,
+        saldoActual: c.saldo_actual != null ? aNumero(c.saldo_actual) : undefined,
+        noCuenta: c.no_cuenta || undefined,
+      } : {}),
+    };
+    setPagos(prev => [pago, ...prev]);
+    setShowNuevo(false);
+    setCurrentPage(1);
+    if (c) toast.success('Pago registrado', { description: `Identificado: ${c.cliente_nombre || c.no_cuenta || c.id}` });
+    else   toast.warning('Pago registrado sin identificar', { description: 'La referencia no coincide con ninguna cuenta; no se podrá aplicar a cobranza.' });
+  };
 
   // ── Cargar pagos desde bancos (simulación con referencias reales de la DB) ──
   const handleCargarPagos = () => {
@@ -131,7 +208,7 @@ export function PagosReferenciadosModule() {
         banco:     bancos[i % bancos.length],
         cuenta:    `CTA-EJE-${String(i + 1).padStart(3, '0')}`,
         referencia: ref,
-        fecha:     new Date(Date.now() - i * 86400000 * 2).toLocaleDateString('es-MX'),
+        fecha:     formatearFecha(new Date(Date.now() - i * 86400000 * 2)),
         importe:   esCapt ? [500, 1000, 2500, 750, 1500, 3000, 800, 1200, 600, 2000][i % 10]
                            : [3500, 5000, 8000, 12000, 6500, 9000, 4500, 7000, 11000, 5500][i % 10],
         identificado:  true,
@@ -140,11 +217,12 @@ export function PagosReferenciadosModule() {
         tipoPago:      tipos[i % tipos.length],
         observaciones: 'Banco en línea',
         descripcion:   'Pago referenciado',
+        concepto:      esCapt ? 'Pago aportación referenciada' : 'Pago crédito referenciado',
         cuentaDbId:    c.id,
         clienteId:     c.cliente_id || undefined,
         clienteNombre: c.cliente_nombre || undefined,
         tipoCuenta:    esCapt ? 'aportacion' : 'credito',
-        saldoActual:   c.saldo_actual ?? undefined,
+        saldoActual:   c.saldo_actual != null ? aNumero(c.saldo_actual) : undefined,
         noCuenta:      c.no_cuenta || undefined,
       };
     });
@@ -155,123 +233,120 @@ export function PagosReferenciadosModule() {
     setCurrentPage(1);
   };
 
-  // ── Toggle selección ──
-  const toggleSelect = (id: number) => {
-    setSelectedIds(prev => {
-      const s = new Set(prev);
-      s.has(id) ? s.delete(id) : s.add(id);
-      return s;
-    });
-  };
-  const toggleSelectAll = () => {
-    const pendientes = paged.filter(p => p.identificado && !p.procesado).map(p => p.id);
-    const todosSelec = pendientes.every(id => selectedIds.has(id));
-    setSelectedIds(prev => {
-      const s = new Set(prev);
-      if (todosSelec) { pendientes.forEach(id => s.delete(id)); }
-      else            { pendientes.forEach(id => s.add(id)); }
-      return s;
-    });
-  };
-
   // ── Aplicar Cobranza ──
+  // Procesa TODOS los pagos con PROCESADO = N. Por cada uno: Referencia → Persona →
+  // cuenta EJE. Si la encuentra registra un Abono en sus Movimientos
+  // (Monto = Importe, Fecha Operación = Fecha, Concepto, Referencia) e IDENTIFICADO = Y;
+  // si no, IDENTIFICADO = N. En ambos casos PROCESADO = Y. "Fecha y Hora" del
+  // movimiento la pone el servidor (momento del registro).
   const handleAplicarCobranza = async () => {
-    const seleccionados = pagos.filter(p => selectedIds.has(p.id) && p.identificado && !p.procesado);
-    if (seleccionados.length === 0) {
-      toast.error('Seleccione pagos identificados y no procesados');
-      return;
-    }
+    const pendientes = pagos.filter(p => !p.procesado);
+    if (pendientes.length === 0) { toast.info('No hay pagos pendientes de procesar'); return; }
     setAplicando(true);
-    let ok = 0; let err = 0;
+    let registrados = 0, noIdentificados = 0, errores = 0;
+    // Saldo vigente por cuenta EJE: varios pagos a la misma cuenta se encadenan.
+    const saldos = new Map<string, number>();
 
-    for (const pago of seleccionados) {
-      if (!pago.cuentaDbId || !pago.clienteId) { err++; continue; }
-
-      const esAportacion = pago.tipoCuenta === 'aportacion';
-      const saldoBase    = pago.saldoActual ?? 0;
-      const saldoNuevo   = esAportacion
-        ? saldoBase + pago.importe   // ABONO → suma
-        : saldoBase - pago.importe;  // CARGO → resta
-
+    for (const pago of pendientes) {
+      const eje = resolverCuentaEje(pago.referencia, cuentas);
+      if (!eje) {
+        noIdentificados++;
+        setPagos(prev => prev.map(p => p.id === pago.id ? { ...p, identificado: false, procesado: true } : p));
+        continue;
+      }
+      const saldoBase = saldos.has(eje.id) ? saldos.get(eje.id)! : aNumero(eje.saldo_actual);
+      const saldoNuevo = saldoBase + pago.importe; // Abono: el pago entra a la cuenta EJE
       const movimiento = {
-        fecha:       pago.fecha,
-        tipo:        esAportacion ? 'Abono' : 'Cargo',
-        sub_tipo:    esAportacion ? 'Aportacion' : 'Amortizacion',
-        concepto:    esAportacion ? 'Pago aportación referenciada' : 'Pago crédito referenciado',
-        referencia:  pago.referencia,
-        banco:       pago.banco,
-        monto:       pago.importe,
-        moneda:      pago.moneda,
-        forma_pago:  pago.tipoPago,
+        tipo:           'Abono',
+        concepto:       pago.concepto || 'Pago referenciado',
+        referencia:     pago.referencia,
+        monto:          pago.importe,
+        fechaOperacion: dmyAIso(pago.fecha) || pago.fecha,
+        banco:          pago.banco,
+        moneda:         pago.moneda,
+        forma_pago:     pago.tipoPago,
+        origenCreacion: 'Pagos Referenciados',
+        estatus:        'Aplicado',
       };
-
       try {
         const res = await fetch(`${API_BASE}/cuentas-ahorro/movimiento`, {
           method: 'PATCH',
           headers: HDR,
-          body: JSON.stringify({
-            cuenta_id:   pago.cuentaDbId,
-            movimiento,
-            saldo_nuevo: saldoNuevo,
-          }),
+          body: JSON.stringify({ cuenta_id: eje.id, movimiento, saldo_nuevo: saldoNuevo }),
         });
-        if (res.ok) {
-          ok++;
-          setPagos(prev => prev.map(p =>
-            p.id === pago.id
-              ? { ...p, procesado: true, saldoActual: saldoNuevo }
-              : p
-          ));
-        } else {
-          err++;
+        if (!res.ok) {
+          errores++;
           const j = await res.json().catch(() => ({}));
           console.warn('Error aplicando pago:', j);
+          continue; // queda PROCESADO = N para reintentar
         }
+        saldos.set(eje.id, saldoNuevo);
+        registrados++;
+        setPagos(prev => prev.map(p => p.id === pago.id ? {
+          ...p,
+          identificado: true,
+          procesado: true,
+          cuentaDbId: eje.id,
+          clienteId: clienteDe(eje) || p.clienteId,
+          clienteNombre: eje.cliente_nombre || p.clienteNombre,
+          noCuenta: eje.no_cuenta || p.noCuenta,
+          saldoActual: saldoNuevo,
+        } : p));
       } catch (e: any) {
-        err++;
+        errores++;
         console.warn('Excepción aplicando pago:', e?.message);
       }
     }
 
     setAplicando(false);
-    setSelectedIds(new Set());
     recargar();
 
-    if (ok > 0 && err === 0)  toast.success(`${ok} pago(s) aplicados correctamente`);
-    else if (ok > 0)          toast.success(`${ok} aplicados`, { description: `${err} con error` });
-    else                      toast.error(`Error al aplicar ${err} pago(s)`);
+    const partes = [
+      registrados ? `${registrados} abono(s) registrados en la cuenta EJE` : '',
+      noIdentificados ? `${noIdentificados} sin identificar` : '',
+      errores ? `${errores} con error (quedan pendientes)` : '',
+    ].filter(Boolean).join(' · ');
+    if (errores && !registrados) toast.error('No se pudo aplicar la cobranza', { description: partes });
+    else if (noIdentificados || errores) toast.warning('Cobranza aplicada con observaciones', { description: partes });
+    else toast.success('Cobranza aplicada', { description: partes });
   };
 
   // ── Filtrado y ordenamiento ──
-  const filtered = useMemo(() => {
+  const filteredSinOrden = useMemo(() => {
     let list = pagos;
     if (filtroEstatus === 'Identificados')    list = list.filter(p => p.identificado);
     if (filtroEstatus === 'No Identificados') list = list.filter(p => !p.identificado);
     if (filtroEstatus === 'Procesados')       list = list.filter(p => p.procesado);
     if (filtroEstatus === 'Pendientes')       list = list.filter(p => p.identificado && !p.procesado);
-    if (searchTerm) {
-      const s = searchTerm.toLowerCase();
-      list = list.filter(p =>
-        p.banco.toLowerCase().includes(s) ||
-        p.referencia.toLowerCase().includes(s) ||
-        p.cuenta.toLowerCase().includes(s) ||
-        (p.clienteNombre || '').toLowerCase().includes(s) ||
-        fmt(p.importe).includes(s)
-      );
-    }
-    return [...list].sort((a, b) => {
-      const pa = a.fecha.split('/'); const pb = b.fecha.split('/');
-      const da = new Date(+pa[2], +pa[1]-1, +pa[0]).getTime();
-      const db = new Date(+pb[2], +pb[1]-1, +pb[0]).getTime();
-      return sortOrder === 'desc' ? db - da : da - db;
-    });
-  }, [pagos, searchTerm, sortOrder, filtroEstatus]);
+    return list.filter(p => coincideBusqueda(searchTerm, [
+      p.banco, p.referencia, p.cuenta, p.noCuenta, p.clienteNombre, p.fecha, fmt(p.importe), p.descripcion, p.concepto,
+    ]));
+  }, [pagos, searchTerm, filtroEstatus]);
+
+  // Más recientes primero (fecha del pago; a igual fecha, el registro más nuevo).
+  const orden = useOrdenTabla(filteredSinOrden, {
+    id: 'pagos-referenciados',
+    columnas: {
+      banco: p => p.banco,
+      referencia: p => p.referencia,
+      concepto: p => p.concepto,
+      cliente: p => p.clienteNombre || p.cuenta,
+      tipo: p => p.tipoCuenta,
+      fecha: p => p.fecha,
+      importe: p => p.importe,
+      saldo: p => p.saldoActual,
+      identificado: p => p.identificado,
+      procesado: p => p.procesado,
+    },
+    porDefecto: { campo: 'fecha', dir: 'desc' },
+    desempate: p => p.id,
+    alCambiar: () => setCurrentPage(1),
+  });
+  const filtered = orden.filas;
 
   const totalPages   = Math.max(1, Math.ceil(filtered.length / itemsPerPage));
   const paged        = filtered.slice((currentPage-1)*itemsPerPage, currentPage*itemsPerPage);
-  const pendientesSel = paged.filter(p => p.identificado && !p.procesado);
-  const todosSelec    = pendientesSel.length > 0 && pendientesSel.every(p => selectedIds.has(p.id));
-  const nSelec        = pagos.filter(p => selectedIds.has(p.id)).length;
+  const nPendientes  = pagos.filter(p => !p.procesado).length;
 
   return (
     <div className="bg-white min-h-screen">
@@ -288,6 +363,16 @@ export function PagosReferenciadosModule() {
           </div>
           <div className="flex items-center gap-2">
             <button
+              onClick={abrirNuevo}
+              className="flex items-center gap-1.5 px-4 py-1.5 bg-[color:var(--theme-primary)] text-white text-sm rounded hover:bg-[color:var(--theme-primary-hover)]"
+              style={{ fontWeight: 500 }}
+            >
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.8">
+                <path d="M7 2v10M2 7h10" strokeLinecap="round"/>
+              </svg>
+              Nuevo
+            </button>
+            <button
               onClick={handleCargarPagos}
               className="flex items-center gap-1.5 px-4 py-1.5 bg-white border border-gray-400 text-gray-700 text-sm rounded hover:bg-gray-50"
             >
@@ -298,8 +383,8 @@ export function PagosReferenciadosModule() {
             </button>
             <button
               onClick={handleAplicarCobranza}
-              disabled={nSelec === 0 || aplicando}
-              className="flex items-center gap-1.5 px-4 py-1.5 bg-[#0099CC] text-white text-sm rounded hover:bg-[#0088BB] disabled:opacity-40 disabled:cursor-not-allowed"
+              disabled={nPendientes === 0 || aplicando}
+              className="flex items-center gap-1.5 px-4 py-1.5 bg-[color:var(--theme-action)] text-white text-sm rounded hover:bg-[color:var(--theme-action-hover)] disabled:opacity-40 disabled:cursor-not-allowed"
               style={{ fontWeight: 500 }}
             >
               {aplicando ? (
@@ -311,7 +396,7 @@ export function PagosReferenciadosModule() {
                   <path d="M2 7h10M8 4l4 3-4 3" strokeLinecap="round" strokeLinejoin="round"/>
                 </svg>
               )}
-              Aplicar Cobranza{nSelec > 0 ? ` (${nSelec})` : ''}
+              Aplicar Cobranza{nPendientes > 0 ? ` (${nPendientes})` : ''}
             </button>
           </div>
         </div>
@@ -397,7 +482,7 @@ export function PagosReferenciadosModule() {
           <div className="flex items-center gap-4 text-sm text-gray-700">
             <div className="flex items-center gap-2">
               <span className="text-xs">Orden</span>
-              <select value={sortOrder} onChange={e => setSortOrder(e.target.value as 'desc' | 'asc')}
+              <select value={orden.dir} onChange={e => orden.fijar(orden.campo, e.target.value as 'desc' | 'asc')}
                 className="px-2 py-1 border border-gray-400 rounded text-xs bg-white">
                 <option value="desc">Descendente</option>
                 <option value="asc">Ascendente</option>
@@ -405,12 +490,12 @@ export function PagosReferenciadosModule() {
             </div>
             <span className="text-xs">Total: {filtered.length}</span>
             <div className="flex items-center gap-1">
-              <button onClick={() => setCurrentPage(p => Math.max(1, p-1))} disabled={currentPage === 1}
-                className="p-0.5 text-[#0099CC] disabled:opacity-40">
+              <button type="button" aria-label="Página anterior" title="Página anterior" onClick={() => setCurrentPage(p => Math.max(1, p-1))} disabled={currentPage === 1}
+                className="p-0.5 text-[color:var(--theme-action)] disabled:opacity-40">
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M10 3L5 8l5 5V3z"/></svg>
               </button>
-              <button onClick={() => setCurrentPage(p => Math.min(totalPages, p+1))} disabled={currentPage === totalPages}
-                className="p-0.5 text-[#0099CC] disabled:opacity-40">
+              <button type="button" aria-label="Página siguiente" title="Página siguiente" onClick={() => setCurrentPage(p => Math.min(totalPages, p+1))} disabled={currentPage === totalPages}
+                className="p-0.5 text-[color:var(--theme-action)] disabled:opacity-40">
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M6 3l5 5-5 5V3z"/></svg>
               </button>
             </div>
@@ -424,20 +509,17 @@ export function PagosReferenciadosModule() {
           <table className="w-full text-xs">
             <thead>
               <tr style={{ backgroundColor: '#D0D0D0' }} className="border-b border-gray-300">
-                <th className="px-2 py-2.5 w-8 border-r border-gray-300">
-                  <input type="checkbox" checked={todosSelec} onChange={toggleSelectAll}
-                    className="w-3 h-3 accent-[#0099CC]" title="Seleccionar todos pendientes"/>
-                </th>
-                <th className="px-3 py-2.5 text-left text-[10px] text-gray-700 border-r border-gray-300" style={{ fontWeight: 600 }}>BANCO</th>
-                <th className="px-3 py-2.5 text-left text-[10px] text-gray-700 border-r border-gray-300" style={{ fontWeight: 600 }}>REFERENCIA</th>
-                <th className="px-3 py-2.5 text-left text-[10px] text-gray-700 border-r border-gray-300" style={{ fontWeight: 600 }}>CLIENTE / CUENTA</th>
-                <th className="px-3 py-2.5 text-left text-[10px] text-gray-700 border-r border-gray-300" style={{ fontWeight: 600 }}>TIPO</th>
-                <th className="px-3 py-2.5 text-left text-[10px] text-gray-700 border-r border-gray-300" style={{ fontWeight: 600 }}>FECHA</th>
-                <th className="px-3 py-2.5 text-right text-[10px] text-gray-700 border-r border-gray-300" style={{ fontWeight: 600 }}>IMPORTE</th>
-                <th className="px-3 py-2.5 text-right text-[10px] text-gray-700 border-r border-gray-300" style={{ fontWeight: 600 }}>SALDO ACTUAL</th>
-                <th className="px-3 py-2.5 text-center text-[10px] text-gray-700 border-r border-gray-300" style={{ fontWeight: 600 }}>IDENTIFICADO</th>
+                <th className="px-3 py-2.5 text-left text-[10px] text-gray-700 border-r border-gray-300" {...orden.th('banco', { fontWeight: 600 })}>BANCO{orden.flecha('banco')}</th>
+                <th className="px-3 py-2.5 text-left text-[10px] text-gray-700 border-r border-gray-300" {...orden.th('referencia', { fontWeight: 600 })}>REFERENCIA{orden.flecha('referencia')}</th>
+                <th className="px-3 py-2.5 text-left text-[10px] text-gray-700 border-r border-gray-300" {...orden.th('concepto', { fontWeight: 600 })}>CONCEPTO{orden.flecha('concepto')}</th>
+                <th className="px-3 py-2.5 text-left text-[10px] text-gray-700 border-r border-gray-300" {...orden.th('cliente', { fontWeight: 600 })}>CLIENTE / CUENTA{orden.flecha('cliente')}</th>
+                <th className="px-3 py-2.5 text-left text-[10px] text-gray-700 border-r border-gray-300" {...orden.th('tipo', { fontWeight: 600 })}>TIPO{orden.flecha('tipo')}</th>
+                <th className="px-3 py-2.5 text-left text-[10px] text-gray-700 border-r border-gray-300" {...orden.th('fecha', { fontWeight: 600 })}>FECHA{orden.flecha('fecha')}</th>
+                <th className="px-3 py-2.5 text-right text-[10px] text-gray-700 border-r border-gray-300" {...orden.th('importe', { fontWeight: 600 })}>IMPORTE{orden.flecha('importe')}</th>
+                <th className="px-3 py-2.5 text-right text-[10px] text-gray-700 border-r border-gray-300" {...orden.th('saldo', { fontWeight: 600 })}>SALDO ACTUAL{orden.flecha('saldo')}</th>
+                <th className="px-3 py-2.5 text-center text-[10px] text-gray-700 border-r border-gray-300" {...orden.th('identificado', { fontWeight: 600 })}>IDENTIFICADO{orden.flecha('identificado')}</th>
                 <th className="px-3 py-2.5 text-center text-[10px] text-gray-700 border-r border-gray-300" style={{ fontWeight: 600 }}>MOVIMIENTO</th>
-                <th className="px-3 py-2.5 text-center text-[10px] text-gray-700" style={{ fontWeight: 600 }}>PROCESADO</th>
+                <th className="px-3 py-2.5 text-center text-[10px] text-gray-700" {...orden.th('procesado', { fontWeight: 600 })}>PROCESADO{orden.flecha('procesado')}</th>
               </tr>
             </thead>
             <tbody>
@@ -448,32 +530,24 @@ export function PagosReferenciadosModule() {
                       <svg width="40" height="40" viewBox="0 0 40 40" fill="none" stroke="#D0D0D0" strokeWidth="1.5">
                         <rect x="4" y="8" width="32" height="24" rx="3"/><path d="M4 16h32M12 24h6M24 24h4"/>
                       </svg>
-                      <span>Sin pagos cargados. Use "Cargar pagos desde bancos" para importar.</span>
+                      <span>Sin pagos cargados. Use "Cargar pagos desde bancos" para importar o "Nuevo" para capturar uno.</span>
                     </div>
                   </td>
                 </tr>
               ) : paged.map((pago, idx) => {
-                const esSel    = selectedIds.has(pago.id);
                 const esAbono  = pago.tipoCuenta === 'aportacion';
                 const esCredito= pago.tipoCuenta === 'credito';
-                const canSel   = pago.identificado && !pago.procesado;
                 return (
                   <tr
                     key={pago.id}
-                    className="border-b border-gray-200 cursor-pointer"
-                    style={{ backgroundColor: esSel ? '#E8F4F8' : idx % 2 === 1 ? '#EEEEEE' : '#FFFFFF' }}
-                    onMouseEnter={e => { if (!esSel) e.currentTarget.style.backgroundColor = '#E8F4F8'; }}
-                    onMouseLeave={e => { if (!esSel) e.currentTarget.style.backgroundColor = idx % 2 === 1 ? '#EEEEEE' : '#FFFFFF'; }}
-                    onClick={() => canSel && toggleSelect(pago.id)}
+                    className="border-b border-gray-200"
+                    style={{ backgroundColor: idx % 2 === 1 ? '#EEEEEE' : '#FFFFFF' }}
+                    onMouseEnter={e => { e.currentTarget.style.backgroundColor = '#E8F4F8'; }}
+                    onMouseLeave={e => { e.currentTarget.style.backgroundColor = idx % 2 === 1 ? '#EEEEEE' : '#FFFFFF'; }}
                   >
-                    <td className="px-2 py-2 text-center border-r border-gray-200">
-                      {canSel && (
-                        <input type="checkbox" checked={esSel} onChange={() => toggleSelect(pago.id)}
-                          onClick={e => e.stopPropagation()} className="w-3 h-3 accent-[#0099CC]"/>
-                      )}
-                    </td>
                     <td className="px-3 py-2 border-r border-gray-200" style={{ fontWeight: 500 }}>{pago.banco}</td>
-                    <td className="px-3 py-2 border-r border-gray-200 text-[#0066CC] font-mono">{pago.referencia}</td>
+                    <td className="px-3 py-2 border-r border-gray-200 text-[color:var(--theme-link)] font-mono">{pago.referencia}</td>
+                    <td className="px-3 py-2 border-r border-gray-200 text-gray-700">{pago.concepto || '—'}</td>
                     <td className="px-3 py-2 border-r border-gray-200">
                       {pago.clienteNombre ? (
                         <div>
@@ -504,24 +578,21 @@ export function PagosReferenciadosModule() {
                       {pago.saldoActual !== undefined ? fmt(pago.saldoActual) : '—'}
                     </td>
                     <td className="px-3 py-2 border-r border-gray-200 text-center">
-                      {pago.identificado
-                        ? <svg width="14" height="14" viewBox="0 0 14 14" fill="none" className="inline-block"><path d="M2.5 7l3 3 6-6" stroke="#2E7D32" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                      {pago.procesado
+                        ? (pago.identificado
+                            ? <span className="px-1.5 py-0.5 text-[9px] border bg-green-50 text-green-700 border-green-200" title="Identificado">Y</span>
+                            : <span className="px-1.5 py-0.5 text-[9px] border bg-red-50 text-red-700 border-red-200" title="No identificado">N</span>)
                         : <span className="text-gray-300">—</span>}
                     </td>
                     <td className="px-3 py-2 border-r border-gray-200 text-center">
-                      {pago.identificado && !pago.procesado && (
-                        <span className={`px-1.5 py-0.5 text-[9px] border ${
-                          esAbono  ? 'bg-green-50 text-green-700 border-green-200' :
-                                     'bg-red-50 text-red-700 border-red-200'
-                        }`}>
-                          {esAbono ? 'ABONO' : 'CARGO'}
-                        </span>
+                      {(!pago.procesado || pago.identificado) && (
+                        <span className="px-1.5 py-0.5 text-[9px] border bg-green-50 text-green-700 border-green-200">ABONO</span>
                       )}
                     </td>
                     <td className="px-3 py-2 text-center">
                       {pago.procesado
-                        ? <svg width="14" height="14" viewBox="0 0 14 14" fill="none" className="inline-block"><path d="M2.5 7l3 3 6-6" stroke="#2E7D32" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
-                        : <span className="text-gray-300">—</span>}
+                        ? <span className="px-1.5 py-0.5 text-[9px] border bg-green-50 text-green-700 border-green-200">Y</span>
+                        : <span className="px-1.5 py-0.5 text-[9px] border bg-gray-50 text-gray-500 border-gray-200">N</span>}
                     </td>
                   </tr>
                 );
@@ -534,29 +605,122 @@ export function PagosReferenciadosModule() {
       {/* Paginación */}
       <div className="px-4 py-3 border-t border-gray-300 flex items-center justify-between">
         <div className="text-xs text-gray-500">
-          {pagos.filter(p => p.identificado && !p.procesado).length} pendientes de aplicar •{' '}
+          {nPendientes} pendientes de procesar •{' '}
           {pagos.filter(p => p.procesado).length} procesados
         </div>
         <div className="flex items-center gap-3">
-          <button onClick={() => setCurrentPage(1)} disabled={currentPage === 1}
+          <button type="button" aria-label="Primera página" title="Primera página" onClick={() => setCurrentPage(1)} disabled={currentPage === 1}
             className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-40">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#666" strokeWidth="1.5"><path d="M11 3L3 8l8 5V3z"/></svg>
           </button>
-          <button onClick={() => setCurrentPage(p => Math.max(1, p-1))} disabled={currentPage === 1}
+          <button type="button" aria-label="Página anterior" title="Página anterior" onClick={() => setCurrentPage(p => Math.max(1, p-1))} disabled={currentPage === 1}
             className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-40">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#666" strokeWidth="1.5"><path d="M9 3L4 8l5 5V3z"/></svg>
           </button>
           <span className="text-sm text-gray-700">Página {currentPage} de {totalPages}</span>
-          <button onClick={() => setCurrentPage(p => Math.min(totalPages, p+1))} disabled={currentPage === totalPages}
+          <button type="button" aria-label="Página siguiente" title="Página siguiente" onClick={() => setCurrentPage(p => Math.min(totalPages, p+1))} disabled={currentPage === totalPages}
             className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-40">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#666" strokeWidth="1.5"><path d="M5 3l5 5-5 5V3z"/></svg>
           </button>
-          <button onClick={() => setCurrentPage(totalPages)} disabled={currentPage === totalPages}
+          <button type="button" aria-label="Última página" title="Última página" onClick={() => setCurrentPage(totalPages)} disabled={currentPage === totalPages}
             className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-40">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#666" strokeWidth="1.5"><path d="M3 3l8 5-8 5V3z"/></svg>
           </button>
         </div>
       </div>
+
+      {/* Modal alta manual */}
+      {showNuevo && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setShowNuevo(false)}>
+          <div className="bg-white rounded shadow-xl w-full max-w-lg flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="bg-primary-theme px-5 py-3.5 flex items-center justify-between rounded-t">
+              <h3 className="text-sm font-medium text-white">Nuevo Pago Referenciado</h3>
+              <button type="button" aria-label="Cerrar" title="Cerrar" onClick={() => setShowNuevo(false)} className="text-white/70 hover:text-white">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 3l8 8M11 3l-8 8"/></svg>
+              </button>
+            </div>
+
+            <div className="p-5 space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10px] font-medium text-gray-600 mb-1 uppercase tracking-wide">Banco *</label>
+                  <select value={nuevo.banco} onChange={e => setNuevo(p => ({ ...p, banco: e.target.value }))} className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded">
+                    {['BBVA', 'BANAMEX', 'BANORTE', 'HSBC', 'SANTANDER', 'SCOTIABANK', 'INBURSA', 'BANREGIO', 'OTRO'].map(b => <option key={b}>{b}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-medium text-gray-600 mb-1 uppercase tracking-wide">Fecha *</label>
+                  <DatePicker formato="iso" value={nuevo.fecha} onChange={(v: string) => setNuevo(p => ({ ...p, fecha: v }))} className="text-xs" />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-medium text-gray-600 mb-1 uppercase tracking-wide">Referencia *</label>
+                <input type="text" value={nuevo.referencia} onChange={e => setNuevo(p => ({ ...p, referencia: e.target.value }))}
+                  placeholder="No. referencia, no. solicitud o no. cuenta" className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded font-mono" />
+                {nuevo.referencia.trim() && (
+                  cuentaNuevo ? (
+                    <p className="text-[10px] text-green-700 mt-1">
+                      Identificado: <span className="font-medium">{cuentaNuevo.cliente_nombre || 'Sin nombre'}</span>
+                      {(() => {
+                        const eje = resolverCuentaEje(nuevo.referencia, cuentas);
+                        return eje
+                          ? <> · al aplicar, Abono en cuenta EJE <span className="font-mono">{eje.no_cuenta || eje.id.slice(0, 8)}</span></>
+                          : <span className="text-amber-600"> · la persona no tiene cuenta EJE: al aplicar quedará IDENTIFICADO = N</span>;
+                      })()}
+                    </p>
+                  ) : (
+                    <p className="text-[10px] text-amber-600 mt-1">No coincide con ninguna cuenta: quedará como no identificado.</p>
+                  )
+                )}
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-medium text-gray-600 mb-1 uppercase tracking-wide">Concepto *</label>
+                <input type="text" value={nuevo.concepto} onChange={e => setNuevo(p => ({ ...p, concepto: e.target.value }))}
+                  placeholder="Ej: Pago mensualidad, Aportación..." className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded" />
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-[10px] font-medium text-gray-600 mb-1 uppercase tracking-wide">Importe *</label>
+                  <CampoMonto value={nuevo.importe} onChange={e => setNuevo(p => ({ ...p, importe: e.target.value }))} className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded" />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-medium text-gray-600 mb-1 uppercase tracking-wide">Tipo de pago</label>
+                  <select value={nuevo.tipoPago} onChange={e => setNuevo(p => ({ ...p, tipoPago: e.target.value }))} className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded">
+                    {['SPEI', 'Transferencia', 'Depósito', 'Cheque'].map(t => <option key={t}>{t}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-medium text-gray-600 mb-1 uppercase tracking-wide">Moneda</label>
+                  <select value={nuevo.moneda} onChange={e => setNuevo(p => ({ ...p, moneda: e.target.value }))} className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded">
+                    <option>MXN</option>
+                    <option>USD</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-medium text-gray-600 mb-1 uppercase tracking-wide">Observaciones</label>
+                <input type="text" value={nuevo.observaciones} onChange={e => setNuevo(p => ({ ...p, observaciones: e.target.value }))}
+                  placeholder="Opcional" className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded" />
+              </div>
+            </div>
+
+            <div className="border-t border-gray-200 px-5 py-3 bg-gray-50 flex justify-end gap-2 rounded-b">
+              <button onClick={() => setShowNuevo(false)}
+                className="px-4 py-1.5 text-xs border border-gray-200 rounded text-gray-600 hover:bg-gray-100">
+                Cancelar
+              </button>
+              <button onClick={handleGuardarNuevo}
+                className="px-5 py-1.5 text-xs bg-primary-theme text-white rounded hover:opacity-90 font-medium">
+                Guardar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

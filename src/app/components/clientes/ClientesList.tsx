@@ -22,7 +22,8 @@
  * ══════════════════════════════════════════════════════════════════
  */
 import { useState, useRef, useEffect } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
+import { useOrdenTabla, coincideBusqueda } from '@/app/lib/ordenTabla';
 import type { ClienteDB, BackendStatus, DiagnosticoEndpoint } from '../../hooks/useClientesDB';
 
 // ── Re-export para compatibilidad con módulos legacy ──
@@ -56,7 +57,6 @@ export function ClientesList({
   onView,
 }: ClientesListProps) {
   const [searchTerm, setSearchTerm] = useState('');
-  const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
   const [currentPage, setCurrentPage] = useState(1);
   const [showDiagnostico, setShowDiagnostico] = useState(false);
   const itemsPerPage = 8;
@@ -140,31 +140,36 @@ export function ClientesList({
     return dateStr;
   };
 
-  const filteredClientes = clientes
-    .filter(cliente => {
-      const s = searchTerm.toLowerCase();
-      return (
-        cliente.nombreCompleto.toLowerCase().includes(s) ||
-        cliente.curp.toLowerCase().includes(s) ||
-        cliente.rfc.toLowerCase().includes(s) ||
-        cliente.correoElectronico.toLowerCase().includes(s) ||
-        cliente.idCliente.toLowerCase().includes(s) ||
-        cliente.estatus.toLowerCase().includes(s) ||
-        cliente.subtipo.toLowerCase().includes(s) ||
-        cliente.tipo.toLowerCase().includes(s)
-      );
-    })
-    .sort((a, b) => {
-      const dateA = parseDate(a.fechaOriginacion).getTime();
-      const dateB = parseDate(b.fechaOriginacion).getTime();
-      return sortOrder === 'desc' ? dateB - dateA : dateA - dateB;
-    });
+  const filteredClientes = clientes.filter(c => coincideBusqueda(searchTerm, [
+    c.idCliente, c.nombreCompleto, c.curp, c.rfc, c.telefono, c.correoElectronico,
+    c.estatus, c.subtipo, c.tipo, formatDateDisplay(c.fechaOriginacion),
+  ]));
+
+  // Más recientes primero (fecha de originación; a igual fecha, el consecutivo).
+  const orden = useOrdenTabla(filteredClientes, {
+    id: 'personas',
+    columnas: {
+      id: c => c.idCliente,
+      nombre: c => c.nombreCompleto,
+      curp: c => c.curp,
+      rfc: c => c.rfc,
+      telefono: c => c.telefono,
+      correo: c => c.correoElectronico,
+      estatus: c => c.estatus,
+      subtipo: c => c.subtipo,
+      tipo: c => c.tipo,
+      fecha: c => parseDate(c.fechaOriginacion),
+    },
+    porDefecto: { campo: 'fecha', dir: 'desc' },
+    desempate: c => c.idCliente,
+    alCambiar: () => setCurrentPage(1),
+  });
 
   // Paginación
   const totalPages = Math.max(1, Math.ceil(filteredClientes.length / itemsPerPage));
   const startIndex = (currentPage - 1) * itemsPerPage;
   const endIndex = startIndex + itemsPerPage;
-  const currentClientes = filteredClientes.slice(startIndex, endIndex);
+  const currentClientes = orden.filas.slice(startIndex, endIndex);
 
   const handlePreviousPage = () => { if (currentPage > 1) setCurrentPage(currentPage - 1); };
   const handleNextPage = () => { if (currentPage < totalPages) setCurrentPage(currentPage + 1); };
@@ -177,8 +182,7 @@ export function ClientesList({
   };
 
   const handleSortChange = (value: 'desc' | 'asc') => {
-    setSortOrder(value);
-    setCurrentPage(1);
+    orden.fijar(orden.campo, value);
   };
 
   // ── Estatus badge ──
@@ -205,8 +209,8 @@ export function ClientesList({
               <circle cx="12" cy="8" r="4"/>
               <path d="M4 20c0-4 3.5-7 8-7s8 3 8 7"/>
             </svg>
-            <h2 className="text-lg font-normal text-gray-800">Lista de Personas</h2>
-            <button className="p-1 ml-2">
+            <h2 className="text-lg font-normal text-gray-800">Lista de Interlocutores Comerciales</h2>
+            <button type="button" aria-label="Buscar" title="Buscar" className="p-1 ml-2">
               <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#999" strokeWidth="2">
                 <circle cx="8" cy="8" r="6"/>
                 <path d="M13 13l3 3"/>
@@ -318,7 +322,7 @@ export function ClientesList({
               <span>Orden Rápido</span>
               <div className="relative">
                 <select 
-                  value={sortOrder} 
+                  value={orden.dir} 
                   onChange={(e) => handleSortChange(e.target.value as 'desc' | 'asc')}
                   className="px-2 py-1 border border-gray-400 rounded text-sm bg-white pr-6 appearance-none"
                 >
@@ -414,16 +418,16 @@ export function ClientesList({
             <thead>
               <tr className="bg-gray-100 border-b border-gray-300">
                 <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700 whitespace-nowrap">Editar | Ver</th>
-                <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700 whitespace-nowrap">ID</th>
-                <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700 whitespace-nowrap">NOMBRE COMPLETO</th>
-                <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700 whitespace-nowrap">CURP</th>
-                <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700 whitespace-nowrap">RFC</th>
-                <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700 whitespace-nowrap">TELÉFONO</th>
-                <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700 whitespace-nowrap">CORREO</th>
-                <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700 whitespace-nowrap">ESTATUS</th>
-                <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700 whitespace-nowrap">SUBTIPO</th>
-                <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700 whitespace-nowrap">TIPO</th>
-                <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700 whitespace-nowrap">FECHA ORIGINACIÓN</th>
+                <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700 whitespace-nowrap" {...orden.th('id')}>NO. INTERLOCUTOR{orden.flecha('id')}</th>
+                <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700 whitespace-nowrap" {...orden.th('nombre')}>NOMBRE COMPLETO{orden.flecha('nombre')}</th>
+                <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700 whitespace-nowrap" {...orden.th('curp')}>CURP{orden.flecha('curp')}</th>
+                <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700 whitespace-nowrap" {...orden.th('rfc')}>RFC{orden.flecha('rfc')}</th>
+                <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700 whitespace-nowrap" {...orden.th('telefono')}>TELÉFONO{orden.flecha('telefono')}</th>
+                <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700 whitespace-nowrap" {...orden.th('correo')}>CORREO{orden.flecha('correo')}</th>
+                <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700 whitespace-nowrap" {...orden.th('estatus')}>ESTATUS{orden.flecha('estatus')}</th>
+                <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700 whitespace-nowrap" {...orden.th('subtipo')}>SUBTIPO{orden.flecha('subtipo')}</th>
+                <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700 whitespace-nowrap" {...orden.th('tipo')}>TIPO{orden.flecha('tipo')}</th>
+                <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700 whitespace-nowrap" {...orden.th('fecha')}>FECHA ORIGINACIÓN{orden.flecha('fecha')}</th>
               </tr>
             </thead>
             <tbody>
@@ -435,7 +439,7 @@ export function ClientesList({
                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"/>
                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
                       </svg>
-                      Consultando J_CLIENTES (todos los registros)...
+                      Cargando...
                     </div>
                   </td>
                 </tr>
@@ -444,7 +448,7 @@ export function ClientesList({
                   <td colSpan={11} className="px-3 py-8 text-center text-gray-500">
                     {searchTerm
                       ? `No se encontraron registros para "${searchTerm}"`
-                      : 'La tabla J_CLIENTES no contiene registros.'}
+                      : 'No hay personas registradas.'}
                   </td>
                 </tr>
               ) : (
@@ -460,9 +464,9 @@ export function ClientesList({
                   >
                     {/* Liga de Edit / Liga de View — llave primaria: dbUuid */}
                     <td className="px-3 py-2.5 text-xs whitespace-nowrap">
-                      <a href="#" className="text-[#0066CC] hover:underline" onClick={(e) => { e.preventDefault(); onEdit?.(cliente); }}>Editar</a>
+                      <button type="button" className="enlace-accion text-[color:var(--theme-link)] hover:underline" onClick={() => { onEdit?.(cliente); }}>Editar</button>
                       <span className="text-gray-700"> | </span>
-                      <a href="#" className="text-[#0066CC] hover:underline" onClick={(e) => { e.preventDefault(); onView?.(cliente); }}>Ver</a>
+                      <button type="button" className="enlace-accion text-[color:var(--theme-link)] hover:underline" onClick={() => { onView?.(cliente); }}>Ver</button>
                     </td>
                     <td className="px-3 py-2.5 text-xs text-gray-700 whitespace-nowrap">{cliente.idCliente || '—'}</td>
                     <td className="px-3 py-2.5 text-xs text-gray-700">{cliente.nombreCompleto}</td>

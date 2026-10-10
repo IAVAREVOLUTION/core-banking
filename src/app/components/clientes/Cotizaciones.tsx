@@ -9,6 +9,7 @@
  */
 import { useState, useMemo } from 'react';
 import { useCotizacionesCaptacionDB } from '@/app/hooks/useCotizacionesCaptacionDB';
+import { formatearFecha } from '@/app/lib/fechas';
 
 const LOG = '[CotizCliente]';
 
@@ -109,12 +110,9 @@ export function Cotizaciones({ onBack: _onBack, mode, clienteId, onNavigateToCot
 
   // ── Helpers de formato ──
   const formatFecha = (fecha: string) => {
+    // Formato único del sistema (lib/fechas): dd/mm/aaaa, sin corrimiento de un día en fechas ISO.
     if (!fecha) return '—';
-    try {
-      return new Date(fecha).toLocaleDateString('es-MX', {
-        year: 'numeric', month: '2-digit', day: '2-digit'
-      });
-    } catch { return fecha; }
+    return formatearFecha(fecha);
   };
 
   const formatMonto = (monto: number | string | undefined | null) => {
@@ -253,7 +251,7 @@ export function Cotizaciones({ onBack: _onBack, mode, clienteId, onNavigateToCot
               <tr>
                 <td colSpan={9} className="px-3 py-8 text-center">
                   <div className="inline-block w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mb-2" />
-                  <p className="text-xs text-gray-500">Cargando cotizaciones desde J_COTIZACIONES...</p>
+                  <p className="text-xs text-gray-500">Cargando cotizaciones...</p>
                 </td>
               </tr>
             ) : cotizacionesFiltradas.length === 0 ? (
@@ -301,7 +299,7 @@ export function Cotizaciones({ onBack: _onBack, mode, clienteId, onNavigateToCot
                             setShowDetail(cot.id);
                           }
                         }}
-                        className="text-[#2E5C91] hover:text-[#1a3d66] underline hover:no-underline cursor-pointer font-mono text-xs"
+                        className="text-[color:var(--theme-secondary)] hover:text-[color:var(--theme-secondary-hover)] underline hover:no-underline cursor-pointer font-mono text-xs"
                         title="Ver en módulo Cotizaciones"
                       >
                         {cot.no_cotiza ? (cot.no_cotiza.length > 16 ? cot.no_cotiza.slice(0, 16) + '...' : cot.no_cotiza) : '—'}
@@ -375,7 +373,7 @@ export function Cotizaciones({ onBack: _onBack, mode, clienteId, onNavigateToCot
               <h3 className="text-base font-medium text-white">
                 Detalle de Cotización
               </h3>
-              <button
+              <button type="button" aria-label="Cerrar" title="Cerrar"
                 onClick={() => setShowDetail(null)}
                 className="text-white hover:text-gray-200"
               >

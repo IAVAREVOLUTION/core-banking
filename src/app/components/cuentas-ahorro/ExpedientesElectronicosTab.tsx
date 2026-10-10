@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 import { Eye } from 'lucide-react';
 
 interface Expediente {
@@ -60,7 +60,7 @@ export function ExpedientesElectronicosTab({ mode }: ExpedientesElectronicosTabP
   return (
     <div className="flex-1">
       <div className="bg-gray-200 px-3 py-2 mb-2">
-        <span className="text-xs font-medium text-gray-700">Expediente electrónico</span>
+        <span className="text-xs font-medium text-gray-700">KM Digital</span>
       </div>
 
       {/* Botones de Acción */}
@@ -288,7 +288,7 @@ export function ExpedientesElectronicosTab({ mode }: ExpedientesElectronicosTabP
                   />
                 </td>
                 <td className="border-b border-gray-200 px-2 py-1.5 text-center">
-                  <button
+                  <button aria-label="Ver" title="Ver"
                     onClick={() => {
                       setCurrentFile(expediente);
                       setShowViewer(true);
@@ -310,7 +310,7 @@ export function ExpedientesElectronicosTab({ mode }: ExpedientesElectronicosTabP
           <div className="bg-white rounded-lg shadow-xl w-96 p-6">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-sm font-semibold text-gray-800">Agregar Documento desde Web</h3>
-              <button
+              <button type="button" aria-label="Cerrar" title="Cerrar"
                 onClick={() => {
                   setShowWmdModal(false);
                   setWmdUrl('');
@@ -332,7 +332,7 @@ export function ExpedientesElectronicosTab({ mode }: ExpedientesElectronicosTabP
                 value={wmdUrl}
                 onChange={(e) => setWmdUrl(e.target.value)}
                 placeholder="https://ejemplo.com/documento.pdf"
-                className="w-full px-3 py-2 text-xs border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-[#5B9BD5]"
+                className="w-full px-3 py-2 text-xs border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-[color:var(--theme-accent)]"
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && wmdUrl.trim()) {
                     const newExpediente: Expediente = {
@@ -419,10 +419,10 @@ export function ExpedientesElectronicosTab({ mode }: ExpedientesElectronicosTabP
               {/* Header */}
               <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
                 <div className="flex items-center gap-2">
-                  <Eye className="w-4 h-4 text-[#5B9BD5]" />
+                  <Eye className="w-4 h-4 text-[color:var(--theme-accent)]" />
                   <h3 className="text-sm font-semibold text-gray-800">Visualizador de Documento</h3>
                 </div>
-                <button
+                <button type="button" aria-label="Cerrar" title="Cerrar"
                   onClick={() => {
                     setShowViewer(false);
                     setCurrentFile(null);

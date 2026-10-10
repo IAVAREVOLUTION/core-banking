@@ -413,6 +413,63 @@ console.log("[SERVER BOOT] PostgreSQL client created (SUPABASE_DB_URL)");
  * - Claves escalares con valor real en incoming → sobreescriben
  * - Claves que solo existen en existing → se CONSERVAN intactas
  */
+/**
+ * Repara el `data` de una solicitud (J_CUENTAS_CORP_CLIENTES) antes de usarlo.
+ * Mismo algoritmo que el frontend (src/app/lib/repararDataSolicitud.ts).
+ *
+ * Algunos registros guardan `data` como texto JSON codificado varias veces. Al
+ * leerlo con un solo JSON.parse quedaba un string, y al fusionarlo se partía
+ * letra por letra en llaves "0","1",… que se volvían a anidar y re-escapar en
+ * cada guardado: 32 solicitudes llegaron a 28 MB y el listado tardaba >100 s.
+ * Aquí se decodifica todas las veces necesarias y se desenvuelven las llaves
+ * numéricas fusionándolas con el resto (lo más reciente gana).
+ */
+function repararDataJsonb(raw: unknown): Record<string, any> {
+  const esObj = (v: unknown): v is Record<string, any> => !!v && typeof v === 'object' && !Array.isArray(v);
+  const vacio = (v: unknown) => v === null || v === undefined || v === '';
+  const decodificar = (v: unknown): unknown => {
+    let x = v;
+    for (let i = 0; i < 10 && typeof x === 'string'; i++) {
+      const t = x.trim();
+      if (!(t.startsWith('{') || t.startsWith('[') || t.startsWith('"'))) break;
+      try { x = JSON.parse(t); } catch { break; }
+    }
+    return x;
+  };
+  const fusionarArreglos = (a: any[], b: any[]): any[] => {
+    const conId = (xs: any[]) => xs.length > 0 && xs.every(x => esObj(x) && x.id != null);
+    if (!conId(a) || !conId(b)) return b.length > 0 ? b : a;
+    const porId = new Map<string, any>(a.map(x => [String(x.id), x]));
+    const vistos = new Set<string>();
+    const r = b.map(x => { const k = String(x.id); vistos.add(k); return porId.has(k) ? fusionar(porId.get(k), x) : x; });
+    for (const x of a) if (!vistos.has(String(x.id))) r.push(x);
+    return r;
+  };
+  const fusionar = (a: unknown, b: unknown): any => {
+    if (vacio(b)) return vacio(a) ? b : a;
+    if (esObj(a) && esObj(b)) {
+      const r: Record<string, any> = { ...a };
+      for (const [k, v] of Object.entries(b)) r[k] = k in a ? fusionar(a[k], v) : v;
+      return r;
+    }
+    if (Array.isArray(a) && Array.isArray(b)) return fusionarArreglos(a, b);
+    return b;
+  };
+  const reparar = (v: unknown): Record<string, any> => {
+    const d = decodificar(v);
+    if (Array.isArray(d)) return d.reduce<Record<string, any>>((acc, x) => fusionar(acc, reparar(x)), {});
+    if (!esObj(d)) return {};
+    const numericas = Object.keys(d).filter(k => /^\d+$/.test(k)).sort((x, y) => Number(x) - Number(y));
+    if (numericas.length === 0) return d;
+    let base: Record<string, any> = {};
+    for (const k of numericas) base = fusionar(base, reparar(d[k]));
+    const resto: Record<string, any> = {};
+    for (const [k, val] of Object.entries(d)) if (!/^\d+$/.test(k)) resto[k] = val;
+    return fusionar(base, resto);
+  };
+  return reparar(raw);
+}
+
 function deepMergeData(
   existing: Record<string, any>,
   incoming: Record<string, any>,
@@ -694,6 +751,13 @@ const activarProspectoHandler = async (c: any) => {
       if (existsSol.length > 0) {
         console.log('[activar-prospecto] Cuenta ya existe para esta solicitud:', existsSol[0].id);
         return c.json({ ok: true, ya_existe: true, cuentaId: existsSol[0].id, noCuenta: existsSol[0].no_cuenta });
+      }
+
+      // La persona ya tiene cuenta EJE: no se crea otra cuenta por esta solicitud.
+      const ejeCliente = await cuentaEjeExistente(String(clienteUuid));
+      if (ejeCliente) {
+        console.log('[activar-prospecto] El cliente ya tiene cuenta EJE', ejeCliente.no_cuenta, '— no se crea otra (solicitud', solicitudUuid, ')');
+        return c.json({ ok: true, ya_tiene_cuenta_eje: true, cuentaId: ejeCliente.id, cuentaEjeId: ejeCliente.id, noCuenta: ejeCliente.no_cuenta });
       }
 
       // Buscar producto eje para asociar
@@ -2760,7 +2824,8 @@ const putCuentasAhorroHandler = async (c: any) => {
         producto_id  = ${producto_id}::uuid,
         producto_eje = ${producto_eje},
         cliente_id   = ${cliente_id}::uuid,
-        saldo_actual = COALESCE(${saldo_actual}::numeric, saldo_actual),
+        -- money, no numeric: ver nota en activarCuentaSolicitudHandler.
+        saldo_actual = COALESCE(${saldo_actual}::numeric::money, saldo_actual),
         monto_sol    = ${monto_sol}::numeric,
         monto_aut    = ${monto_aut}::numeric,
         monto_disp   = ${monto_disp}::numeric,
@@ -3017,8 +3082,102 @@ app.delete("/catalogos/documentos/:id", deleteCatalogoDocumentoHandler);
 
 // ── Solicitudes de Crédito (direct SQL — J_CUENTAS_CORP_CLIENTES) ──
 
+// Columnas de J_CLIENTES / J_PRODUCTOS que acompañan a cada solicitud (JOIN).
+const SOLICITUD_JOIN_COLS = (sql: any) => sql`
+  cl.data->>'nombre'                AS cliente_nombre,
+  cl.data->>'apellidoPaterno'       AS cliente_ap_paterno,
+  cl.data->>'apellidoMaterno'       AS cliente_ap_materno,
+  cl.data->>'rfc'                   AS cliente_rfc,
+  cl.data->>'curp'                  AS cliente_curp,
+  cl.data->>'institucionGobierno'   AS institucion_gobierno,
+  cl.type                           AS cliente_tipo,
+  cl.subtipo                        AS cliente_subtipo,
+  p.data->>'nombreProducto'    AS producto_nombre,
+  p.data->>'claveProducto'     AS producto_clave,
+  p.data->>'sucursal'          AS producto_sucursal
+`;
+
+/**
+ * GET /solicitudes-credito?vista=lista — listado LIGERO.
+ *
+ * El listado completo arma el JSONB de todas las solicitudes (~5.8 MB, ~2 s de
+ * servidor): expediente, resultados IA, simulaciones, calendarios. Las tablas
+ * sólo pintan columnas y unos cuantos campos del JSONB, así que aquí `data` se
+ * reduce en SQL a lo que usan las listas (~15x menos). Va marcado con
+ * `_resumen: true`; el frontend pide GET /solicitudes-credito/:id antes de
+ * abrir, editar o guardar una solicitud.
+ */
+const getSolicitudesListaLigera = async (c: any) => {
+  const rows = await sql`
+    SELECT
+      to_jsonb(s) - 'data' AS cols,
+      CASE WHEN jsonb_typeof(s.data) = 'object' THEN
+        jsonb_strip_nulls(jsonb_build_object(
+          'nombreCompleto',         s.data->'nombreCompleto',
+          'nombrePersona',          s.data->'nombrePersona',
+          'apellidoPaternoPersona', s.data->'apellidoPaternoPersona',
+          'apellidoMaternoPersona', s.data->'apellidoMaternoPersona',
+          'nombreProducto',         s.data->'nombreProducto',
+          'tipoProducto',           s.data->'tipoProducto',
+          'sucursal',               s.data->'sucursal',
+          'descripcionFase',        s.data->'descripcionFase',
+          'estatusSolicitud',       s.data->'estatusSolicitud',
+          'noSol',                  s.data->'noSol',
+          'tipoPersona',            s.data->'tipoPersona',
+          'disposicionDe',          s.data->'disposicionDe',
+          'solicitud', jsonb_build_object(
+            'header',        s.data->'solicitud'->'header',
+            'tesoreria',     s.data->'solicitud'->'tesoreria',
+            'garantias',     s.data->'solicitud'->'garantias',
+            'disposicionDe', s.data->'solicitud'->'disposicionDe',
+            'terminos_condiciones', jsonb_build_object(
+              'parametros_simulacion', s.data->'solicitud'->'terminos_condiciones'->'parametros_simulacion',
+              '_raw',                  s.data->'solicitud'->'terminos_condiciones'->'_raw'
+            )
+          )
+        )) || '{"_resumen": true}'::jsonb
+      ELSE s.data END AS data,
+      ${SOLICITUD_JOIN_COLS(sql)}
+    FROM "EFINANCIANET_DB"."J_CUENTAS_CORP_CLIENTES" s
+    LEFT JOIN "EFINANCIANET_DB"."J_CLIENTES" cl ON cl.id = s.cliente_id
+    LEFT JOIN "EFINANCIANET_DB"."J_PRODUCTOS" p  ON p.id  = s.producto_id
+    ORDER BY s.fecha_sol DESC NULLS LAST
+  `;
+  const data = rows.map((r: any) => {
+    const { cols, data: d, ...join } = r;
+    return { ...(cols || {}), ...join, data: typeof d === 'string' ? (() => { try { return JSON.parse(d); } catch { return d; } })() : d };
+  });
+  console.log(`[SOLICITUDES] GET lista ligera — ${data.length} registros`);
+  return c.json({ data, _vista: 'lista' });
+};
+
+/** GET /solicitudes-credito/:id — una solicitud con su JSONB completo. */
+const getSolicitudPorIdHandler = async (c: any) => {
+  const id = c.req.param('id');
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id || '')) {
+    return c.json({ error: 'ID inválido (se espera UUID)' }, 400);
+  }
+  try {
+    const rows = await sql`
+      SELECT s.*, ${SOLICITUD_JOIN_COLS(sql)}
+      FROM "EFINANCIANET_DB"."J_CUENTAS_CORP_CLIENTES" s
+      LEFT JOIN "EFINANCIANET_DB"."J_CLIENTES" cl ON cl.id = s.cliente_id
+      LEFT JOIN "EFINANCIANET_DB"."J_PRODUCTOS" p  ON p.id  = s.producto_id
+      WHERE s.id = ${id}::uuid
+    `;
+    if (rows.length === 0) return c.json({ error: 'Solicitud no encontrada' }, 404);
+    const r: any = rows[0];
+    if (typeof r.data === 'string') { try { r.data = JSON.parse(r.data); } catch { /* keep */ } }
+    return c.json({ data: r });
+  } catch (err: any) {
+    console.log("[SOLICITUDES] Error GET por id:", err?.message);
+    return c.json({ error: `Error consultando solicitud: ${err?.message}` }, 500);
+  }
+};
+
 const getSolicitudesHandler = async (c: any) => {
   try {
+    if (c.req.query('vista') === 'lista') return await getSolicitudesListaLigera(c);
     console.log("[SOLICITUDES] GET /solicitudes-credito — ALL rows (inclusive) with JOIN");
     const rows = await sql`
       SELECT
@@ -3176,6 +3335,24 @@ const postSolicitudesHandler = async (c: any) => {
   }
 };
 
+// ── Regla de negocio: UNA cuenta EJE por persona ─────────────────────────────
+// Una vez que la persona tiene cuenta EJE (cta_eje_chec, o folios AUTO-/CEJE- de
+// registros previos), ningún producto genera otra. Devuelve la existente o null.
+async function cuentaEjeExistente(clienteId: string): Promise<{ id: string; no_cuenta: string } | null> {
+  try {
+    const [row] = await sql`
+      SELECT id, no_cuenta FROM "EFINANCIANET_DB"."J_CUENTAS_CORP_CLIENTES"
+      WHERE cliente_id = ${clienteId}::uuid
+        AND (cta_eje_chec = true OR no_sol LIKE 'AUTO-%' OR no_sol LIKE 'CEJE-%')
+      ORDER BY cta_eje_chec DESC NULLS LAST, fecha_sol ASC NULLS LAST
+      LIMIT 1
+    `;
+    return row ? { id: String(row.id), no_cuenta: String(row.no_cuenta || '') } : null;
+  } catch {
+    return null;
+  }
+}
+
 // ── Helper: crea CuentaAhorro por solicitud (idempotente por JSONB solicitudId) ──
 // no_referenc1 es VARCHAR(30) — no puede almacenar un UUID de 36 chars.
 // Se usa data->metadatos->solicitudId para la relación y la idempotencia.
@@ -3221,6 +3398,13 @@ async function crearCuentaAhorroParaSolicitud(
       } catch { /* no bloquea */ }
       console.log(`${LOG} Ya existe para solicitud ${solicitudId}: ${existe[0].id}`);
       return existe[0].id;
+    }
+
+    // La persona ya tiene cuenta EJE: no se crea otra cuenta por esta solicitud.
+    const ejeCliente = await cuentaEjeExistente(clienteId);
+    if (ejeCliente) {
+      console.log(`${LOG} Cliente ${clienteId} ya tiene cuenta EJE ${ejeCliente.no_cuenta}; no se crea otra (solicitud ${solicitudId}).`);
+      return ejeCliente.id;
     }
 
     const lineaNorm = lineaProd.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
@@ -3329,11 +3513,10 @@ const putSolicitudesHandler = async (c: any) => {
       `;
       let existingData: Record<string, any> = {};
       if (existingRows.length > 0 && existingRows[0].data) {
-        existingData = typeof existingRows[0].data === "string"
-          ? JSON.parse(existingRows[0].data)
-          : (existingRows[0].data as Record<string, any>);
+        // Decodifica todas las capas y desenvuelve llaves "0","1",… (ver repararDataJsonb).
+        existingData = repararDataJsonb(existingRows[0].data);
       }
-      const merged = deepMergeData(existingData, incomingData as Record<string, any>);
+      const merged = deepMergeData(existingData, repararDataJsonb(incomingData));
       finalDataJson = JSON.stringify(merged);
       console.log(`[SOLICITUDES] PUT deep-merge data: existing=${Object.keys(existingData).length} keys → incoming=${Object.keys(incomingData as object).length} keys → merged=${Object.keys(merged).length} keys`);
     }
@@ -3473,12 +3656,14 @@ const getNextNoSolHandler = async (c: any) => {
 
 app.get(`${PREFIX}/solicitudes-credito/next-no-sol`, getNextNoSolHandler);
 app.get(`${PREFIX}/solicitudes-credito`, getSolicitudesHandler);
+app.get(`${PREFIX}/solicitudes-credito/:id`, getSolicitudPorIdHandler);
 app.post(`${PREFIX}/solicitudes-credito`, postSolicitudesHandler);
 app.put(`${PREFIX}/solicitudes-credito/:id`, putSolicitudesHandler);
 app.delete(`${PREFIX}/solicitudes-credito/:id`, deleteSolicitudesHandler);
 // ── Solicitudes (sin prefijo — fallback) ──
 app.get("/solicitudes-credito/next-no-sol", getNextNoSolHandler);
 app.get("/solicitudes-credito", getSolicitudesHandler);
+app.get("/solicitudes-credito/:id", getSolicitudPorIdHandler);
 app.post("/solicitudes-credito", postSolicitudesHandler);
 app.put("/solicitudes-credito/:id", putSolicitudesHandler);
 app.delete("/solicitudes-credito/:id", deleteSolicitudesHandler);
@@ -3659,7 +3844,14 @@ const activarCuentaSolicitudHandler = async (c: any) => {
         estatus_disp = ${estatus_disp},
         cta_eje_chec = COALESCE(${cta_eje_chec}, cta_eje_chec),
         no_cuenta    = COALESCE(${no_cuenta}, no_cuenta),
-        saldo_actual = COALESCE(${esLineaCredito ? null : saldoFinal}::numeric, saldo_actual),
+        -- saldo_actual es de tipo money. COALESCE no resuelve un tipo comun
+        -- entre numeric y money (no hay cast implicito money->numeric), asi que
+        -- COALESCE(<numeric>, <money>) revienta con "could not convert type
+        -- money to numeric". El SET a secas si funciona porque ahi aplica el
+        -- cast de asignacion numeric->money; dentro de COALESCE no. Hay que
+        -- llevar el parametro a money, como ya se hace en el UPDATE de
+        -- actualizar-solicitud (monto_sol/monto_aut/saldo_actual).
+        saldo_actual = COALESCE(${esLineaCredito ? null : saldoFinal}::numeric::money, saldo_actual),
         data         = ${newDataJson}::jsonb
       WHERE id = ${id}::uuid
     `;
@@ -4186,7 +4378,7 @@ const carteraMarcarPagadoHandler = async (c: any) => {
 
     // 1. Leer factura + datos de la cuenta
     const [factura] = await sql`
-      SELECT f.id, f.solicitud_id, f.amortizacion_id, f.estatus,
+      SELECT f.id, f.solicitud_id, f.amortizacion_id, f.estatus, f.sub_tipo,
         TRIM(REPLACE(REPLACE(f.monto_transaccion::text,'$',''),',',' '))::numeric AS monto,
         cc.no_cuenta, cc.no_sol
       FROM "EFINANCIANET_DB"."J_FACTURAS" f
@@ -4201,6 +4393,27 @@ const carteraMarcarPagadoHandler = async (c: any) => {
     const noCuenta = factura.no_cuenta || '';
     const noSol    = factura.no_sol    || '';
     const solicitudId = factura.solicitud_id;
+
+    /**
+     * Aviso de COMISIÓN GPO (Garantía Financiera 2o Piso).
+     *
+     * Cobrar la comisión periódica de una garantía NO consume la garantía: el
+     * "Saldo Monto Garantía" de la línea es la cobertura comprometida, no un
+     * capital que se amortice. Lo que sí lo reduce es una disposición
+     * (`aplicarDisposicionALinea`) o una reclamación pagada.
+     *
+     * Hasta aquí el pago trataba todo aviso como abono a capital y restaba el
+     * monto de `saldo_actual` —la columna que alimenta ese campo—, así que cada
+     * comisión trimestral cobrada le comía cobertura real al cliente.
+     *
+     * ALCANCE: sólo `saldo_actual`. `monto_aut` sigue disminuyendo como siempre
+     * (Req 13), también para las comisiones; ése no es el campo en disputa.
+     *
+     * Se discrimina por `sub_tipo` y no por tipo de producto a propósito: la
+     * misma línea puede tener avisos de comisión y, en el escenario de pánico,
+     * avisos de un Crédito de Recuperación que SÍ amortizan.
+     */
+    const esComisionGPO = String(factura.sub_tipo || '').trim() === 'ComisionGPO';
 
     // 2. Actualizar J_FACTURAS → Pagado
     await sql`UPDATE "EFINANCIANET_DB"."J_FACTURAS" SET estatus = 'Pagado' WHERE id = ${facturaId}::bigint`;
@@ -4228,6 +4441,9 @@ const carteraMarcarPagadoHandler = async (c: any) => {
     // 5. Disminuir monto_aut + registrar movimiento en data.movimientos (Req 13 + Req 16)
     if (solicitudId) {
       try {
+        // `monto_aut` conserva su comportamiento de siempre (Req 13), también
+        // para las comisiones GPO: el único campo que la comisión no debe tocar
+        // es el saldo de la garantía.
         if (monto > 0) {
           await sql`
             UPDATE "EFINANCIANET_DB"."J_CUENTAS_CORP_CLIENTES"
@@ -4250,10 +4466,14 @@ const carteraMarcarPagadoHandler = async (c: any) => {
           const montoAutStr = String(cuentaRow.monto_aut || '0').replace(/[^0-9.-]/g, '');
           const saldoActual = parseFloat(String(cuentaRow.saldo_actual || '0').replace(/[^0-9.-]/g, '')) || 0;
           const saldoAntes  = saldoActual;
-          const nuevoSaldo  = Math.max(0, saldoActual - monto);
+          // `null` deja el saldo intacto: `escribirMovimientoEnCuenta` conserva
+          // el actual cuando no se le pasa uno nuevo. El movimiento SÍ se
+          // registra — el cobro ocurrió y debe verse en Movimientos; lo que no
+          // ocurre es el descuento a la garantía.
+          const nuevoSaldo  = esComisionGPO ? null : Math.max(0, saldoActual - monto);
           const movPago = {
             tipo:          'Abono',
-            concepto:      'Pago de Crédito',
+            concepto:      esComisionGPO ? 'Pago de Comisión GPO' : 'Pago de Crédito',
             referencia,
             monto,
             saldoInicial:  saldoAntes,
@@ -4263,7 +4483,7 @@ const carteraMarcarPagadoHandler = async (c: any) => {
           await escribirMovimientoEnCuenta(String(solicitudId), movPago, nuevoSaldo);
           // Replicar en cuenta eje del cliente para que aparezca en tab Movimientos
           await replicarEnCuentaEje(cuentaRow.cliente_id ? String(cuentaRow.cliente_id) : null, String(solicitudId), movPago);
-          console.log(`${LOG} Movimiento registrado — saldo: ${saldoAntes} → ${nuevoSaldo}`);
+          console.log(`${LOG} Movimiento registrado — saldo: ${saldoAntes} → ${nuevoSaldo ?? saldoAntes}${esComisionGPO ? ' (sin cambio: comisión GPO)' : ''}`);
         }
       } catch (movErr: any) {
         console.warn(`${LOG} data.movimientos update fallido (no bloquea): ${movErr?.message}`);
@@ -4277,6 +4497,148 @@ const carteraMarcarPagadoHandler = async (c: any) => {
   }
 };
 
+// ═══════════════════════════════════════════════════════════════════
+// APLICACIÓN DE PAGOS — POST /cartera/aplicar-pago  (Cartera Crédito Individual)
+// Portado de la rama Producto-TDC-FINAL. El reparto lo decide el motor del
+// cliente (motorAplicacionPagos) con la "Prelación de cargos" del producto;
+// aquí se persiste en UNA transacción y se valida que ninguna línea se pague
+// de más (si otro proceso pagó en medio, no se aplica nada).
+//   1. J_PAGOS por línea (factura_detalle_id) + estatus Pagado/Parcial del detalle
+//   2. J_FACTURAS → Pagado cuando todas sus líneas quedan pagadas
+//   3. monto_aut del crédito disminuye en lo aplicado (igual que /pagar)
+//   Después (no bloquea): Abono del pago y Cargo de lo aplicado en la Cuenta
+//   EJE (el remanente se queda ahí) y Abono "Pago de Crédito" en el crédito.
+// ═══════════════════════════════════════════════════════════════════
+const carteraAplicarPagoHandler = async (c: any) => {
+  const LOG = '[APLICAR-PAGO]';
+  try {
+    const body = await c.req.json().catch(() => ({}));
+    const solicitudId = String(body.solicitud_id || '');
+    const referencia  = String(body.referencia || '').trim();
+    const fechaPago   = String(body.fecha_pago || new Date().toISOString().slice(0, 10)).slice(0, 10);
+    const montoPago   = Number(body.monto_pago) || 0;
+    const cuentaEjeId = body.cuenta_eje_id ? String(body.cuenta_eje_id) : null;
+    const aplicaciones: any[] = Array.isArray(body.aplicaciones) ? body.aplicaciones : [];
+    const r2 = (n: number) => Math.round((Number(n) || 0) * 100) / 100;
+
+    if (!/^[0-9a-f-]{36}$/i.test(solicitudId)) return c.json({ ok: false, error: 'solicitud_id inválido' }, 400);
+    if (!referencia) return c.json({ ok: false, error: 'La referencia del pago es obligatoria' }, 400);
+    if (!cuentaEjeId) return c.json({ ok: false, error: 'El cliente no tiene Cuenta EJE válida' }, 400);
+    if (aplicaciones.some(a => !(Number(a?.monto) > 0) || !a?.detalle_id || !a?.factura_id)) {
+      return c.json({ ok: false, error: 'Aplicaciones inválidas' }, 400);
+    }
+
+    // Idempotencia: la misma referencia no se aplica dos veces al mismo crédito.
+    const previo = await sql`
+      SELECT 1 FROM "EFINANCIANET_DB"."J_PAGOS" p
+      JOIN "EFINANCIANET_DB"."J_FACTURAS" f ON f.id = p.factura_id
+      WHERE f.solicitud_id = ${solicitudId}::uuid AND p.numero_referencia = ${referencia}
+      LIMIT 1
+    `;
+    if (previo.length > 0) return c.json({ ok: true, ya_aplicado: true });
+
+    let totalAplicado = 0;
+    // Lo aplicado a avisos de COMISIÓN GPO no reduce el saldo de la línea
+    // (Saldo Monto Garantía): mismo criterio que PATCH /cartera/facturas/:id/pagar.
+    let aplicadoReduceSaldo = 0;
+    await sql.begin(async (tx: any) => {
+      const facturasTocadas = new Set<string>();
+      for (const a of aplicaciones) {
+        const monto = r2(a.monto);
+        const [det] = await tx`
+          SELECT id, factura_id, monto::numeric AS monto
+          FROM "EFINANCIANET_DB"."J_FACTURAS_DETALLE"
+          WHERE id = ${a.detalle_id} FOR UPDATE
+        `;
+        if (!det || String(det.factura_id) !== String(a.factura_id)) {
+          throw new Error(`La línea ${a.detalle_id} no pertenece al aviso ${a.factura_id}`);
+        }
+        const [fac] = await tx`
+          SELECT id, sub_tipo FROM "EFINANCIANET_DB"."J_FACTURAS"
+          WHERE id = ${a.factura_id} AND solicitud_id = ${solicitudId}::uuid
+        `;
+        if (!fac) throw new Error(`El aviso ${a.factura_id} no pertenece a este crédito`);
+
+        const [pag] = await tx`
+          SELECT COALESCE(SUM(TRIM(REPLACE(REPLACE(monto_pagado::text,'$',''),',',''))::numeric), 0) AS pagado
+          FROM "EFINANCIANET_DB"."J_PAGOS" WHERE factura_detalle_id = ${a.detalle_id}
+        `;
+        const montoLinea = r2(det.monto);
+        const pagado = r2(pag?.pagado);
+        if (r2(pagado + monto) > r2(montoLinea) + 0.005) {
+          throw new Error('Otro proceso cambió de saldo durante el proceso: la línea ya no admite ese monto');
+        }
+        await tx`
+          INSERT INTO "EFINANCIANET_DB"."J_PAGOS"
+            (factura_id, factura_detalle_id, fecha_pago, monto_pagado, numero_referencia, forma_pago, estatus)
+          VALUES (${a.factura_id}, ${a.detalle_id}, ${fechaPago}::date, ${monto}, ${referencia}, 'Pago Referenciado', 'Aplicado')
+        `;
+        const estDet = r2(pagado + monto) >= r2(montoLinea) ? 'Pagado' : 'Parcial';
+        await tx`UPDATE "EFINANCIANET_DB"."J_FACTURAS_DETALLE" SET estatus = ${estDet} WHERE id = ${a.detalle_id}`;
+        facturasTocadas.add(String(a.factura_id));
+        totalAplicado = r2(totalAplicado + monto);
+        if (String(fac.sub_tipo || '').trim() !== 'ComisionGPO') aplicadoReduceSaldo = r2(aplicadoReduceSaldo + monto);
+      }
+
+      // Aviso pagado cuando ninguna de sus líneas tiene saldo.
+      for (const fid of facturasTocadas) {
+        const [pend] = await tx`
+          SELECT COUNT(*)::int AS n FROM "EFINANCIANET_DB"."J_FACTURAS_DETALLE"
+          WHERE factura_id = ${fid} AND COALESCE(estatus, 'Pendiente') <> 'Pagado'
+        `;
+        if ((pend?.n ?? 1) === 0) {
+          await tx`UPDATE "EFINANCIANET_DB"."J_FACTURAS" SET estatus = 'Pagado' WHERE id = ${fid}`;
+        }
+      }
+
+      if (totalAplicado > 0) {
+        await tx`
+          UPDATE "EFINANCIANET_DB"."J_CUENTAS_CORP_CLIENTES"
+          SET monto_aut = GREATEST(0::money, monto_aut - ${totalAplicado}::numeric::money)
+          WHERE id = ${solicitudId}::uuid
+        `;
+      }
+    });
+    console.log(`${LOG} ✅ solicitud=${solicitudId} ref=${referencia} pago=${montoPago} aplicado=${totalAplicado}`);
+
+    // Movimientos (después del commit; no bloquean, igual que /pagar).
+    const noSol = String(body.no_sol || '');
+    try {
+      const [eje] = await sql`SELECT saldo_actual FROM "EFINANCIANET_DB"."J_CUENTAS_CORP_CLIENTES" WHERE id = ${cuentaEjeId}::uuid`;
+      let saldoEje = parseFloat(String(eje?.saldo_actual ?? '0').replace(/[^0-9.-]/g, '')) || 0;
+      if (montoPago > 0) {
+        saldoEje = r2(saldoEje + montoPago);
+        await escribirMovimientoEnCuenta(cuentaEjeId, {
+          tipo: 'Abono', concepto: 'Pago referenciado', referencia, monto: montoPago,
+          fechaOperacion: fechaPago, estatus: 'Aplicado', origenCreacion: 'Aplicación de Pagos',
+        }, saldoEje);
+      }
+      if (totalAplicado > 0) {
+        saldoEje = r2(saldoEje - totalAplicado);
+        await escribirMovimientoEnCuenta(cuentaEjeId, {
+          tipo: 'Cargo', concepto: `Aplicación de pago a crédito ${noSol}`.trim(), referencia, monto: totalAplicado,
+          fechaOperacion: fechaPago, estatus: 'Aplicado', origenCreacion: 'Aplicación de Pagos',
+        }, saldoEje);
+        const [cred] = await sql`SELECT saldo_actual FROM "EFINANCIANET_DB"."J_CUENTAS_CORP_CLIENTES" WHERE id = ${solicitudId}::uuid`;
+        const saldoCred = parseFloat(String(cred?.saldo_actual ?? '0').replace(/[^0-9.-]/g, '')) || 0;
+        await escribirMovimientoEnCuenta(solicitudId, {
+          tipo: 'Abono', concepto: aplicadoReduceSaldo > 0 ? 'Pago de Crédito' : 'Pago de Comisión GPO', referencia, monto: totalAplicado,
+          fechaOperacion: fechaPago, estatus: 'Aplicado', origenCreacion: 'Aplicación de Pagos',
+        }, aplicadoReduceSaldo > 0 ? Math.max(0, r2(saldoCred - aplicadoReduceSaldo)) : null);
+      }
+    } catch (movErr: any) {
+      console.warn(`${LOG} movimientos fallidos (el pago sí quedó aplicado): ${movErr?.message}`);
+    }
+
+    return c.json({ ok: true, monto_total_aplicado: totalAplicado });
+  } catch (err: any) {
+    console.error(`${LOG} Error:`, err?.message);
+    return c.json({ ok: false, error: String(err?.message || err) }, 500);
+  }
+};
+
+app.post(`${PREFIX}/cartera/aplicar-pago`, carteraAplicarPagoHandler);
+app.post(`/cartera/aplicar-pago`, carteraAplicarPagoHandler);
 app.patch(`${PREFIX}/cartera/facturas/:id/pagar`, carteraMarcarPagadoHandler);
 app.patch(`/cartera/facturas/:id/pagar`, carteraMarcarPagadoHandler);
 
@@ -4494,14 +4856,10 @@ const carteraCobranzaHandler = async (c: any) => {
 // ═══════════════════════════════════════════════════════════════════
 // GENERACIÓN CONTABLE — Eventos por crédito (almacenados en JSONB)
 // ═══════════════════════════════════════════════════════════════════
-const parseJsonbData = (raw: any): Record<string, any> => {
-  if (!raw) return {};
-  if (typeof raw === 'string') { try { return JSON.parse(raw); } catch { return {}; } }
-  if (typeof raw === 'object' && !Array.isArray(raw) && '0' in raw) {
-    try { return JSON.parse(Object.values(raw).join('')); } catch { return {}; }
-  }
-  return typeof raw === 'object' ? raw : {};
-};
+// Decodifica todas las capas y desenvuelve llaves "0","1",… (ver repararDataJsonb).
+// Antes un JSON.parse de una sola capa dejaba strings que luego se esparcían
+// letra por letra al escribir movimientos.
+const parseJsonbData = (raw: any): Record<string, any> => (raw ? repararDataJsonb(raw) : {});
 
 const carteraContableGetHandler = async (c: any) => {
   try {

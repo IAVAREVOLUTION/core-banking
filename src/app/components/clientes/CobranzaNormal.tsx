@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 import { X } from 'lucide-react';
-import * as XLSX from 'xlsx';
+import { cargarXLSX } from '@/app/lib/librerias';
+import { formatearFecha } from '@/app/lib/fechas';
 
 interface CobranzaNormal {
   id: number;
@@ -83,7 +84,7 @@ export function CobranzaNormal({ clienteId, mode, isView }: CobranzaNormalProps 
 
   const handleNuevo = () => {
     // Obtener fecha actual en formato DD/MM/YYYY
-    const fechaActual = new Date().toLocaleDateString('es-MX');
+    const fechaActual = formatearFecha(new Date());
     const fechaHoraActual = `${fechaActual} ${new Date().toLocaleTimeString('es-MX')}`;
     
     setFormData({
@@ -159,7 +160,8 @@ export function CobranzaNormal({ clienteId, mode, isView }: CobranzaNormalProps 
     setShowConsulta(!showConsulta);
   };
 
-  const exportarExcel = () => {
+  const exportarExcel = async () => {
+    const XLSX = await cargarXLSX();
     const datosExportar = filteredData.map(({ cuenta, usuario, observaciones, fechaGenerar, fechaEnvio, fechaProgramacion }) => ({
       Cuenta: cuenta,
       Usuario: usuario,
@@ -489,7 +491,7 @@ export function CobranzaNormal({ clienteId, mode, isView }: CobranzaNormalProps 
           <div className="bg-white rounded-lg shadow-2xl w-full max-w-2xl border border-gray-200">
             <div className="flex items-center justify-between px-4 py-3 border-b border-gray-300 bg-[#D9D9D9]">
               <h3 className="text-sm font-medium text-gray-800">Nuevo Registro de Cobranza Normal</h3>
-              <button 
+              <button aria-label="Cerrar" title="Cerrar" 
                 onClick={() => {
                   setShowModal(false);
                   setFormData({

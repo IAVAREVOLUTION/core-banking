@@ -300,24 +300,27 @@ export function useClientesDB(active: boolean) {
       let method = '';
       const errors: string[] = [];
 
-      // ── INTENTO 1: Schema directo ──
-      const r1 = await tryDirectSchema();
+      // ── INTENTO 1: RPC ──
+      // Va primero: la llave anon no tiene permiso de lectura directa sobre
+      // J_CLIENTES (42501), así que el schema directo siempre fallaba y sólo
+      // sumaba una petición de ~0.3 s antes de llegar aquí.
+      const r1 = await tryRPC();
       if (r1.ok) {
         rows = r1.rows;
         method = r1.method;
-        diag.endpointExclusivo = true;
-        diag.endpointName = 'supabase.schema("EFINANCIANET_DB").from("J_CLIENTES")';
+        diag.endpointName = 'supabase.rpc("get_all_jclientes")';
       } else {
-        errors.push(`Schema directo: ${r1.error}`);
+        errors.push(`RPC: ${r1.error}`);
 
-        // ── INTENTO 2: RPC ──
-        const r2 = await tryRPC();
+        // ── INTENTO 2: Schema directo ──
+        const r2 = await tryDirectSchema();
         if (r2.ok) {
           rows = r2.rows;
           method = r2.method;
-          diag.endpointName = 'supabase.rpc("get_all_jclientes")';
+          diag.endpointExclusivo = true;
+          diag.endpointName = 'supabase.schema("EFINANCIANET_DB").from("J_CLIENTES")';
         } else {
-          errors.push(`RPC: ${r2.error}`);
+          errors.push(`Schema directo: ${r2.error}`);
 
           // ── INTENTO 3: Edge function ──
           const r3 = await tryEdgeFunction();
@@ -391,7 +394,7 @@ export function useClientesDB(active: boolean) {
         }
       } else {
         setBackendStatus('empty');
-        setWarning('La tabla J_CLIENTES no contiene registros.');
+        setWarning('No hay personas registradas.');
       }
 
     } catch (err) {

@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
+import { useOrdenTabla, coincideBusqueda } from '@/app/lib/ordenTabla';
 
 export interface Prospecto {
   id: number;
@@ -97,7 +98,6 @@ interface ProspectosListProps {
 export function ProspectosList({ onNew, onEdit, onView, prospectos: prospectosProp, onProspectosChange, loading, error, onRefetch, queryMethod }: ProspectosListProps) {
   const [prospectos, setProspectos] = useState<Prospecto[]>(prospectosProp || []);
   const [searchTerm, setSearchTerm] = useState('');
-  const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 8;
   const tableRef = useRef<HTMLDivElement>(null);
@@ -110,12 +110,6 @@ export function ProspectosList({ onNew, onEdit, onView, prospectos: prospectosPr
     }
   }, [prospectosProp]);
 
-  // ── Conteo por type (columna "categoria") para diagnóstico visible ──
-  const typeDistribution = prospectos.reduce<Record<string, number>>((acc, p) => {
-    const t = p.categoria || '(sin type)';
-    acc[t] = (acc[t] || 0) + 1;
-    return acc;
-  }, {});
 
   // Estado para anchos de columnas
   const [columnWidths, setColumnWidths] = useState({
@@ -211,29 +205,34 @@ export function ProspectosList({ onNew, onEdit, onView, prospectos: prospectosPr
     return `${dd}/${mm}/${yy}`;
   };
 
-  const filteredProspectos = prospectos
-    .filter(prospecto => {
-      const searchLower = searchTerm.toLowerCase();
-      return (
-        (prospecto.nombre || '').toLowerCase().includes(searchLower) ||
-        (prospecto.idProspecto || '').toLowerCase().includes(searchLower) ||
-        (prospecto.dbUuid || '').toLowerCase().includes(searchLower) ||
-        prospecto.id.toString().includes(searchLower) ||
-        (prospecto.sucursal || '').toLowerCase().includes(searchLower) ||
-        (prospecto.categoria || '').toLowerCase().includes(searchLower)
-      );
-    })
-    .sort((a, b) => {
-      const dateA = parseDate(a.fechaOriginacion).getTime();
-      const dateB = parseDate(b.fechaOriginacion).getTime();
-      return sortOrder === 'desc' ? dateB - dateA : dateA - dateB;
-    });
+  const filteredProspectos = prospectos.filter(p => coincideBusqueda(searchTerm, [
+    p.idProspecto, p.nombre, p.estatus, p.sucursal, p.estatusSIC, p.estatusListaNegra,
+    p.categoria, formatDateForDisplay(p.fechaOriginacion), p.dbUuid,
+  ]));
+
+  // Orden: más recientes primero (fecha de originación y, a igual fecha, el
+  // consecutivo). Cualquier encabezado ordena por su columna.
+  const orden = useOrdenTabla(filteredProspectos, {
+    id: 'tipos-interlocutor',
+    columnas: {
+      id: p => p.idProspecto,
+      nombre: p => p.nombre,
+      estatus: p => p.estatus,
+      sucursal: p => p.sucursal,
+      sic: p => p.estatusSIC,
+      listaNegra: p => p.estatusListaNegra,
+      fecha: p => parseDate(p.fechaOriginacion),
+    },
+    porDefecto: { campo: 'fecha', dir: 'desc' },
+    desempate: p => p.idProspecto,
+    alCambiar: () => setCurrentPage(1),
+  });
 
   // Paginacion
   const totalPages = Math.max(1, Math.ceil(filteredProspectos.length / itemsPerPage));
   const startIndex = (currentPage - 1) * itemsPerPage;
   const endIndex = startIndex + itemsPerPage;
-  const currentProspectos = filteredProspectos.slice(startIndex, endIndex);
+  const currentProspectos = orden.filas.slice(startIndex, endIndex);
 
   const handlePreviousPage = () => {
     if (currentPage > 1) {
@@ -262,8 +261,7 @@ export function ProspectosList({ onNew, onEdit, onView, prospectos: prospectosPr
   };
 
   const handleSortChange = (value: 'desc' | 'asc') => {
-    setSortOrder(value);
-    setCurrentPage(1);
+    orden.fijar(orden.campo, value);
   };
 
   // Funciones para redimensionar columnas
@@ -313,8 +311,8 @@ export function ProspectosList({ onNew, onEdit, onView, prospectos: prospectosPr
               <circle cx="12" cy="8" r="4"/>
               <path d="M4 20c0-4 3.5-7 8-7s8 3 8 7"/>
             </svg>
-            <h2 className="text-lg font-normal text-gray-800">Prospecto</h2>
-            <button className="p-1 ml-2">
+            <h2 className="text-lg font-normal text-gray-800">Tipo Interlocutor</h2>
+            <button type="button" aria-label="Buscar" title="Buscar" className="p-1 ml-2">
               <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#999" strokeWidth="2">
                 <circle cx="8" cy="8" r="6"/>
                 <path d="M13 13l3 3"/>
@@ -322,8 +320,8 @@ export function ProspectosList({ onNew, onEdit, onView, prospectos: prospectosPr
             </button>
           </div>
           <div className="flex items-center gap-4 text-sm text-gray-700">
-            <span onClick={handleListaClick} className="cursor-pointer hover:text-[#0099CC] transition-colors">Lista</span>
-            <span onClick={handleBuscarClick} className="cursor-pointer hover:text-[#0099CC] transition-colors">Buscar</span>
+            <span onClick={handleListaClick} className="cursor-pointer hover:text-[color:var(--theme-action)] transition-colors">Lista</span>
+            <span onClick={handleBuscarClick} className="cursor-pointer hover:text-[color:var(--theme-action)] transition-colors">Buscar</span>
           </div>
         </div>
       </div>
@@ -334,15 +332,24 @@ export function ProspectosList({ onNew, onEdit, onView, prospectos: prospectosPr
           <span className="text-sm text-gray-700">Ver</span>
           <div className="relative">
             <select className="px-3 py-1.5 border border-gray-400 rounded text-sm bg-white pr-8 appearance-none min-w-[200px]">
-              <option>Vista general del Prospecto</option>
+              <option>Vista general del Tipo Interlocutor</option>
             </select>
             <svg className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" width="12" height="12" viewBox="0 0 12 12" fill="#666">
               <path d="M6 8l-4-4h8z"/>
             </svg>
           </div>
-          <button onClick={onNew} className="px-5 py-1.5 bg-[#0099CC] text-white rounded text-sm hover:bg-[#0088BB] font-medium">
+          <button onClick={onNew} className="px-5 py-1.5 bg-[color:var(--theme-action)] text-white rounded text-sm hover:bg-[color:var(--theme-action-hover)] font-medium">
             Nuevo
           </button>
+          {onRefetch && (
+            <button
+              onClick={onRefetch}
+              disabled={loading}
+              className="px-3 py-1.5 border border-gray-400 rounded text-sm hover:bg-gray-50 transition-colors disabled:opacity-50"
+            >
+              {loading ? '⟳ Cargando...' : '⟳ Refrescar'}
+            </button>
+          )}
         </div>
       </div>
 
@@ -356,7 +363,7 @@ export function ProspectosList({ onNew, onEdit, onView, prospectos: prospectosPr
               type="text" 
               value={searchTerm}
               onChange={(e) => handleSearchChange(e.target.value)}
-              placeholder="Buscar prospectos..." 
+              placeholder="Buscar tipo interlocutor..." 
               className="px-3 py-1 border border-gray-400 rounded text-sm w-64 transition-all"
             />
           </div>
@@ -417,7 +424,7 @@ export function ProspectosList({ onNew, onEdit, onView, prospectos: prospectosPr
               <span>Orden Rapido</span>
               <div className="relative">
                 <select 
-                  value={sortOrder} 
+                  value={orden.dir} 
                   onChange={(e) => handleSortChange(e.target.value as 'desc' | 'asc')}
                   className="px-2 py-1 border border-gray-400 rounded text-sm bg-white pr-6 appearance-none"
                 >
@@ -441,7 +448,7 @@ export function ProspectosList({ onNew, onEdit, onView, prospectos: prospectosPr
                 </svg>
               </div>
               <button 
-                className="p-0.5 text-[#0099CC] hover:text-[#0088BB] disabled:opacity-40" 
+                className="p-0.5 text-[color:var(--theme-action)] hover:text-[color:var(--theme-action-hover)] disabled:opacity-40" 
                 title="Anterior"
                 onClick={handlePreviousPage}
                 disabled={currentPage === 1}
@@ -451,7 +458,7 @@ export function ProspectosList({ onNew, onEdit, onView, prospectos: prospectosPr
                 </svg>
               </button>
               <button 
-                className="p-0.5 text-[#0099CC] hover:text-[#0088BB] disabled:opacity-40" 
+                className="p-0.5 text-[color:var(--theme-action)] hover:text-[color:var(--theme-action-hover)] disabled:opacity-40" 
                 title="Siguiente"
                 onClick={handleNextPage}
                 disabled={currentPage === totalPages}
@@ -469,25 +476,9 @@ export function ProspectosList({ onNew, onEdit, onView, prospectos: prospectosPr
       {/* Error de consulta a J_CLIENTES */}
       {error && (
         <div className="px-4 py-2 bg-red-50 border-b border-red-200 text-red-700 text-sm flex items-center justify-between">
-          <span>Error al consultar J_CLIENTES: {error}</span>
+          <span>No se pudo cargar la lista: {error}</span>
           {onRefetch && (
             <button onClick={onRefetch} className="px-3 py-1 bg-red-100 hover:bg-red-200 rounded text-xs font-medium">Reintentar</button>
-          )}
-        </div>
-      )}
-
-      {/* Diagnóstico v17.0: distribución de types recibidos del servidor */}
-      {!loading && prospectos.length > 0 && (
-        <div className="px-4 py-1.5 bg-blue-50 border-b border-blue-200 text-xs flex items-center gap-3">
-          <span className="text-blue-800">
-            J_CLIENTES: {prospectos.length} registros |{' '}
-            {Object.entries(typeDistribution).map(([t, c]) => `${t}: ${c}`).join(', ')}
-            {queryMethod && <> | via: {queryMethod}</>}
-          </span>
-          {onRefetch && (
-            <button onClick={onRefetch} className="px-2 py-0.5 bg-blue-100 hover:bg-blue-200 rounded text-[10px] text-blue-700">
-              Refrescar
-            </button>
           )}
         </div>
       )}
@@ -496,8 +487,8 @@ export function ProspectosList({ onNew, onEdit, onView, prospectos: prospectosPr
       <div className="px-4 py-4" ref={tableRef}>
         {loading ? (
           <div className="border border-gray-300 px-3 py-8 text-center text-gray-500 bg-white">
-            <div className="inline-block animate-spin rounded-full h-5 w-5 border-2 border-gray-300 border-t-[#0099CC] mr-2 align-middle"></div>
-            Consultando J_CLIENTES...
+            <div className="inline-block animate-spin rounded-full h-5 w-5 border-2 border-gray-300 border-t-[color:var(--theme-action)] mr-2 align-middle"></div>
+            Cargando...
           </div>
         ) : (
         <div className="border border-gray-300 overflow-hidden" style={{ backgroundColor: 'transparent' }}>
@@ -505,20 +496,20 @@ export function ProspectosList({ onNew, onEdit, onView, prospectos: prospectosPr
             <thead>
               <tr className="bg-[#D0D0D0] border-b border-gray-300">
                 <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700">Editar | Ver</th>
-                <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700">ID</th>
-                <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700">NOMBRE</th>
-                <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700">ESTATUS DEL CLIENTE</th>
-                <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700">SUCURSAL</th>
-                <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700">ESTATUS SIC</th>
-                <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700">ESTATUS LISTA NEGRA</th>
-                <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700">FECHA ORIGINACION</th>
+                <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700" {...orden.th('id')}>NO. INTERLOCUTOR{orden.flecha('id')}</th>
+                <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700" {...orden.th('nombre')}>NOMBRE{orden.flecha('nombre')}</th>
+                <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700" {...orden.th('estatus')}>ESTATUS DEL CLIENTE{orden.flecha('estatus')}</th>
+                <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700" {...orden.th('sucursal')}>SUCURSAL{orden.flecha('sucursal')}</th>
+                <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700" {...orden.th('sic')}>ESTATUS SIC{orden.flecha('sic')}</th>
+                <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700" {...orden.th('listaNegra')}>ESTATUS LISTA NEGRA{orden.flecha('listaNegra')}</th>
+                <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700" {...orden.th('fecha')}>FECHA ORIGINACION{orden.flecha('fecha')}</th>
               </tr>
             </thead>
             <tbody>
               {currentProspectos.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="px-3 py-8 text-center text-gray-500">
-                    {error ? 'Error al cargar prospectos' : 'No se encontraron prospectos en J_CLIENTES'}
+                    {error ? 'Error al cargar tipos interlocutor' : 'No hay tipos interlocutor registrados'}
                   </td>
                 </tr>
               ) : (
@@ -533,9 +524,9 @@ export function ProspectosList({ onNew, onEdit, onView, prospectos: prospectosPr
                     onMouseLeave={(e) => e.currentTarget.style.backgroundColor = index % 2 === 1 ? '#EEEEEE' : '#FFFFFF'}
                   >
                     <td className="px-3 py-2.5 text-xs">
-                      <a href="#" className="text-[#0066CC] hover:underline" onClick={(e) => { e.preventDefault(); onEdit?.(prospecto); }}>Editar</a>
+                      <button type="button" className="enlace-accion text-[color:var(--theme-link)] hover:underline" onClick={() => { onEdit?.(prospecto); }}>Editar</button>
                       <span className="text-gray-700"> | </span>
-                      <a href="#" className="text-[#0066CC] hover:underline" onClick={(e) => { e.preventDefault(); onView?.(prospecto); }}>Ver</a>
+                      <button type="button" className="enlace-accion text-[color:var(--theme-link)] hover:underline" onClick={() => { onView?.(prospecto); }}>Ver</button>
                     </td>
                     <td className="px-3 py-2.5 text-xs text-gray-700" title={prospecto.dbUuid || undefined}>
                       {prospecto.idProspecto || `PROS-${prospecto.id.toString().padStart(3, '0')}`}

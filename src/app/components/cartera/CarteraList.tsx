@@ -3,6 +3,7 @@
  * Diseño institucional idéntico a CasosCobranza
  */
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useOrdenTabla, coincideBusqueda } from '@/app/lib/ordenTabla';
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { CarteraForm, type CarteraCredito } from './CarteraForm';
 import { SolicitudesExtGestion } from './SolicitudesExtGestion';
@@ -41,6 +42,11 @@ function useCreditos() {
       // sin este filtro esas solicitudes aparecían mezcladas aquí.
       const mapped: CarteraCredito[] = (json.data || [])
         .filter((r: any) => {
+          // Sólo créditos: la tabla también guarda cuentas EJE (AUTO-/CEJE-),
+          // cuentas de ahorro y cuentas bancarias CLABE (BANC-, type CAPTACION),
+          // que no son cartera de crédito.
+          if (r.type && r.type !== 'Solicitud') return false;
+          if (r.cta_eje_chec === true || /^(AUTO|CEJE|BANC)-/i.test(String(r.no_sol || ''))) return false;
           const h = r.data?.solicitud?.header || {};
           if (esArrendamientoPuroRow(
             r.linea_produc || h.linea_producto || '',
@@ -71,10 +77,13 @@ function useCreditos() {
           noSol:          r.no_sol || '',
           cliente:        [r.cliente_nombre, r.cliente_ap_paterno, r.cliente_ap_materno].filter(Boolean).join(' ') || h.nombre_persona || '—',
           clienteId:      r.cliente_id || '',
+          productoId:     r.producto_id || h.producto_id || '',
           productoNombre: r.producto_nombre || h.nombre_producto || '—',
           lineaProducto:  r.linea_produc || h.linea_producto || 'Crédito',
           tipoProducto:   r.tipo_produc || h.tipo_producto || '',
-          montoAut:       parseMon(r.monto_aut),
+          // Créditos activados antes de la corrección quedaron con monto_aut = 0:
+          // sin monto autorizado registrado, se muestra el solicitado.
+          montoAut:       parseMon(r.monto_aut) || parseMon(r.monto_sol),
           montoSol:       parseMon(r.monto_sol),
           tasa:           t.tasa || h.tasa_autorizada || '',
           plazo:          t.plazo || h.plazo_autorizado || '',
@@ -99,9 +108,27 @@ function useCreditos() {
 // ═══════════════════════════════════════════════════════════════════
 // MÓDULO PRINCIPAL
 // ═══════════════════════════════════════════════════════════════════
-export function CarteraList() {
+/** Compara sublíneas sin importar acentos ni mayúsculas. */
+const normSublinea = (v?: string) => (v || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
+
+export interface CarteraListProps {
+  /**
+   * Fija el módulo a una sola sublínea (tipo de producto), p. ej. "Crédito
+   * Individual". Aplica a Inicio, Lista y Sol. Extraordinarias, y oculta el
+   * selector de Sublínea.
+   */
+  sublineaFija?: string;
+  /** Nombre del módulo en títulos ("Cartera de Crédito 2º Piso" por defecto). */
+  etiqueta?: string;
+}
+
+export function CarteraList({ sublineaFija, etiqueta = 'Cartera de Crédito 2º Piso' }: CarteraListProps = {}) {
   const [view, setView] = useState<ViewState>({ type: 'inicio' });
-  const { rows, loading, error, refetch } = useCreditos();
+  const { rows: rowsTodos, loading, error, refetch } = useCreditos();
+  const rows = useMemo(
+    () => (sublineaFija ? rowsTodos.filter(r => normSublinea(r.tipoProducto) === normSublinea(sublineaFija)) : rowsTodos),
+    [rowsTodos, sublineaFija],
+  );
 
   const goInicio = () => setView({ type: 'inicio' });
   const goLista  = () => setView({ type: 'lista' });
@@ -159,11 +186,12 @@ export function CarteraList() {
       {view.type === 'inicio' ? (
         <DashboardScreen rows={rows} loading={loading} error={error} refetch={refetch} onVer={c => goDetalle(c, 'ver')} />
       ) : view.type === 'lista' ? (
-        <ListScreen rows={rows} loading={loading} error={error} refetch={refetch} onVer={c => goDetalle(c, 'ver')} onEditar={c => goDetalle(c, 'editar')} />
+        <ListScreen rows={rows} loading={loading} error={error} refetch={refetch} onVer={c => goDetalle(c, 'ver')} onEditar={c => goDetalle(c, 'editar')} sublineaFija={sublineaFija} etiqueta={etiqueta} />
       ) : view.type === 'sol-ext' ? (
         <SolicitudesExtGestion />
       ) : (
-        <CarteraForm credito={view.credito} mode={view.mode === 'editar' ? 'editar' : 'ver'} onBack={goLista} />
+        <CarteraForm credito={view.credito} mode={view.mode === 'editar' ? 'editar' : 'ver'} onBack={goLista}
+          conAplicacionPagos />
       )}
     </>
   );
@@ -227,14 +255,6 @@ function DashboardScreen({ rows, loading, error, refetch, onVer }: {
 
   return (
     <div className="p-6 space-y-6 bg-[#F5F5F5] min-h-screen">
-      {/* Refresh */}
-      <div className="flex justify-end">
-        <button onClick={refetch} disabled={loading} className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-gray-300 rounded bg-white hover:bg-gray-50 text-gray-700 disabled:opacity-40">
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M2 7A5 5 0 1 0 4 3"/><path d="M2 3v4h4" strokeLinecap="round"/></svg>
-          {loading ? 'Cargando...' : 'Actualizar'}
-        </button>
-      </div>
-
       {error && <div className="px-3 py-2 bg-red-50 border border-red-200 rounded text-xs text-red-700">{error}</div>}
 
       {/* KPI Cards */}
@@ -266,7 +286,7 @@ function DashboardScreen({ rows, loading, error, refetch, onVer }: {
               <thead className="bg-gray-50 border-b border-gray-300">
                 <tr>
                   <th className="text-left px-3 py-2 font-medium text-gray-700">No. Sol.</th>
-                  <th className="text-left px-3 py-2 font-medium text-gray-700">Cliente</th>
+                  <th className="text-left px-3 py-2 font-medium text-gray-700">Nombre Interlocutor</th>
                   <th className="text-left px-3 py-2 font-medium text-gray-700">Línea</th>
                   <th className="text-right px-3 py-2 font-medium text-gray-700">Monto Aut.</th>
                   <th className="text-left px-3 py-2 font-medium text-gray-700">Estatus</th>
@@ -279,7 +299,7 @@ function DashboardScreen({ rows, loading, error, refetch, onVer }: {
                   <tr><td colSpan={5} className="px-3 py-6 text-center text-gray-400">Sin registros</td></tr>
                 ) : recientes.map((c, idx) => (
                   <tr key={c.id} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                    <td className="px-3 py-2 text-[#0066CC] cursor-pointer hover:underline font-mono" onClick={() => onVer(c)}>{c.noSol}</td>
+                    <td className="px-3 py-2 text-[color:var(--theme-link)] cursor-pointer hover:underline font-mono" onClick={() => onVer(c)}>{c.noSol}</td>
                     <td className="px-3 py-2 text-gray-900">{c.cliente}</td>
                     <td className="px-3 py-2 text-gray-600">{c.lineaProducto}</td>
                     <td className="px-3 py-2 text-gray-700 text-right">{fmtMoney(c.montoAut)}</td>
@@ -373,40 +393,67 @@ function DashboardScreen({ rows, loading, error, refetch, onVer }: {
 // ═══════════════════════════════════════════════════════════════════
 // LIST SCREEN — diseño idéntico a SolicitudActivacionList
 // ═══════════════════════════════════════════════════════════════════
-function ListScreen({ rows, loading, error, refetch, onVer, onEditar }: {
+function ListScreen({ rows, loading, error, refetch, onVer, onEditar, sublineaFija, etiqueta = 'Cartera de Crédito 2º Piso' }: {
   rows: CarteraCredito[]; loading: boolean; error: string | null;
   refetch: () => void;
   onVer: (c: CarteraCredito) => void;
   onEditar: (c: CarteraCredito) => void;
+  sublineaFija?: string;
+  etiqueta?: string;
 }) {
   const [search, setSearch]           = useState('');
   const [filtroEstatus, setFiltroEstatus] = useState('');
-  const [sortOrder, setSortOrder]     = useState<'desc' | 'asc'>('desc');
+  // Sublínea (tipo de producto). Por defecto "Créditos Personales"; la elección se recuerda.
+  const CLAVE_SUBLINEA = 'cartera-credito:sublinea';
+  const [filtroSublinea, setFiltroSublineaEstado] = useState<string>(() => {
+    if (sublineaFija) return ''; // ya viene filtrado por el módulo
+    try { return localStorage.getItem(CLAVE_SUBLINEA) ?? 'Créditos Personales'; } catch { return 'Créditos Personales'; }
+  });
+  const setFiltroSublinea = (v: string) => {
+    setFiltroSublineaEstado(v);
+    try { localStorage.setItem(CLAVE_SUBLINEA, v); } catch { /* sin almacenamiento */ }
+  };
+  const normSub = (v?: string) => (v || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
+  const sublineas = useMemo(() => {
+    const vistas = new Map<string, string>();
+    for (const r of rows) if (r.tipoProducto) vistas.set(normSub(r.tipoProducto), r.tipoProducto);
+    if (filtroSublinea && !vistas.has(normSub(filtroSublinea))) vistas.set(normSub(filtroSublinea), filtroSublinea);
+    return [...vistas.values()].sort((a, b) => a.localeCompare(b, 'es'));
+  }, [rows, filtroSublinea]);
   const [page, setPage]               = useState(1);
   const PER_PAGE = 10;
 
   const filtered = useMemo(() => {
     let list = rows;
+    if (filtroSublinea) list = list.filter(r => normSub(r.tipoProducto) === normSub(filtroSublinea));
     if (filtroEstatus) list = list.filter(r => r.estatus === filtroEstatus);
-    if (search) {
-      const q = search.toLowerCase();
-      list = list.filter(r =>
-        r.noSol.toLowerCase().includes(q) ||
-        r.cliente.toLowerCase().includes(q) ||
-        r.productoNombre.toLowerCase().includes(q) ||
-        r.lineaProducto.toLowerCase().includes(q) ||
-        r.estatus.toLowerCase().includes(q)
-      );
-    }
-    return [...list].sort((a, b) => {
-      const da = new Date(a.fechaSol || 0).getTime();
-      const db = new Date(b.fechaSol || 0).getTime();
-      return sortOrder === 'desc' ? db - da : da - db;
-    });
-  }, [rows, search, filtroEstatus, sortOrder]);
+    return list.filter(r => coincideBusqueda(search, [
+      r.noSol, r.cliente, r.productoNombre, r.lineaProducto, r.moneda, r.estatus,
+    ]));
+  }, [rows, search, filtroEstatus, filtroSublinea]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PER_PAGE));
-  const pageRows   = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
+  // Más recientes primero (fecha de solicitud; a igual fecha, el número de solicitud).
+  const orden = useOrdenTabla(filtered, {
+    id: sublineaFija ? `cartera-credito:${normSublinea(sublineaFija)}` : 'cartera-credito',
+    columnas: {
+      fecha: r => r.fechaSol,
+      noSol: r => r.noSol,
+      cliente: r => r.cliente,
+      producto: r => r.productoNombre,
+      linea: r => r.lineaProducto,
+      monto: r => r.montoAut,
+      tasa: r => r.tasa,
+      plazo: r => r.plazo,
+      moneda: r => r.moneda,
+      estatus: r => r.estatus,
+    },
+    porDefecto: { campo: 'fecha', dir: 'desc' },
+    desempate: r => r.noSol,
+    alCambiar: () => setPage(1),
+  });
+
+  const totalPages = Math.max(1, Math.ceil(orden.filas.length / PER_PAGE));
+  const pageRows   = orden.filas.slice((page - 1) * PER_PAGE, page * PER_PAGE);
 
   const statusClass = (estatus: string) => {
     if (estatus === 'Activa' || estatus === 'Autorizada') return 'text-green-700 bg-green-50 border-green-200';
@@ -439,7 +486,7 @@ function ListScreen({ rows, loading, error, refetch, onVer, onEditar }: {
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#666" strokeWidth="1.5">
               <rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18"/><path d="M8 5V3M16 5V3"/>
             </svg>
-            <h2 className="text-lg font-normal text-gray-800">Gestión de Cartera — Créditos</h2>
+            <h2 className="text-lg font-normal text-gray-800">Gestión de Cartera — {sublineaFija || 'Créditos'}</h2>
           </div>
           <div className="flex items-center gap-4 text-sm text-gray-700">
             <span className="cursor-pointer hover:text-secondary-theme transition-colors">Lista</span>
@@ -454,7 +501,7 @@ function ListScreen({ rows, loading, error, refetch, onVer, onEditar }: {
           <span className="text-sm text-gray-700">Ver</span>
           <div className="relative">
             <select className="px-3 py-1.5 border border-gray-400 rounded text-sm bg-white pr-8 appearance-none min-w-[280px]">
-              <option>Vista general de Cartera de Crédito 2º Piso</option>
+              <option>Vista general de {etiqueta}</option>
             </select>
             <svg className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" width="12" height="12" viewBox="0 0 12 12" fill="#666">
               <path d="M6 8l-4-4h8z" />
@@ -480,7 +527,20 @@ function ListScreen({ rows, loading, error, refetch, onVer, onEditar }: {
       <div className="px-4 py-2 bg-gray-50 border-b border-gray-200">
         <div className="flex items-center justify-between flex-wrap gap-2">
           <div className="flex items-center gap-2">
-            <span className="text-sm text-gray-700 font-medium">Estatus</span>
+            {!sublineaFija && (<>
+            <span className="text-sm text-gray-700 font-medium">Sublínea</span>
+            <div className="relative">
+              <select value={filtroSublinea} onChange={e => { setFiltroSublinea(e.target.value); setPage(1); }}
+                className="px-3 py-1 border border-gray-400 rounded text-sm bg-white appearance-none pr-7">
+                <option value="">Todas</option>
+                {sublineas.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+              <svg className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" width="10" height="10" viewBox="0 0 12 12" fill="#666">
+                <path d="M6 8l-4-4h8z" />
+              </svg>
+            </div>
+            </>)}
+            <span className={`text-sm text-gray-700 font-medium ${sublineaFija ? '' : 'ml-3'}`}>Estatus</span>
             <div className="relative">
               <select value={filtroEstatus} onChange={e => { setFiltroEstatus(e.target.value); setPage(1); }}
                 className="px-3 py-1 border border-gray-400 rounded text-sm bg-white appearance-none pr-7">
@@ -524,7 +584,7 @@ function ListScreen({ rows, loading, error, refetch, onVer, onEditar }: {
           <div className="flex items-center gap-4 text-sm text-gray-700">
             <div className="flex items-center gap-2">
               <span>Orden</span>
-              <select value={sortOrder} onChange={e => { setSortOrder(e.target.value as 'desc' | 'asc'); setPage(1); }}
+              <select value={orden.dir} onChange={e => orden.fijar(orden.campo, e.target.value as 'desc' | 'asc')}
                 className="px-2 py-1 border border-gray-400 rounded text-sm bg-white pr-6 appearance-none">
                 <option value="desc">Descendente</option>
                 <option value="asc">Ascendente</option>
@@ -544,15 +604,15 @@ function ListScreen({ rows, loading, error, refetch, onVer, onEditar }: {
             <thead>
               <tr className="bg-gray-100 border-b border-gray-300">
                 <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700">Editar | Ver</th>
-                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700">NO. SOL.</th>
-                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700">CLIENTE</th>
-                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700">PRODUCTO</th>
-                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700">LÍNEA</th>
-                <th className="px-2 py-2.5 text-right font-medium text-xs text-gray-700">MONTO AUT.</th>
-                <th className="px-2 py-2.5 text-center font-medium text-xs text-gray-700">TASA</th>
-                <th className="px-2 py-2.5 text-center font-medium text-xs text-gray-700">PLAZO</th>
-                <th className="px-2 py-2.5 text-center font-medium text-xs text-gray-700">MONEDA</th>
-                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700">ESTATUS</th>
+                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700" {...orden.th('noSol')}>NO. SOL.{orden.flecha('noSol')}</th>
+                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700" {...orden.th('cliente')}>NOMBRE INTERLOCUTOR{orden.flecha('cliente')}</th>
+                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700" {...orden.th('producto')}>PRODUCTO{orden.flecha('producto')}</th>
+                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700" {...orden.th('linea')}>LÍNEA{orden.flecha('linea')}</th>
+                <th className="px-2 py-2.5 text-right font-medium text-xs text-gray-700" {...orden.th('monto')}>MONTO AUT.{orden.flecha('monto')}</th>
+                <th className="px-2 py-2.5 text-center font-medium text-xs text-gray-700" {...orden.th('tasa')}>TASA{orden.flecha('tasa')}</th>
+                <th className="px-2 py-2.5 text-center font-medium text-xs text-gray-700" {...orden.th('plazo')}>PLAZO{orden.flecha('plazo')}</th>
+                <th className="px-2 py-2.5 text-center font-medium text-xs text-gray-700" {...orden.th('moneda')}>MONEDA{orden.flecha('moneda')}</th>
+                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700" {...orden.th('estatus')}>ESTATUS{orden.flecha('estatus')}</th>
               </tr>
             </thead>
             <tbody>
@@ -575,11 +635,11 @@ function ListScreen({ rows, loading, error, refetch, onVer, onEditar }: {
                   onMouseLeave={e => (e.currentTarget.style.backgroundColor = idx % 2 === 1 ? '#EEEEEE' : '#FFFFFF')}
                 >
                   <td className="px-2 py-2.5 text-xs whitespace-nowrap">
-                    <a href="#" className="text-[#0066CC] hover:underline" onClick={e => { e.preventDefault(); onEditar(c); }}>Editar</a>
+                    <button type="button" className="enlace-accion text-[color:var(--theme-link)] hover:underline" onClick={() => { onEditar(c); }}>Editar</button>
                     <span className="text-gray-500"> | </span>
-                    <a href="#" className="text-[#0066CC] hover:underline" onClick={e => { e.preventDefault(); onVer(c); }}>Ver</a>
+                    <button type="button" className="enlace-accion text-[color:var(--theme-link)] hover:underline" onClick={() => { onVer(c); }}>Ver</button>
                   </td>
-                  <td className="px-2 py-2.5 text-xs font-mono text-[#0066CC] cursor-pointer hover:underline" onClick={() => onVer(c)}>{c.noSol}</td>
+                  <td className="px-2 py-2.5 text-xs font-mono text-[color:var(--theme-link)] cursor-pointer hover:underline" onClick={() => onVer(c)}>{c.noSol}</td>
                   <td className="px-2 py-2.5 text-xs text-gray-800 font-medium max-w-[160px] truncate" title={c.cliente}>{c.cliente}</td>
                   <td className="px-2 py-2.5 text-xs text-gray-700 max-w-[140px] truncate" title={c.productoNombre}>{c.productoNombre}</td>
                   <td className="px-2 py-2.5 text-xs text-gray-600">{c.lineaProducto}</td>
@@ -602,19 +662,19 @@ function ListScreen({ rows, loading, error, refetch, onVer, onEditar }: {
       {/* ── Paginación ── */}
       <div className="px-4 py-3 border-t border-gray-300">
         <div className="flex items-center justify-end gap-3">
-          <button className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-40" onClick={() => setPage(1)} disabled={page === 1}>
+          <button type="button" aria-label="Primera página" title="Primera página" className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-40" onClick={() => setPage(1)} disabled={page === 1}>
             <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#666" strokeWidth="1.5"><path d="M13 4L4 9l9 5V4z" /></svg>
           </button>
-          <button className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-40" onClick={() => setPage(p => p - 1)} disabled={page === 1}>
+          <button type="button" aria-label="Página anterior" title="Página anterior" className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-40" onClick={() => setPage(p => p - 1)} disabled={page === 1}>
             <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#666" strokeWidth="1.5"><path d="M9 4L4 9l5 5V4z" /></svg>
           </button>
           <div className="text-sm text-gray-700 min-w-[100px] text-center">
             Página {page} de {totalPages}
           </div>
-          <button className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-40" onClick={() => setPage(p => p + 1)} disabled={page === totalPages}>
+          <button type="button" aria-label="Página siguiente" title="Página siguiente" className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-40" onClick={() => setPage(p => p + 1)} disabled={page === totalPages}>
             <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#666" strokeWidth="1.5"><path d="M5 4l5 5-5 5V4z" /></svg>
           </button>
-          <button className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-40" onClick={() => setPage(totalPages)} disabled={page === totalPages}>
+          <button type="button" aria-label="Última página" title="Última página" className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-40" onClick={() => setPage(totalPages)} disabled={page === totalPages}>
             <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#666" strokeWidth="1.5"><path d="M4 4L13 9l-9 5V4z" /></svg>
           </button>
         </div>

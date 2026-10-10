@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { saveToSession, loadFromSession, loadFromSavedStore, MOCK_FORMS, parseCurrency } from './solicitudCreditoStore';
+import { CampoMonto } from '@/app/components/ui/CampoMonto';
 
 interface Props { mode: 'nuevo' | 'editar' | 'ver'; solicitudId: number | string | 'new'; }
 
@@ -52,7 +53,7 @@ export function MontosPlazosTab({ mode, solicitudId }: Props) {
   const ic = (disabled = false, outOfRange = false) => {
     const base = 'w-full px-2 py-1 text-xs border rounded focus:outline-none';
     const border = outOfRange ? 'border-orange-400' : 'border-gray-300';
-    return `${base} ${border} ${disabled || isRO ? 'bg-gray-100 text-gray-600' : 'bg-white focus:ring-2 focus:ring-[#4A6FA5]'}`;
+    return `${base} ${border} ${disabled || isRO ? 'bg-gray-100 text-gray-600' : 'bg-white focus:ring-2 focus:ring-[color:var(--theme-primary)]'}`;
   };
 
   const handlePlazoBlur = () => {
@@ -73,7 +74,7 @@ export function MontosPlazosTab({ mode, solicitudId }: Props) {
       <div className="grid grid-cols-2 gap-x-8 gap-y-4">
         {/* PLAZOS */}
         <div className="space-y-4">
-          <div className="bg-[#D9E2F3] border-l-4 border-[#4A6FA5] px-3 py-1.5 mb-1">
+          <div className="bg-[color:var(--theme-tint)] border-l-4 border-[color:var(--theme-primary)] px-3 py-1.5 mb-1">
             <span className="text-xs text-gray-800">PLAZOS</span>
           </div>
           <div>
@@ -131,7 +132,7 @@ export function MontosPlazosTab({ mode, solicitudId }: Props) {
 
         {/* MONTOS */}
         <div className="space-y-4">
-          <div className="bg-[#D9E2F3] border-l-4 border-[#4A6FA5] px-3 py-1.5 mb-1">
+          <div className="bg-[color:var(--theme-tint)] border-l-4 border-[color:var(--theme-primary)] px-3 py-1.5 mb-1">
             <span className="text-xs text-gray-800">MONTOS</span>
           </div>
           <div>
@@ -145,8 +146,7 @@ export function MontosPlazosTab({ mode, solicitudId }: Props) {
             <label className="block text-xs text-gray-700 mb-1">MONTO AUTORIZADO <span className="text-red-600">*</span></label>
             <div className="relative">
               <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-600">$</span>
-              <input
-                type="text"
+              <CampoMonto
                 value={data.montoAutorizado}
                 onChange={e => set('montoAutorizado', e.target.value.replace(/[^0-9.,-]/g, ''))}
                 onBlur={handleMontoBlur}

@@ -62,7 +62,7 @@ export function DefaultTab({ credito }: Props) {
           </div>
           <div>
             <Field label="Producto"              value={credito.productoNombre} />
-            <Field label="Cliente"               value={credito.cliente} />
+            <Field label="Nombre Interlocutor"               value={credito.cliente} />
             <Field label="Institución Gobierno"  value={credito.gobierno} />
             <Field label="Moneda"                value={credito.moneda || 'MXN'} />
             <Field label="Responsable"           value={credito.usuario} />

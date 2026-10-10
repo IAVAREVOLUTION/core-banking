@@ -42,8 +42,8 @@ export function AutorizacionForm({ mode, autorizacion, onBack, onSave, nextId, s
 
   const isReadOnly = mode === 'view';
   const inputClass = mode === 'create' 
-    ? 'w-full px-3 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-[#2E5C91]'
-    : 'w-full px-3 py-1.5 border-0 border-b border-gray-300 bg-transparent text-sm focus:outline-none focus:border-[#2E5C91]';
+    ? 'w-full px-3 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-[color:var(--theme-secondary)]'
+    : 'w-full px-3 py-1.5 border-0 border-b border-gray-300 bg-transparent text-sm focus:outline-none focus:border-[color:var(--theme-secondary)]';
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -71,20 +71,20 @@ export function AutorizacionForm({ mode, autorizacion, onBack, onSave, nextId, s
       </div>
 
       {/* Barra de navegación principal */}
-      <div className="bg-[#2E5C91] px-6 py-0 flex items-center gap-6 text-white text-xs overflow-x-auto">
-        <button className="px-3 py-2 hover:bg-[#1E4C81] whitespace-nowrap">Configuración</button>
-        <button className="px-3 py-2 hover:bg-[#1E4C81] whitespace-nowrap">Productos</button>
-        <button className="px-3 py-2 hover:bg-[#1E4C81] whitespace-nowrap">Bienes</button>
-        <button className="px-3 py-2 hover:bg-[#1E4C81] whitespace-nowrap">Prospectos</button>
-        <button className="px-3 py-2 hover:bg-[#1E4C81] whitespace-nowrap">Clientes</button>
-        <button className="px-3 py-2 hover:bg-[#1E4C81] whitespace-nowrap">Cuentas ahorro</button>
-        <button className="px-3 py-2 bg-[#1E4C81] border-b-2 border-white whitespace-nowrap">Solicitudes crédito</button>
-        <button className="px-3 py-2 hover:bg-[#1E4C81] whitespace-nowrap">Créditos</button>
-        <button className="px-3 py-2 hover:bg-[#1E4C81] whitespace-nowrap">Inversiones</button>
-        <button className="px-3 py-2 hover:bg-[#1E4C81] whitespace-nowrap">Cartera crédito</button>
-        <button className="px-3 py-2 hover:bg-[#1E4C81] whitespace-nowrap">Cartera inversión</button>
-        <button className="px-3 py-2 hover:bg-[#1E4C81] whitespace-nowrap">Cartera ahorro</button>
-        <button className="px-3 py-2 hover:bg-[#1E4C81] whitespace-nowrap">Avisos</button>
+      <div className="bg-[color:var(--theme-secondary)] px-6 py-0 flex items-center gap-6 text-white text-xs overflow-x-auto">
+        <button className="px-3 py-2 hover:bg-[color:var(--theme-secondary-hover)] whitespace-nowrap">Configuración</button>
+        <button className="px-3 py-2 hover:bg-[color:var(--theme-secondary-hover)] whitespace-nowrap">Productos</button>
+        <button className="px-3 py-2 hover:bg-[color:var(--theme-secondary-hover)] whitespace-nowrap">Bienes</button>
+        <button className="px-3 py-2 hover:bg-[color:var(--theme-secondary-hover)] whitespace-nowrap">Tipo Interlocutor</button>
+        <button className="px-3 py-2 hover:bg-[color:var(--theme-secondary-hover)] whitespace-nowrap">Clientes</button>
+        <button className="px-3 py-2 hover:bg-[color:var(--theme-secondary-hover)] whitespace-nowrap">Cuentas ahorro</button>
+        <button className="px-3 py-2 bg-[color:var(--theme-secondary-hover)] border-b-2 border-white whitespace-nowrap">Solicitudes crédito</button>
+        <button className="px-3 py-2 hover:bg-[color:var(--theme-secondary-hover)] whitespace-nowrap">Créditos</button>
+        <button className="px-3 py-2 hover:bg-[color:var(--theme-secondary-hover)] whitespace-nowrap">Inversiones</button>
+        <button className="px-3 py-2 hover:bg-[color:var(--theme-secondary-hover)] whitespace-nowrap">Cartera crédito</button>
+        <button className="px-3 py-2 hover:bg-[color:var(--theme-secondary-hover)] whitespace-nowrap">Cartera inversión</button>
+        <button className="px-3 py-2 hover:bg-[color:var(--theme-secondary-hover)] whitespace-nowrap">Cartera ahorro</button>
+        <button className="px-3 py-2 hover:bg-[color:var(--theme-secondary-hover)] whitespace-nowrap">Avisos</button>
       </div>
 
       {/* Breadcrumb y título */}
@@ -102,7 +102,7 @@ export function AutorizacionForm({ mode, autorizacion, onBack, onSave, nextId, s
               <>
                 <button
                   onClick={handleSubmit}
-                  className="px-4 py-1.5 bg-[#2E5C91] text-white text-xs font-medium rounded hover:bg-[#1E4C81]"
+                  className="px-4 py-1.5 bg-[color:var(--theme-secondary)] text-white text-xs font-medium rounded hover:bg-[color:var(--theme-secondary-hover)]"
                 >
                   Guardar
                 </button>
@@ -204,8 +204,8 @@ export function AutorizacionForm({ mode, autorizacion, onBack, onSave, nextId, s
                 rows={3}
                 maxLength={255}
                 className={mode === 'create' 
-                  ? 'w-full px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-[#2E5C91] resize-none'
-                  : 'w-full px-3 py-2 border-0 border-b border-gray-300 bg-transparent text-sm focus:outline-none focus:border-[#2E5C91] resize-none'
+                  ? 'w-full px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-[color:var(--theme-secondary)] resize-none'
+                  : 'w-full px-3 py-2 border-0 border-b border-gray-300 bg-transparent text-sm focus:outline-none focus:border-[color:var(--theme-secondary)] resize-none'
                 }
                 placeholder={mode === 'create' ? 'Ej: Sin Observaciones' : ''}
               />

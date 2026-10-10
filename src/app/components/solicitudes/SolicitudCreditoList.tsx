@@ -1,13 +1,14 @@
 import { useState, useRef, useEffect } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
+import { useOrdenTabla, coincideBusqueda } from '@/app/lib/ordenTabla';
 import { SolicitudCreditoForm } from './SolicitudCreditoForm';
 import {
   SolicitudListItem, SOLICITUDES_LISTA,
   clearSession, migrateSavedStore, deleteSavedStore, saveToSavedStore, saveToSession, formatCurrency as fmtCur,
-  EMPTY_FORM, EMPTY_TERMINOS, consumeNoSol, getFechaSolicitudNow,
+  EMPTY_FORM, EMPTY_TERMINOS, consumeNoSol, getFechaSolicitudNow, versionFromDB,
 } from './solicitudCreditoStore';
 import { createCreditoFromSolicitud } from '../creditos/creditoStore';
-import { useSolicitudesDB } from '../../hooks/useSolicitudesDB';
+import { useSolicitudesDB, asegurarDetalleSolicitud } from '../../hooks/useSolicitudesDB';
 import { useProductosCatalogoDB } from '../../hooks/useProductosCatalogoDB';
 
 type ViewState = { type: 'list' } | { type: 'form'; mode: 'nuevo' | 'editar' | 'ver'; solicitudId?: number | string; dbId?: string };
@@ -65,6 +66,30 @@ function normalizeTipoPersona(raw: string): string {
   if (l.includes('moral')) return 'Moral';
   if (l.includes('f') || l.includes('física') || l.includes('fisica')) return 'Física';
   return raw;
+}
+
+/**
+ * Siembra sessionStorage con una solicitud del listado para abrir su
+ * formulario. Primero garantiza el JSONB completo: el listado ligero sólo trae
+ * un resumen y precargar con él dejaría los subtabs vacíos.
+ */
+export async function sembrarSolicitudParaAbrir(sid: number | string, s: SolicitudListItem): Promise<boolean> {
+  try {
+    await asegurarDetalleSolicitud(s as any);
+  } catch (err: any) {
+    toast.error('No se pudo abrir la solicitud', { description: err?.message || String(err) });
+    return false;
+  }
+  clearSession(sid);
+  saveToSession(sid, 'form', buildFormDataFromListItem(s));
+  const dbData = (s as any)._data;
+  if (dbData && typeof dbData === 'object') {
+    preloadSubtabsFromDBData(sid, dbData, {
+      montoCubrirGarantia: (s as any)._montoCubrirGarantia,
+      porcentajeAforo: (s as any)._porcentajeAforo,
+    });
+  }
+  return true;
 }
 
 export function buildFormDataFromListItem(s: SolicitudListItem): Record<string, any> {
@@ -142,6 +167,13 @@ export function preloadSubtabsFromDBData(
   d: Record<string, any>,
   rowExtras?: { montoCubrirGarantia?: number | null; porcentajeAforo?: number | null },
 ) {
+  // REQ rendimiento: el listado ligero trae un JSONB reducido. Precargar con él
+  // dejaría los subtabs vacíos y un guardado posterior los borraría en BD.
+  // Quien abre una solicitud debe llamar antes a asegurarDetalleSolicitud().
+  if (d?._resumen) {
+    console.error('[preloadSubtabsFromDBData] Se recibió el JSONB reducido del listado; no se precarga. Falta asegurarDetalleSolicitud().');
+    return;
+  }
   // Preserve original JSONB so that on UPDATE we can merge instead of overwrite
   // Guardar en AMBOS: session (acceso rápido) y savedStore (persiste tras commitAndClearSession)
   saveToSession(storageId, '_originalData', d);
@@ -330,6 +362,7 @@ export function preloadSubtabsFromDBData(
         tamanoKB:      doc.tamano_kb || 0,
         iaMotivos:     doc.ia_motivos || [],
         iaExtraido:    doc.ia_extraido || {},
+        ...versionFromDB(doc),
       };
     }));
   }
@@ -392,6 +425,16 @@ export function preloadSubtabsFromDBData(
       id: i + 1, fecha: n.fecha || '', usuario: n.usuario || '',
       puesto: n.puesto || '', nota: n.nota || '', archivoAdjunto: n.archivo_adjunto || '',
     })));
+  }
+  // Comités y activaciones de dispersión: ahora se leen de la BD al abrir.
+  if (Array.isArray(sol.comites) && sol.comites.length > 0) {
+    saveToSession(storageId, 'comites', sol.comites.map((c: any, i: number) => ({
+      id: c.id ?? i + 1, autoridad: c.autoridad || '', estatus: c.estatus || 'Pendiente',
+      fecha: c.fecha || '', observaciones: c.observaciones || '',
+    })));
+  }
+  if (Array.isArray(sol.activaciones_dispersion) && sol.activaciones_dispersion.length > 0) {
+    saveToSession(storageId, 'activacionesDispersion', sol.activaciones_dispersion.map((x: any) => String(x)));
   }
   // REQ-11 — Votación del Comité de Prepago y Crédito.
   if (sol.votacion_cpc?.votos?.length > 0) {
@@ -490,7 +533,6 @@ export function SolicitudCreditoList({
   );
   const [dbLoaded, setDbLoaded] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
-  const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 8;
   const tableRef = useRef<HTMLDivElement>(null);
@@ -580,19 +622,12 @@ export function SolicitudCreditoList({
       // porque nadie los había copiado a session antes de abrir el form.
       // Mismas 2 llamadas que handleVer, con clearSession primero para no
       // arrastrar un session leftover de otra solicitud con el mismo sid.
-      clearSession(sid);
-      const formData = buildFormDataFromListItem(found);
-      saveToSession(sid, 'form', formData);
-      const dbData = (found as any)._data;
-      if (dbData && typeof dbData === 'object') {
-        preloadSubtabsFromDBData(sid, dbData, {
-          montoCubrirGarantia: (found as any)._montoCubrirGarantia,
-          porcentajeAforo: (found as any)._porcentajeAforo,
-        });
-      }
-      setView({ type: 'form', mode: modoApertura, solicitudId: sid, dbId: (found as any)._dbId || String(sid) });
-      // Limpiar deep link
+      // Limpiar deep link ya (la carga del detalle es asíncrona y este efecto
+      // podría volver a correr si cambia la lista mientras tanto).
       onSolicitudDeepLinkConsumed?.();
+      sembrarSolicitudParaAbrir(sid, found).then(ok => {
+        if (ok) setView({ type: 'form', mode: modoApertura, solicitudId: sid, dbId: (found as any)._dbId || String(sid) });
+      });
     } else {
       // Limpiar de todas formas para evitar loop
       onSolicitudDeepLinkConsumed?.();
@@ -672,6 +707,15 @@ export function SolicitudCreditoList({
         montoGarantia: tc.montoGarantia || '',
         seguroFinanciado: tc.seguroFinanciado || false,
         montoSeguro: tc.montoSeguro || '',
+        // Bien y seguro elegidos en la cotización
+        ...(tc.tipoGarantia ? {
+          _garantiaActiva: true,
+          tipoGarantia: tc.tipoGarantia,
+          subtipoGarantia: tc.subtipoGarantia || '',
+          porcentajeAforo: tc.porcentajeAforo,
+          montoCubrirGarantia: tc.montoCubrirGarantia,
+        } : {}),
+        ...(tc.seguroNombre ? { seguroNombre: tc.seguroNombre, seguroProductoIdCot: tc.seguroProductoIdCot || '', seguroMontoDefaultCot: tc.seguroMontoDefaultCot, tasaSeguroCot: tc.tasaSeguro } : {}),
         // Garantía Financiera 2o Piso (GPO) — heredados de la Oportunidad (Línea de Crédito).
         ...(tc.sectorInfraestructura !== undefined ? { sectorInfraestructura: tc.sectorInfraestructura } : {}),
         ...(tc.montoEmisionProyectado !== undefined ? { montoEmisionProyectado: tc.montoEmisionProyectado } : {}),
@@ -687,6 +731,13 @@ export function SolicitudCreditoList({
       const simRows = tc._simulacion;
       if (Array.isArray(simRows) && simRows.length > 0) {
         saveToSession('new', 'simulacion', simRows);
+        // Marca para el formulario: esta simulación viene de la cotización y no
+        // debe limpiarse al abrir (el prop cotizacionData ya llega en null).
+        // Sólo Cotización: el flujo de Oportunidad (Banca 2º Piso, trae campos GPO)
+        // se deja exactamente como estaba.
+        const vieneDeOportunidad = tc.sectorInfraestructura !== undefined
+          || tc.montoGarantizadoGpo !== undefined || tc.plazosProducto !== undefined;
+        if (!vieneDeOportunidad) saveToSession('new', 'simulacion_desde_cotizacion', true);
       }
     }
 
@@ -865,6 +916,7 @@ estatusSolicitud: s.estatusSolicitud || d.estatusSolicitud || 'Pendiente',
         // ── Resultados de validación IA ──
         iaMotivos: doc.ia_motivos || [],
         iaExtraido: doc.ia_extraido || {},
+        ...versionFromDB(doc),
       })));
     }
 
@@ -917,34 +969,14 @@ estatusSolicitud: s.estatusSolicitud || d.estatusSolicitud || 'Pendiente',
     }
   };
 
-  const handleEditar = (s: SolicitudListItem) => {
+  const abrir = async (s: SolicitudListItem, mode: 'editar' | 'ver') => {
     const sid = resolveStorageId(s);
-    clearSession(sid);
-    const formData = buildFormDataFromListItem(s);
-    saveToSession(sid, 'form', formData);
-    const dbData = (s as any)._data;
-    if (dbData && typeof dbData === 'object') {
-      preloadSubtabsFromDBData(sid, dbData, {
-        montoCubrirGarantia: (s as any)._montoCubrirGarantia,
-        porcentajeAforo: (s as any)._porcentajeAforo,
-      });
+    if (await sembrarSolicitudParaAbrir(sid, s)) {
+      setView({ type: 'form', mode, solicitudId: sid, dbId: (s as any)._dbId || String(s.id) });
     }
-    setView({ type: 'form', mode: 'editar', solicitudId: sid, dbId: (s as any)._dbId || String(s.id) });
   };
-  const handleVer = (s: SolicitudListItem) => {
-    const sid = resolveStorageId(s);
-    clearSession(sid);
-    const formData = buildFormDataFromListItem(s);
-    saveToSession(sid, 'form', formData);
-    const dbData = (s as any)._data;
-    if (dbData && typeof dbData === 'object') {
-      preloadSubtabsFromDBData(sid, dbData, {
-        montoCubrirGarantia: (s as any)._montoCubrirGarantia,
-        porcentajeAforo: (s as any)._porcentajeAforo,
-      });
-    }
-    setView({ type: 'form', mode: 'ver', solicitudId: sid, dbId: (s as any)._dbId || String(s.id) });
-  };
+  const handleEditar = (s: SolicitudListItem) => { abrir(s, 'editar'); };
+  const handleVer = (s: SolicitudListItem) => { abrir(s, 'ver'); };
   const handleBack = () => {
     // Si venimos de una Oportunidad, regresar a su formulario
     if (cameFromOportunidad && onBackToOportunidad) {
@@ -1044,38 +1076,54 @@ estatusSolicitud: s.estatusSolicitud || d.estatusSolicitud || 'Pendiente',
     setView({ type: 'list' });
   };
 
+  // ─── LIST VIEW: filtro y orden ───
+  // Van ANTES del return del formulario: useOrdenTabla es un hook y no puede
+  // quedar después de un return condicional.
+  const clienteFiltered = clienteIdFilter
+    ? solicitudes.filter(s => (s as any)._clienteId === clienteIdFilter)
+    : solicitudes;
+
+  const filteredSolicitudes = clienteFiltered.filter(s => coincideBusqueda(searchTerm, [
+    s.noSol, s.nombreCompleto, s.tipoProducto, s.nombreProducto, s.fechaSolicitud,
+    s.sucursal, s.faseDescripcion, s.estatusSolicitud,
+  ]));
+
+  // Más recientes primero (fecha de solicitud; a igual fecha, el número de solicitud).
+  const orden = useOrdenTabla(filteredSolicitudes, {
+    id: 'solicitudes',
+    columnas: {
+      noSol: s => s.noSol,
+      solicitante: s => s.nombreCompleto,
+      tipo: s => s.tipoProducto,
+      producto: s => s.nombreProducto,
+      fecha: s => parseDate(s.fechaSolicitud),
+      montoSol: s => s.montoSolicitado,
+      montoAut: s => s.montoAutorizado,
+      sucursal: s => s.sucursal,
+      fase: s => s.faseDescripcion,
+      estatus: s => s.estatusSolicitud,
+    },
+    porDefecto: { campo: 'fecha', dir: 'desc' },
+    desempate: s => s.noSol,
+    alCambiar: () => setCurrentPage(1),
+  });
+
   // ─── FORM VIEW ───
   if (view.type === 'form') {
     return <SolicitudCreditoForm key={`${view.mode}-${view.solicitudId ?? 'new'}`} mode={view.mode} solicitudId={view.solicitudId} onCancel={handleBack} onSave={handleSave} cotizacionData={cotizacionParaSolicitud} />;
   }
 
   // ─── LIST VIEW ───
-  const clienteFiltered = clienteIdFilter
-    ? solicitudes.filter(s => (s as any)._clienteId === clienteIdFilter)
-    : solicitudes;
-
-  const filteredSolicitudes = clienteFiltered
-    .filter(s => {
-      const q = searchTerm.toLowerCase();
-      return s.noSol.toLowerCase().includes(q) || s.nombreCompleto.toLowerCase().includes(q) ||
-        s.sucursal.toLowerCase().includes(q) || s.nombreProducto.toLowerCase().includes(q);
-    })
-    .sort((a, b) => {
-      const dateA = parseDate(a.fechaSolicitud).getTime();
-      const dateB = parseDate(b.fechaSolicitud).getTime();
-      return sortOrder === 'desc' ? dateB - dateA : dateA - dateB;
-    });
-
-  const totalPages = Math.ceil(filteredSolicitudes.length / itemsPerPage);
+  const totalPages = Math.ceil(orden.filas.length / itemsPerPage);
   const startIndex = (currentPage - 1) * itemsPerPage;
-  const currentSolicitudes = filteredSolicitudes.slice(startIndex, startIndex + itemsPerPage);
+  const currentSolicitudes = orden.filas.slice(startIndex, startIndex + itemsPerPage);
 
   const handlePreviousPage = () => { if (currentPage > 1) setCurrentPage(currentPage - 1); };
   const handleNextPage = () => { if (currentPage < totalPages) setCurrentPage(currentPage + 1); };
   const handleFirstPage = () => setCurrentPage(1);
   const handleLastPage = () => setCurrentPage(totalPages);
   const handleSearchChange = (v: string) => { setSearchTerm(v); setCurrentPage(1); };
-  const handleSortChange = (v: 'desc' | 'asc') => { setSortOrder(v); setCurrentPage(1); };
+  const handleSortChange = (v: 'desc' | 'asc') => orden.fijar(orden.campo, v);
 
   return (
     <div className="bg-white min-h-screen">
@@ -1185,7 +1233,7 @@ estatusSolicitud: s.estatusSolicitud || d.estatusSolicitud || 'Pendiente',
           <div className="flex items-center gap-4 text-sm text-gray-700">
             <div className="flex items-center gap-2">
               <span>Orden</span>
-              <select value={sortOrder} onChange={(e) => handleSortChange(e.target.value as any)} className="px-2 py-1 border border-gray-400 rounded text-sm bg-white pr-6 appearance-none">
+              <select value={orden.dir} onChange={(e) => handleSortChange(e.target.value as any)} className="px-2 py-1 border border-gray-400 rounded text-sm bg-white pr-6 appearance-none">
                 <option value="desc">Descendente</option>
                 <option value="asc">Ascendente</option>
               </select>
@@ -1202,16 +1250,16 @@ estatusSolicitud: s.estatusSolicitud || d.estatusSolicitud || 'Pendiente',
             <thead>
               <tr className="bg-gray-100 border-b border-gray-300">
                 <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700">Editar | Ver</th>
-                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700">N° SOLICITUD</th>
-                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700">SOLICITANTE</th>
-                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700">TIPO PRODUCTO</th>
-                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700">PRODUCTO</th>
-                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700">FECHA</th>
-                <th className="px-2 py-2.5 text-right font-medium text-xs text-gray-700">MONTO SOL.</th>
-                <th className="px-2 py-2.5 text-right font-medium text-xs text-gray-700">MONTO AUT.</th>
-                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700">SUCURSAL</th>
-                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700">FASE</th>
-                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700">ESTATUS</th>
+                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700" {...orden.th('noSol')}>N° SOLICITUD{orden.flecha('noSol')}</th>
+                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700" {...orden.th('solicitante')}>SOLICITANTE{orden.flecha('solicitante')}</th>
+                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700" {...orden.th('tipo')}>TIPO PRODUCTO{orden.flecha('tipo')}</th>
+                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700" {...orden.th('producto')}>PRODUCTO{orden.flecha('producto')}</th>
+                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700" {...orden.th('fecha')}>FECHA{orden.flecha('fecha')}</th>
+                <th className="px-2 py-2.5 text-right font-medium text-xs text-gray-700" {...orden.th('montoSol')}>MONTO SOL.{orden.flecha('montoSol')}</th>
+                <th className="px-2 py-2.5 text-right font-medium text-xs text-gray-700" {...orden.th('montoAut')}>MONTO AUT.{orden.flecha('montoAut')}</th>
+                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700" {...orden.th('sucursal')}>SUCURSAL{orden.flecha('sucursal')}</th>
+                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700" {...orden.th('fase')}>FASE{orden.flecha('fase')}</th>
+                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700" {...orden.th('estatus')}>ESTATUS{orden.flecha('estatus')}</th>
               </tr>
             </thead>
             <tbody>
@@ -1227,9 +1275,9 @@ estatusSolicitud: s.estatusSolicitud || d.estatusSolicitud || 'Pendiente',
                     onMouseLeave={(e) => e.currentTarget.style.backgroundColor = idx % 2 === 1 ? '#EEEEEE' : '#FFFFFF'}
                   >
                     <td className="px-2 py-2.5 text-xs whitespace-nowrap">
-                      <a href="#" className="text-[#0066CC] hover:underline" onClick={(e) => { e.preventDefault(); handleEditar(s); }}>Editar</a>
+                      <button type="button" className="enlace-accion text-[color:var(--theme-link)] hover:underline" onClick={() => { handleEditar(s); }}>Editar</button>
                       <span className="text-gray-500"> | </span>
-                      <a href="#" className="text-[#0066CC] hover:underline" onClick={(e) => { e.preventDefault(); handleVer(s); }}>Ver</a>
+                      <button type="button" className="enlace-accion text-[color:var(--theme-link)] hover:underline" onClick={() => { handleVer(s); }}>Ver</button>
                     </td>
                     <td className="px-2 py-2.5 text-xs text-gray-700 max-w-[180px] truncate" title={s.noSol}>{s.noSol}</td>
                     <td className="px-2 py-2.5 text-xs text-gray-700 max-w-[160px] truncate" title={s.nombreCompleto}>{s.nombreCompleto}</td>
@@ -1260,17 +1308,17 @@ estatusSolicitud: s.estatusSolicitud || d.estatusSolicitud || 'Pendiente',
       {/* Pagination */}
       <div className="px-4 py-3 border-t border-gray-300">
         <div className="flex items-center justify-end gap-3">
-          <button className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-40" onClick={handleFirstPage} disabled={currentPage === 1}>
+          <button type="button" aria-label="Primera página" title="Primera página" className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-40" onClick={handleFirstPage} disabled={currentPage === 1}>
             <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#666" strokeWidth="1.5"><path d="M13 4L4 9l9 5V4z" /></svg>
           </button>
-          <button className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-40" onClick={handlePreviousPage} disabled={currentPage === 1}>
+          <button type="button" aria-label="Página anterior" title="Página anterior" className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-40" onClick={handlePreviousPage} disabled={currentPage === 1}>
             <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#666" strokeWidth="1.5"><path d="M9 4L4 9l5 5V4z" /></svg>
           </button>
           <div className="text-sm text-gray-700 min-w-[100px] text-center">Página {currentPage} de {totalPages || 1}</div>
-          <button className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-40" onClick={handleNextPage} disabled={currentPage === totalPages}>
+          <button type="button" aria-label="Página siguiente" title="Página siguiente" className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-40" onClick={handleNextPage} disabled={currentPage === totalPages}>
             <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#666" strokeWidth="1.5"><path d="M5 4l5 5-5 5V4z" /></svg>
           </button>
-          <button className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-40" onClick={handleLastPage} disabled={currentPage === totalPages}>
+          <button type="button" aria-label="Última página" title="Última página" className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-40" onClick={handleLastPage} disabled={currentPage === totalPages}>
             <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#666" strokeWidth="1.5"><path d="M4 4L13 9l-9 5V4z" /></svg>
           </button>
         </div>
@@ -1280,9 +1328,9 @@ estatusSolicitud: s.estatusSolicitud || d.estatusSolicitud || 'Pendiente',
       {showGenerarModal && solicitudToGenerate && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="bg-white rounded shadow-xl w-full max-w-lg overflow-hidden">
-            <div className="bg-[#4A6FA5] px-6 py-4 flex items-center justify-between">
+            <div className="bg-[color:var(--theme-primary)] px-6 py-4 flex items-center justify-between">
               <h3 className="text-base text-white">Confirmar Generación de Crédito</h3>
-              <button onClick={() => { setShowGenerarModal(false); setSolicitudToGenerate(null); }} className="text-white hover:text-gray-200">
+              <button type="button" aria-label="Cerrar" title="Cerrar" onClick={() => { setShowGenerarModal(false); setSolicitudToGenerate(null); }} className="text-white hover:text-gray-200">
                 <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor"><path d="M10 8.586L2.929 1.515 1.515 2.929 8.586 10l-7.071 7.071 1.414 1.414L10 11.414l7.071 7.071 1.414-1.414L11.414 10l7.071-7.071-1.414-1.414L10 8.586z" /></svg>
               </button>
             </div>

@@ -66,7 +66,7 @@ interface FaseActionsComponentProps {
    */
   plantillasProducto?: { tipoPlantilla?: string; estatus?: string }[];
   /** Solicitud de Activación existente (para fase 3+) */
-  existingActivacion?: { id: string; estatus: string } | null;
+  existingActivacion?: { id: string | number; estatus: string } | null;
   /** Generar Factura de Pago Inicial — Arrendamiento Puro, fase "Recaudación Inicial y Compra" */
   onGenerarFacturaInicial?: () => void;
   /** Generar Factura del Proveedor (CFDI) — Arrendamiento Puro, fase "Recepción del Activo y Cierre" */
@@ -249,10 +249,10 @@ export function FaseActionsComponent({
     return (
       <>
         {inconsistencyBanner}
-        <div className={`rounded px-4 py-3 mb-4 border ${flujoCerrado ? 'bg-[#F0FDF4] border-[#16A34A]' : 'bg-[#EBF3FB] border-[#4A6FA5]'}`}>
+        <div className={`rounded px-4 py-3 mb-4 border ${flujoCerrado ? 'bg-[#F0FDF4] border-[#16A34A]' : 'bg-[#EBF3FB] border-[color:var(--theme-primary)]'}`}>
           <div className="flex items-center justify-between">
             <span className="text-xs text-gray-700">
-              <strong>Fase actual:</strong>{' '}
+              <strong>Etapa actual:</strong>{' '}
               {faseActualReal?.fase || formData.descripcionFase || '—'}
               {seqActual > 0 && (
                 <span className="ml-1 text-gray-400">(#{seqActual})</span>
@@ -278,7 +278,7 @@ export function FaseActionsComponent({
                 <button
                   onClick={onSolicitudActivacion}
                   disabled={enviandoFase || !onSolicitudActivacion}
-                  className="px-4 py-1.5 bg-[#2E5C91] text-white rounded text-xs hover:bg-[#1E4A75] flex items-center gap-1.5 disabled:opacity-50"
+                  className="px-4 py-1.5 bg-[color:var(--theme-secondary)] text-white rounded text-xs hover:bg-[color:var(--theme-secondary-hover)] flex items-center gap-1.5 disabled:opacity-50"
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <path d="M9 12l2 2 4-4" />
@@ -292,7 +292,7 @@ export function FaseActionsComponent({
                 <button
                   onClick={onSolicitudActivacion}
                   disabled={enviandoFase || !onSolicitudActivacion}
-                  className="px-4 py-1.5 bg-[#2E5C91] text-white rounded text-xs hover:bg-[#1E4A75] flex items-center gap-1.5 disabled:opacity-50"
+                  className="px-4 py-1.5 bg-[color:var(--theme-secondary)] text-white rounded text-xs hover:bg-[color:var(--theme-secondary-hover)] flex items-center gap-1.5 disabled:opacity-50"
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <path d="M9 12l2 2 4-4" />
@@ -376,13 +376,13 @@ export function FaseActionsComponent({
     <>
       {inconsistencyBanner}
 
-      <div className={`rounded px-4 py-3 mb-4 border ${flujoCerrado ? 'bg-[#F0FDF4] border-[#16A34A]' : 'bg-[#EBF3FB] border-[#4A6FA5]'}`}>
+      <div className={`rounded px-4 py-3 mb-4 border ${flujoCerrado ? 'bg-[#F0FDF4] border-[#16A34A]' : 'bg-[#EBF3FB] border-[color:var(--theme-primary)]'}`}>
         {/* Fila info + botones */}
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div className="flex items-center gap-3 min-w-0">
             {/* Icono de estado: un cierre se reconoce antes de leer nada. */}
             <div className={`shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${
-              flujoCerrado ? 'bg-[#16A34A] text-white' : 'bg-[#4A6FA5] text-white'
+              flujoCerrado ? 'bg-[#16A34A] text-white' : 'bg-[color:var(--theme-primary)] text-white'
             }`}>
               {flujoCerrado ? (
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
@@ -490,7 +490,7 @@ export function FaseActionsComponent({
               <button
                 onClick={onSolicitudActivacion}
                 disabled={enviandoFase || !onSolicitudActivacion}
-                className="px-4 py-1.5 bg-[#2E5C91] text-white rounded text-xs hover:bg-[#1E4A75] flex items-center gap-1.5 disabled:opacity-50"
+                className="px-4 py-1.5 bg-[color:var(--theme-secondary)] text-white rounded text-xs hover:bg-[color:var(--theme-secondary-hover)] flex items-center gap-1.5 disabled:opacity-50"
               >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <path d="M9 12l2 2 4-4" />
@@ -586,7 +586,7 @@ export function FaseActionsComponent({
         {/* Contexto de navegación — separado del titular por una línea, para que
             deje de leerse como una continuación del nombre de la fase. */}
         <div className={`mt-2.5 pt-2 border-t flex items-center gap-x-4 gap-y-1 flex-wrap text-[11px] text-gray-500 ${
-          flujoCerrado ? 'border-green-200' : 'border-[#4A6FA5]/20'
+          flujoCerrado ? 'border-green-200' : 'border-[color:var(--theme-primary)]/20'
         }`}>
           {faseAnterior && !flujoCerrado && (
             <span>← Anterior: <span className="text-gray-600">{faseAnterior.fase}</span></span>

@@ -11,7 +11,7 @@
  * sistema todavía no tiene modelo de datos para ella (§Decisión #1 de la HU).
  */
 import { useState } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 import { DefaultTab } from '../cartera/DefaultTab';
 import { SolicitudesExtTab } from '../cartera/SolicitudesExtTab';
 import { ExpedienteElectronicoTab } from '../solicitudes/ExpedienteElectronicoTab';
@@ -19,6 +19,7 @@ import { AvisosVencimientoTab } from '../cartera/AvisosVencimientoTab';
 import { CalendarioComisionesTab } from './CalendarioComisionesTab';
 import { EnvioPrelacionTab } from './EnvioPrelacionTab';
 import { DisposicionesTab } from './DisposicionesTab';
+import { AplicacionPagosTab } from '../cartera/AplicacionPagosTab';
 import {
   fmtMoneyExacto, parseMon, guardarBanca2oPiso,
   SUB_ESTATUS_2O_PISO, type SubEstatus2oPiso, type LineaCreditoRow,
@@ -28,13 +29,15 @@ import { loadFromSession, loadFromSavedStore } from '../solicitudes/solicitudCre
 const TABS = [
   { id: 'default', label: 'Default' },
   { id: 'terminos', label: 'Términos y Condiciones' },
-  { id: 'expediente', label: 'Expediente Electrónico' },
+  { id: 'expediente', label: 'KM Digital' },
   { id: 'cargos', label: 'Cargos' },
   { id: 'solicitudes-ext', label: 'Solicitudes Extraordinarias' },
   { id: 'disposiciones', label: 'Disposiciones' },
   // ── REQ-18 ──
   { id: 'calendario-comisiones', label: 'Calendario de Comisiones' },
   { id: 'avisos-vencimiento', label: 'Avisos de Vencimiento' },
+  // Mismo subtab que Cartera Crédito Individual (motorAplicacionPagos).
+  { id: 'aplicacion-pagos', label: 'Aplicación de Pagos' },
   { id: 'envio-prelacion', label: 'Envío Prelación' },
 ];
 
@@ -61,7 +64,7 @@ export function Banca2oPisoDetalle({
   const [activeTab, setActiveTab] = useState('default');
 
   const chips = [
-    { label: 'Cliente', value: row.cliente },
+    { label: 'Nombre Interlocutor', value: row.cliente },
     { label: 'Inst. Gobierno', value: row.gobierno || '—' },
     { label: 'Producto', value: row.productoNombre },
     { label: 'Línea', value: row.lineaProducto },
@@ -167,6 +170,12 @@ export function Banca2oPisoDetalle({
               tipoPersona={row.tipoPersona}
               lineaProducto={row.lineaProducto}
               descripcionFase={row.descripcionFase}
+              // Los documentos llegan de la BD (data.solicitud.expediente_
+              // electronico.documentos). El tab solo lee sessionStorage del
+              // namespace sol_credito_, que este modulo nunca llena: se puede
+              // abrir sin haber pasado por el formulario de la Solicitud, y por
+              // eso la pestaña salia vacia aunque si hubiera archivos.
+              documentosIniciales={row.documentos}
               soloArchivos
             />
           </div>
@@ -212,6 +221,12 @@ export function Banca2oPisoDetalle({
               <span className="text-sm font-medium text-gray-800">AVISOS DE VENCIMIENTO DE LA LÍNEA</span>
             </div>
             <AvisosVencimientoTab solicitudId={row.id} />
+          </div>
+        )}
+
+        {activeTab === 'aplicacion-pagos' && (
+          <div className="bg-white border border-gray-300 p-4">
+            <AplicacionPagosTab solicitudId={row.id} clienteId={row.clienteId} productoId={row.productoId} noSol={row.noSol} isRO={false} />
           </div>
         )}
 
@@ -270,7 +285,7 @@ function SubEstatusLinea({ row, onCambio }: { row: LineaCreditoRow; onCambio?: (
             value={valor}
             disabled={guardando}
             onChange={e => handleChange(e.target.value as SubEstatus2oPiso)}
-            className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-[#4A6FA5] disabled:bg-gray-100"
+            className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-[color:var(--theme-primary)] disabled:bg-gray-100"
           >
             {SUB_ESTATUS_2O_PISO.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
@@ -459,7 +474,7 @@ function TerminosLineaCreditoTab({ row }: { row: LineaCreditoRow }) {
 function Bloque({ titulo, filas }: { titulo: string; filas: Array<[string, string]> }) {
   return (
     <div className="border border-gray-300">
-      <div className="bg-[#4A6FA5] text-white px-3 py-1.5 text-xs font-medium">{titulo}</div>
+      <div className="bg-[color:var(--theme-primary)] text-white px-3 py-1.5 text-xs font-medium">{titulo}</div>
       <table className="w-full text-xs">
         <tbody className="divide-y divide-gray-200">
           {filas.map(([label, valor]) => (

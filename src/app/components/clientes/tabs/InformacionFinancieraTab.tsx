@@ -29,7 +29,7 @@ export function InformacionFinancieraTab({ formData, updateFormData, isView }: I
           {/* Cuenta Eje */}
           <div className="bg-[#F5F5F7] rounded-lg p-4 border border-[#E0E0E0]">
             <div className="flex items-center gap-3 mb-2">
-              <div className="w-10 h-10 bg-[#2E5C91] rounded-lg flex items-center justify-center">
+              <div className="w-10 h-10 bg-[color:var(--theme-secondary)] rounded-lg flex items-center justify-center">
                 <Wallet className="h-5 w-5 text-white" strokeWidth={2} />
               </div>
               <div>
@@ -83,15 +83,15 @@ export function InformacionFinancieraTab({ formData, updateFormData, isView }: I
             Para ver información detallada de productos financieros, utilice los submódulos:
           </p>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <div className="border border-[#E0E0E0] rounded-lg p-3 hover:border-[#2E5C91] transition-colors cursor-pointer">
+            <div className="border border-[#E0E0E0] rounded-lg p-3 hover:border-[color:var(--theme-secondary)] transition-colors cursor-pointer">
               <p className="text-sm font-semibold text-[#3C3C3C]">Cuenta de Ahorro</p>
               <p className="text-xs text-[#9E9E9E] mt-1">Ver cuentas asociadas</p>
             </div>
-            <div className="border border-[#E0E0E0] rounded-lg p-3 hover:border-[#2E5C91] transition-colors cursor-pointer">
+            <div className="border border-[#E0E0E0] rounded-lg p-3 hover:border-[color:var(--theme-secondary)] transition-colors cursor-pointer">
               <p className="text-sm font-semibold text-[#3C3C3C]">Créditos</p>
               <p className="text-xs text-[#9E9E9E] mt-1">Historial crediticio</p>
             </div>
-            <div className="border border-[#E0E0E0] rounded-lg p-3 hover:border-[#2E5C91] transition-colors cursor-pointer">
+            <div className="border border-[#E0E0E0] rounded-lg p-3 hover:border-[color:var(--theme-secondary)] transition-colors cursor-pointer">
               <p className="text-sm font-semibold text-[#3C3C3C]">Inversiones</p>
               <p className="text-xs text-[#9E9E9E] mt-1">Portafolio de inversiones</p>
             </div>

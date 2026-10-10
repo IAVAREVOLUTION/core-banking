@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 import { supabase } from '../../lib/supabaseClient';
+import { getUsuarioSesion } from '../../lib/sesion';
 import {
   DocumentoCargado, RequisitoProducto,
-  saveToSession, loadFromSession, generateId,
+  saveToSession, loadFromSession, generateId, fechaHoraActual,
 } from '../solicitudes/solicitudCreditoStore';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-7e2d13d9`;
@@ -117,13 +118,13 @@ export function AgregarDocumentoModal({ isOpen, onClose, solicitudId, faseIdActu
     try {
       const uploadResult = await uploadFileToStorage(selectedFile, String(solicitudId));
       const req = requisitos.find(r => r.tipoDocumento === tipoFinal);
-      const now = new Date();
-      const fechaStr = `${now.getDate().toString().padStart(2, '0')}/${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getFullYear()}`;
-      const horaStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+      const fecha = fechaHoraActual();
       const nuevo: DocumentoCargado = {
         id: generateId(),
-        fecha: `${fechaStr} ${horaStr}`,
-        usuario: '(sesión pendiente)',
+        fecha,
+        fechaActualizacion: fecha,
+        version: '1.0',
+        usuario: getUsuarioSesion(),
         tipoDocumento: tipoFinal,
         archivo: uploadResult.nombre,
         tipoArchivo: uploadResult.mime.split('/')[1]?.toUpperCase() || 'FILE',
@@ -155,7 +156,7 @@ export function AgregarDocumentoModal({ isOpen, onClose, solicitudId, faseIdActu
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
       <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full max-h-[80vh] overflow-hidden border border-gray-200/50" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 bg-gradient-to-r from-[#4A6FA5] to-[#607698]">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 bg-gradient-to-r from-[color:var(--theme-primary)] to-[#607698]">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-lg bg-white/20 flex items-center justify-center">
               <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="white" strokeWidth="1.5" strokeLinecap="round">
@@ -165,7 +166,7 @@ export function AgregarDocumentoModal({ isOpen, onClose, solicitudId, faseIdActu
             </div>
             <h3 className="text-sm font-bold text-white">Agregar Documento</h3>
           </div>
-          <button onClick={onClose} className="w-8 h-8 rounded-lg flex items-center justify-center text-white/80 hover:text-white hover:bg-white/20 transition-colors">
+          <button type="button" aria-label="Cerrar" title="Cerrar" onClick={onClose} className="w-8 h-8 rounded-lg flex items-center justify-center text-white/80 hover:text-white hover:bg-white/20 transition-colors">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
               <path d="M4 4l8 8M12 4l-8 8" />
             </svg>
@@ -179,7 +180,7 @@ export function AgregarDocumentoModal({ isOpen, onClose, solicitudId, faseIdActu
             {requisitosFaseActual.length > 0 ? (
               <>
                 <select value={tipoDocumento} onChange={e => setTipoDocumento(e.target.value)}
-                  className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg bg-white focus:ring-2 focus:ring-[#4A6FA5]/30 focus:border-[#4A6FA5]">
+                  className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg bg-white focus:ring-2 focus:ring-[color:var(--theme-primary)]/30 focus:border-[color:var(--theme-primary)]">
                   <option value="">Seleccionar tipo...</option>
                   {fasesOrdenadas.map(grupo => (
                     <optgroup key={grupo.faseId} label={grupo.fase}>
@@ -216,7 +217,7 @@ export function AgregarDocumentoModal({ isOpen, onClose, solicitudId, faseIdActu
                   <input
                     type="text" value={tipoCustom} onChange={e => setTipoCustom(e.target.value)}
                     placeholder="Escribe el tipo de documento..."
-                    className="mt-2 w-full px-3 py-2 text-xs border border-gray-200 rounded-lg bg-white focus:ring-2 focus:ring-[#4A6FA5]/30 focus:border-[#4A6FA5]"
+                    className="mt-2 w-full px-3 py-2 text-xs border border-gray-200 rounded-lg bg-white focus:ring-2 focus:ring-[color:var(--theme-primary)]/30 focus:border-[color:var(--theme-primary)]"
                     autoFocus
                   />
                 )}
@@ -225,7 +226,7 @@ export function AgregarDocumentoModal({ isOpen, onClose, solicitudId, faseIdActu
               <input
                 type="text" value={tipoCustom} onChange={e => setTipoCustom(e.target.value)}
                 placeholder="Ej. INE, Comprobante de domicilio, CURP..."
-                className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg bg-white focus:ring-2 focus:ring-[#4A6FA5]/30 focus:border-[#4A6FA5]"
+                className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg bg-white focus:ring-2 focus:ring-[color:var(--theme-primary)]/30 focus:border-[color:var(--theme-primary)]"
               />
             )}
           </div>
@@ -234,7 +235,7 @@ export function AgregarDocumentoModal({ isOpen, onClose, solicitudId, faseIdActu
               Archivo <span className="text-red-400">*</span>
             </label>
             <div onClick={() => fileInputRef.current?.click()}
-              className="flex items-center gap-2 px-3 py-2.5 text-xs border border-dashed border-gray-300 rounded-lg bg-gray-50 cursor-pointer hover:border-[#4A6FA5] hover:bg-blue-50/30 transition-colors">
+              className="flex items-center gap-2 px-3 py-2.5 text-xs border border-dashed border-gray-300 rounded-lg bg-gray-50 cursor-pointer hover:border-[color:var(--theme-primary)] hover:bg-blue-50/30 transition-colors">
               <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="#9CA3AF" strokeWidth="1.5" className="shrink-0">
                 <path d="M7 1v8M4 6l3 3 3-3" strokeLinecap="round" strokeLinejoin="round" />
                 <path d="M1 10v2a1 1 0 001 1h10a1 1 0 001-1v-2" strokeLinecap="round" />
@@ -248,7 +249,7 @@ export function AgregarDocumentoModal({ isOpen, onClose, solicitudId, faseIdActu
           <div>
             <label className="block text-[11px] font-medium text-gray-600 mb-1.5">Nota <span className="text-gray-300">(opcional)</span></label>
             <input type="text" value={nota} onChange={e => setNota(e.target.value)} placeholder="Agregar observaciones..."
-              className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg bg-white focus:ring-2 focus:ring-[#4A6FA5]/30 focus:border-[#4A6FA5]" />
+              className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg bg-white focus:ring-2 focus:ring-[color:var(--theme-primary)]/30 focus:border-[color:var(--theme-primary)]" />
           </div>
         </div>
         <div className="px-5 py-4 border-t border-gray-100 bg-gray-50/50 flex justify-end gap-2">
@@ -256,7 +257,7 @@ export function AgregarDocumentoModal({ isOpen, onClose, solicitudId, faseIdActu
             Cancelar
           </button>
           <button onClick={handleSubmit} disabled={uploading}
-            className="px-5 py-2 bg-[#4A6FA5] text-white rounded-lg text-xs font-medium flex items-center gap-2 disabled:opacity-60 shadow-sm hover:bg-[#3A5A8A] transition-colors">
+            className="px-5 py-2 bg-[color:var(--theme-primary)] text-white rounded-lg text-xs font-medium flex items-center gap-2 disabled:opacity-60 shadow-sm hover:bg-[color:var(--theme-primary-hover)] transition-colors">
             {uploading ? (
               <svg className="animate-spin h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                 <circle cx="12" cy="12" r="10" strokeOpacity="0.25" /><path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round" />

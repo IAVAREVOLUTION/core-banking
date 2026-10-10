@@ -1,5 +1,6 @@
 import { useState, useEffect, forwardRef, useImperativeHandle } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
+import { DatePicker } from '@/app/components/ui/DatePicker';
 
 interface PeriodoDisponible {
   periodoId: number;
@@ -418,21 +419,11 @@ export const TasaInversionTab = forwardRef<{ getData: () => TasaInversionItem[] 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-[11px] font-semibold text-gray-600 uppercase tracking-wide mb-1.5">Inicio Vigencia</label>
-                    <input
-                      type="date"
-                      value={formData.inicioVigencia}
-                      onChange={(e) => setFormData({ ...formData, inicioVigencia: e.target.value })}
-                      className="w-full px-2.5 py-1.5 text-xs border border-gray-300 rounded bg-white focus:border-primary-theme focus:ring-1 ring-primary-theme outline-none transition-colors"
-                    />
+                    <DatePicker formato="iso" value={formData.inicioVigencia} onChange={(__v: string) => setFormData({ ...formData, inicioVigencia: __v })} className="w-full text-xs" />
                   </div>
                   <div>
                     <label className="block text-[11px] font-semibold text-gray-600 uppercase tracking-wide mb-1.5">Fin Vigencia</label>
-                    <input
-                      type="date"
-                      value={formData.finVigencia}
-                      onChange={(e) => setFormData({ ...formData, finVigencia: e.target.value })}
-                      className="w-full px-2.5 py-1.5 text-xs border border-gray-300 rounded bg-white focus:border-primary-theme focus:ring-1 ring-primary-theme outline-none transition-colors"
-                    />
+                    <DatePicker formato="iso" value={formData.finVigencia} onChange={(__v: string) => setFormData({ ...formData, finVigencia: __v })} className="w-full text-xs" />
                   </div>
                 </div>
 

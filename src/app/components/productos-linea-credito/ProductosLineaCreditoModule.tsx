@@ -4,7 +4,7 @@ import { ProductoLineaCreditoList } from './ProductoLineaCreditoList';
 import { ProductoLineaCreditoForm } from './ProductoLineaCreditoForm';
 import { useProductosLineaCreditoDB } from '@/app/hooks/useProductosLineaCreditoDB';
 import { syncToJProducts } from '@/app/hooks/useSyncJProducts';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 
 interface ProductosLineaCreditoModuleProps {
   onViewChange?: (view: 'list' | 'form') => void;

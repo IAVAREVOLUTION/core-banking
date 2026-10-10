@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
+import { CampoMonto } from '@/app/components/ui/CampoMonto';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-7e2d13d9`;
 const HDR = { 'Content-Type': 'application/json', Authorization: `Bearer ${publicAnonKey}` };
@@ -139,7 +140,7 @@ export function MovimientosTab({ mode, accountId }: MovimientosTabProps) {
           <span className="text-sm font-medium text-gray-800">MOVIMIENTOS</span>
           {saldoActual !== null && (
             <span className="text-[11px] font-semibold text-gray-700">
-              Saldo: <span className="text-[#2E5C91]">{fmtMoney(saldoActual)}</span>
+              Saldo: <span className="text-[color:var(--theme-secondary)]">{fmtMoney(saldoActual)}</span>
             </span>
           )}
         </div>
@@ -155,7 +156,7 @@ export function MovimientosTab({ mode, accountId }: MovimientosTabProps) {
             {mode === 'editar' && (
               <button
                 onClick={() => setShowModal(true)}
-                className="px-3 py-1 bg-primary-theme text-white text-xs hover:bg-[#3E5C91] border border-[#3E5C91]"
+                className="px-3 py-1 bg-primary-theme text-white text-xs hover:bg-[color:var(--theme-secondary)] border border-[color:var(--theme-secondary)]"
               >
                 Nuevo
               </button>
@@ -239,14 +240,14 @@ export function MovimientosTab({ mode, accountId }: MovimientosTabProps) {
           <div className="bg-white rounded shadow-xl w-full max-w-md flex flex-col" onClick={e => e.stopPropagation()}>
             <div className="bg-primary-theme px-5 py-3.5 flex items-center justify-between rounded-t">
               <h3 className="text-sm font-medium text-white">Nuevo Movimiento</h3>
-              <button onClick={() => setShowModal(false)} className="text-white/70 hover:text-white">
+              <button type="button" aria-label="Cerrar" title="Cerrar" onClick={() => setShowModal(false)} className="text-white/70 hover:text-white">
                 <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 3l8 8M11 3l-8 8"/></svg>
               </button>
             </div>
             <div className="p-5 space-y-3">
               <div className="bg-gray-50 border border-gray-200 rounded p-3 flex justify-between text-xs">
                 <span className="text-gray-500">Saldo actual</span>
-                <span className="font-semibold text-[#2E5C91]">{fmtMoney(saldoActual ?? 0)}</span>
+                <span className="font-semibold text-[color:var(--theme-secondary)]">{fmtMoney(saldoActual ?? 0)}</span>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -259,7 +260,7 @@ export function MovimientosTab({ mode, accountId }: MovimientosTabProps) {
                 </div>
                 <div>
                   <label className="block text-[10px] font-medium text-gray-600 mb-1 uppercase tracking-wide">Monto *</label>
-                  <input type="text" value={monto} onChange={e => setMonto(e.target.value)}
+                  <CampoMonto value={monto} onChange={e => setMonto(e.target.value)}
                     placeholder="$ 0.00"
                     className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded" />
                 </div>

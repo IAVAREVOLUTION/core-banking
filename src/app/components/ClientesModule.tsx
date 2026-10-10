@@ -3,7 +3,7 @@ import { ClientesList } from './clientes/ClientesList';
 import { ClienteDB, useClientesDB } from '../hooks/useClientesDB';
 import { AltaClienteDefault } from './clientes/AltaClienteDefault';
 import { clearAllClienteData } from '../hooks/useClientePersistence';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 
 type FormMode = 'nuevo' | 'editar' | 'ver';
 
@@ -42,11 +42,11 @@ export function ClientesModule() {
     // ═══════════════════════════════════════════════════════════════
     if (formMode === 'nuevo') {
       toast.success('Cliente creado exitosamente', {
-        description: `El cliente "${clienteData.nombre || 'Nuevo Cliente'}" ha sido registrado en J_CLIENTES.`,
+        description: `El cliente "${clienteData.nombre || 'Nuevo Cliente'}" ha sido registrado.`,
       });
     } else if (formMode === 'editar') {
       toast.success('Cliente actualizado', {
-        description: `Los cambios en "${clienteData.nombre || ''}" han sido guardados en J_CLIENTES.`,
+        description: `Los cambios en "${clienteData.nombre || ''}" han sido guardados.`,
       });
     }
     setTimeout(() => {

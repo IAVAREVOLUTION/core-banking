@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 import { usePersonasRelacionadasDB } from '../../../hooks/usePersonasRelacionadasDB';
 import { saveToSession, loadFromSession } from '../solicitudCreditoStore';
 
@@ -183,7 +183,7 @@ export function PartesRelacionadasTab({ mode, solicitudId, montoSolicitado, clie
         {!isViewMode && (
           <button
             onClick={handleNuevaParte}
-            className="px-3 py-1.5 bg-[#4A6FA5] text-white text-xs font-medium rounded hover:bg-[#3E5C91] transition-colors"
+            className="px-3 py-1.5 bg-[color:var(--theme-primary)] text-white text-xs font-medium rounded hover:bg-[color:var(--theme-secondary)] transition-colors"
           >
             + Nueva Parte
           </button>
@@ -380,11 +380,11 @@ function ModalParteRelacionada({ parte, editIndex, partesActuales, personasDispo
       <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px]" />
       <div className="relative bg-white rounded-lg shadow-2xl w-full max-w-lg mx-4 overflow-hidden animate-in fade-in zoom-in-95" onClick={e => e.stopPropagation()}>
         {/* Header */}
-        <div className="bg-[#4A6FA5] px-5 py-3 flex items-center justify-between">
+        <div className="bg-[color:var(--theme-primary)] px-5 py-3 flex items-center justify-between">
           <span className="text-sm font-semibold text-white">
             {parte ? 'Editar Parte Relacionada' : 'Nueva Parte Relacionada'}
           </span>
-          <button
+          <button type="button" aria-label="Cerrar" title="Cerrar"
             onClick={onClose}
             className="text-white/80 hover:text-white hover:bg-white/20 rounded-full w-6 h-6 flex items-center justify-center transition-colors"
           >
@@ -405,7 +405,7 @@ function ModalParteRelacionada({ parte, editIndex, partesActuales, personasDispo
               <select
                 value={formData.tipoRelacion}
                 onChange={e => setFormData(prev => ({ ...prev, tipoRelacion: e.target.value }))}
-                className="w-full px-3 py-2 text-xs border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-[#4A6FA5]"
+                className="w-full px-3 py-2 text-xs border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-[color:var(--theme-primary)]"
               >
                 {TIPOS_RELACION.map(t => (
                   <option key={t.value} value={t.value}>{t.label}</option>
@@ -425,7 +425,7 @@ function ModalParteRelacionada({ parte, editIndex, partesActuales, personasDispo
                   <select
                     value={formData.personaId}
                     onChange={e => handlePersonaSelect(e.target.value)}
-                    className="w-full px-3 py-2 text-xs border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-[#4A6FA5] mb-2"
+                    className="w-full px-3 py-2 text-xs border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-[color:var(--theme-primary)] mb-2"
                   >
                     <option value="">-- Seleccionar persona --</option>
                     {personasDisponibles.map(p => (
@@ -439,7 +439,7 @@ function ModalParteRelacionada({ parte, editIndex, partesActuales, personasDispo
                     value={formData.nombreCompleto}
                     onChange={e => setFormData(prev => ({ ...prev, nombreCompleto: e.target.value, personaId: '' }))}
                     placeholder="O ingrese nombre manualmente..."
-                    className="w-full px-3 py-2 text-xs border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-[#4A6FA5]"
+                    className="w-full px-3 py-2 text-xs border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-[color:var(--theme-primary)]"
                   />
                 </>
               )}
@@ -459,7 +459,7 @@ function ModalParteRelacionada({ parte, editIndex, partesActuales, personasDispo
                 value={formData.participacion}
                 onChange={e => setFormData(prev => ({ ...prev, participacion: e.target.value }))}
                 placeholder="Ej: 50"
-                className="w-full px-3 py-2 text-xs border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-[#4A6FA5]"
+                className="w-full px-3 py-2 text-xs border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-[color:var(--theme-primary)]"
               />
               {formData.tipoRelacion === 'Beneficiario' && (
                 <p className="text-[10px] text-gray-400 mt-1">La suma de todos los beneficiarios debe ser exactamente 100%.</p>
@@ -491,7 +491,7 @@ function ModalParteRelacionada({ parte, editIndex, partesActuales, personasDispo
             </button>
             <button
               type="submit"
-              className="px-4 py-2 text-xs font-medium text-white bg-[#4A6FA5] rounded hover:bg-[#3E5C91] transition-colors"
+              className="px-4 py-2 text-xs font-medium text-white bg-[color:var(--theme-primary)] rounded hover:bg-[color:var(--theme-secondary)] transition-colors"
             >
               {parte ? 'Guardar Cambios' : 'Agregar'}
             </button>

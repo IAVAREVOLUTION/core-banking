@@ -4,11 +4,11 @@ import {
   FileSpreadsheet, FileText, FileDown, Printer, AlertTriangle,
   Eye, Pencil, Brain, RefreshCw, Loader2, CloudOff, Cloud, ClipboardList,
 } from 'lucide-react';
-import { toast } from 'sonner';
-import * as XLSX from 'xlsx';
-import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
+import { toast } from '@/app/lib/notificaciones';
+import { useOrdenTabla, coincideBusqueda } from '@/app/lib/ordenTabla';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
+import { cargarXLSX, cargarPDF } from '@/app/lib/librerias';
+import { formatearFecha } from '@/app/lib/fechas';
 
 // ═══════════════════════════════════════════════════════════════════
 // TIPOS — Tabla EFINANCIANET_DB.REPORTES_REGULATORIOS
@@ -213,15 +213,22 @@ export function ReportesRegulariosSection() {
   });
 
   // ─── Filtrado ──────────────────────────────────────────────────
-  const filteredData = useMemo(() => {
-    if (!filterText) return db.data;
-    const q = filterText.toLowerCase();
-    return db.data.filter(item =>
-      item.clave_reporte.toLowerCase().includes(q) ||
-      item.nombre_reporte.toLowerCase().includes(q) ||
-      item.formato_salida.toLowerCase().includes(q)
-    );
-  }, [db.data, filterText]);
+  const filtradosData = useMemo(() => db.data.filter(item =>
+    coincideBusqueda(filterText, [item.clave_reporte, item.nombre_reporte, item.formato_salida])
+  ), [db.data, filterText]);
+
+  // Catálogo: orden natural por clave/código; cualquier encabezado ordena por su columna.
+  const orden = useOrdenTabla(filtradosData, {
+    id: 'catalogo-reportes',
+    columnas: {
+      clave: item => item.clave_reporte,
+      nombre: item => item.nombre_reporte,
+      formato: item => item.formato_salida,
+      prompt: item => item.prompt_ia,
+    },
+    porDefecto: { campo: 'clave', dir: 'asc' },
+  });
+  const filteredData = orden.filas;
 
   // ─── CRUD handlers ─────────────────────────────────────────────
   const handleNew = () => {
@@ -331,7 +338,8 @@ export function ReportesRegulariosSection() {
   };
 
   // ─── Exports ───────────────────────────────────────────────────
-  const exportExcel = () => {
+  const exportExcel = async () => {
+    const XLSX = await cargarXLSX();
     const ws = XLSX.utils.json_to_sheet(db.data.map(d => ({
       ID: d.id,
       'Clave Reporte': d.clave_reporte,
@@ -345,7 +353,8 @@ export function ReportesRegulariosSection() {
     toast.success('Exportado a Excel');
   };
 
-  const exportCSV = () => {
+  const exportCSV = async () => {
+    const XLSX = await cargarXLSX();
     const ws = XLSX.utils.json_to_sheet(db.data.map(d => ({
       ID: d.id,
       'Clave Reporte': d.clave_reporte,
@@ -360,12 +369,13 @@ export function ReportesRegulariosSection() {
     toast.success('Exportado a CSV');
   };
 
-  const exportPDF = () => {
+  const exportPDF = async () => {
+    const { jsPDF, autoTable } = await cargarPDF();
     const doc = new jsPDF({ orientation: 'landscape' });
     doc.setFontSize(14);
     doc.text('Reportes Regulatorios del Sistema', 14, 15);
     doc.setFontSize(8);
-    doc.text(`Generado: ${new Date().toLocaleDateString('es-MX')} | Fuente: REPORTES_REGULATORIOS`, 14, 21);
+    doc.text(`Generado: ${formatearFecha(new Date())} | Fuente: REPORTES_REGULATORIOS`, 14, 21);
     autoTable(doc, {
       startY: 26,
       head: [['Clave', 'Nombre', 'Formato', 'Prompt IA']],
@@ -395,7 +405,7 @@ export function ReportesRegulariosSection() {
     return (
       <div className="p-6 bg-[#FAFBFC] min-h-[600px] flex items-center justify-center">
         <div className="flex flex-col items-center gap-3 text-gray-500">
-          <Loader2 size={32} className="animate-spin text-[#2E5C91]" />
+          <Loader2 size={32} className="animate-spin text-[color:var(--theme-secondary)]" />
           <span className="text-sm">Cargando reportes desde REPORTES_REGULATORIOS...</span>
         </div>
       </div>
@@ -410,7 +420,7 @@ export function ReportesRegulariosSection() {
       <div className="p-6 bg-[#FAFBFC] min-h-[600px]">
         <div className="max-w-4xl mx-auto">
           {/* Header */}
-          <div className="bg-gradient-to-r from-[#2E5C91] to-[#4A6FA5] px-5 py-3 flex items-center justify-between">
+          <div className="bg-gradient-to-r from-[color:var(--theme-secondary)] to-[color:var(--theme-primary)] px-5 py-3 flex items-center justify-between">
             <div className="flex items-center gap-3">
               <ClipboardList size={18} className="text-white/80" />
               <span className="text-sm font-semibold text-white tracking-wide uppercase">
@@ -433,7 +443,7 @@ export function ReportesRegulariosSection() {
           {/* Body */}
           <div className="bg-white border-2 border-gray-400 border-t-0 p-6">
             {/* Sección: Datos del Reporte */}
-            <div className="bg-[#E7E6E6] px-3 py-1.5 mb-5 border-l-4 border-[#2E5C91] rounded-r">
+            <div className="bg-[#E7E6E6] px-3 py-1.5 mb-5 border-l-4 border-[color:var(--theme-secondary)] rounded-r">
               <span className="text-[11px] font-semibold text-gray-700 uppercase tracking-wide">Datos del Reporte Regulatorio</span>
             </div>
 
@@ -491,7 +501,7 @@ export function ReportesRegulariosSection() {
             </div>
 
             {/* Sección: Prompt IA */}
-            <div className="bg-[#E7E6E6] px-3 py-1.5 mb-5 border-l-4 border-[#2E5C91] rounded-r">
+            <div className="bg-[#E7E6E6] px-3 py-1.5 mb-5 border-l-4 border-[color:var(--theme-secondary)] rounded-r">
               <span className="text-[11px] font-semibold text-gray-700 uppercase tracking-wide">
                 Prompt de Inteligencia Artificial
               </span>
@@ -543,7 +553,7 @@ export function ReportesRegulariosSection() {
   return (
     <div className="p-6 bg-[#FAFBFC] min-h-[600px]">
       {/* Header principal */}
-      <div className="bg-gradient-to-r from-[#2E5C91] to-[#4A6FA5] px-5 py-3 flex items-center justify-between">
+      <div className="bg-gradient-to-r from-[color:var(--theme-secondary)] to-[color:var(--theme-primary)] px-5 py-3 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <ClipboardList size={18} className="text-white/80" />
           <span className="text-sm font-semibold text-white tracking-wide uppercase">
@@ -592,7 +602,7 @@ export function ReportesRegulariosSection() {
         <div className="relative">
           <button
             onClick={() => setShowMenu(!showMenu)}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-[#4A6FA5] text-white text-xs hover:bg-[#3E5C91] border border-[#3E5C91] rounded-sm"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-[color:var(--theme-primary)] text-white text-xs hover:bg-[color:var(--theme-secondary)] border border-[color:var(--theme-secondary)] rounded-sm"
           >
             <Menu size={12} /> Menú
           </button>
@@ -645,16 +655,16 @@ export function ReportesRegulariosSection() {
         <div className="overflow-x-auto">
           <table className="w-full text-xs">
             <thead>
-              <tr className="bg-[#2E5C91]">
+              <tr className="bg-[color:var(--theme-secondary)]">
                 {deleteMode && (
                   <th className="text-center px-2 py-2.5 font-semibold text-white/90 text-[11px] uppercase tracking-wide w-12">
                     <Trash2 size={13} className="mx-auto text-white/70" />
                   </th>
                 )}
-                <th className="text-left px-3 py-2.5 font-semibold text-white/90 text-[11px] uppercase tracking-wide w-36">Clave Reporte</th>
-                <th className="text-left px-3 py-2.5 font-semibold text-white/90 text-[11px] uppercase tracking-wide">Nombre Reporte</th>
-                <th className="text-left px-3 py-2.5 font-semibold text-white/90 text-[11px] uppercase tracking-wide w-28">Formato Salida</th>
-                <th className="text-left px-3 py-2.5 font-semibold text-white/90 text-[11px] uppercase tracking-wide w-64">Prompt IA</th>
+                <th className="text-left px-3 py-2.5 font-semibold text-white/90 text-[11px] uppercase tracking-wide w-36" {...orden.th('clave')}>Clave Reporte{orden.flecha('clave')}</th>
+                <th className="text-left px-3 py-2.5 font-semibold text-white/90 text-[11px] uppercase tracking-wide" {...orden.th('nombre')}>Nombre Reporte{orden.flecha('nombre')}</th>
+                <th className="text-left px-3 py-2.5 font-semibold text-white/90 text-[11px] uppercase tracking-wide w-28" {...orden.th('formato')}>Formato Salida{orden.flecha('formato')}</th>
+                <th className="text-left px-3 py-2.5 font-semibold text-white/90 text-[11px] uppercase tracking-wide w-64" {...orden.th('prompt')}>Prompt IA{orden.flecha('prompt')}</th>
                 <th className="text-center px-2 py-2.5 font-semibold text-white/90 text-[11px] uppercase tracking-wide w-24">Acciones</th>
               </tr>
             </thead>
@@ -697,7 +707,7 @@ export function ReportesRegulariosSection() {
                       </td>
                     )}
                     <td className="px-3 py-2 border-b border-gray-200">
-                      <span className="font-mono font-semibold text-[#2E5C91] text-[11px]">{item.clave_reporte}</span>
+                      <span className="font-mono font-semibold text-[color:var(--theme-secondary)] text-[11px]">{item.clave_reporte}</span>
                     </td>
                     <td className="px-3 py-2 border-b border-gray-200 font-medium text-gray-800">{item.nombre_reporte}</td>
                     <td className="px-3 py-2 border-b border-gray-200">
@@ -756,7 +766,7 @@ export function ReportesRegulariosSection() {
       {showDeleteModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 backdrop-blur-sm">
           <div className="bg-white rounded-sm shadow-2xl w-[440px] mx-4 overflow-hidden border-2 border-gray-400">
-            <div className="bg-gradient-to-r from-[#2E5C91] to-[#4A6FA5] px-5 py-3">
+            <div className="bg-gradient-to-r from-[color:var(--theme-secondary)] to-[color:var(--theme-primary)] px-5 py-3">
               <h3 className="text-sm font-semibold text-white">Confirmar Eliminación</h3>
             </div>
             <div className="px-6 py-6 flex items-start gap-3">

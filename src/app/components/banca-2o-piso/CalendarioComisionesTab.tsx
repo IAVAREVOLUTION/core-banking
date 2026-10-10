@@ -13,7 +13,9 @@
  * Garantizado se mantiene constante y cada periodo sólo devenga comisión + IVA.
  */
 import { useState, useMemo, useEffect, useCallback } from 'react';
-import { toast } from 'sonner';
+import { aFecha } from '@/app/lib/fechas';
+import { cuentaEjeConSaldo } from '@/app/lib/aplicacionPagosCartera';
+import { toast } from '@/app/lib/notificaciones';
 import { crearAvisoVencimiento, type Amortizacion } from '../../hooks/useCarteraDB';
 import {
   fmtMoneyExacto, parseMon, generarCalendarioComisiones, faltantesComisionGPO,
@@ -26,6 +28,7 @@ import { useProductosLineaCreditoDB } from '../../hooks/useProductosLineaCredito
 // REQ-21 HU-21.1 — los conceptos del Aviso salen del catálogo de Cargos del
 // producto, no de literales: tienen que coincidir con el componente contable.
 import { conceptosAvisoComision, construirConceptosAviso } from '../../lib/cargosProductoGPO';
+import { DatePicker } from '@/app/components/ui/DatePicker';
 
 const FORMAS_PAGO = [
   'Transferencia SPEI', 'Banca por internet', 'En sucursal',
@@ -112,6 +115,33 @@ export function CalendarioComisionesTab({
 
   const pendientes = useMemo(() => rows.filter(esPendiente), [rows]);
   const seleccionadas = useMemo(() => rows.filter(r => seleccion.has(r.noPago)), [rows, seleccion]);
+
+  /**
+   * Abre el modal con los campos ya llenos:
+   *   - Fecha Compromiso: la fecha de pago más próxima de las comisiones elegidas.
+   *   - Cuenta Bancaria: la cuenta de la línea o, si no tiene, la Cuenta EJE del
+   *     cliente (de donde se cobra la comisión).
+   * Todo sigue editable; sólo se llena lo que esté vacío.
+   */
+  const abrirAvisoModal = async () => {
+    if (seleccion.size === 0) { toast.error('Seleccione al menos una comisión'); return; }
+    const p2 = (n: number) => String(n).padStart(2, '0');
+    const fechas = seleccionadas
+      .map(r => aFecha(r.fechaPago))
+      .filter((d): d is Date => !!d)
+      .sort((a, b) => a.getTime() - b.getTime());
+    if (fechas.length > 0) {
+      const d = fechas[0];
+      setFechaCompromiso(`${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`);
+    }
+    if (!referencia) setReferencia(row.noSol || '');
+    if (!institucion) setInstitucion('eFinancianet');
+    setShowAvisoModal(true);
+    if (!cuentaBancaria) {
+      const cuenta = row.noCuenta || (await cuentaEjeConSaldo(String(row.clienteId || ''))).noCuenta;
+      if (cuenta) setCuentaBancaria(prev => prev || cuenta);
+    }
+  };
   const todasSeleccionadas = pendientes.length > 0 && seleccion.size === pendientes.length;
 
   const totalesSeleccion = useMemo(() => seleccionadas.reduce(
@@ -289,7 +319,7 @@ export function CalendarioComisionesTab({
           {generando ? 'Generando…' : rows.length > 0 ? 'Regenerar Calendario' : 'Generar Calendario'}
         </button>
         <button
-          onClick={() => seleccion.size > 0 ? setShowAvisoModal(true) : toast.error('Seleccione al menos una comisión')}
+          onClick={() => { void abrirAvisoModal(); }}
           disabled={seleccion.size === 0}
           className="px-3 py-1.5 text-xs font-medium rounded border border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5 transition-colors"
         >
@@ -380,14 +410,14 @@ export function CalendarioComisionesTab({
       {showAvisoModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => !enviando && setShowAvisoModal(false)}>
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg border border-gray-200" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-5 py-3.5 bg-[#2E5C91] rounded-t-xl">
+            <div className="flex items-center justify-between px-5 py-3.5 bg-[color:var(--theme-secondary)] rounded-t-xl">
               <div>
                 <h4 className="text-sm font-bold text-white">Nuevo Aviso de Vencimiento</h4>
                 <p className="text-[11px] text-blue-200 mt-0.5">
                   {seleccion.size} comisión{seleccion.size !== 1 ? 'es' : ''} GPO · {row.moneda || 'MXN'}
                 </p>
               </div>
-              <button onClick={() => !enviando && setShowAvisoModal(false)} className="text-white/70 hover:text-white">
+              <button type="button" aria-label="Cerrar" title="Cerrar" onClick={() => !enviando && setShowAvisoModal(false)} className="text-white/70 hover:text-white">
                 <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 3l8 8M11 3l-8 8" /></svg>
               </button>
             </div>
@@ -402,13 +432,13 @@ export function CalendarioComisionesTab({
                 ))}
                 <div className="flex justify-between text-xs font-bold border-t border-gray-200 pt-1.5">
                   <span>Total a Cobrar</span>
-                  <span className="text-[#2E5C91] font-mono">{fmtMoneyExacto(totalesSeleccion.total)}</span>
+                  <span className="text-[color:var(--theme-secondary)] font-mono">{fmtMoneyExacto(totalesSeleccion.total)}</span>
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="col-span-2">
-                  <label className="block text-[10px] font-medium text-gray-600 mb-1 uppercase tracking-wide">Cliente</label>
+                  <label className="block text-[10px] font-medium text-gray-600 mb-1 uppercase tracking-wide">Nombre Interlocutor</label>
                   <input value={row.cliente} disabled className="w-full px-3 py-1.5 text-xs border border-gray-200 rounded-lg bg-gray-100 text-gray-600" />
                 </div>
                 <div className="col-span-2">
@@ -419,7 +449,7 @@ export function CalendarioComisionesTab({
                 </div>
                 <div>
                   <label className="block text-[10px] font-medium text-gray-600 mb-1 uppercase tracking-wide">Fecha Compromiso</label>
-                  <input type="date" value={fechaCompromiso} onChange={e => setFechaCompromiso(e.target.value)} className="w-full px-3 py-1.5 text-xs border border-gray-200 rounded-lg" />
+                  <DatePicker formato="iso" value={fechaCompromiso} onChange={(__v: string) => setFechaCompromiso(__v)} className="w-full text-xs" />
                 </div>
                 <div>
                   <label className="block text-[10px] font-medium text-gray-600 mb-1 uppercase tracking-wide">Institución Financiera</label>

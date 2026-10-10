@@ -3,10 +3,11 @@ import {
   ChevronDown, Menu, Plus, Search, Trash2, UserCheck, Wifi, Save, RotateCcw, X,
   FileSpreadsheet, FileText, FileDown, Printer, AlertTriangle,
 } from 'lucide-react';
-import { toast } from 'sonner';
-import * as XLSX from 'xlsx';
-import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
+import { toast } from '@/app/lib/notificaciones';
+import { useOrdenTabla, coincideBusqueda } from '@/app/lib/ordenTabla';
+import { cargarXLSX, cargarPDF } from '@/app/lib/librerias';
+import { DatePicker } from '@/app/components/ui/DatePicker';
+import { formatearFecha } from '@/app/lib/fechas';
 
 // ═══════════════════════════════════════════════════════════════════
 // TIPOS
@@ -59,17 +60,20 @@ function emptyEmpleado(): Omit<Empleado, 'id'> {
 // ═══════════════════════════════════════════════════════════════════
 // EXPORTACIÓN
 // ═══════════════════════════════════════════════════════════════════
-function exportExcelEmp(data: Empleado[]) {
+async function exportExcelEmp(data: Empleado[]) {
+  const XLSX = await cargarXLSX();
   const rows = data.map((d) => ({ 'No': d.noEmpleado, 'Ap. Paterno': d.apellidoPaterno, 'Ap. Materno': d.apellidoMaterno, 'Nombre': d.nombre, 'Cargo': d.cargo, 'ID Usuario': d.idUsuario, 'Responsabilidad': d.responsabilidad, 'Sucursal': d.sucursal, 'Correo': d.correoElectronico }));
   const ws = XLSX.utils.json_to_sheet(rows); const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Empleados'); XLSX.writeFile(wb, 'empleados.xlsx'); toast.success('Exportado a Excel');
 }
-function exportCSVEmp(data: Empleado[]) {
+async function exportCSVEmp(data: Empleado[]) {
+  const XLSX = await cargarXLSX();
   const rows = data.map((d) => ({ 'No': d.noEmpleado, 'Ap. Paterno': d.apellidoPaterno, 'Nombre': d.nombre, 'ID Usuario': d.idUsuario, 'Correo': d.correoElectronico, 'Sucursal': d.sucursal }));
   const ws = XLSX.utils.json_to_sheet(rows); const csv = XLSX.utils.sheet_to_csv(ws);
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' }); const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = 'empleados.csv'; link.click(); toast.success('Exportado a CSV');
 }
-function exportPDFEmp(data: Empleado[]) {
-  const doc = new jsPDF({ orientation: 'landscape' }); doc.setFontSize(14); doc.text('Empleados', 14, 18); doc.setFontSize(9); doc.text(`Generado: ${new Date().toLocaleDateString('es-MX')}`, 14, 24);
+async function exportPDFEmp(data: Empleado[]) {
+  const { jsPDF, autoTable } = await cargarPDF();
+  const doc = new jsPDF({ orientation: 'landscape' }); doc.setFontSize(14); doc.text('Empleados', 14, 18); doc.setFontSize(9); doc.text(`Generado: ${formatearFecha(new Date())}`, 14, 24);
   autoTable(doc, { startY: 30, head: [['No', 'Ap. Paterno', 'Nombre', 'Cargo', 'ID Usuario', 'Responsabilidad', 'Sucursal', 'Correo']], body: data.map((d) => [d.noEmpleado, d.apellidoPaterno, d.nombre, d.cargo, d.idUsuario, d.responsabilidad, d.sucursal, d.correoElectronico]), styles: { fontSize: 7 }, headStyles: { fillColor: [74, 111, 165] }, alternateRowStyles: { fillColor: [245, 245, 245] } });
   doc.save('empleados.pdf'); toast.success('Exportado a PDF');
 }
@@ -101,7 +105,7 @@ const FormFieldEmp = React.memo(function FormFieldEmp({ label, value, name, requ
       <label className="text-[11px] text-gray-600 w-[145px] flex-shrink-0 text-right">{label}{required && <span className="text-red-500 ml-0.5">*</span>}{':'}</label>
       {type === 'checkbox' ? <input type="checkbox" checked={checked} onChange={(e) => onCheck?.(name, e.target.checked)} className="h-3.5 w-3.5 accent-primary-theme" />
       : type === 'select' ? <select value={String(value ?? '')} onChange={(e) => onChange?.(name, e.target.value)} className="flex-1 text-[11px] px-1.5 py-1 border border-gray-300 rounded bg-white text-gray-800 min-w-0 focus:border-primary-theme focus:ring-1 focus:ring-primary-theme/30 outline-none"><option value="">-- Seleccionar --</option>{options?.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}</select>
-      : type === 'date' ? <input type="date" value={value ?? ''} onChange={(e) => onChange?.(name, e.target.value)} className="flex-1 text-[11px] px-1.5 py-1 border border-gray-300 rounded bg-white text-gray-800 min-w-0 focus:border-primary-theme focus:ring-1 focus:ring-primary-theme/30 outline-none" />
+      : type === 'date' ? <DatePicker formato="iso" value={value ?? ''} onChange={(__v: string) => onChange?.(name, __v)} className="min-w-0" />
       : <input type={type === 'password' ? 'password' : inputType ?? 'text'} value={value ?? ''} onChange={(e) => onChange?.(name, e.target.value)} className="flex-1 text-[11px] px-1.5 py-1 border border-gray-300 rounded bg-white text-gray-800 min-w-0 focus:border-primary-theme focus:ring-1 focus:ring-primary-theme/30 outline-none" />}
     </div>
   );
@@ -183,7 +187,7 @@ function CreateModalEmp({ nextNo, puestoOptions, responsabilidadOptions, sucursa
       <div className="bg-white rounded-lg shadow-2xl flex flex-col" style={{ width: '780px', maxHeight: '88vh' }} onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between px-5 py-3 bg-primary-theme rounded-t-lg">
           <div className="flex items-center gap-2"><Plus size={15} className="text-white" /><span className="text-white text-sm" style={{ fontWeight: 600 }}>Nuevo Empleado</span><span className="text-white/60 text-xs ml-2">{nextNo}</span></div>
-          <button onClick={onCancel} className="text-white/80 hover:text-white p-0.5 rounded hover:bg-white/10"><X size={18} /></button>
+          <button aria-label="Cerrar" title="Cerrar" onClick={onCancel} className="text-white/80 hover:text-white p-0.5 rounded hover:bg-white/10"><X size={18} /></button>
         </div>
         <div className="flex-1 overflow-y-auto p-5">
           <div className="grid grid-cols-2 gap-x-8 gap-y-2.5">
@@ -214,7 +218,7 @@ function CreateModalEmp({ nextNo, puestoOptions, responsabilidadOptions, sucursa
         </div>
         <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-gray-200 bg-gray-50 rounded-b-lg">
           <button onClick={onCancel} className="px-4 py-1.5 text-[11px] border border-gray-400 rounded bg-white hover:bg-gray-100 text-gray-700">Cancelar</button>
-          <button onClick={handleSave} className="flex items-center gap-1.5 px-4 py-1.5 text-[11px] bg-[#0099CC] text-white rounded hover:bg-[#0088BB]" style={{ fontWeight: 500 }}><Save size={12} />Crear empleado</button>
+          <button onClick={handleSave} className="flex items-center gap-1.5 px-4 py-1.5 text-[11px] bg-[color:var(--theme-action)] text-white rounded hover:bg-[color:var(--theme-action-hover)]" style={{ fontWeight: 500 }}><Save size={12} />Crear empleado</button>
         </div>
       </div>
     </div>
@@ -236,11 +240,30 @@ export function EmpleadosSection() {
 
   useEffect(() => { saveDataEmp(data); }, [data]);
 
-  const filteredData = useMemo(() => {
-    if (!searchQuery.trim()) return data;
-    const q = searchQuery.toLowerCase();
-    return data.filter((e) => e.apellidoPaterno.toLowerCase().includes(q) || e.nombre.toLowerCase().includes(q) || e.idUsuario.toLowerCase().includes(q) || e.noEmpleado.toLowerCase().includes(q));
-  }, [data, searchQuery]);
+  const filtradosData = useMemo(() => data.filter((e) => coincideBusqueda(searchQuery, [
+    e.apellidoPaterno, e.apellidoMaterno, e.nombre, e.cargo, e.idUsuario, e.noEmpleado, e.responsabilidad,
+    e.puestoTrabajo, e.sucursal, e.tipoEmpleado,
+  ])), [data, searchQuery]);
+
+  // Directorio: por apellido paterno; cualquier encabezado ordena por su columna.
+  const orden = useOrdenTabla(filtradosData, {
+    id: 'empleados',
+    columnas: {
+      apPaterno: e => e.apellidoPaterno,
+      apMaterno: e => e.apellidoMaterno,
+      nombre: e => e.nombre,
+      cargo: e => e.cargo,
+      usuario: e => e.idUsuario,
+      responsabilidad: e => e.responsabilidad,
+      puesto: e => e.puestoTrabajo,
+      sucursal: e => e.sucursal,
+      tipo: e => e.tipoEmpleado,
+      enLinea: e => e.enLinea,
+    },
+    porDefecto: { campo: 'apPaterno', dir: 'asc' },
+    desempate: e => e.nombre,
+  });
+  const filteredData = orden.filas;
 
   const handleSelect = useCallback((id: number) => { setSelectedId(id); const e = data.find((i) => i.id === id); if (e) setFormData({ ...e }); }, [data]);
   const handleFieldChange = useCallback((name: string, value: string) => { setFormData((p) => p ? { ...p, [name]: value } : p); }, []);
@@ -292,7 +315,7 @@ export function EmpleadosSection() {
           {showSearch && (
             <div className="ml-2 flex items-center gap-1">
               <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Buscar..." className="text-[11px] px-2 py-1 border border-gray-300 rounded w-[200px] focus:border-primary-theme outline-none" autoFocus />
-              {searchQuery && <button onClick={() => setSearchQuery('')} className="text-gray-400 hover:text-gray-600 p-0.5"><X size={12} /></button>}
+              {searchQuery && <button aria-label="Cerrar" title="Cerrar" onClick={() => setSearchQuery('')} className="text-gray-400 hover:text-gray-600 p-0.5"><X size={12} /></button>}
               <span className="text-[10px] text-gray-400">{filteredData.length}/{data.length}</span>
             </div>
           )}
@@ -301,16 +324,16 @@ export function EmpleadosSection() {
           <table className="w-full text-[11px]">
             <thead className="sticky top-0 z-10">
               <tr className="bg-[#D0D0D0]">
-                <th className="px-2 py-1.5 text-left text-gray-700 border-r border-gray-400 whitespace-nowrap">Ap. Paterno</th>
-                <th className="px-2 py-1.5 text-left text-gray-700 border-r border-gray-400 whitespace-nowrap">Ap. Materno</th>
-                <th className="px-2 py-1.5 text-left text-gray-700 border-r border-gray-400 whitespace-nowrap">Nombre</th>
-                <th className="px-2 py-1.5 text-left text-gray-700 border-r border-gray-400 whitespace-nowrap">Cargo</th>
-                <th className="px-2 py-1.5 text-left text-gray-700 border-r border-gray-400 whitespace-nowrap">ID de usuario</th>
-                <th className="px-2 py-1.5 text-left text-gray-700 border-r border-gray-400 whitespace-nowrap">Responsabilidad</th>
-                <th className="px-2 py-1.5 text-left text-gray-700 border-r border-gray-400 whitespace-nowrap">Puesto</th>
-                <th className="px-2 py-1.5 text-left text-gray-700 border-r border-gray-400 whitespace-nowrap">Sucursal</th>
-                <th className="px-2 py-1.5 text-left text-gray-700 border-r border-gray-400 whitespace-nowrap">Tipo</th>
-                <th className="px-2 py-1.5 text-center text-gray-700 whitespace-nowrap">En línea</th>
+                <th className="px-2 py-1.5 text-left text-gray-700 border-r border-gray-400 whitespace-nowrap" {...orden.th('apPaterno')}>Ap. Paterno{orden.flecha('apPaterno')}</th>
+                <th className="px-2 py-1.5 text-left text-gray-700 border-r border-gray-400 whitespace-nowrap" {...orden.th('apMaterno')}>Ap. Materno{orden.flecha('apMaterno')}</th>
+                <th className="px-2 py-1.5 text-left text-gray-700 border-r border-gray-400 whitespace-nowrap" {...orden.th('nombre')}>Nombre{orden.flecha('nombre')}</th>
+                <th className="px-2 py-1.5 text-left text-gray-700 border-r border-gray-400 whitespace-nowrap" {...orden.th('cargo')}>Cargo{orden.flecha('cargo')}</th>
+                <th className="px-2 py-1.5 text-left text-gray-700 border-r border-gray-400 whitespace-nowrap" {...orden.th('usuario')}>ID de usuario{orden.flecha('usuario')}</th>
+                <th className="px-2 py-1.5 text-left text-gray-700 border-r border-gray-400 whitespace-nowrap" {...orden.th('responsabilidad')}>Responsabilidad{orden.flecha('responsabilidad')}</th>
+                <th className="px-2 py-1.5 text-left text-gray-700 border-r border-gray-400 whitespace-nowrap" {...orden.th('puesto')}>Puesto{orden.flecha('puesto')}</th>
+                <th className="px-2 py-1.5 text-left text-gray-700 border-r border-gray-400 whitespace-nowrap" {...orden.th('sucursal')}>Sucursal{orden.flecha('sucursal')}</th>
+                <th className="px-2 py-1.5 text-left text-gray-700 border-r border-gray-400 whitespace-nowrap" {...orden.th('tipo')}>Tipo{orden.flecha('tipo')}</th>
+                <th className="px-2 py-1.5 text-center text-gray-700 whitespace-nowrap" {...orden.th('enLinea')}>En línea{orden.flecha('enLinea')}</th>
               </tr>
             </thead>
             <tbody>
@@ -395,7 +418,7 @@ export function EmpleadosSection() {
                 <FormFieldEmp label="División" name="division" value={formData.division} type="select" options={divisionOptions} onChange={handleFieldChange} />
               </div>
               <div className="flex items-center gap-2 mt-4 pt-3 border-t border-gray-200">
-                <button onClick={handleSave} className="flex items-center gap-1.5 px-4 py-1.5 text-[11px] bg-[#0099CC] text-white rounded hover:bg-[#0088BB]" style={{ fontWeight: 500 }}><Save size={12} />Guardar cambios</button>
+                <button onClick={handleSave} className="flex items-center gap-1.5 px-4 py-1.5 text-[11px] bg-[color:var(--theme-action)] text-white rounded hover:bg-[color:var(--theme-action-hover)]" style={{ fontWeight: 500 }}><Save size={12} />Guardar cambios</button>
                 <button onClick={handleReset} className="flex items-center gap-1.5 px-4 py-1.5 text-[11px] bg-white border border-gray-400 text-gray-700 rounded hover:bg-gray-50" style={{ fontWeight: 500 }}><RotateCcw size={12} />Descartar cambios</button>
               </div>
             </div>

@@ -20,6 +20,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useCuentasAhorroDB } from '@/app/hooks/useCuentasAhorroDB';
 import type { CuentaAhorroListItem } from '@/app/hooks/useCuentasAhorroDB';
 import { getCuentaAhorroById } from '@/app/hooks/useCuentasAhorroDB';
+import { formatearFecha } from '@/app/lib/fechas';
 
 interface CuentaAhorroProps {
   onBack: () => void;
@@ -124,11 +125,9 @@ export function CuentaAhorro({ onBack, mode, clienteId, onCuentaEjeChange }: Cue
   // HELPERS
   // ═══════════════════════════════════════════════════════════════════
   const formatDate = (d: string) => {
+    // Formato único del sistema (lib/fechas): dd/mm/aaaa, sin corrimiento de un día en fechas ISO.
     if (!d) return '—';
-    try {
-      const date = new Date(d);
-      return date.toLocaleDateString('es-MX', { day: '2-digit', month: '2-digit', year: 'numeric' });
-    } catch { return d; }
+    return formatearFecha(d);
   };
 
   const formatMoney = (n: number) => {
@@ -200,11 +199,11 @@ export function CuentaAhorro({ onBack, mode, clienteId, onCuentaEjeChange }: Cue
       {/* Loading */}
       {loading && (
         <div className="flex items-center justify-center py-12">
-          <svg className="animate-spin h-6 w-6 text-[#4A6FA5] mr-2" viewBox="0 0 24 24" fill="none">
+          <svg className="animate-spin h-6 w-6 text-[color:var(--theme-primary)] mr-2" viewBox="0 0 24 24" fill="none">
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
           </svg>
-          <span className="text-xs text-gray-500">Consultando J_CUENTAS_CORP_CLIENTES...</span>
+          <span className="text-xs text-gray-500">Cargando...</span>
         </div>
       )}
 
@@ -232,7 +231,7 @@ export function CuentaAhorro({ onBack, mode, clienteId, onCuentaEjeChange }: Cue
                   <td colSpan={10} className="px-3 py-8 text-center text-xs text-gray-500">
                     {isNuevo
                       ? 'Las cuentas de ahorro se pueden asociar después de guardar el cliente.'
-                      : 'No hay cuentas de ahorro asociadas a este cliente en J_CUENTAS_CORP_CLIENTES.'}
+                      : 'No hay cuentas de ahorro asociadas a este cliente.'}
                   </td>
                 </tr>
               ) : (

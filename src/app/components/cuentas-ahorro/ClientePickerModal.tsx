@@ -120,7 +120,7 @@ export function ClientePickerModal({ open, onClose, onSelect }: ClientePickerMod
               <circle cx="9" cy="6" r="3" />
               <path d="M3 16c0-3.3 2.7-6 6-6s6 2.7 6 6" />
             </svg>
-            <h3 className="text-sm text-gray-800">Seleccionar Cliente — J_CLIENTES</h3>
+            <h3 className="text-sm text-gray-800">Seleccionar Cliente</h3>
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-lg">&times;</button>
         </div>
@@ -132,7 +132,7 @@ export function ClientePickerModal({ open, onClose, onSelect }: ClientePickerMod
             value={search}
             onChange={e => setSearch(e.target.value)}
             placeholder="Buscar por nombre, clave o RFC..."
-            className="w-full px-3 py-1.5 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-[#4A6FA5] focus:border-[#4A6FA5] focus:outline-none"
+            className="w-full px-3 py-1.5 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-[color:var(--theme-primary)] focus:border-[color:var(--theme-primary)] focus:outline-none"
             autoFocus
           />
           <div className="flex items-center justify-between mt-1">
@@ -145,11 +145,11 @@ export function ClientePickerModal({ open, onClose, onSelect }: ClientePickerMod
         <div className="flex-1 overflow-auto">
           {loading ? (
             <div className="flex items-center justify-center py-12 text-xs text-gray-500">
-              <svg className="animate-spin h-5 w-5 mr-2 text-[#4A6FA5]" viewBox="0 0 24 24" fill="none">
+              <svg className="animate-spin h-5 w-5 mr-2 text-[color:var(--theme-primary)]" viewBox="0 0 24 24" fill="none">
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
               </svg>
-              Cargando clientes desde J_CLIENTES...
+              Cargando clientes...
             </div>
           ) : filtered.length === 0 ? (
             <div className="text-center py-12 text-xs text-gray-500">

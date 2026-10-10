@@ -7,8 +7,9 @@ import { useTheme, Theme } from '@/app/contexts/ThemeContext';
  * llamadas a Supabase usan la misma llave para todos (ver §Alcance de la HU).
  */
 export const MODULOS_DEMO = [
-  'prospectos', 'cotizaciones', 'oportunidades', 'solicitudes-creditos',
-  'solicitudes-activacion', 'banca-2o-piso', 'cartera-credito',
+  // `clientes` es el modulo que el menu muestra como "Personas".
+  'prospectos', 'clientes', 'cotizaciones', 'oportunidades', 'solicitudes-creditos',
+  'solicitudes-activacion', 'originacion', 'banca-2o-piso', 'cartera-credito',
   'cobranza', 'polizas-contables',
 ];
 
@@ -180,7 +181,7 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
 
               {/* Menú de temas */}
               {showThemeMenu && (
-                <div className="absolute top-12 right-0 bg-white border border-gray-300 rounded-lg shadow-lg py-2 z-10 min-w-[180px]">
+                <div className="absolute top-12 right-0 bg-white border border-gray-300 rounded-lg shadow-lg py-2 z-10 min-w-[200px]">
                   <div className="px-3 py-1.5 text-xs font-semibold text-gray-500 uppercase">
                     Seleccionar Tema
                   </div>
@@ -189,15 +190,15 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
                   {/* Tema Azul */}
                   <button
                     onClick={() => handleThemeChange('blue')}
-                    className={`w-full px-3 py-2 flex items-center gap-3 hover:bg-gray-50 transition-colors ${
+                    className={`w-full px-3 py-2 flex items-center gap-3 text-left whitespace-nowrap hover:bg-gray-50 transition-colors ${
                       currentTheme === 'blue' ? 'bg-blue-50' : ''
                     }`}
                     type="button"
                   >
-                    <div className="w-5 h-5 rounded-full bg-primary-theme border-2 border-white shadow"></div>
+                    <div className="w-5 h-5 rounded-full bg-[#4A6FA5] border-2 border-white shadow"></div>
                     <span className="text-sm text-gray-700">Azul Institucional</span>
                     {currentTheme === 'blue' && (
-                      <svg className="w-4 h-4 ml-auto text-primary-theme" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                      <svg className="w-4 h-4 ml-auto text-[#4A6FA5]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
                         <polyline points="20 6 9 17 4 12"/>
                       </svg>
                     )}
@@ -206,7 +207,7 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
                   {/* Tema Rojo */}
                   <button
                     onClick={() => handleThemeChange('red')}
-                    className={`w-full px-3 py-2 flex items-center gap-3 hover:bg-gray-50 transition-colors ${
+                    className={`w-full px-3 py-2 flex items-center gap-3 text-left whitespace-nowrap hover:bg-gray-50 transition-colors ${
                       currentTheme === 'red' ? 'bg-red-50' : ''
                     }`}
                     type="button"
@@ -223,7 +224,7 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
                   {/* Tema Verde */}
                   <button
                     onClick={() => handleThemeChange('green')}
-                    className={`w-full px-3 py-2 flex items-center gap-3 hover:bg-gray-50 transition-colors ${
+                    className={`w-full px-3 py-2 flex items-center gap-3 text-left whitespace-nowrap hover:bg-gray-50 transition-colors ${
                       currentTheme === 'green' ? 'bg-green-50' : ''
                     }`}
                     type="button"

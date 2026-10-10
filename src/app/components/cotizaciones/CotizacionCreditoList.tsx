@@ -7,7 +7,8 @@
  *   Tasa Interés | Plazo | Periodo | Interés a Pagar | Pago por Periodo | Estatus
  */
 import { useState, useRef } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
+import { useOrdenTabla, coincideBusqueda } from '@/app/lib/ordenTabla';
 import type { CotizacionCredito } from './cotizacionCreditoTypes';
 
 interface Props {
@@ -45,7 +46,6 @@ const renderEstatus = (estatus: string) => {
 
 export function CotizacionCreditoList({ cotizaciones, lineaLabel, onNew, onEdit, onView, loading, onRefresh, onCrearSolicitud }: Props) {
   const [searchTerm, setSearchTerm] = useState('');
-  const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 8;
   const tableRef = useRef<HTMLDivElement>(null);
@@ -56,26 +56,35 @@ export function CotizacionCreditoList({ cotizaciones, lineaLabel, onNew, onEdit,
   const handleExportPDF = () => { toast.success('Exportando a PDF'); };
   const handlePrint = () => { toast.success('Imprimiendo'); };
 
-  const filtered = cotizaciones
-    .filter(c => {
-      const s = searchTerm.toLowerCase();
-      return (
-        c.no_cotiza.toLowerCase().includes(s) ||
-        (c.data.usuario || '').toLowerCase().includes(s) ||
-        (c.data.producto?.nombreProducto || '').toLowerCase().includes(s) ||
-        (c.data.cliente?.nombreCompleto || '').toLowerCase().includes(s) ||
-        c.estatus_cotiza.toLowerCase().includes(s)
-      );
-    })
-    .sort((a, b) => {
-      const dA = new Date(a.fecha_cotiza).getTime();
-      const dB = new Date(b.fecha_cotiza).getTime();
-      return sortOrder === 'desc' ? dB - dA : dA - dB;
-    });
+  const filtered = cotizaciones.filter(c => coincideBusqueda(searchTerm, [
+    c.no_cotiza, formatDateDisplay(c.fecha_cotiza), c.data.usuario, c.data.producto?.nombreProducto,
+    c.data.cliente?.nombreCompleto, c.estatus_cotiza, c.data.periodo,
+  ]));
+
+  // Más recientes primero (fecha de cotización; a igual fecha, el folio).
+  const orden = useOrdenTabla(filtered, {
+    id: 'cotizaciones-credito',
+    columnas: {
+      id: c => c.no_cotiza,
+      fecha: c => c.fecha_cotiza,
+      usuario: c => c.data.usuario,
+      producto: c => c.data.producto?.nombreProducto,
+      monto: c => c.data.montoSolicitado,
+      tasa: c => c.data.tasaCotizada ?? (c.data as any).tasaAnual,
+      plazo: c => c.data.plazo || (c.data as any).plazoMeses,
+      periodo: c => c.data.periodo || (c.data as any).frecuenciaPago,
+      interes: c => c.data.interesAPagar || (c.data as any).interesTotal,
+      pago: c => c.data.pagoPeriodo || c.data.pagoMensual,
+      estatus: c => c.estatus_cotiza,
+    },
+    porDefecto: { campo: 'fecha', dir: 'desc' },
+    desempate: c => c.no_cotiza,
+    alCambiar: () => setCurrentPage(1),
+  });
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / itemsPerPage));
   const startIdx = (currentPage - 1) * itemsPerPage;
-  const currentItems = filtered.slice(startIdx, startIdx + itemsPerPage);
+  const currentItems = orden.filas.slice(startIdx, startIdx + itemsPerPage);
 
   const goPrev = () => { if (currentPage > 1) setCurrentPage(currentPage - 1); };
   const goNext = () => { if (currentPage < totalPages) setCurrentPage(currentPage + 1); };
@@ -153,7 +162,7 @@ export function CotizacionCreditoList({ cotizaciones, lineaLabel, onNew, onEdit,
           <div className="flex items-center gap-4 text-sm text-gray-700">
             <div className="flex items-center gap-2">
               <span>Orden</span>
-              <select value={sortOrder} onChange={(e) => { setSortOrder(e.target.value as any); setCurrentPage(1); }} className="px-2 py-1 border border-gray-400 rounded text-sm bg-white pr-6 appearance-none">
+              <select value={orden.dir} onChange={(e) => orden.fijar(orden.campo, e.target.value as 'asc' | 'desc')} className="px-2 py-1 border border-gray-400 rounded text-sm bg-white pr-6 appearance-none">
                 <option value="desc">Descendente</option>
                 <option value="asc">Ascendente</option>
               </select>
@@ -170,17 +179,17 @@ export function CotizacionCreditoList({ cotizaciones, lineaLabel, onNew, onEdit,
             <thead>
               <tr className="bg-gray-100 border-b border-gray-300">
                 <th className="px-2 py-2.5 text-left font-normal text-xs text-gray-700 whitespace-nowrap">Editar | Ver</th>
-                <th className="px-2 py-2.5 text-left font-normal text-xs text-gray-700 whitespace-nowrap">ID COTIZA</th>
-                <th className="px-2 py-2.5 text-left font-normal text-xs text-gray-700 whitespace-nowrap">FECHA Y HORA</th>
-                <th className="px-2 py-2.5 text-left font-normal text-xs text-gray-700 whitespace-nowrap">USUARIO</th>
-                <th className="px-2 py-2.5 text-left font-normal text-xs text-gray-700 whitespace-nowrap">PRODUCTO</th>
-                <th className="px-2 py-2.5 text-right font-normal text-xs text-gray-700 whitespace-nowrap">MONTO COTIZADO</th>
-                <th className="px-2 py-2.5 text-center font-normal text-xs text-gray-700 whitespace-nowrap">TASA INTERÉS</th>
-                <th className="px-2 py-2.5 text-center font-normal text-xs text-gray-700 whitespace-nowrap">PLAZO</th>
-                <th className="px-2 py-2.5 text-center font-normal text-xs text-gray-700 whitespace-nowrap">PERIODO</th>
-                <th className="px-2 py-2.5 text-right font-normal text-xs text-gray-700 whitespace-nowrap">INTERÉS A PAGAR</th>
-                <th className="px-2 py-2.5 text-right font-normal text-xs text-gray-700 whitespace-nowrap">PAGO PERIODO</th>
-                <th className="px-2 py-2.5 text-center font-normal text-xs text-gray-700 whitespace-nowrap">ESTATUS</th>
+                <th className="px-2 py-2.5 text-left font-normal text-xs text-gray-700 whitespace-nowrap" {...orden.th('id')}>ID COTIZA{orden.flecha('id')}</th>
+                <th className="px-2 py-2.5 text-left font-normal text-xs text-gray-700 whitespace-nowrap" {...orden.th('fecha')}>FECHA Y HORA{orden.flecha('fecha')}</th>
+                <th className="px-2 py-2.5 text-left font-normal text-xs text-gray-700 whitespace-nowrap" {...orden.th('usuario')}>USUARIO{orden.flecha('usuario')}</th>
+                <th className="px-2 py-2.5 text-left font-normal text-xs text-gray-700 whitespace-nowrap" {...orden.th('producto')}>PRODUCTO{orden.flecha('producto')}</th>
+                <th className="px-2 py-2.5 text-right font-normal text-xs text-gray-700 whitespace-nowrap" {...orden.th('monto')}>MONTO COTIZADO{orden.flecha('monto')}</th>
+                <th className="px-2 py-2.5 text-center font-normal text-xs text-gray-700 whitespace-nowrap" {...orden.th('tasa')}>TASA INTERÉS{orden.flecha('tasa')}</th>
+                <th className="px-2 py-2.5 text-center font-normal text-xs text-gray-700 whitespace-nowrap" {...orden.th('plazo')}>PLAZO{orden.flecha('plazo')}</th>
+                <th className="px-2 py-2.5 text-center font-normal text-xs text-gray-700 whitespace-nowrap" {...orden.th('periodo')}>PERIODO{orden.flecha('periodo')}</th>
+                <th className="px-2 py-2.5 text-right font-normal text-xs text-gray-700 whitespace-nowrap" {...orden.th('interes')}>INTERÉS A PAGAR{orden.flecha('interes')}</th>
+                <th className="px-2 py-2.5 text-right font-normal text-xs text-gray-700 whitespace-nowrap" {...orden.th('pago')}>PAGO PERIODO{orden.flecha('pago')}</th>
+                <th className="px-2 py-2.5 text-center font-normal text-xs text-gray-700 whitespace-nowrap" {...orden.th('estatus')}>ESTATUS{orden.flecha('estatus')}</th>
               </tr>
             </thead>
             <tbody>
@@ -195,9 +204,9 @@ export function CotizacionCreditoList({ cotizaciones, lineaLabel, onNew, onEdit,
                   onMouseLeave={(e) => e.currentTarget.style.backgroundColor = index % 2 === 1 ? '#EEEEEE' : '#FFFFFF'}
                 >
                   <td className="px-2 py-2.5 text-xs whitespace-nowrap">
-                    <a href="#" className="text-[#0066CC] hover:underline" onClick={(e) => { e.preventDefault(); onEdit(c); }}>Editar</a>
+                    <button type="button" className="enlace-accion text-[color:var(--theme-link)] hover:underline" onClick={() => { onEdit(c); }}>Editar</button>
                     <span className="text-gray-700"> | </span>
-                    <a href="#" className="text-[#0066CC] hover:underline" onClick={(e) => { e.preventDefault(); onView(c); }}>Ver</a>
+                    <button type="button" className="enlace-accion text-[color:var(--theme-link)] hover:underline" onClick={() => { onView(c); }}>Ver</button>
                   </td>
                   <td className="px-2 py-2.5 text-xs text-gray-700 whitespace-nowrap">{c.no_cotiza}</td>
                   <td className="px-2 py-2.5 text-xs text-gray-700 whitespace-nowrap">{formatDateDisplay(c.fecha_cotiza)}</td>
@@ -220,17 +229,17 @@ export function CotizacionCreditoList({ cotizaciones, lineaLabel, onNew, onEdit,
       {/* Paginación */}
       <div className="px-4 py-3 border-t border-gray-300">
         <div className="flex items-center justify-end gap-3">
-          <button className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-40" onClick={goFirst} disabled={currentPage === 1}>
+          <button type="button" aria-label="Primera página" title="Primera página" className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-40" onClick={goFirst} disabled={currentPage === 1}>
             <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#666" strokeWidth="1.5"><path d="M13 4L4 9l9 5V4z" /></svg>
           </button>
-          <button className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-40" onClick={goPrev} disabled={currentPage === 1}>
+          <button type="button" aria-label="Página anterior" title="Página anterior" className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-40" onClick={goPrev} disabled={currentPage === 1}>
             <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#666" strokeWidth="1.5"><path d="M9 4L4 9l5 5V4z" /></svg>
           </button>
           <div className="text-sm text-gray-700 min-w-[100px] text-center">Página {currentPage} de {totalPages}</div>
-          <button className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-40" onClick={goNext} disabled={currentPage === totalPages}>
+          <button type="button" aria-label="Página siguiente" title="Página siguiente" className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-40" onClick={goNext} disabled={currentPage === totalPages}>
             <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#666" strokeWidth="1.5"><path d="M5 4l5 5-5 5V4z" /></svg>
           </button>
-          <button className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-40" onClick={goLast} disabled={currentPage === totalPages}>
+          <button type="button" aria-label="Última página" title="Última página" className="p-1.5 hover:bg-gray-100 rounded disabled:opacity-40" onClick={goLast} disabled={currentPage === totalPages}>
             <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#666" strokeWidth="1.5"><path d="M4 4L13 9l-9 5V4z" /></svg>
           </button>
         </div>

@@ -15,7 +15,7 @@
  * el motor de cascada consuma el mismo shape filtrando.
  */
 import { useState, useEffect, useRef, forwardRef, useImperativeHandle } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 import { useTabPersistence } from '@/app/hooks/useProductoPersistence';
 import type { PrelacionSegundoPiso, EscenarioPrelacion2oPiso } from '@/app/types/productoLineaCredito';
 
@@ -138,7 +138,7 @@ export const Prelacion2oPisoTab = forwardRef<{ getData: () => PrelacionSegundoPi
                 onClick={() => { setEscenario(e.id); setSelectedRow(null); }}
                 className={`px-4 py-2 text-xs border border-b-0 transition-colors ${
                   escenario === e.id
-                    ? 'bg-[#4A6FA5] text-white border-[#3E5C91] font-medium'
+                    ? 'bg-[color:var(--theme-primary)] text-white border-[color:var(--theme-secondary)] font-medium'
                     : 'bg-[#F5F5F5] text-gray-700 border-gray-300 hover:bg-gray-200'
                 }`}
               >
@@ -149,14 +149,14 @@ export const Prelacion2oPisoTab = forwardRef<{ getData: () => PrelacionSegundoPi
 
           {/* Acciones */}
           <div className="flex items-center gap-2 mb-3">
-            <button onClick={handleNew} disabled={isViewMode} className="px-3 py-1 bg-[#4A6FA5] text-white text-xs hover:bg-[#3E5C91] border border-[#3E5C91] disabled:bg-gray-400 disabled:cursor-not-allowed">Nuevo</button>
-            <button onClick={handleDelete} disabled={selectedRow === null || isViewMode} className="px-3 py-1 bg-[#4A6FA5] text-white text-xs hover:bg-[#3E5C91] border border-[#3E5C91] disabled:bg-gray-400 disabled:cursor-not-allowed">Eliminar</button>
+            <button onClick={handleNew} disabled={isViewMode} className="px-3 py-1 bg-[color:var(--theme-primary)] text-white text-xs hover:bg-[color:var(--theme-secondary)] border border-[color:var(--theme-secondary)] disabled:bg-gray-400 disabled:cursor-not-allowed">Nuevo</button>
+            <button onClick={handleDelete} disabled={selectedRow === null || isViewMode} className="px-3 py-1 bg-[color:var(--theme-primary)] text-white text-xs hover:bg-[color:var(--theme-secondary)] border border-[color:var(--theme-secondary)] disabled:bg-gray-400 disabled:cursor-not-allowed">Eliminar</button>
           </div>
 
           <div className="border border-gray-400 overflow-x-auto">
             <table className="w-full text-xs">
               <thead>
-                <tr className="bg-[#4A6FA5] text-white">
+                <tr className="bg-[color:var(--theme-primary)] text-white">
                   <th className="px-3 py-2 text-center font-medium border-r border-white/20 w-16">SEQ</th>
                   <th className="px-3 py-2 text-left font-medium border-r border-white/20">CONCEPTO</th>
                   <th className="px-3 py-2 text-left font-medium w-56">VALOR</th>
@@ -174,7 +174,7 @@ export const Prelacion2oPisoTab = forwardRef<{ getData: () => PrelacionSegundoPi
                       onClick={() => setSelectedRow(item.id)}
                       onDoubleClick={() => handleEdit(item)}
                       className={`border-b border-gray-300 cursor-pointer transition-colors ${
-                        selectedRow === item.id ? 'bg-[#D6EAF8]' : index % 2 === 0 ? 'bg-white' : 'bg-[#F9F9F9]'
+                        selectedRow === item.id ? 'bg-[color:var(--theme-tint-soft)]' : index % 2 === 0 ? 'bg-white' : 'bg-[#F9F9F9]'
                       }`}
                     >
                       <td className="px-3 py-2 text-center text-gray-700 border-r border-gray-300 font-medium">{item.seq}</td>
@@ -250,7 +250,7 @@ function FormModal({ mode, item, escenarioLabel, onSave, onClose }: FormModalPro
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
       <div className="bg-white shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col border-2 border-gray-400" onClick={(e) => e.stopPropagation()}>
-        <div className="bg-[#2E5C91] px-4 py-2.5 border-b-2 border-gray-400 flex items-center justify-between">
+        <div className="bg-[color:var(--theme-secondary)] px-4 py-2.5 border-b-2 border-gray-400 flex items-center justify-between">
           <h3 className="text-sm font-medium text-white">
             {mode === 'create' ? 'Nuevo Renglón de Cascada' : mode === 'edit' ? 'Editar Renglón de Cascada' : 'Ver Renglón de Cascada'}
           </h3>
@@ -260,7 +260,7 @@ function FormModal({ mode, item, escenarioLabel, onSave, onClose }: FormModalPro
         <div className="px-6 py-4 overflow-auto bg-white">
           <form onSubmit={handleSubmit}>
             <div className="mb-4">
-              <div className="bg-[#E7E6E6] px-3 py-1.5 mb-3 border-l-4 border-[#2E5C91] flex items-center justify-between">
+              <div className="bg-[#E7E6E6] px-3 py-1.5 mb-3 border-l-4 border-[color:var(--theme-secondary)] flex items-center justify-between">
                 <span className="text-xs font-medium text-gray-800">INFORMACIÓN DEL RENGLÓN</span>
                 <span className="text-[10px] text-gray-600">Escenario: <strong>{escenarioLabel}</strong></span>
               </div>
@@ -309,7 +309,7 @@ function FormModal({ mode, item, escenarioLabel, onSave, onClose }: FormModalPro
             <div className="flex gap-2 justify-end pt-3 border-t border-gray-300">
               <button type="button" onClick={onClose} className="px-4 py-1.5 bg-gray-500 text-white text-xs hover:bg-gray-600">{isViewMode ? 'Cerrar' : 'Cancelar'}</button>
               {!isViewMode && (
-                <button type="submit" className="px-4 py-1.5 bg-[#4A6FA5] text-white text-xs hover:bg-[#3E5C91]">Guardar</button>
+                <button type="submit" className="px-4 py-1.5 bg-[color:var(--theme-primary)] text-white text-xs hover:bg-[color:var(--theme-secondary)]">Guardar</button>
               )}
             </div>
           </form>

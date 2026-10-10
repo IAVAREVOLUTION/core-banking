@@ -234,6 +234,8 @@ export interface PromComisImpuesto {
 }
 
 export interface ProductoLineaCredito {
+  /** Checklist documental (datos de ejemplo / registros previos). */
+  checkList?: unknown[];
   id: number;
   /** UUID de la llave primaria en J_PRODUCTOS — para CRUD contra Supabase */
   dbUuid?: string;

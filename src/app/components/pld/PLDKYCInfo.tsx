@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 import { DatePicker } from '@/app/components/ui/DatePicker';
 import * as store from './pldStore';
 
@@ -138,7 +138,7 @@ export function PLDKYCInfo({ onBack }: Props) {
                 <option>Bajo</option><option>Medio</option><option>Alto</option>
               </select>
               {(filterEstatus || filterRiesgo || searchTerm) && (
-                <button onClick={() => { setFilterEstatus(''); setFilterRiesgo(''); setSearchTerm(''); setCurrentPage(1); }} className="text-xs text-[#0066CC] hover:underline">Limpiar</button>
+                <button onClick={() => { setFilterEstatus(''); setFilterRiesgo(''); setSearchTerm(''); setCurrentPage(1); }} className="text-xs text-[color:var(--theme-link)] hover:underline">Limpiar</button>
               )}
             </div>
             <input type="text" value={searchTerm} onChange={e => { setSearchTerm(e.target.value); setCurrentPage(1); }} placeholder="Buscar por nombre, RFC, No. KYC..." className="px-3 py-1 border border-gray-400 rounded text-sm w-72 transition-all" />
@@ -161,10 +161,10 @@ export function PLDKYCInfo({ onBack }: Props) {
             <div className="flex items-center gap-4 text-sm text-gray-700">
               <span className="font-medium">Total: {filtered.length}</span>
               <div className="flex items-center gap-1">
-                <button onClick={() => setCurrentPage(p => Math.max(1,p-1))} disabled={currentPage===1} className="p-0.5 text-[#0066CC] disabled:opacity-40">
+                <button type="button" aria-label="Página anterior" title="Página anterior" onClick={() => setCurrentPage(p => Math.max(1,p-1))} disabled={currentPage===1} className="p-0.5 text-[color:var(--theme-link)] disabled:opacity-40">
                   <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M10 3L5 8l5 5V3z"/></svg>
                 </button>
-                <button onClick={() => setCurrentPage(p => Math.min(totalPages,p+1))} disabled={currentPage===totalPages} className="p-0.5 text-[#0066CC] disabled:opacity-40">
+                <button type="button" aria-label="Página siguiente" title="Página siguiente" onClick={() => setCurrentPage(p => Math.min(totalPages,p+1))} disabled={currentPage===totalPages} className="p-0.5 text-[color:var(--theme-link)] disabled:opacity-40">
                   <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M6 3l5 5-5 5V3z"/></svg>
                 </button>
               </div>
@@ -180,7 +180,7 @@ export function PLDKYCInfo({ onBack }: Props) {
                 <tr style={{ backgroundColor: '#D0D0D0' }} className="border-b border-gray-300">
                   <th className="px-3 py-2.5 text-left text-xs text-gray-700">Editar | Ver</th>
                   <th className="px-3 py-2.5 text-left text-xs text-gray-700">No. KYC</th>
-                  <th className="px-3 py-2.5 text-left text-xs text-gray-700">Cliente</th>
+                  <th className="px-3 py-2.5 text-left text-xs text-gray-700">Nombre Interlocutor</th>
                   <th className="px-3 py-2.5 text-left text-xs text-gray-700">RFC</th>
                   <th className="px-3 py-2.5 text-left text-xs text-gray-700">Personalidad</th>
                   <th className="px-3 py-2.5 text-left text-xs text-gray-700">Sucursal</th>
@@ -195,14 +195,14 @@ export function PLDKYCInfo({ onBack }: Props) {
                 ) : paged.map((kyc, idx) => (
                   <tr key={kyc.clienteId || idx} className="border-b border-gray-200 transition-colors duration-150"
                     style={{ backgroundColor: idx % 2 === 1 ? '#EEEEEE' : '#FFFFFF' }}
-                    onMouseEnter={e => e.currentTarget.style.backgroundColor = '#E8F4F8'}
+                    onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--theme-tint-soft)'}
                     onMouseLeave={e => e.currentTarget.style.backgroundColor = idx % 2 === 1 ? '#EEEEEE' : '#FFFFFF'}>
                     <td className="px-3 py-2.5 text-xs whitespace-nowrap">
-                      <span className="text-[#0066CC] cursor-pointer hover:underline" onClick={() => openDetail(kyc,'editar')}>Editar</span>
+                      <span className="text-[color:var(--theme-link)] cursor-pointer hover:underline" onClick={() => openDetail(kyc,'editar')}>Editar</span>
                       <span className="text-gray-400 mx-1">|</span>
-                      <span className="text-[#0066CC] cursor-pointer hover:underline" onClick={() => openDetail(kyc,'ver')}>Ver</span>
+                      <span className="text-[color:var(--theme-link)] cursor-pointer hover:underline" onClick={() => openDetail(kyc,'ver')}>Ver</span>
                     </td>
-                    <td className="px-3 py-2.5 text-xs text-[#0066CC]" style={{ fontWeight: 500 }}>{kyc.noCalculado}</td>
+                    <td className="px-3 py-2.5 text-xs text-[color:var(--theme-link)]" style={{ fontWeight: 500 }}>{kyc.noCalculado}</td>
                     <td className="px-3 py-2.5 text-xs" style={{ fontWeight: 500 }}>{kyc.clienteNombre}</td>
                     <td className="px-3 py-2.5 text-xs font-mono">{kyc.clienteRFC}</td>
                     <td className="px-3 py-2.5 text-xs">{kyc.clientePersonalidad}</td>
@@ -242,7 +242,7 @@ export function PLDKYCInfo({ onBack }: Props) {
       <div className="bg-white px-4 py-3 border-b border-gray-300">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <button onClick={handleBackToList} className="text-gray-500 hover:text-gray-700">
+            <button type="button" aria-label="Regresar" title="Regresar" onClick={handleBackToList} className="text-gray-500 hover:text-gray-700">
               <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M11 4L6 9l5 5"/></svg>
             </button>
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#666" strokeWidth="1.5"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
@@ -251,9 +251,9 @@ export function PLDKYCInfo({ onBack }: Props) {
           </div>
           <div className="flex items-center gap-2">
             {isView
-              ? <button onClick={() => setDetailMode('editar')} className="px-4 py-1.5 bg-white border border-gray-400 text-gray-700 rounded text-sm hover:bg-gray-50">Editar KYC</button>
+              ? <button onClick={() => setDetailMode('editar')} className="px-4 py-1.5 rounded text-sm text-white bg-[color:var(--theme-action)] hover:bg-[color:var(--theme-action-hover)]">Editar KYC</button>
               : <>
-                  <button onClick={handleSave} className="px-5 py-1.5 bg-[#0099CC] text-white rounded text-sm hover:bg-[#0088BB]" style={{ fontWeight: 500 }}>Guardar</button>
+                  <button onClick={handleSave} className="px-5 py-1.5 bg-[color:var(--theme-action)] text-white rounded text-sm hover:bg-[color:var(--theme-action-hover)]" style={{ fontWeight: 500 }}>Guardar</button>
                   <button onClick={handleBackToList} className="px-4 py-1.5 bg-white border border-gray-400 text-gray-700 rounded text-sm hover:bg-gray-50">Cancelar</button>
                 </>}
             {isView && <button onClick={handleBackToList} className="px-4 py-1.5 bg-white border border-gray-400 text-gray-700 rounded text-sm hover:bg-gray-50">Volver</button>}
@@ -284,9 +284,9 @@ export function PLDKYCInfo({ onBack }: Props) {
           </div>
           <div className="p-4 grid grid-cols-2 gap-x-6">
             <div className="space-y-2">
-              <div className="flex items-center gap-2"><label className={labelCls}>ES PEP O HA SIDO PEP <span className="text-red-600">*</span></label><input type="checkbox" checked={editData.esPEP} onChange={e => update('esPEP', e.target.checked)} disabled={isView} className="w-3.5 h-3.5 accent-[#4A6FA5]" /></div>
+              <div className="flex items-center gap-2"><label className={labelCls}>ES PEP O HA SIDO PEP <span className="text-red-600">*</span></label><input type="checkbox" checked={editData.esPEP} onChange={e => update('esPEP', e.target.checked)} disabled={isView} className="w-3.5 h-3.5 accent-[color:var(--theme-primary)]" /></div>
               <div className="flex items-center gap-2"><label className={labelCls}>No. SALARIOS / MES <span className="text-red-600">*</span></label><input type="text" value={editData.numeroSalarios} onChange={e => update('numeroSalarios', e.target.value.replace(/\D/g,''))} readOnly={isView} className={isView ? disabledCls : inputCls} /></div>
-              <div className="flex items-center gap-2"><label className={labelCls}>CONYUGE/FAMILIAR PEP <span className="text-red-600">*</span></label><input type="checkbox" checked={editData.conyugeFamiliarPEP} onChange={e => update('conyugeFamiliarPEP', e.target.checked)} disabled={isView} className="w-3.5 h-3.5 accent-[#4A6FA5]" /></div>
+              <div className="flex items-center gap-2"><label className={labelCls}>CONYUGE/FAMILIAR PEP <span className="text-red-600">*</span></label><input type="checkbox" checked={editData.conyugeFamiliarPEP} onChange={e => update('conyugeFamiliarPEP', e.target.checked)} disabled={isView} className="w-3.5 h-3.5 accent-[color:var(--theme-primary)]" /></div>
               <div className="flex items-center gap-2"><label className={labelCls}>LISTAS NEGRAS <span className="text-red-600">*</span></label><input type="text" value={editData.listasNegras} onChange={e => update('listasNegras', e.target.value)} readOnly={isView} className={isView ? disabledCls : inputCls} placeholder="Sin coincidencias" /></div>
               <div className="flex items-start gap-2"><label className={`${labelCls} pt-1`}>ACTIVIDAD INGRESOS</label>{isView ? <div className={disabledCls}>{editData.actividadIngresos||'—'}</div> : <textarea value={editData.actividadIngresos} onChange={e => update('actividadIngresos', e.target.value)} className={`${inputCls} h-14 resize-none`} placeholder="Describa la actividad..." />}</div>
               <div className="flex items-center gap-2"><label className={labelCls}>FECHA CALIFICACIÓN</label>{isView ? <div className={disabledCls}>{editData.fechaCalificacion||'—'}</div> : <DatePicker value={editData.fechaCalificacion} onChange={v => update('fechaCalificacion', v)} />}</div>
@@ -294,8 +294,8 @@ export function PLDKYCInfo({ onBack }: Props) {
             <div className="space-y-2">
               <div className="flex items-center gap-2"><label className={labelCls}>INGRESO MENSUAL <span className="text-red-600">*</span></label>{isView ? <div className={disabledCls}>{editData.ingresoMensual||'—'}</div> : <select value={editData.ingresoMensual} onChange={e => update('ingresoMensual', e.target.value)} className={inputCls}><option value="">-- Seleccionar --</option><option>Menos de $5,000</option><option>$5,000 - $10,000</option><option>$10,001 - $20,000</option><option>$20,001 - $50,000</option><option>$50,001 - $100,000</option><option>Mas de $100,000</option></select>}</div>
               <div className="flex items-center gap-2"><label className={labelCls}>ACTIVIDAD ECONÓMICA <span className="text-red-600">*</span></label>{isView ? <div className={disabledCls}>{editData.actividadEconomica||'—'}</div> : <select value={editData.actividadEconomica} onChange={e => update('actividadEconomica', e.target.value)} className={inputCls}><option value="">-- Seleccionar --</option><option>Comercio al por menor</option><option>Servicios profesionales</option><option>Manufactura</option><option>Construccion</option><option>Transporte</option><option>Servicios financieros</option><option>Tecnologia</option><option>Agricultura</option></select>}</div>
-              <div className="flex items-center gap-2"><label className={labelCls}>FUNCIONARIOS PÚBLICOS</label><input type="checkbox" checked={editData.funcionariosPublicos} onChange={e => update('funcionariosPublicos', e.target.checked)} disabled={isView} className="w-3.5 h-3.5 accent-[#4A6FA5]" /></div>
-              <div className="flex items-center gap-2"><label className={labelCls}>PERCIBE OTROS INGRESOS</label><input type="checkbox" checked={editData.percibeOtrosIngresos} onChange={e => update('percibeOtrosIngresos', e.target.checked)} disabled={isView} className="w-3.5 h-3.5 accent-[#4A6FA5]" /></div>
+              <div className="flex items-center gap-2"><label className={labelCls}>FUNCIONARIOS PÚBLICOS</label><input type="checkbox" checked={editData.funcionariosPublicos} onChange={e => update('funcionariosPublicos', e.target.checked)} disabled={isView} className="w-3.5 h-3.5 accent-[color:var(--theme-primary)]" /></div>
+              <div className="flex items-center gap-2"><label className={labelCls}>PERCIBE OTROS INGRESOS</label><input type="checkbox" checked={editData.percibeOtrosIngresos} onChange={e => update('percibeOtrosIngresos', e.target.checked)} disabled={isView} className="w-3.5 h-3.5 accent-[color:var(--theme-primary)]" /></div>
               <div className="flex items-center gap-2"><label className={labelCls}>APROBADO POR OFICIAL</label><input type="checkbox" checked={editData.aprobadoOficial} disabled className="w-3.5 h-3.5 opacity-60" /><span className="text-[10px] text-gray-400">(solo lectura)</span></div>
               <div className="flex items-center gap-2"><label className={labelCls}>ULT. REVISIÓN</label><div className={disabledCls}>{editData.fechaUltimaRevision||'—'}</div></div>
             </div>

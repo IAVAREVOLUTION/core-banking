@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect } from 'react';
 import type { InversionCompleta } from '@/types/inversion';
 import * as store from './inversionesStore';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
+import { useOrdenTabla, coincideBusqueda } from '@/app/lib/ordenTabla';
 
 interface Props {
   onNew: () => void;
@@ -12,7 +13,6 @@ interface Props {
 export function InversionesList({ onNew, onEdit, onView }: Props) {
   const inversiones = store.getAll();
   const [searchTerm, setSearchTerm] = useState('');
-  const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
   const tableRef = useRef<HTMLDivElement>(null);
@@ -21,26 +21,34 @@ export function InversionesList({ onNew, onEdit, onView }: Props) {
   const fmtMoney = (v: string) => (v ? `$${v}` : '$0.00');
 
   // ── Filtrado ──
-  const filteredInversiones = inversiones
-    .filter((inv) => {
-      const t = searchTerm.toLowerCase();
-      return (
-        inv.numero.toLowerCase().includes(t) ||
-        inv.form.cliente.toLowerCase().includes(t) ||
-        inv.form.producto.toLowerCase().includes(t) ||
-        inv.form.noCuentaInversion.toLowerCase().includes(t) ||
-        inv.form.estatusInversion.toLowerCase().includes(t)
-      );
-    })
-    .sort((a, b) => {
-      const cmp = a.id - b.id;
-      return sortOrder === 'desc' ? -cmp : cmp;
-    });
+  const filteredInversiones = inversiones.filter(inv => coincideBusqueda(searchTerm, [
+    inv.numero, inv.form.cliente, inv.form.producto, inv.form.moneda, inv.form.estatusInversion,
+    inv.form.noCuentaInversion, inv.form.fechaInicio,
+  ]));
+
+  // Más recientes primero: por orden de alta (id), como antes.
+  const orden = useOrdenTabla(filteredInversiones, {
+    id: 'inversiones',
+    columnas: {
+      alta: inv => inv.id,
+      id: inv => inv.numero,
+      nombre: inv => inv.form.cliente,
+      producto: inv => inv.form.producto,
+      moneda: inv => inv.form.moneda,
+      estatus: inv => inv.form.estatusInversion,
+      cuenta: inv => inv.form.noCuentaInversion,
+      saldo: inv => inv.form.montoInversion,
+      fecha: inv => inv.form.fechaInicio,
+    },
+    porDefecto: { campo: 'alta', dir: 'desc' },
+    desempate: inv => inv.id,
+    alCambiar: () => setCurrentPage(1),
+  });
 
   // ── Paginación ──
   const totalPages = Math.max(1, Math.ceil(filteredInversiones.length / itemsPerPage));
   const startIndex = (currentPage - 1) * itemsPerPage;
-  const currentInversiones = filteredInversiones.slice(startIndex, startIndex + itemsPerPage);
+  const currentInversiones = orden.filas.slice(startIndex, startIndex + itemsPerPage);
 
   const handlePreviousPage = () => { if (currentPage > 1) setCurrentPage(currentPage - 1); };
   const handleNextPage = () => { if (currentPage < totalPages) setCurrentPage(currentPage + 1); };
@@ -53,8 +61,7 @@ export function InversionesList({ onNew, onEdit, onView }: Props) {
   };
 
   const handleSortChange = (value: 'desc' | 'asc') => {
-    setSortOrder(value);
-    setCurrentPage(1);
+    orden.fijar(orden.campo, value);
   };
 
   // ── Acciones ──
@@ -104,7 +111,7 @@ export function InversionesList({ onNew, onEdit, onView }: Props) {
               <path d="M12 8v8M8 12h8" />
             </svg>
             <h2 className="text-lg text-gray-800" style={{ fontWeight: 400 }}>Inversión</h2>
-            <button className="p-1 ml-2">
+            <button type="button" aria-label="Buscar" title="Buscar" className="p-1 ml-2">
               <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#999" strokeWidth="2">
                 <circle cx="8" cy="8" r="6" />
                 <path d="M13 13l3 3" />
@@ -112,8 +119,8 @@ export function InversionesList({ onNew, onEdit, onView }: Props) {
             </button>
           </div>
           <div className="flex items-center gap-4 text-sm text-gray-700">
-            <span onClick={handleListaClick} className="cursor-pointer hover:text-[#0099CC] transition-colors">Lista</span>
-            <span onClick={handleBuscarClick} className="cursor-pointer hover:text-[#0099CC] transition-colors">Buscar</span>
+            <span onClick={handleListaClick} className="cursor-pointer hover:text-[color:var(--theme-action)] transition-colors">Lista</span>
+            <span onClick={handleBuscarClick} className="cursor-pointer hover:text-[color:var(--theme-action)] transition-colors">Buscar</span>
           </div>
         </div>
       </div>
@@ -130,7 +137,7 @@ export function InversionesList({ onNew, onEdit, onView }: Props) {
               <path d="M6 8l-4-4h8z" />
             </svg>
           </div>
-          <button onClick={onNew} className="px-5 py-1.5 bg-[#0099CC] text-white rounded text-sm hover:bg-[#0088BB]" style={{ fontWeight: 500 }}>
+          <button onClick={onNew} className="px-5 py-1.5 bg-[color:var(--theme-action)] text-white rounded text-sm hover:bg-[color:var(--theme-action-hover)]" style={{ fontWeight: 500 }}>
             Nuevo
           </button>
         </div>
@@ -209,7 +216,7 @@ export function InversionesList({ onNew, onEdit, onView }: Props) {
               <span>Orden Rápido</span>
               <div className="relative">
                 <select
-                  value={sortOrder}
+                  value={orden.dir}
                   onChange={(e) => handleSortChange(e.target.value as 'desc' | 'asc')}
                   className="px-2 py-1 border border-gray-400 rounded text-sm bg-white pr-6 appearance-none"
                 >
@@ -233,7 +240,7 @@ export function InversionesList({ onNew, onEdit, onView }: Props) {
                 </svg>
               </div>
               <button
-                className="p-0.5 text-[#0099CC] hover:text-[#0088BB] disabled:opacity-40"
+                className="p-0.5 text-[color:var(--theme-action)] hover:text-[color:var(--theme-action-hover)] disabled:opacity-40"
                 title="Anterior"
                 onClick={handlePreviousPage}
                 disabled={currentPage === 1}
@@ -243,7 +250,7 @@ export function InversionesList({ onNew, onEdit, onView }: Props) {
                 </svg>
               </button>
               <button
-                className="p-0.5 text-[#0099CC] hover:text-[#0088BB] disabled:opacity-40"
+                className="p-0.5 text-[color:var(--theme-action)] hover:text-[color:var(--theme-action-hover)] disabled:opacity-40"
                 title="Siguiente"
                 onClick={handleNextPage}
                 disabled={currentPage === totalPages}
@@ -265,14 +272,14 @@ export function InversionesList({ onNew, onEdit, onView }: Props) {
             <thead>
               <tr className="bg-[#D0D0D0] border-b border-gray-300">
                 <th className="px-3 py-2.5 text-left text-xs text-gray-700" style={{ fontWeight: 400 }}>Editar | Ver</th>
-                <th className="px-3 py-2.5 text-left text-xs text-gray-700" style={{ fontWeight: 400 }}>ID</th>
-                <th className="px-3 py-2.5 text-left text-xs text-gray-700" style={{ fontWeight: 400 }}>NOMBRE</th>
-                <th className="px-3 py-2.5 text-left text-xs text-gray-700" style={{ fontWeight: 400 }}>PRODUCTO</th>
-                <th className="px-3 py-2.5 text-left text-xs text-gray-700" style={{ fontWeight: 400 }}>MONEDA</th>
-                <th className="px-3 py-2.5 text-left text-xs text-gray-700" style={{ fontWeight: 400 }}>ESTATUS INVERSIÓN</th>
-                <th className="px-3 py-2.5 text-left text-xs text-gray-700" style={{ fontWeight: 400 }}>CUENTA INVERSIÓN</th>
-                <th className="px-3 py-2.5 text-right text-xs text-gray-700" style={{ fontWeight: 400 }}>SALDO</th>
-                <th className="px-3 py-2.5 text-left text-xs text-gray-700" style={{ fontWeight: 400 }}>FECHA ACTIVACIÓN</th>
+                <th className="px-3 py-2.5 text-left text-xs text-gray-700" {...orden.th('id', { fontWeight: 400 })}>ID{orden.flecha('id')}</th>
+                <th className="px-3 py-2.5 text-left text-xs text-gray-700" {...orden.th('nombre', { fontWeight: 400 })}>NOMBRE{orden.flecha('nombre')}</th>
+                <th className="px-3 py-2.5 text-left text-xs text-gray-700" {...orden.th('producto', { fontWeight: 400 })}>PRODUCTO{orden.flecha('producto')}</th>
+                <th className="px-3 py-2.5 text-left text-xs text-gray-700" {...orden.th('moneda', { fontWeight: 400 })}>MONEDA{orden.flecha('moneda')}</th>
+                <th className="px-3 py-2.5 text-left text-xs text-gray-700" {...orden.th('estatus', { fontWeight: 400 })}>ESTATUS INVERSIÓN{orden.flecha('estatus')}</th>
+                <th className="px-3 py-2.5 text-left text-xs text-gray-700" {...orden.th('cuenta', { fontWeight: 400 })}>CUENTA INVERSIÓN{orden.flecha('cuenta')}</th>
+                <th className="px-3 py-2.5 text-right text-xs text-gray-700" {...orden.th('saldo', { fontWeight: 400 })}>SALDO{orden.flecha('saldo')}</th>
+                <th className="px-3 py-2.5 text-left text-xs text-gray-700" {...orden.th('fecha', { fontWeight: 400 })}>FECHA ACTIVACIÓN{orden.flecha('fecha')}</th>
               </tr>
             </thead>
             <tbody>
@@ -294,9 +301,9 @@ export function InversionesList({ onNew, onEdit, onView }: Props) {
                     onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = index % 2 === 1 ? '#EEEEEE' : '#FFFFFF')}
                   >
                     <td className="px-3 py-2.5 text-xs">
-                      <a href="#" className="text-[#0066CC] hover:underline" onClick={(e) => { e.preventDefault(); onEdit(inv); }}>Editar</a>
+                      <button type="button" className="enlace-accion text-[color:var(--theme-link)] hover:underline" onClick={() => { onEdit(inv); }}>Editar</button>
                       <span className="text-gray-700"> | </span>
-                      <a href="#" className="text-[#0066CC] hover:underline" onClick={(e) => { e.preventDefault(); onView(inv); }}>Ver</a>
+                      <button type="button" className="enlace-accion text-[color:var(--theme-link)] hover:underline" onClick={() => { onView(inv); }}>Ver</button>
                     </td>
                     <td className="px-3 py-2.5 text-xs text-gray-700">{inv.numero}</td>
                     <td className="px-3 py-2.5 text-xs text-gray-700">{inv.form.cliente}</td>

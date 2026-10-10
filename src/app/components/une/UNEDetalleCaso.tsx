@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 import {
   CasoUNE, EstatusCaso, Dictamen, CAT_ESTATUS, diasRestantes,
 } from './uneStore';
@@ -100,7 +100,7 @@ export function UNEDetalleCaso({ caso, onBack, onUpdate }: Props) {
 
       {/* Breadcrumb + botón volver */}
       <div className="flex items-center gap-2">
-        <button onClick={onBack} className="flex items-center gap-1 text-xs text-[#2E5C91] hover:underline">
+        <button onClick={onBack} className="flex items-center gap-1 text-xs text-[color:var(--theme-secondary)] hover:underline">
           <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2"><path d="M7 2L3 6l4 4"/></svg>
           Volver a casos
         </button>
@@ -113,7 +113,7 @@ export function UNEDetalleCaso({ caso, onBack, onUpdate }: Props) {
         <div className="flex items-start justify-between gap-4">
           <div>
             <div className="flex items-center gap-2 mb-1">
-              <span className="font-mono text-lg font-bold text-[#2E5C91]">{caso.folio}</span>
+              <span className="font-mono text-lg font-bold text-[color:var(--theme-secondary)]">{caso.folio}</span>
               <span className={`px-2 py-0.5 text-[10px] border ${estatusBadge(caso.estatus)}`}>{caso.estatus}</span>
               <span className={`px-2 py-0.5 text-[10px] rounded ${tipoBadge(caso.tipo)}`}>{caso.tipo}</span>
               <span className={`px-2 py-0.5 text-[10px] border border-gray-200 ${caso.prioridad === 'Alta' ? 'bg-red-50 text-red-700' : caso.prioridad === 'Media' ? 'bg-amber-50 text-amber-700' : 'bg-gray-50 text-gray-600'}`}>
@@ -146,8 +146,8 @@ export function UNEDetalleCaso({ caso, onBack, onUpdate }: Props) {
             <p className="text-[10px] text-gray-500 uppercase tracking-wide font-semibold mb-3">Información del caso</p>
             <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 text-xs">
               {[
-                ['Cliente',           caso.clienteNombre],
-                ['ID Cliente',        caso.clienteId],
+                ['Nombre Interlocutor',           caso.clienteNombre],
+                ['No. Interlocutor',        caso.clienteId],
                 ['Canal',             caso.canal],
                 ['Producto afectado', caso.productoAfectado],
                 ['Área responsable',  caso.areaResponsable],
@@ -166,7 +166,7 @@ export function UNEDetalleCaso({ caso, onBack, onUpdate }: Props) {
                   {caso.notificadoCliente ? '✓ Sí' : '✗ Pendiente'}
                 </span>
                 {!caso.notificadoCliente && !cerrado && (
-                  <button onClick={handleNotificar} className="ml-2 text-[10px] text-[#2E5C91] hover:underline">
+                  <button onClick={handleNotificar} className="ml-2 text-[10px] text-[color:var(--theme-secondary)] hover:underline">
                     Marcar como notificado
                   </button>
                 )}
@@ -201,7 +201,7 @@ export function UNEDetalleCaso({ caso, onBack, onUpdate }: Props) {
                 <div>
                   <label className="block text-[10px] text-gray-600 mb-1">Nuevo estatus</label>
                   <select value={nuevoEstatus} onChange={e => setNuevoEstatus(e.target.value as EstatusCaso)}
-                    className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-[#2E5C91]">
+                    className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-[color:var(--theme-secondary)]">
                     <option value="">Mantener estatus actual</option>
                     {siguientesEstatus.map(s => <option key={s} value={s}>{s}</option>)}
                   </select>
@@ -210,10 +210,10 @@ export function UNEDetalleCaso({ caso, onBack, onUpdate }: Props) {
                   <label className="block text-[10px] text-gray-600 mb-1">Nota de seguimiento <span className="text-red-500">*</span></label>
                   <textarea value={notaAvance} onChange={e => setNotaAvance(e.target.value)}
                     rows={2} placeholder="Describa las acciones tomadas..."
-                    className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-[#2E5C91] resize-none"/>
+                    className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-[color:var(--theme-secondary)] resize-none"/>
                 </div>
                 <button onClick={handleAvanzar}
-                  className="px-4 py-1.5 bg-[#2E5C91] text-white text-xs rounded hover:bg-[#1d3f6b]">
+                  className="px-4 py-1.5 bg-[color:var(--theme-secondary)] text-white text-xs rounded hover:bg-[color:var(--theme-secondary-hover)]">
                   {nuevoEstatus === 'Cerrado' ? 'Proceder al cierre →' : 'Guardar avance'}
                 </button>
               </div>
@@ -236,7 +236,7 @@ export function UNEDetalleCaso({ caso, onBack, onUpdate }: Props) {
                     <div className="flex flex-col items-center">
                       <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 text-[10px] font-bold ${
                         completado
-                          ? actual ? 'bg-[#2E5C91] text-white' : 'bg-green-500 text-white'
+                          ? actual ? 'bg-[color:var(--theme-secondary)] text-white' : 'bg-green-500 text-white'
                           : 'bg-gray-200 text-gray-400'}`}>
                         {completado && !actual ? '✓' : i + 1}
                       </div>
@@ -245,7 +245,7 @@ export function UNEDetalleCaso({ caso, onBack, onUpdate }: Props) {
                       )}
                     </div>
                     <div className="pb-2 min-w-0">
-                      <p className={`text-xs font-medium ${actual ? 'text-[#2E5C91]' : completado ? 'text-green-700' : 'text-gray-400'}`}>{fase}</p>
+                      <p className={`text-xs font-medium ${actual ? 'text-[color:var(--theme-secondary)]' : completado ? 'text-green-700' : 'text-gray-400'}`}>{fase}</p>
                       {caso.historial.find(h => h.fase === fase) && (
                         <p className="text-[9px] text-gray-400">
                           {caso.historial.find(h => h.fase === fase)?.fecha.split(' ')[0]}
@@ -263,7 +263,7 @@ export function UNEDetalleCaso({ caso, onBack, onUpdate }: Props) {
             <p className="text-[10px] text-gray-500 uppercase tracking-wide font-semibold mb-3">Historial de actividad</p>
             <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
               {[...caso.historial].reverse().map((h, i) => (
-                <div key={i} className="border-l-2 border-[#2E5C91]/30 pl-3">
+                <div key={i} className="border-l-2 border-[color:var(--theme-secondary)]/30 pl-3">
                   <div className="flex items-center justify-between mb-0.5">
                     <span className="text-[10px] font-semibold text-gray-700">{h.fase}</span>
                     <span className="text-[9px] text-gray-400">{h.fecha}</span>
@@ -281,9 +281,9 @@ export function UNEDetalleCaso({ caso, onBack, onUpdate }: Props) {
       {showCierre && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setShowCierre(false)}>
           <div className="bg-white shadow-2xl w-full max-w-lg overflow-hidden" onClick={e => e.stopPropagation()}>
-            <div className="bg-[#2E5C91] px-5 py-3 flex items-center justify-between">
+            <div className="bg-[color:var(--theme-secondary)] px-5 py-3 flex items-center justify-between">
               <span className="text-sm font-medium text-white">Cierre del caso — {caso.folio}</span>
-              <button onClick={() => setShowCierre(false)} className="text-white/80 hover:text-white">
+              <button type="button" aria-label="Cerrar" title="Cerrar" onClick={() => setShowCierre(false)} className="text-white/80 hover:text-white">
                 <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 1l12 12M13 1L1 13"/></svg>
               </button>
             </div>
@@ -291,7 +291,7 @@ export function UNEDetalleCaso({ caso, onBack, onUpdate }: Props) {
               <div>
                 <label className="block text-[10px] text-gray-600 mb-1 font-medium">DICTAMEN <span className="text-red-500">*</span></label>
                 <select value={dictamen} onChange={e => setDictamen(e.target.value as Dictamen)}
-                  className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-[#2E5C91]">
+                  className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-[color:var(--theme-secondary)]">
                   <option value="">Seleccionar...</option>
                   {DICTAMEN_OPTS.map(d => <option key={d} value={d}>{d}</option>)}
                 </select>
@@ -300,7 +300,7 @@ export function UNEDetalleCaso({ caso, onBack, onUpdate }: Props) {
                 <label className="block text-[10px] text-gray-600 mb-1 font-medium">RESOLUCIÓN DOCUMENTADA <span className="text-red-500">*</span></label>
                 <textarea value={resolucion} onChange={e => setResolucion(e.target.value)}
                   rows={4} placeholder="Documente detalladamente la resolución del caso y las acciones tomadas..."
-                  className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-[#2E5C91] resize-none"/>
+                  className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-[color:var(--theme-secondary)] resize-none"/>
               </div>
               <div className="bg-amber-50 border border-amber-200 px-3 py-2 text-[10px] text-amber-800">
                 Al cerrar el caso, el cliente será marcado como notificado y el expediente quedará bloqueado para edición.

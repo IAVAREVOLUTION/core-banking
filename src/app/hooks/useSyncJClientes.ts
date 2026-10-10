@@ -23,7 +23,7 @@
 // Esto garantiza que contrasena se preserva INDEPENDIENTEMENTE de si
 // la edge function tiene deep merge o no. Es protección de doble capa.
 // ═══════════════════════════════════════════════════════════════════
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 import { supabase } from '../lib/supabaseClient';
 
@@ -110,7 +110,7 @@ interface SyncClienteOptions {
  */
 export async function syncToJClientes(opts: SyncClienteOptions): Promise<string | null> {
   const { type, tipoFormulario, estatus, data, label, existingId, par_cliente_id } = opts;
-  const displayLabel = label || 'Prospecto';
+  const displayLabel = label || 'Tipo Interlocutor';
 
   // Mapear valor del picklist a columna subtipo
   const subtipo = SUBTIPO_MAP[tipoFormulario] || tipoFormulario || null;
@@ -346,7 +346,7 @@ export async function syncToJClientes(opts: SyncClienteOptions): Promise<string 
         // ── Paso 8: Slim down expedientesElectronicos — conservar solo metadata de Storage ──
         // Las URLs firmadas se regeneran al cargar. Solo necesitamos storagePath + metadata.
         if (Array.isArray(compacted.expedientesElectronicos)) {
-          const EXP_KEEP = ['id', 'nombre', 'tipo', 'tipoDocumento', 'estatus', 'fecha', 'fechaCarga', 'storagePath', 'mime', 'tamanoKB', 'bucket'];
+          const EXP_KEEP = ['id', 'nombre', 'tipo', 'tipoDocumento', 'estatus', 'fecha', 'fechaCarga', 'storagePath', 'mime', 'tamanoKB', 'bucket', 'usuarioCarga', 'version', 'fechaActualizacion', 'versionDe', 'versionRaiz'];
           compacted.expedientesElectronicos = compacted.expedientesElectronicos.map((item: any) => {
             if (typeof item !== 'object' || item === null) return item;
             const slim: Record<string, any> = {};
@@ -532,8 +532,8 @@ export async function syncToJClientes(opts: SyncClienteOptions): Promise<string 
       result = JSON.parse(text);
     } catch {
       console.error(`[syncToJClientes] Respuesta no-JSON del servidor (HTTP ${res.status}):`, text.substring(0, 300));
-      toast.error('Error al sincronizar con J_CLIENTES', {
-        description: `Respuesta inesperada del servidor (HTTP ${res.status})`,
+      toast.error('No se pudieron guardar los cambios', {
+        description: 'Respuesta inesperada del servidor. Intente de nuevo.',
         duration: 5000,
       });
       return existingId ?? null;
@@ -541,8 +541,8 @@ export async function syncToJClientes(opts: SyncClienteOptions): Promise<string 
 
     if (!res.ok) {
       console.error(`[syncToJClientes] Error al sincronizar ${displayLabel} con J_CLIENTES:`, result);
-      toast.error('Error al sincronizar con J_CLIENTES', {
-        description: result.error || `HTTP ${res.status} — ${displayLabel}`,
+      toast.error('No se pudieron guardar los cambios', {
+        description: `${displayLabel}: intente de nuevo. Si el problema persiste, contacte a soporte.`,
         duration: 5000,
       });
       return existingId ?? null;
@@ -567,10 +567,6 @@ export async function syncToJClientes(opts: SyncClienteOptions): Promise<string 
     }
 
     console.log(`[syncToJClientes] J_CLIENTES — ${existingId ? 'UPDATE' : 'INSERT'} exitoso (${displayLabel}):`, result);
-    toast.success('Sincronizado con J_CLIENTES', {
-      description: `ID: ${returnedId ? String(returnedId).substring(0, 8) + '...' : 'N/A'} — Type: ${type} | Subtipo: ${subtipo}`,
-      duration: 4000,
-    });
 
     // ══════════════════════════════════════════════════════════════════
     // NOTA: par_cliente_id ya se envía en el body del PUT principal
@@ -593,8 +589,8 @@ export async function syncToJClientes(opts: SyncClienteOptions): Promise<string 
     return returnedId;
   } catch (err) {
     console.error(`[syncToJClientes] Error de red al sincronizar ${displayLabel} con J_CLIENTES:`, err);
-    toast.error('Error de conexion al sincronizar con J_CLIENTES', {
-      description: `${displayLabel}: ${String(err)}`,
+    toast.error('Sin conexión con el servidor', {
+      description: `${displayLabel}: no se guardaron los cambios. Verifique su conexión e intente de nuevo.`,
       duration: 5000,
     });
     return null;

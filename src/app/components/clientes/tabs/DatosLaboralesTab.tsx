@@ -33,7 +33,7 @@ export function DatosLaboralesTab({ formData, updateFormData, isView }: DatosLab
               onValueChange={(value) => updateFormData('tipoEmpleado', value)}
               disabled={isView}
             >
-              <SelectTrigger className="border-[#E0E0E0] focus:border-[#2E5C91]">
+              <SelectTrigger className="border-[#E0E0E0] focus:border-[color:var(--theme-secondary)]">
                 <SelectValue placeholder="Seleccione..." />
               </SelectTrigger>
               <SelectContent>
@@ -56,7 +56,7 @@ export function DatosLaboralesTab({ formData, updateFormData, isView }: DatosLab
               value={formData.nombreEmpresaTrabajo || ''}
               onChange={(e) => updateFormData('nombreEmpresaTrabajo', e.target.value)}
               disabled={isView}
-              className="border-[#E0E0E0] focus:border-[#2E5C91]"
+              className="border-[#E0E0E0] focus:border-[color:var(--theme-secondary)]"
               placeholder="Empresa donde labora"
             />
           </div>
@@ -70,7 +70,7 @@ export function DatosLaboralesTab({ formData, updateFormData, isView }: DatosLab
               value={formData.puestoDesempena || ''}
               onChange={(e) => updateFormData('puestoDesempena', e.target.value)}
               disabled={isView}
-              className="border-[#E0E0E0] focus:border-[#2E5C91]"
+              className="border-[#E0E0E0] focus:border-[color:var(--theme-secondary)]"
               placeholder="Cargo o posición"
             />
           </div>
@@ -93,7 +93,7 @@ export function DatosLaboralesTab({ formData, updateFormData, isView }: DatosLab
               value={formData.ingresosMensuales || ''}
               onChange={(e) => updateFormData('ingresosMensuales', parseFloat(e.target.value) || 0)}
               disabled={isView}
-              className="border-[#E0E0E0] focus:border-[#2E5C91]"
+              className="border-[#E0E0E0] focus:border-[color:var(--theme-secondary)]"
               placeholder="0.00"
             />
           </div>
@@ -108,7 +108,7 @@ export function DatosLaboralesTab({ formData, updateFormData, isView }: DatosLab
               value={formData.otrosIngresos || ''}
               onChange={(e) => updateFormData('otrosIngresos', parseFloat(e.target.value) || 0)}
               disabled={isView}
-              className="border-[#E0E0E0] focus:border-[#2E5C91]"
+              className="border-[#E0E0E0] focus:border-[color:var(--theme-secondary)]"
               placeholder="0.00"
             />
           </div>

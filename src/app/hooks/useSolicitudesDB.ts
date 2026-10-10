@@ -22,6 +22,8 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase, SUPABASE_URL } from '../lib/supabaseClient';
 import { publicAnonKey } from '/utils/supabase/info';
 import type { SolicitudFormData, SolicitudListItem } from '../components/solicitudes/solicitudCreditoStore';
+import { versionToDB } from '../components/solicitudes/solicitudCreditoStore';
+import { repararDataSolicitud } from '@/app/lib/repararDataSolicitud';
 
 // ═══════════════════════════════════════════════════════════════════
 const DB_AVAILABLE = true;
@@ -176,13 +178,9 @@ function saveToSession(items: SolicitudListItem[]) {
 // ═══════════════════════════════════════════════════════════════════
 function mapRowToListItem(row: SolicitudDBRow): SolicitudListItem {
   // ── Protección: row.data puede venir como string si el driver no parsea JSONB ──
-  let d: Record<string, any>;
-  if (typeof row.data === 'string') {
-    try { d = JSON.parse(row.data); } catch { d = {}; }
-    console.warn('[mapRow] row.data era STRING — parseado manualmente. id:', row.id);
-  } else {
-    d = (row.data || {}) as Record<string, any>;
-  }
+  // También repara data corrupta: texto JSON (a veces doble) o contenido
+  // atrapado en llaves "0", "1"… por guardados anteriores (ver lib/repararDataSolicitud).
+  let d: Record<string, any> = repararDataSolicitud(row.data);
 
   // ── Nested structure (banca móvil) ──
   const sol = d.solicitud || {};
@@ -314,7 +312,6 @@ function deepMerge(base: Record<string, any>, patch: Record<string, any>): Recor
 
 function formToDBPayload(form: SolicitudFormData, allSubtabs?: Record<string, any>) {
   const montoSolNum = parseFloat((form.montoSolicitado || '0').replace(/[^0-9.-]/g, ''));
-  const montoAutNum = parseFloat((form.montoAutorizado || '0').replace(/[^0-9.-]/g, ''));
 
   // Original JSONB from DB (present when editing an existing record from any source)
   const originalData: Record<string, any> | undefined = allSubtabs?._originalData;
@@ -328,12 +325,28 @@ function formToDBPayload(form: SolicitudFormData, allSubtabs?: Record<string, an
   }
 
   const terminos = allSubtabs?.terminos || {};
+
+  // Monto Autorizado (columna monto_aut). Sólo Arrendamiento Puro lo calculaba
+  // en Términos y Condiciones; en la línea Crédito nunca se llenaba y la
+  // solicitud se activaba con monto_aut = 0 (Cartera mostraba $0.00). Regla de
+  // Términos: Monto Autorizado = Monto Solicitado × (1 − % Enganche); sin
+  // enganche, igual al solicitado. Captación no maneja monto autorizado.
+  const aNum = (v: unknown) => parseFloat(String(v ?? '').replace(/[^0-9.-]/g, '')) || 0;
+  const lineaNorm = (form.lineaProducto || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  const esCaptacionLinea = /captacion|ahorro|inversion|aportacion/.test(lineaNorm);
+  const pctEnganche = aNum((form as any).porcentajeEnganche || terminos.porcentajeEnganche);
+  const montoAutNum = aNum(form.montoAutorizado) || aNum(terminos.montoAutorizado)
+    || (esCaptacionLinea ? 0 : montoSolNum * (1 - pctEnganche / 100));
   const simulacion: any[] = allSubtabs?.simulacion || [];
   const documentos: any[] = allSubtabs?.documentos !== undefined ? allSubtabs.documentos : (origSol.expediente_electronico?.documentos || []);
   const garantias: any[] = subtabArr('garantias', 'garantias');
   const comisiones: any[] = subtabArr('comisiones', 'comisiones');
   const autorizaciones: any[] = subtabArr('autorizaciones', 'autorizaciones');
   const notas: any[] = subtabArr('notas', 'notas');
+  // Comités de la solicitud: antes sólo vivían en memoria (se perdían al recargar).
+  const comites: any[] = subtabArr('comites', 'comites');
+  // Activaciones de dispersión ya generadas (evita duplicarlas al reabrir).
+  const activacionesDispersion: any[] = subtabArr('activacionesDispersion', 'activaciones_dispersion');
   const partesRelacionadas: any[] = subtabArr('partesRelacionadas', 'partes_relacionadas');
   // REQ-9 — Estructura Operativa de 2o Piso. Objeto, no arreglo: si el subtab no
   // se abrió en esta sesión se conserva lo que ya había en el JSONB.
@@ -575,6 +588,7 @@ function formToDBPayload(form: SolicitudFormData, allSubtabs?: Record<string, an
         tamano_kb: doc.tamanoKB || null,
         ia_motivos: doc.iaMotivos || null,
         ia_extraido: doc.iaExtraido || null,
+        ...versionToDB(doc),
       })),
     },
     garantias: garantias.map((g: any) => ({
@@ -608,6 +622,11 @@ function formToDBPayload(form: SolicitudFormData, allSubtabs?: Record<string, an
       puesto: n.puesto || null, nota: n.nota || null,
       archivo_adjunto: n.archivoAdjunto || null,
     })),
+    comites: comites.map((c: any) => ({
+      id: c.id ?? null, autoridad: c.autoridad || null, estatus: c.estatus || null,
+      fecha: c.fecha || null, observaciones: c.observaciones || null,
+    })),
+    activaciones_dispersion: activacionesDispersion.map((x: any) => String(x)),
     // REQ-11 — sólo viaja si hay al menos un voto.
     ...(votacionCPC.length > 0
       ? {
@@ -782,8 +801,11 @@ function formToDBPayload(form: SolicitudFormData, allSubtabs?: Record<string, an
 // ═════════════════════════════════════án════════════════════════════
 async function tryEdgeFunction(): Promise<{ ok: boolean; rows: SolicitudDBRow[]; method: string; error?: string }> {
   try {
-    console.log('[SolicDB] Intento 1: Edge Function', `${API_BASE}/solicitudes-credito`);
-    const res = await fetch(`${API_BASE}/solicitudes-credito`, {
+    // vista=lista: JSONB reducido (~15x menos). El detalle completo se pide con
+    // asegurarDetalleSolicitud() antes de abrir/editar/guardar. Un servidor que
+    // aún no conozca el parámetro lo ignora y devuelve el listado completo.
+    console.log('[SolicDB] Intento 1: Edge Function', `${API_BASE}/solicitudes-credito?vista=lista`);
+    const res = await fetch(`${API_BASE}/solicitudes-credito?vista=lista`, {
       headers: { 'Authorization': `Bearer ${publicAnonKey}` },
     });
     const text = await res.text();
@@ -801,6 +823,54 @@ async function tryEdgeFunction(): Promise<{ ok: boolean; rows: SolicitudDBRow[];
     console.error('[SolicDB] Edge EXCEPCIÓN:', err);
     return { ok: false, rows: [], method: 'edge-function', error: err?.message || String(err) };
   }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// DETALLE: JSONB completo de una solicitud
+// ═══════════════════════════════════════════════════════════════════
+
+/** ¿El renglón trae sólo el JSONB reducido del listado ligero? */
+export function esResumen(item: any): boolean {
+  return !!(item?._data?._resumen || item?._resumen);
+}
+
+/**
+ * Fila completa (con JSONB íntegro) de una solicitud. Usa GET /:id y, si el
+ * servidor aún no tiene esa ruta, el listado completo (que sigue existiendo).
+ */
+export async function fetchSolicitudCompleta(id: string): Promise<SolicitudDBRow | null> {
+  const hdr = { 'Authorization': `Bearer ${publicAnonKey}` };
+  try {
+    const res = await fetch(`${API_BASE}/solicitudes-credito/${id}`, { headers: hdr });
+    if (res.ok) {
+      const json = await res.json();
+      if (json?.data && !Array.isArray(json.data)) return json.data as SolicitudDBRow;
+    }
+  } catch { /* fallback abajo */ }
+  try {
+    const res = await fetch(`${API_BASE}/solicitudes-credito`, { headers: hdr });
+    if (!res.ok) return null;
+    const json = await res.json();
+    const rows: SolicitudDBRow[] = json.data || [];
+    return rows.find(r => String(r.id) === String(id)) || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Garantiza que el renglón del listado traiga el JSONB completo. Si vino del
+ * listado ligero, descarga el detalle y lo copia sobre el MISMO objeto (así
+ * todos los que lo referencian quedan completos). Lanza error si no se puede:
+ * abrir o guardar con datos reducidos borraría subtabs en la BD.
+ */
+export async function asegurarDetalleSolicitud<T extends Record<string, any>>(item: T): Promise<T> {
+  if (!esResumen(item)) return item;
+  const id = String(item._dbId || item.id);
+  const row = await fetchSolicitudCompleta(id);
+  if (!row) throw new Error(`No se pudo cargar el detalle de la solicitud ${item.noSol || id}`);
+  Object.assign(item, mapRowToListItem(row));
+  return item;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -1352,6 +1422,30 @@ function generateNoCuentaInterno(): string {
  * Debe llamarse inmediatamente después de que la solicitud cambia a 'Autorizada'.
  * Soporta: Crédito, Captación, Aportación, Inversión, Línea de Crédito.
  */
+/**
+ * ¿El cliente ya tiene cuenta EJE? (registro de cuenta con cta_eje_chec, o los
+ * folios de cuenta eje AUTO-/CEJE-). Se consulta la misma lista de solicitudes
+ * que usa la app (la comparte la caché de lecturas).
+ *
+ * Al activar/liberar una solicitud se creaba además una cuenta "por solicitud"
+ * aunque el cliente ya tuviera su cuenta EJE: por eso aparecían cuentas de más.
+ */
+export async function clienteTieneCuentaEje(clienteId: string, excluirId?: string): Promise<boolean> {
+  if (!clienteId || !UUID_RE.test(clienteId)) return false;
+  try {
+    const res = await fetch(`${API_BASE}/solicitudes-credito`, { headers: { 'Authorization': `Bearer ${publicAnonKey}` } });
+    if (!res.ok) return false;
+    const json = await res.json();
+    const filas: any[] = Array.isArray(json?.data) ? json.data : Array.isArray(json) ? json : [];
+    return filas.some(r =>
+      String(r?.cliente_id || '') === clienteId &&
+      String(r?.id || '') !== String(excluirId || '') &&
+      (r?.cta_eje_chec === true || /^(AUTO|CEJE)-/i.test(String(r?.no_sol || ''))));
+  } catch {
+    return false; // ante la duda, no se bloquea el flujo
+  }
+}
+
 export async function crearCuentaDesdeSolicitudDB(params: {
   solicitudId: string;
   clienteId: string;
@@ -1364,10 +1458,16 @@ export async function crearCuentaDesdeSolicitudDB(params: {
   data?: Record<string, unknown>;
 }): Promise<{ ok: boolean; noCuenta?: string; cuentaId?: string; error?: string }> {
   const PRODUCTOS_CON_CUENTA = ['crédito', 'captacion', 'captación', 'aportacion', 'aportación', 'inversion', 'inversión', 'linea', 'línea'];
-  const lineaNorm = (params.lineaProducto || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  const lineaNorm = (params.lineaProducto || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   const debeCrear = PRODUCTOS_CON_CUENTA.some(p => lineaNorm.includes(p));
   if (!debeCrear) {
     console.log('[SolicDB] crearCuentaDesdeSolicitud — línea no genera cuenta:', params.lineaProducto);
+    return { ok: true };
+  }
+
+  // El cliente ya tiene cuenta EJE: no se crea otra cuenta por esta solicitud.
+  if (UUID_RE.test(params.clienteId || '') && await clienteTieneCuentaEje(params.clienteId, params.solicitudId)) {
+    console.log('[SolicDB] crearCuentaDesdeSolicitud — el cliente ya tiene cuenta EJE; no se crea otra.');
     return { ok: true };
   }
 
@@ -1489,6 +1589,12 @@ export async function crearCuentaEjeDB(
   montoInicial?: number,
 ): Promise<void> {
   if (!clienteId || !UUID_RE.test(clienteId)) return;
+  // Con solicitud, el servidor crea una cuenta "por solicitud" sin revisar si
+  // el cliente ya tiene cuenta EJE: aquí se evita la cuenta duplicada.
+  if (solicitudId && await clienteTieneCuentaEje(clienteId, solicitudId)) {
+    console.log('[SolicDB] crearCuentaEjeDB — el cliente ya tiene cuenta EJE; no se crea otra.');
+    return;
+  }
   try {
     const body: Record<string, unknown> = { cliente_id: clienteId, nombre_prospecto: nombreCliente || '' };
     if (solicitudId && UUID_RE.test(solicitudId)) body.solicitud_id = solicitudId;
@@ -1991,16 +2097,17 @@ export function useSolicitudesDB(active: boolean) {
       // producirá un objeto parcial (solo campos Core) que sobreescribirá datos de banca móvil.
       // Solución: recuperar data actual de la BD antes de construir el payload.
       let subtabsWithOriginal = allSubtabs;
-      if (!isNew && !(allSubtabs?._originalData) && existingDbId) {
-        console.warn('[SolicDB] SAVE — _originalData faltante en modo edición, recuperando de BD...');
+      // También si la base es el JSONB reducido del listado ligero: hacer merge
+      // contra él pisaría en BD todo lo que no viene en el resumen.
+      const originalReducido = !!allSubtabs?._originalData?._resumen;
+      if (!isNew && existingDbId && (!(allSubtabs?._originalData) || originalReducido)) {
+        console.warn('[SolicDB] SAVE — _originalData faltante o reducido en modo edición, recuperando de BD...');
         try {
-          const { data: row } = await supabase
-            .from('J_CUENTAS_CORP_CLIENTES')
-            .select('data')
-            .eq('id', existingDbId)
-            .single();
+          // (Antes leía J_CUENTAS_CORP_CLIENTES directo, que la llave anon no
+          // puede leer — 42501 — así que esta recuperación nunca funcionaba.)
+          const row = await fetchSolicitudCompleta(existingDbId);
           if (row?.data) {
-            const fetchedData = typeof row.data === 'string' ? JSON.parse(row.data) : row.data;
+            const fetchedData = repararDataSolicitud(row.data);
             subtabsWithOriginal = { ...(allSubtabs || {}), _originalData: fetchedData };
             console.log('[SolicDB] SAVE — _originalData recuperado de BD, keys:', Object.keys(fetchedData).length);
           } else {
@@ -2008,6 +2115,9 @@ export function useSolicitudesDB(active: boolean) {
           }
         } catch (fetchErr: any) {
           console.warn('[SolicDB] SAVE — no se pudo recuperar _originalData de BD:', fetchErr?.message);
+        }
+        if (subtabsWithOriginal?._originalData?._resumen) {
+          return { ok: false, error: 'No se pudo cargar la solicitud completa; no se guardó para no perder datos. Intente de nuevo.' };
         }
       }
 

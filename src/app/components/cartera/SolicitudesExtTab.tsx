@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 import {
   useSolicitudesExt, fetchTiposSolicitudesExt, crearSolicitudExt,
   fmtDate, type TipoSolicitudExt, type SolicitudExt,
@@ -63,7 +63,7 @@ export function SolicitudesExtTab({ solicitudId, usuario = 'Sistema' }: Props) {
         <span className="text-xs text-gray-500">{rows.length} solicitud{rows.length !== 1 ? 'es' : ''} extraordinaria{rows.length !== 1 ? 's' : ''}</span>
         <button
           onClick={() => setShowForm(v => !v)}
-          className="px-3 py-1.5 text-xs font-medium rounded border border-[#4A6FA5] bg-[#4A6FA5] text-white hover:bg-[#3A5A8A] flex items-center gap-1.5 transition-colors"
+          className="px-3 py-1.5 text-xs font-medium rounded border border-[color:var(--theme-primary)] bg-[color:var(--theme-primary)] text-white hover:bg-[color:var(--theme-primary-hover)] flex items-center gap-1.5 transition-colors"
         >
           <svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M5.5 1v9M1 5.5h9"/></svg>
           Nueva Solicitud
@@ -74,8 +74,8 @@ export function SolicitudesExtTab({ solicitudId, usuario = 'Sistema' }: Props) {
 
       {/* Form */}
       {showForm && (
-        <div className="border border-[#4A6FA5]/30 rounded-xl bg-blue-50/40 p-4 space-y-4">
-          <p className="text-xs font-semibold text-[#4A6FA5] uppercase tracking-wide">Nueva Solicitud Extraordinaria</p>
+        <div className="border border-[color:var(--theme-primary)]/30 rounded-xl bg-blue-50/40 p-4 space-y-4">
+          <p className="text-xs font-semibold text-[color:var(--theme-primary)] uppercase tracking-wide">Nueva Solicitud Extraordinaria</p>
 
           {/* Tipo cards */}
           <div className="grid grid-cols-3 gap-3">
@@ -84,11 +84,11 @@ export function SolicitudesExtTab({ solicitudId, usuario = 'Sistema' }: Props) {
                 key={t.id}
                 onClick={() => setTipoId(t.id)}
                 className={`p-3 rounded-lg border text-left transition-all ${tipoId === t.id
-                  ? 'border-[#4A6FA5] bg-[#4A6FA5] text-white shadow-sm'
-                  : 'border-gray-200 bg-white hover:border-[#4A6FA5]/50 hover:bg-blue-50/50 text-gray-700'
+                  ? 'border-[color:var(--theme-primary)] bg-[color:var(--theme-primary)] text-white shadow-sm'
+                  : 'border-gray-200 bg-white hover:border-[color:var(--theme-primary)]/50 hover:bg-blue-50/50 text-gray-700'
                 }`}
               >
-                <div className={`mb-1.5 ${tipoId === t.id ? 'text-white' : 'text-[#4A6FA5]'}`}>
+                <div className={`mb-1.5 ${tipoId === t.id ? 'text-white' : 'text-[color:var(--theme-primary)]'}`}>
                   {TIPO_ICONS[t.clave] || <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="2" y="2" width="10" height="10" rx="1.5"/><path d="M5 7h4M7 5v4"/></svg>}
                 </div>
                 <p className="text-[11px] font-bold leading-tight">{t.nombre}</p>
@@ -103,7 +103,7 @@ export function SolicitudesExtTab({ solicitudId, usuario = 'Sistema' }: Props) {
           {/* Descripción del tipo */}
           {tipoSeleccionado && (
             <div className="bg-white border border-blue-100 rounded-lg p-3 text-xs text-gray-600 space-y-1">
-              <p className="font-semibold text-[#4A6FA5]">{tipoSeleccionado.nombre}</p>
+              <p className="font-semibold text-[color:var(--theme-primary)]">{tipoSeleccionado.nombre}</p>
               {tipoSeleccionado.puesto && <p><span className="text-gray-400">Puesto responsable:</span> {tipoSeleccionado.puesto}</p>}
               {tipoSeleccionado.prompt_ia && <p className="text-gray-500 italic">{tipoSeleccionado.prompt_ia.substring(0, 120)}...</p>}
             </div>
@@ -117,7 +117,7 @@ export function SolicitudesExtTab({ solicitudId, usuario = 'Sistema' }: Props) {
               onChange={e => setNotas(e.target.value)}
               rows={3}
               placeholder="Describa el motivo de la solicitud..."
-              className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg resize-none focus:ring-2 focus:ring-[#4A6FA5]/30 focus:border-[#4A6FA5]"
+              className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg resize-none focus:ring-2 focus:ring-[color:var(--theme-primary)]/30 focus:border-[color:var(--theme-primary)]"
             />
           </div>
 
@@ -125,7 +125,7 @@ export function SolicitudesExtTab({ solicitudId, usuario = 'Sistema' }: Props) {
             <button onClick={() => { setShowForm(false); setTipoId(''); setNotas(''); }} className="px-4 py-2 text-xs border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-100">
               Cancelar
             </button>
-            <button onClick={handleCrear} disabled={enviando || !tipoId} className="px-5 py-2 text-xs bg-[#4A6FA5] text-white rounded-lg hover:bg-[#3A5A8A] disabled:opacity-50 font-medium">
+            <button onClick={handleCrear} disabled={enviando || !tipoId} className="px-5 py-2 text-xs bg-[color:var(--theme-primary)] text-white rounded-lg hover:bg-[color:var(--theme-primary-hover)] disabled:opacity-50 font-medium">
               {enviando ? 'Enviando...' : 'Enviar Solicitud'}
             </button>
           </div>
@@ -136,7 +136,7 @@ export function SolicitudesExtTab({ solicitudId, usuario = 'Sistema' }: Props) {
       <div className="border border-gray-200 rounded overflow-x-auto">
         <table className="w-full text-xs">
           <thead>
-            <tr className="bg-[#2E5C91] text-white">
+            <tr className="bg-[color:var(--theme-secondary)] text-white">
               <th className="px-2 py-2 text-left font-medium">Tipo</th>
               <th className="px-2 py-2 text-left font-medium">Clave</th>
               <th className="px-2 py-2 text-left font-medium">Fecha</th>

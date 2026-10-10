@@ -1,7 +1,7 @@
 import { useState, useEffect, forwardRef, useImperativeHandle } from 'react';
 import { CheckListCaptacion } from '@/types/checkListCaptacion';
 import { K_PHASES } from '@/app/data/mockData';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 
 interface CheckListCaptacionesTabProps {
   mode: 'nuevo' | 'editar' | 'ver';
@@ -164,7 +164,7 @@ export const CheckListCaptacionesTab = forwardRef<{ getData: () => CheckListCapt
             <div className="relative">
               <button 
                 onClick={() => setShowMenu(!showMenu)}
-                className="px-3 py-1 bg-[#4A6FA5] text-white text-xs hover:bg-[#3E5C91] border border-[#3E5C91] flex items-center gap-1"
+                className="px-3 py-1 bg-[color:var(--theme-primary)] text-white text-xs hover:bg-[color:var(--theme-secondary)] border border-[color:var(--theme-secondary)] flex items-center gap-1"
               >
                 Menú
                 <svg width="10" height="6" viewBox="0 0 10 6" fill="white">
@@ -204,7 +204,7 @@ export const CheckListCaptacionesTab = forwardRef<{ getData: () => CheckListCapt
             <button 
               onClick={handleNew}
               disabled={isViewMode}
-              className="px-3 py-1 bg-[#4A6FA5] text-white text-xs hover:bg-[#3E5C91] border border-[#3E5C91] disabled:bg-gray-400 disabled:border-gray-400 disabled:cursor-not-allowed"
+              className="px-3 py-1 bg-[color:var(--theme-primary)] text-white text-xs hover:bg-[color:var(--theme-secondary)] border border-[color:var(--theme-secondary)] disabled:bg-gray-400 disabled:border-gray-400 disabled:cursor-not-allowed"
             >
               Nuevo
             </button>
@@ -212,14 +212,14 @@ export const CheckListCaptacionesTab = forwardRef<{ getData: () => CheckListCapt
             <button 
               onClick={handleDelete}
               disabled={selectedRow === null || isViewMode}
-              className="px-3 py-1 bg-[#4A6FA5] text-white text-xs hover:bg-[#3E5C91] border border-[#3E5C91] disabled:bg-gray-400 disabled:border-gray-400 disabled:cursor-not-allowed"
+              className="px-3 py-1 bg-[color:var(--theme-primary)] text-white text-xs hover:bg-[color:var(--theme-secondary)] border border-[color:var(--theme-secondary)] disabled:bg-gray-400 disabled:border-gray-400 disabled:cursor-not-allowed"
             >
               Eliminar
             </button>
 
             <button 
               onClick={handleConsulta}
-              className="px-3 py-1 bg-[#4A6FA5] text-white text-xs hover:bg-[#3E5C91] border border-[#3E5C91]"
+              className="px-3 py-1 bg-[color:var(--theme-primary)] text-white text-xs hover:bg-[color:var(--theme-secondary)] border border-[color:var(--theme-secondary)]"
             >
               Consulta
             </button>
@@ -283,7 +283,7 @@ export const CheckListCaptacionesTab = forwardRef<{ getData: () => CheckListCapt
           <div className="border border-gray-400">
             <table className="w-full text-xs">
               <thead>
-                <tr className="bg-[#4A6FA5] text-white">
+                <tr className="bg-[color:var(--theme-primary)] text-white">
                   <th className="px-3 py-2 text-left font-medium text-xs border-r border-white/20">Tipo persona</th>
                   <th className="px-3 py-2 text-left font-medium text-xs border-r border-white/20">Tipo documento</th>
                   <th className="px-3 py-2 text-center font-medium text-xs border-r border-white/20">Requerido</th>
@@ -308,7 +308,7 @@ export const CheckListCaptacionesTab = forwardRef<{ getData: () => CheckListCapt
                       key={item.id}
                       onClick={() => setSelectedRow(item.id)}
                       className={`border-b border-gray-300 cursor-pointer transition-colors ${
-                        selectedRow === item.id ? 'bg-[#D6EAF8]' : index % 2 === 0 ? 'bg-white' : 'bg-[#F9F9F9]'
+                        selectedRow === item.id ? 'bg-[color:var(--theme-tint-soft)]' : index % 2 === 0 ? 'bg-white' : 'bg-[#F9F9F9]'
                       }`}
                       onMouseEnter={(e) => {
                         if (selectedRow !== item.id) {
@@ -476,7 +476,7 @@ function FormModal({ mode, item, onSave, onClose }: FormModalProps) {
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
       <div className="bg-white shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col border-2 border-gray-400" onClick={(e) => e.stopPropagation()}>
         {/* Header */}
-        <div className="bg-[#2E5C91] px-4 py-2.5 border-b-2 border-gray-400 flex items-center justify-between">
+        <div className="bg-[color:var(--theme-secondary)] px-4 py-2.5 border-b-2 border-gray-400 flex items-center justify-between">
           <h3 className="text-sm font-medium text-white">{getTitle()}</h3>
           <button 
             onClick={onClose}
@@ -491,7 +491,7 @@ function FormModal({ mode, item, onSave, onClose }: FormModalProps) {
           <form onSubmit={handleSubmit}>
             {/* Sección: Información General */}
             <div className="mb-4">
-              <div className="bg-[#E7E6E6] px-3 py-1.5 mb-3 border-l-4 border-[#2E5C91]">
+              <div className="bg-[#E7E6E6] px-3 py-1.5 mb-3 border-l-4 border-[color:var(--theme-secondary)]">
                 <span className="text-xs font-medium text-gray-800">INFORMACIÓN GENERAL</span>
               </div>
 
@@ -626,7 +626,7 @@ function FormModal({ mode, item, onSave, onClose }: FormModalProps) {
 
             {/* Sección: Configuración */}
             <div className="mb-4">
-              <div className="bg-[#E7E6E6] px-3 py-1.5 mb-3 border-l-4 border-[#2E5C91]">
+              <div className="bg-[#E7E6E6] px-3 py-1.5 mb-3 border-l-4 border-[color:var(--theme-secondary)]">
                 <span className="text-xs font-medium text-gray-800">CONFIGURACIÓN</span>
               </div>
 
@@ -668,7 +668,7 @@ function FormModal({ mode, item, onSave, onClose }: FormModalProps) {
               {!isViewMode && (
                 <button 
                   type="submit"
-                  className="px-4 py-1.5 bg-[#2E5C91] text-white text-xs hover:bg-[#244A7A] border border-[#244A7A]"
+                  className="px-4 py-1.5 bg-[color:var(--theme-secondary)] text-white text-xs hover:bg-[color:var(--theme-secondary-hover)] border border-[color:var(--theme-secondary-hover)]"
                 >
                   {mode === 'edit' ? 'Guardar Cambios' : 'Crear Documento'}
                 </button>

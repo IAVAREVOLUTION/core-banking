@@ -13,7 +13,7 @@
  * así que persiste sobre el mismo registro de J_COTIZACIONES.
  */
 import { useState, useMemo, useEffect, useRef } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 import { generarCuentaEje, buscarCuentaEje } from '../../hooks/useCuentaEjeGenerator';
 import type { CotizacionCredito, BitacoraEstatusOportunidad, ArchivoAdjuntoOportunidad, SolicitudLOSRef, BitacoraCierreComercial } from '../cotizaciones/cotizacionCreditoTypes';
 import { generarCartaOferta, subirCartaOferta, CartaOfertaError, subirDocumentoAceptacion, esPDFValido, DocumentoAceptacionError } from './cartaOfertaPDF';
@@ -28,6 +28,8 @@ import type { SolicitudFormData, TerminosCondiciones as TerminosCondicionesLOS }
 import { syncToJClientes } from '../../hooks/useSyncJClientes';
 import { fechasCobroComision } from '../../lib/fechasComisionGPO';
 import { SeleccionarClienteModal } from '../solicitudes/SeleccionarClienteModal';
+import { CampoMonto } from '@/app/components/ui/CampoMonto';
+import { DatePicker } from '@/app/components/ui/DatePicker';
 
 type FormMode = 'create' | 'edit' | 'view';
 type TabId = 'default' | 'solicitudes' | 'adjuntos' | 'cierre';
@@ -760,7 +762,7 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
           // J_CLIENTES; el usuario no debe perder el cierre ya logrado.
           console.error('[OportunidadForm] Cerrada-Ganada: no se pudo convertir el Prospecto a Cliente:', errCliente);
           toast.warning('Oportunidad Ganada, pero no se pudo activar el Cliente', {
-            description: 'Revise el registro del Prospecto manualmente.',
+            description: 'Revise el registro del Tipo Interlocutor manualmente.',
           });
         }
 
@@ -1108,7 +1110,7 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
       setCartaEnVisor({ url: generada.dataUri, nombre: generada.nombreArchivo });
 
       if (subida.enStorage) {
-        toast.success('Carta Oferta generada', { description: 'Se adjuntó a la Oportunidad y se guardó en la pestaña Archivos Adjuntos.' });
+        toast.success('Carta Oferta generada', { description: 'Se adjuntó a la Oportunidad y se guardó en la pestaña KM Digital.' });
       } else {
         toast.warning('Carta Oferta generada, pero no se subió a Storage', {
           description: 'Queda disponible en esta sesión. Revise permisos del bucket.',
@@ -1170,8 +1172,8 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
   );
 
   const tabs: { id: TabId; label: string }[] = [
-    { id: 'default', label: 'Default' },
-    { id: 'adjuntos', label: `Archivos Adjuntos${archivosAdjuntos.length ? ` (${archivosAdjuntos.length})` : ''}` },
+    { id: 'default', label: 'Datos Generales' },
+    { id: 'adjuntos', label: `Documentos de la Oportunidad${archivosAdjuntos.length ? ` (${archivosAdjuntos.length})` : ''}` },
     { id: 'cierre', label: 'Cierre Comercial' },
     { id: 'solicitudes', label: 'Solicitudes' },
   ];
@@ -1223,7 +1225,7 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
               className={`px-5 py-1.5 rounded text-xs font-normal transition-colors border ${
                 generandoCarta
                   ? 'bg-gray-200 text-gray-500 border-gray-300 cursor-not-allowed'
-                  : 'bg-white text-[#0099CC] border-[#0099CC] hover:bg-[#E8F6FB]'
+                  : 'bg-white text-[color:var(--theme-action)] border-[color:var(--theme-action)] hover:bg-[#E8F6FB]'
               }`}
             >
               {generandoCarta ? 'Generando…' : 'Generar Carta Oferta'}
@@ -1246,7 +1248,7 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-x-4 gap-y-2 p-3">
             <div className="flex flex-col">
-              <label className="text-[10px] text-gray-600 mb-0.5">ID OPORTUNIDAD</label>
+              <label className="text-[10px] text-gray-600 mb-0.5">Folio de Oportunidad</label>
               <input value={form.no_cotiza || '—'} disabled className={readonlyClass} />
             </div>
             <div className="flex flex-col">
@@ -1269,7 +1271,7 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
               )}
             </div>
             <div className="flex flex-col">
-              <label className="text-[10px] text-gray-600 mb-0.5">SECTOR</label>
+              <label className="text-[10px] text-gray-600 mb-0.5">Sector de Atención</label>
               {esDirecta && !isView ? (
                 <select
                   value={data.sectorInfraestructura || ''}
@@ -1293,7 +1295,7 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
                   className={`px-4 py-2 text-[11px] whitespace-nowrap border-r border-gray-500/30 transition-colors ${
-                    activeTab === tab.id ? 'bg-secondary-theme text-white font-medium' : 'text-white/90 hover:bg-[#5A7FB5]'
+                    activeTab === tab.id ? 'bg-secondary-theme text-white font-medium' : 'text-white/90 hover:bg-[color:var(--theme-primary)]'
                   }`}
                 >
                   {tab.label}
@@ -1365,7 +1367,7 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
                             checked={plazosSeleccionados.includes(p)}
                             onChange={() => togglePlazoProducto(p)}
                             disabled={isView}
-                            className="w-3 h-3 accent-[#0099CC]"
+                            className="w-3 h-3 accent-[color:var(--theme-action)]"
                           />
                           {p}
                         </label>
@@ -1397,9 +1399,7 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
                 {/* Monto Emisión — base del cálculo de CA-06. En TDC es el monto de la línea. */}
                 <div className="flex flex-col">
                   <label className="text-[10px] text-gray-600 mb-0.5">{esTDC ? 'MONTO' : 'MONTO EMISIÓN'}</label>
-                  <input
-                    type="text"
-                    inputMode="decimal"
+                  <CampoMonto
                     value={data.montoEmision ?? ''}
                     disabled={isView}
                     onChange={e => { const c = limpiarDecimal(e.target.value); if (c !== null) setData({ montoEmision: c }); }}
@@ -1485,9 +1485,7 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
                 {!esTDC && (
                   <div className="flex flex-col">
                     <label className="text-[10px] text-gray-600 mb-0.5">MONTO INVERSIÓN</label>
-                    <input
-                      type="text"
-                      inputMode="decimal"
+                    <CampoMonto
                       value={data.montoInversion ?? ''}
                       disabled={isView}
                       onChange={e => { const c = limpiarDecimal(e.target.value); if (c !== null) setData({ montoInversion: c }); }}
@@ -1629,7 +1627,7 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
               </>)}
 
               {/* ── Estatus ── */}
-              {seccion('Estatus')}
+              {seccion('Situación de la Oportunidad')}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-x-4 gap-y-2 p-3">
                 <div className="flex flex-col">
                   <label className="text-[10px] text-gray-600 mb-0.5">ESTATUS DE LA OPORTUNIDAD</label>
@@ -1928,7 +1926,7 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
                   <input value={rfcEmisor || '— No encontrado en el expediente —'} disabled className={readonlyClass} />
                 </div>
                 <div className="flex flex-col">
-                  <label className="text-[10px] text-gray-600 mb-0.5">SECTOR DE INFRAESTRUCTURA</label>
+                  <label className="text-[10px] text-gray-600 mb-0.5">Sector de Atención</label>
                   <input value={data.sectorInfraestructura || '—'} disabled className={readonlyClass} />
                 </div>
               </div>
@@ -1957,13 +1955,13 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#15803D" strokeWidth="2" className="shrink-0">
                       <path d="M22 11.08V12a10 10 0 11-5.93-9.14" /><polyline points="22 4 12 14.01 9 11.01" />
                     </svg>
-                    <a
-                      href="#"
-                      className="text-[#0066CC] hover:underline font-mono"
-                      onClick={e => { e.preventDefault(); setCartaEnVisor({ url: documentoAceptacion.url, nombre: documentoAceptacion.nombre }); }}
+                    <button
+                      type="button"
+                      className="enlace-accion text-[color:var(--theme-link)] hover:underline font-mono"
+                      onClick={() => { setCartaEnVisor({ url: documentoAceptacion.url, nombre: documentoAceptacion.nombre }); }}
                     >
                       {documentoAceptacion.nombre}
-                    </a>
+                    </button>
                     <span className="text-gray-500">
                       {documentoAceptacion.tamanoKB} KB · {new Date(documentoAceptacion.fecha).toLocaleString('es-MX')}
                     </span>
@@ -1976,7 +1974,7 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
                           type="button"
                           onClick={abrirSelectorFirmada}
                           disabled={subiendoAceptacion}
-                          className="text-[#0066CC] hover:underline disabled:opacity-60"
+                          className="text-[color:var(--theme-link)] hover:underline disabled:opacity-60"
                         >
                           {subiendoAceptacion ? 'Subiendo…' : 'Reemplazar'}
                         </button>
@@ -2039,7 +2037,7 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
 
               {/* Bitácora del gatillo Cierre Comercial — folio, usuario, timestamp, id_solicitud generada */}
               <div className="px-4 pb-4">
-                <div className="text-[10px] text-gray-600 mb-0.5 uppercase tracking-wide">Bitácora de Cierre Comercial</div>
+                <div className="text-[10px] text-gray-600 mb-0.5 uppercase tracking-wide">Historial del Cierre Comercial</div>
                 <div className="border border-gray-300 rounded overflow-hidden">
                   <table className="w-full text-[11px]">
                     <thead>
@@ -2085,7 +2083,7 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
           {/* ═══════════ TAB ARCHIVOS ADJUNTOS — HU-CRM-10 CA-04 ═══════════ */}
           {activeTab === 'adjuntos' && (
             <div>
-              {seccion('Archivos Adjuntos')}
+              {seccion('Documentos de la Oportunidad')}
               <div className="p-4">
                 <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
                   <span className="text-[11px] text-gray-500">
@@ -2100,12 +2098,12 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
                        Carta Oferta generada — no tiene sentido "firmar" algo
                        que aún no se emitió. */
                     <div className="flex items-center gap-2 px-2 py-1.5 bg-gray-50 border border-gray-200 rounded-lg">
-                      <span className="w-4 h-4 flex items-center justify-center rounded-full bg-[#0099CC] text-white text-[9px] font-bold shrink-0">1</span>
+                      <span className="w-4 h-4 flex items-center justify-center rounded-full bg-[color:var(--theme-action)] text-white text-[9px] font-bold shrink-0">1</span>
                       <button
                         onClick={handleGenerarCartaOferta}
                         disabled={generandoCarta}
                         className={`px-4 py-1.5 rounded text-xs font-medium whitespace-nowrap ${
-                          generandoCarta ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'bg-[#0099CC] text-white hover:bg-[#0088BB]'
+                          generandoCarta ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'bg-[color:var(--theme-action)] text-white hover:bg-[color:var(--theme-action-hover)]'
                         }`}
                       >
                         {generandoCarta ? 'Generando…' : 'Generar Carta Oferta'}
@@ -2149,7 +2147,7 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
                       <tr className="bg-gray-100 border-b border-gray-300">
                         <th className="px-3 py-2 text-left font-normal text-gray-700 w-20">Ver</th>
                         <th className="px-3 py-2 text-left font-normal text-gray-700">ARCHIVO</th>
-                        <th className="px-3 py-2 text-left font-normal text-gray-700 w-32">TIPO</th>
+                        <th className="px-3 py-2 text-left font-normal text-gray-700 w-32">Tipo de Documento</th>
                         <th className="px-3 py-2 text-left font-normal text-gray-700 w-44">PLANTILLA</th>
                         <th className="px-3 py-2 text-right font-normal text-gray-700 w-20">TAMAÑO</th>
                         <th className="px-3 py-2 text-left font-normal text-gray-700 w-40">FECHA</th>
@@ -2167,13 +2165,13 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
                         [...archivosAdjuntos].reverse().map((a, i) => (
                           <tr key={a.id} className="border-b border-gray-200" style={{ backgroundColor: i % 2 === 1 ? '#F9F9F9' : '#FFFFFF' }}>
                             <td className="px-3 py-2">
-                              <a
-                                href="#"
-                                className="text-[#0066CC] hover:underline"
-                                onClick={e => { e.preventDefault(); setCartaEnVisor({ url: a.url, nombre: a.nombre }); }}
+                              <button
+                                type="button"
+                                className="enlace-accion text-[color:var(--theme-link)] hover:underline"
+                                onClick={() => { setCartaEnVisor({ url: a.url, nombre: a.nombre }); }}
                               >
                                 Ver
-                              </a>
+                              </button>
                             </td>
                             <td className="px-3 py-2 text-gray-700 font-mono text-[10px] break-all">{a.nombre}</td>
                             <td className="px-3 py-2">
@@ -2203,13 +2201,13 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
             <div>
               {/* ── Solicitud en Originación (LOS) — un único botón de alta ── */}
               <div className="p-4">
-                <div className={`rounded-lg border p-4 ${solicitudLOSRef ? 'border-green-200 bg-green-50' : 'border-[#0099CC]/40 bg-[#F0F9FC]'}`}>
+                <div className={`rounded-lg border p-4 ${solicitudLOSRef ? 'border-green-200 bg-green-50' : 'border-[color:var(--theme-action)]/40 bg-[#F0F9FC]'}`}>
                   <div className="flex items-center justify-between gap-3">
-                    <span className="text-xs font-semibold text-gray-800 uppercase tracking-wide">Solicitud en Originación (LOS)</span>
+                    <span className="text-xs font-semibold text-gray-800 uppercase tracking-wide">Solicitud de Originación</span>
                     {!isView && !solicitudLOSRef && (
                       <button
                         onClick={handleNuevaSolicitud}
-                        className="px-4 py-1.5 bg-[#0099CC] text-white rounded text-xs hover:bg-[#0088BB] font-medium whitespace-nowrap"
+                        className="px-4 py-1.5 bg-[color:var(--theme-action)] text-white rounded text-xs hover:bg-[color:var(--theme-action-hover)] font-medium whitespace-nowrap"
                       >
                         + Nueva Solicitud
                       </button>
@@ -2225,7 +2223,7 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
                   ) : (
                     <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mt-3">
                       <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-xs text-gray-700">
-                        <div><span className="text-gray-500">Folio LOS:</span> <span className="font-mono font-medium">{solicitudLOSRef.noSol}</span></div>
+                        <div><span className="text-gray-500">Folio de Solicitud:</span> <span className="font-mono font-medium">{solicitudLOSRef.noSol}</span></div>
                         <div><span className="text-gray-500">Fecha:</span> {new Date(solicitudLOSRef.fecha).toLocaleString('es-MX')}</div>
                       </div>
                       {onNavigateToSolicitud && (
@@ -2234,7 +2232,7 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
                             mode: 'editar',
                             volverAOportunidadId: form.id,
                           })}
-                          className="px-4 py-1.5 bg-[#0099CC] text-white rounded text-xs hover:bg-[#0088BB] font-medium whitespace-nowrap"
+                          className="px-4 py-1.5 bg-[color:var(--theme-action)] text-white rounded text-xs hover:bg-[color:var(--theme-action-hover)] font-medium whitespace-nowrap"
                         >
                           Abrir Solicitud
                         </button>
@@ -2246,17 +2244,16 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
 
               {/* ── Solicitudes reales del LOS — se consulta J_CUENTAS_CORP_CLIENTES ── */}
               <div className="border-t border-gray-200 mt-1">
-                {seccion('Solicitudes (J_CUENTAS_CORP_CLIENTES)')}
+                {seccion('Solicitudes Relacionadas')}
                 <div className="p-4">
                   <p className="text-[10px] text-gray-400 mb-2">
-                    Solicitudes cuyo <span className="font-mono">no_referenc1</span> es el folio de esta Oportunidad
-                    (<span className="font-mono text-gray-600">{form.no_cotiza}</span>). Se dan de alta y se editan
-                    desde el módulo de Solicitudes; aquí son de solo lectura.
+                    Solicitudes vinculadas a esta Oportunidad. Se crean y editan en el
+                    módulo de Solicitudes; aquí se muestran para consulta.
                   </p>
 
                   {errorSolicitudesLOS && (
                     <div className="mb-3 px-3 py-2 bg-red-50 border border-red-200 rounded text-[11px] text-red-700">
-                      No se pudo consultar J_CUENTAS_CORP_CLIENTES: {errorSolicitudesLOS}
+                      No se pudieron consultar las solicitudes: {errorSolicitudesLOS}
                     </div>
                   )}
 
@@ -2269,7 +2266,7 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
                           <th className="px-3 py-2 text-left font-normal text-gray-700">PRODUCTO</th>
                           <th className="px-3 py-2 text-right font-normal text-gray-700">MONTO SOLICITADO</th>
                           <th className="px-3 py-2 text-right font-normal text-gray-700">MONTO AUTORIZADO</th>
-                          <th className="px-3 py-2 text-left font-normal text-gray-700">FASE</th>
+                          <th className="px-3 py-2 text-left font-normal text-gray-700">Etapa</th>
                           <th className="px-3 py-2 text-center font-normal text-gray-700">ESTATUS</th>
                           <th className="px-3 py-2 text-left font-normal text-gray-700">FECHA</th>
                         </tr>
@@ -2278,7 +2275,7 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
                         {solicitudesDeLaOportunidad.length === 0 ? (
                           <tr>
                             <td colSpan={onNavigateToSolicitud ? 8 : 7} className="px-3 py-8 text-center text-gray-400">
-                              {cargandoSolicitudesLOS ? 'Consultando J_CUENTAS_CORP_CLIENTES…' : 'Sin solicitudes asociadas a esta Oportunidad.'}
+                              {cargandoSolicitudesLOS ? 'Consultando solicitudes…' : 'Sin solicitudes asociadas a esta Oportunidad.'}
                             </td>
                           </tr>
                         ) : solicitudesDeLaOportunidad.map((sol, i) => {
@@ -2296,7 +2293,7 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
                             >
                               {!!onNavigateToSolicitud && (
                                 <td className="px-3 py-2 whitespace-nowrap">
-                                  <a href="#" className="text-[#0066CC] hover:underline" onClick={e => { e.preventDefault(); abrir(); }}>Abrir</a>
+                                  <button type="button" className="enlace-accion text-[color:var(--theme-link)] hover:underline" onClick={() => { abrir(); }}>Abrir</button>
                                 </td>
                               )}
                               <td className="px-3 py-2 text-gray-700 font-mono">{sol.noSol || '—'}</td>
@@ -2368,7 +2365,7 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
                     {subiendoAceptacion ? 'Subiendo…' : (documentoAceptacion ? 'Actualizar firmada' : 'Subir firmada')}
                   </button>
                 )}
-                <button
+                <button type="button" aria-label="Cerrar" title="Cerrar"
                   onClick={() => setCartaEnVisor(null)}
                   className="text-white/80 hover:text-white hover:bg-white/20 rounded-full w-6 h-6 flex items-center justify-center"
                 >
@@ -2459,7 +2456,7 @@ function CorpFinModal({ item, monedaDefault, onSave, onClose }: CorpFinModalProp
           <span className="text-sm font-semibold tracking-wide uppercase">
             {item ? 'Editar Solicitud Corporativa' : 'Nueva Solicitud Corporativa'}
           </span>
-          <button onClick={onClose} className="text-white/80 hover:text-white hover:bg-white/20 rounded-full w-6 h-6 flex items-center justify-center">
+          <button type="button" aria-label="Cerrar" title="Cerrar" onClick={onClose} className="text-white/80 hover:text-white hover:bg-white/20 rounded-full w-6 h-6 flex items-center justify-center">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M18 6L6 18" /><path d="M6 6l12 12" /></svg>
           </button>
         </div>
@@ -2475,9 +2472,7 @@ function CorpFinModal({ item, monedaDefault, onSave, onClose }: CorpFinModalProp
             </div>
             <div>
               <label className="block text-[11px] font-semibold text-gray-600 uppercase mb-1.5">Monto <span className="text-red-500">*</span></label>
-              <input
-                type="text"
-                inputMode="decimal"
+              <CampoMonto
                 value={f.monto}
                 onChange={e => { const c = limpiarDecimal(e.target.value); if (c !== null) set('monto', c); }}
                 className={`${inputCls} text-right font-mono`}
@@ -2497,7 +2492,7 @@ function CorpFinModal({ item, monedaDefault, onSave, onClose }: CorpFinModalProp
             </div>
             <div>
               <label className="block text-[11px] font-semibold text-gray-600 uppercase mb-1.5">Fecha Solicitud</label>
-              <input type="date" value={f.fecha_solicitud} onChange={e => set('fecha_solicitud', e.target.value)} className={inputCls} />
+              <DatePicker formato="iso" value={f.fecha_solicitud} onChange={(__v: string) => set('fecha_solicitud', __v)} />
             </div>
             <div className="col-span-2">
               <label className="block text-[11px] font-semibold text-gray-600 uppercase mb-1.5">Folio</label>

@@ -1,6 +1,7 @@
 import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { memo, useMemo } from 'react';
 import { useClientesDB } from '../hooks/useClientesDB';
+import { AccesosModulos } from './AccesosModulos';
 import { useSolicitudesDB } from '../hooks/useSolicitudesDB';
 import {
   clientesRecientes as calcClientesRecientes,
@@ -142,31 +143,9 @@ export function Dashboard({ onNavigateToModule, modulos }: {
 
   return (
     <div className="p-6 space-y-6">
-      {/* Accesos a los modulos visibles de la sesion */}
+      {/* Accesos a los modulos visibles de la sesion — agrupados en acordeón */}
       {onNavigateToModule && (modulos?.length ?? 0) > 0 && (
-        <div className="mb-6">
-          <div className="bg-primary-light-theme border-l-4 border-primary-theme px-3 py-2 mb-3">
-            <span className="text-sm font-medium text-gray-800">ACCESOS</span>
-            <span className="text-[11px] text-gray-500 ml-2">{modulos!.length} módulo(s) disponibles</span>
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-            {modulos!.map(m => (
-              <button
-                key={m.id}
-                onClick={() => onNavigateToModule(m.id)}
-                className="group flex items-center gap-2.5 px-3 py-3 bg-white border border-gray-200 rounded-lg text-left hover:border-primary-theme hover:shadow-md transition-all"
-              >
-                <span className="shrink-0 w-8 h-8 rounded-lg bg-primary-light-theme flex items-center justify-center text-primary-theme group-hover:bg-primary-theme group-hover:text-white transition-colors">
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" />
-                    <rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" />
-                  </svg>
-                </span>
-                <span className="text-xs font-medium text-gray-700 leading-tight">{m.label}</span>
-              </button>
-            ))}
-          </div>
-        </div>
+        <AccesosModulos modulos={modulos!} onNavigate={onNavigateToModule} />
       )}
 
       {/* Grid principal: 2 columnas en desktop */}
@@ -219,7 +198,7 @@ export function Dashboard({ onNavigateToModule, modulos }: {
               <thead className="bg-gray-50 border-b border-gray-300">
                 <tr>
                   <th className="text-left px-3 py-2 font-medium text-gray-700">Producto</th>
-                  <th className="text-left px-3 py-2 font-medium text-gray-700">Cliente</th>
+                  <th className="text-left px-3 py-2 font-medium text-gray-700">Nombre Interlocutor</th>
                   <th className="text-left px-3 py-2 font-medium text-gray-700">Prioridad</th>
                   <th className="text-left px-3 py-2 font-medium text-gray-700">Fecha</th>
                   <th className="text-left px-3 py-2 font-medium text-gray-700">Estatus</th>
@@ -261,7 +240,7 @@ export function Dashboard({ onNavigateToModule, modulos }: {
           <table className="w-full text-xs">
             <thead className="bg-gray-50 border-b border-gray-300">
               <tr>
-                <th className="text-left px-3 py-2 font-medium text-gray-700">Cliente</th>
+                <th className="text-left px-3 py-2 font-medium text-gray-700">Nombre Interlocutor</th>
                 <th className="text-right px-3 py-2 font-medium text-gray-700">Monto Autorizado</th>
                 <th className="text-left px-3 py-2 font-medium text-gray-700">Producto</th>
                 <th className="text-left px-3 py-2 font-medium text-gray-700">Folio</th>

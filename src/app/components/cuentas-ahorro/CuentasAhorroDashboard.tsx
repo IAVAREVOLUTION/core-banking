@@ -38,7 +38,7 @@ export function CuentasAhorroDashboard({ onNew, onEdit, onView }: CuentasAhorroD
     return (
       <div className="p-6 bg-[#F5F5F5] min-h-full flex items-center justify-center">
         <div className="text-center space-y-3">
-          <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-[#2E5C91] mx-auto" />
+          <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-[color:var(--theme-secondary)] mx-auto" />
           <p className="text-sm text-gray-600">Cargando dashboard de cuentas de ahorro...</p>
         </div>
       </div>
@@ -48,7 +48,7 @@ export function CuentasAhorroDashboard({ onNew, onEdit, onView }: CuentasAhorroD
   // ── KPIs calculados desde datos reales ──
   const totalCuentas = cuentas.length;
   const saldoTotal = cuentas.reduce((sum, c) => sum + (c.saldoActual || 0), 0);
-  const cuentasEje = cuentas.filter(c => c.ctaEjeChec && c.ctaEjeChec !== '—' && c.ctaEjeChec !== '').length;
+  const cuentasEje = cuentas.filter(c => c.ctaEjeChec === true).length;
   const saldoPromedio = totalCuentas > 0 ? saldoTotal / totalCuentas : 0;
 
   // Cuentas recientes (últimas 8 por fecha_sol)
@@ -157,13 +157,13 @@ export function CuentasAhorroDashboard({ onNew, onEdit, onView }: CuentasAhorroD
             {statusBadge.label}
           </span>
           <span className="text-xs text-gray-500">
-            {totalCuentas} registro{totalCuentas !== 1 ? 's' : ''} desde J_CUENTAS_CORP_CLIENTES
+            {totalCuentas} registro{totalCuentas !== 1 ? 's' : ''}
           </span>
         </div>
         {onNew && (
           <button
             onClick={onNew}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-[#2E5C91] text-white text-sm rounded hover:bg-[#244A75] transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-[color:var(--theme-secondary)] text-white text-sm rounded hover:bg-[color:var(--theme-secondary-hover)] transition-colors"
           >
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M7 1v12M1 7h12"/>
@@ -264,7 +264,7 @@ export function CuentasAhorroDashboard({ onNew, onEdit, onView }: CuentasAhorroD
             <div className="p-8 text-center text-sm text-gray-500">
               No hay cuentas de ahorro registradas.
               {onNew && (
-                <button onClick={onNew} className="block mx-auto mt-3 text-[#2E5C91] underline text-xs">
+                <button onClick={onNew} className="block mx-auto mt-3 text-[color:var(--theme-secondary)] underline text-xs">
                   Crear primera cuenta
                 </button>
               )}
@@ -275,7 +275,7 @@ export function CuentasAhorroDashboard({ onNew, onEdit, onView }: CuentasAhorroD
                 <thead className="bg-gray-50 border-b border-gray-300">
                   <tr>
                     <th className="text-left px-3 py-2 font-medium text-gray-700">N° Cuenta</th>
-                    <th className="text-left px-3 py-2 font-medium text-gray-700">Cliente</th>
+                    <th className="text-left px-3 py-2 font-medium text-gray-700">Nombre Interlocutor</th>
                     <th className="text-left px-3 py-2 font-medium text-gray-700">Saldo</th>
                     <th className="text-left px-3 py-2 font-medium text-gray-700">Estatus</th>
                     <th className="text-left px-3 py-2 font-medium text-gray-700">Fecha</th>
@@ -288,7 +288,7 @@ export function CuentasAhorroDashboard({ onNew, onEdit, onView }: CuentasAhorroD
                       className={`${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'} cursor-pointer hover:bg-blue-50 transition-colors`}
                       onClick={() => onView?.(cuenta.id)}
                     >
-                      <td className="px-3 py-2 text-[#2E5C91] font-medium">{cuenta.noCuenta || '—'}</td>
+                      <td className="px-3 py-2 text-[color:var(--theme-secondary)] font-medium">{cuenta.noCuenta || '—'}</td>
                       <td className="px-3 py-2 text-gray-700 max-w-[160px] truncate">{cuenta.clienteNombre}</td>
                       <td className="px-3 py-2 text-gray-900 font-medium">{formatCurrency(cuenta.saldoActual)}</td>
                       <td className="px-3 py-2">

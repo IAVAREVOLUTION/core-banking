@@ -10,7 +10,8 @@
  *   - Filtrado por solicitudId + usuario actual
  */
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
+import { getUsuarioSesion } from '../../lib/sesion';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 import { supabase } from '../../lib/supabaseClient';
 
@@ -23,18 +24,20 @@ import {
   DocumentoCargado, RequisitoProducto, ElementoRequerido,
   saveToSession, loadFromSession, loadFromSavedStore, generateId,
   MOCK_REQUISITOS_PRODUCTO, MOCK_DOCUMENTOS, documentosParaSessionStorage,
+  fechaHoraActual, versionDoc, raizVersion, siguienteVersion, documentosVigentes, versionToDB,
 } from './solicitudCreditoStore';
 import { AgregarDocumentoModal } from '../originacion/AgregarDocumentoModal';
 import {
   autoCrearReporteBuro, CLAVE_REPORTE_BURO,
   autoCrearKitLegal, generarPagareDesdePlantilla,
+  generarDocumentoDesdePlantilla, plantillaParaRequisito,
   CLAVE_CONTRATO_REQ, CLAVE_PAGARE_REQ, CLAVE_ANEXO_RENTAS,
   autoCrearDocumentosComitePrepago, CLAVE_ACTA_COMITE, CLAVE_CERT_PREAPART,
 } from '../../hooks/generarDocumentosFase4';
+import { quitarModeloIA } from '@/app/lib/toastNegocio';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-7e2d13d9`;
 const LOG = '[ExpedienteTab]';
-const CURRENT_USER = '(sesión pendiente)';
 
 /** Bucket principal — mismo que prospectos/clientes */
 const BUCKET_EXPEDIENTES = 'make-7e2d13d9-expedientes-electronicos-prospectos';
@@ -267,7 +270,7 @@ function PreviewModal({ doc, fileDataUrl, onClose, onUrlRefreshed }: PreviewModa
               </div>
             </div>
           </div>
-          <button onClick={onClose} className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors">
+          <button type="button" aria-label="Cerrar" title="Cerrar" onClick={onClose} className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
               <path d="M4 4l8 8M12 4l-8 8" />
             </svg>
@@ -277,7 +280,7 @@ function PreviewModal({ doc, fileDataUrl, onClose, onUrlRefreshed }: PreviewModa
         <div className="flex-1 overflow-auto bg-gray-50/50 flex items-center justify-center min-h-[400px]">
           {loading ? (
             <div className="text-center py-10">
-              <svg className="animate-spin h-8 w-8 text-[#4A6FA5] mx-auto mb-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <svg className="animate-spin h-8 w-8 text-[color:var(--theme-primary)] mx-auto mb-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <circle cx="12" cy="12" r="10" strokeOpacity="0.25" />
                 <path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round" />
               </svg>
@@ -331,7 +334,7 @@ function PreviewModal({ doc, fileDataUrl, onClose, onUrlRefreshed }: PreviewModa
               Descargar
             </a>
           )}
-          <button onClick={onClose} className="px-5 py-2 bg-[#4A6FA5] text-white rounded-lg text-xs font-medium hover:bg-[#3A5A8A] transition-colors shadow-sm">
+          <button onClick={onClose} className="px-5 py-2 bg-[color:var(--theme-primary)] text-white rounded-lg text-xs font-medium hover:bg-[color:var(--theme-primary-hover)] transition-colors shadow-sm">
             Cerrar
           </button>
         </div>
@@ -565,6 +568,12 @@ interface Props {
    * requisitos y su validación pertenecen a la originación, no a la administración.
    */
   soloArchivos?: boolean;
+  /**
+   * REQ-03 — permite "Nueva Versión" aunque el tab esté en modo 'ver'. Lo usa
+   * Originación, que muestra el KM Digital de la solicitud en sólo lectura pero
+   * debe poder versionar sus archivos.
+   */
+  permitirVersiones?: boolean;
   onDocumentosChange?: (docs: DocumentoCargado[]) => void;
   /**
    * Dirección inversa de onDocumentosChange: la última lista conocida en
@@ -602,7 +611,7 @@ function elMasCompleto(...candidatos: (DocumentoCargado[] | null | undefined)[])
   return mejor;
 }
 
-export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, productoId, nombreSolicitante, curpCliente, rfcCliente, fasePromptIA, tipoPersona, lineaProducto, descripcionFase, onEnviarSolicitud, onDocumentosChange, documentosIniciales, noSolicitud, tipoProducto, nombreProducto, plantillasProducto = [], soloArchivos = false }: Props) {
+export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, productoId, nombreSolicitante, curpCliente, rfcCliente, fasePromptIA, tipoPersona, lineaProducto, descripcionFase, onEnviarSolicitud, onDocumentosChange, documentosIniciales, noSolicitud, tipoProducto, nombreProducto, plantillasProducto = [], soloArchivos = false, permitirVersiones = false }: Props) {
   // ── State: requisitos del producto (desde DB) ──
   const [requisitosDB, setRequisitosDB] = useState<RequisitoProducto[]>([]);
   const [loadingReqs, setLoadingReqs] = useState(false);
@@ -724,6 +733,10 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
   const [showAgregarModal, setShowAgregarModal] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const isRO = mode === 'ver';
+  // REQ-03: en sólo lectura (Originación) sólo se persiste si este montaje versionó algo;
+  // abrir el tab para consultar nunca escribe.
+  const puedeVersionar = !isRO || permitirVersiones;
+  const versionadoRef = useRef(false);
 
   /**
    * ¿Este montaje llegó a tener documentos alguna vez?
@@ -766,7 +779,7 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
 
   // ── Persist documentos en sessionStorage (caché local) ──
   useEffect(() => {
-    if (isRO) return;
+    if (isRO && !versionadoRef.current) return;
     if (!persistenciaSegura) return;
     if (bajaSospechosa) return;
     saveToSession(solicitudId, 'documentos', documentosParaSessionStorage(documentos));
@@ -774,7 +787,7 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
 
   // ── Guardar documentos en BD cada vez que cambian (debounce 800ms) ──
   useEffect(() => {
-    if (isRO) return;
+    if (isRO && !versionadoRef.current) return;
     // NUNCA escribir un expediente vacío que este montaje no produjo.
     if (!persistenciaSegura) {
       console.log(`${LOG} PUT omitido: lista vacía inicial — no se pisa la BD.`);
@@ -814,6 +827,7 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
                 tamano_kb: (doc as any).tamanoKB || null,
                 ia_motivos: (doc as any).iaMotivos || null,
                 ia_extraido: (doc as any).iaExtraido || null,
+                ...versionToDB(doc),
               })),
             },
           },
@@ -1023,10 +1037,12 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
    * Matching case-insensitive + NFD-normalizado para tolerar diferencias
    * de formato entre la plataforma web y banca móvil.
    */
+  // REQ-03: sólo la última versión de cada documento cubre el requisito.
+  const docsVigentes = useMemo(() => documentosVigentes(documentos), [documentos]);
   const findDocForReq = useCallback((req: RequisitoProducto): DocumentoCargado | undefined => {
     const reqNorm = normTipo(req.tipoDocumento);
-    return documentos.find(d => normTipo(d.tipoDocumento) === reqNorm);
-  }, [documentos]);
+    return docsVigentes.find(d => normTipo(d.tipoDocumento) === reqNorm);
+  }, [docsVigentes]);
 
   /**
    * Un requisito se considera "cubierto" (para progreso y canAdvance) cuando:
@@ -1073,6 +1089,95 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
     [documentos]
   );
 
+  // ── Repositorio KM Digital: documentos agrupados por fase en árbol ──
+  // Sólo la fase actual arranca abierta. Lo que el usuario abre o cierra se
+  // recuerda por solicitud (sessionStorage), así que al cambiar de subtab o de
+  // fase el árbol se queda como lo dejó; al avanzar de fase se abre la nueva y
+  // se cierra la anterior (si el usuario la quiere ver, la vuelve a abrir).
+  const claveArbol = `km-arbol:${solicitudId}`;
+  const faseActualArbol = Number(faseIdActual) || 0;
+  const [fasesAbiertas, setFasesAbiertasEstado] = useState<Set<number>>(() => {
+    try {
+      const g = JSON.parse(sessionStorage.getItem(claveArbol) || 'null') as { abiertas: number[]; fase: number } | null;
+      if (g && Array.isArray(g.abiertas)) {
+        const abiertas = new Set(g.abiertas);
+        if (g.fase !== faseActualArbol) {
+          abiertas.delete(g.fase);
+          abiertas.add(faseActualArbol);
+        }
+        return abiertas;
+      }
+    } catch { /* sin almacenamiento: usar el default */ }
+    return new Set([faseActualArbol]);
+  });
+  const setFasesAbiertas = (sig: Set<number>) => {
+    setFasesAbiertasEstado(sig);
+    try { sessionStorage.setItem(claveArbol, JSON.stringify({ abiertas: [...sig], fase: faseActualArbol })); } catch { /* ignore */ }
+  };
+  // Si la fase cambia sin desmontar el componente (Originación), abrir la nueva y cerrar la anterior.
+  const faseArbolPrevia = useRef(faseActualArbol);
+  useEffect(() => {
+    if (faseArbolPrevia.current === faseActualArbol) return;
+    const sig = new Set(fasesAbiertas);
+    sig.delete(faseArbolPrevia.current);
+    sig.add(faseActualArbol);
+    faseArbolPrevia.current = faseActualArbol;
+    setFasesAbiertas(sig);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [faseActualArbol]);
+  const gruposDocs = useMemo(() => {
+    const grupos = new Map<number, { fase: string; items: DocumentoCargado[] }>();
+    for (const d of documentosFiltrados) {
+      const fid = Number(d.faseId) || 0;
+      if (!grupos.has(fid)) {
+        // Nombre de la rama: el de la fase en los requisitos del producto; si no
+        // está, el que trae el documento. faseId 0 = sin fase (p. ej. banca móvil).
+        const nombre = fid === 0
+          ? 'Sin fase asignada'
+          : (requisitos.find(r => Number(r.faseId) === fid)?.fase || d.fase || `Fase ${fid}`);
+        grupos.set(fid, { fase: nombre, items: [] });
+      }
+      grupos.get(fid)!.items.push(d);
+    }
+    // Fases en orden; "Sin fase" al final.
+    return [...grupos.entries()].sort((a, b) => (a[0] || Infinity) - (b[0] || Infinity));
+  }, [documentosFiltrados, requisitos]);
+  // ── Dentro de cada fase: una fila por DOCUMENTO (su versión vigente) y el
+  // historial de versiones anteriores colgado debajo, colapsado por defecto.
+  const [versionesAbiertas, setVersionesAbiertas] = useState<Set<number>>(new Set());
+  const toggleVersiones = (raiz: number) => setVersionesAbiertas(prev => {
+    const n = new Set(prev);
+    if (n.has(raiz)) n.delete(raiz); else n.add(raiz);
+    return n;
+  });
+  /** Versiones agrupadas por documento, de la más reciente a la más antigua. */
+  const documentosConVersiones = (docs: DocumentoCargado[]): DocumentoCargado[][] => {
+    const porRaiz = new Map<number, DocumentoCargado[]>();
+    for (const d of docs) {
+      const r = raizVersion(d);
+      if (!porRaiz.has(r)) porRaiz.set(r, []);
+      porRaiz.get(r)!.push(d);
+    }
+    return [...porRaiz.values()].map(vs =>
+      vs.sort((a, b) => (parseFloat(versionDoc(b)) || 1) - (parseFloat(versionDoc(a)) || 1)));
+  };
+  type FilaDoc = { doc: DocumentoCargado; tipo: 'vigente' | 'anterior'; total: number; raiz: number; ultima: boolean };
+  const filasDocumentos = (docs: DocumentoCargado[]): FilaDoc[] =>
+    documentosConVersiones(docs).flatMap(vs => {
+      const raiz = raizVersion(vs[0]);
+      const filas: FilaDoc[] = [{ doc: vs[0], tipo: 'vigente', total: vs.length, raiz, ultima: false }];
+      if (versionesAbiertas.has(raiz)) {
+        vs.slice(1).forEach((d, i) => filas.push({ doc: d, tipo: 'anterior', total: vs.length, raiz, ultima: i === vs.length - 2 }));
+      }
+      return filas;
+    });
+
+  const toggleFaseDocs = (fid: number) => {
+    const n = new Set(fasesAbiertas);
+    if (n.has(fid)) n.delete(fid); else n.add(fid);
+    setFasesAbiertas(n);
+  };
+
   // ── Reporte de Buró (Fase 2) — generación manual bajo demanda ──
   const [generandoBuro, setGenerandoBuro] = useState(false);
   const yaExisteReporteBuro = documentos.some(d => d.tipoDocumento === CLAVE_REPORTE_BURO);
@@ -1101,7 +1206,7 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
         if (fresh) setDocumentos(fresh);
         if (resultado.registradosEnExpediente) {
           toast.success('Autorización Buró de Crédito generada y guardada', {
-            description: 'Adjuntado al Expediente Electrónico y persistido en base de datos.',
+            description: 'Adjuntado al KM Digital y persistido en base de datos.',
             duration: 6000,
           });
         } else {
@@ -1145,6 +1250,7 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
   // ── Kit Legal (Fase 3): Contrato + Anexo de Rentas + Pagaré ──
   const [generandoKit, setGenerandoKit] = useState(false);
   const [generandoPagare, setGenerandoPagare] = useState(false);
+  const [generandoFase, setGenerandoFase] = useState(false);
   const [generandoComite, setGenerandoComite] = useState(false);
 
   /**
@@ -1209,10 +1315,65 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
       setGenerandoComite(false);
     }
   };
-  const kitLegalCompleto =
-    documentos.some(d => d.tipoDocumento === CLAVE_CONTRATO_REQ) &&
-    documentos.some(d => d.tipoDocumento === CLAVE_PAGARE_REQ) &&
-    documentos.some(d => d.tipoDocumento === CLAVE_ANEXO_RENTAS);
+  /**
+   * Crédito Individual: el Kit Legal genérico arma el paquete de arrendamiento
+   * (Contrato + Anexo de Rentas + Pagaré). Este producto no usa Anexo de Rentas;
+   * su kit son sólo los documentos de plantilla (Contrato, Pagaré, Solicitud)
+   * que el producto declara en la(s) fase(s) donde pide el Contrato o el Pagaré.
+   * Los demás productos siguen exactamente igual.
+   */
+  const sinAcentos = (v: string) => String(v || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  const esCreditoIndividual = sinAcentos(tipoProducto || '').includes('credito individual')
+    && !sinAcentos(lineaProducto || '').includes('linea de credito');
+  const kitDeclaradoCI = useMemo(() => {
+    if (!esCreditoIndividual) return [];
+    const aplica = (r: RequisitoProducto) => r.obligatorio !== false
+      && !(r.tipoPersona && tipoPersona && !normTipo(tipoPersona).includes(normTipo(r.tipoPersona)));
+    const fasesKit = new Set(requisitos
+      .filter(r => aplica(r) && ['contrato', 'pagare'].includes(String(plantillaParaRequisito(r.tipoDocumento))))
+      .map(r => Number(r.faseId)));
+    return requisitos.filter(r => {
+      if (!aplica(r) || !fasesKit.has(Number(r.faseId))) return false;
+      const tp = plantillaParaRequisito(r.tipoDocumento);
+      if (!tp) return false;
+      return tp === 'solicitud' || plantillasProducto.some((p: any) => p?.tipoPlantilla === tp && p?.estatus === 'Activo');
+    });
+  }, [esCreditoIndividual, requisitos, tipoPersona, plantillasProducto]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const kitLegalCompleto = esCreditoIndividual
+    ? kitDeclaradoCI.every(r => !!findDocForReq(r))
+    : documentos.some(d => d.tipoDocumento === CLAVE_CONTRATO_REQ) &&
+      documentos.some(d => d.tipoDocumento === CLAVE_PAGARE_REQ) &&
+      documentos.some(d => d.tipoDocumento === CLAVE_ANEXO_RENTAS);
+
+  /** Kit Legal de Crédito Individual: sólo lo declarado (ver kitDeclaradoCI). */
+  const generarKitCreditoIndividual = async (datos: any) => {
+    const res = { exito: true, documentosCreados: [] as string[], pdfGenerados: [] as string[], subidosASupabase: false,
+      registradosEnExpediente: true, error: undefined as string | undefined,
+      documentosGenerados: [] as Array<{ tipo: string; archivo: string; fileData: string }> };
+    const errores: string[] = [];
+    for (const req of kitDeclaradoCI) {
+      if (findDocForReq(req)) continue;
+      const r = await generarDocumentoDesdePlantilla({
+        tipoPlantilla: plantillaParaRequisito(req.tipoDocumento)!,
+        storageId: solicitudId, datos, plantillas: plantillasProducto, supabase, projectId,
+        tipoDocumento: req.tipoDocumento,
+        fase: req.fase,
+        faseId: Number(req.faseId) || undefined,
+      });
+      if (!r.exito) { errores.push(`${req.tipoDocumento}: ${r.error}`); continue; }
+      res.documentosCreados.push(...r.documentosCreados);
+      res.pdfGenerados.push(...r.pdfGenerados);
+      res.documentosGenerados.push(...(r.documentosGenerados || []));
+      if (r.subidosASupabase) res.subidosASupabase = true;
+      if (r.documentosCreados.length && !r.registradosEnExpediente) { res.registradosEnExpediente = false; if (r.error) errores.push(r.error); }
+    }
+    if (errores.length) {
+      res.error = errores.join(' · ');
+      if (res.documentosCreados.length === 0) res.exito = false;
+    }
+    return res;
+  };
 
   /**
    * REQ-23 HU-23.1 — genera el Pagaré solo, desde la plantilla del producto.
@@ -1305,10 +1466,87 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
     }
   };
 
+  /**
+   * Documentos obligatorios de la FASE ACTUAL que el sistema puede generar desde
+   * plantilla (Solicitud, Contrato, Pagaré) y que aún no están cargados. Los que
+   * entrega el cliente (INE, comprobante, acta, constancia…) no aplican.
+   */
+  const generablesDeLaFase = useMemo(() => requisitos.filter(r => {
+    if (Number(r.faseId) !== Number(faseIdActual) || r.obligatorio === false) return false;
+    if (r.tipoPersona && tipoPersona && !normTipo(tipoPersona).includes(normTipo(r.tipoPersona))) return false;
+    const tp = plantillaParaRequisito(r.tipoDocumento);
+    if (!tp) return false;
+    if (tp !== 'solicitud' && !plantillasProducto.some(p => p?.tipoPlantilla === tp && p?.estatus === 'Activo')) return false;
+    return !findDocForReq(r);
+  }), [requisitos, faseIdActual, tipoPersona, plantillasProducto, findDocForReq]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleGenerarDocumentosFase = async () => {
+    if (generandoFase || generablesDeLaFase.length === 0) return;
+    setGenerandoFase(true);
+    const creados: string[] = [];
+    const errores: string[] = [];
+    try {
+      for (const req of generablesDeLaFase) {
+        const tp = plantillaParaRequisito(req.tipoDocumento)!;
+        const r = await generarDocumentoDesdePlantilla({
+          tipoPlantilla: tp,
+          storageId: solicitudId,
+          datos: {
+            noSol: noSolicitud || '',
+            cliente: nombreSolicitante || 'Cliente',
+            lineaProducto: lineaProducto || '',
+            tipoProducto: tipoProducto || '',
+            productoNombre: nombreProducto || tipoProducto || '',
+            terminos: loadFromSession<any>(solicitudId, 'terminos') || loadFromSavedStore<any>(solicitudId, 'terminos') || {},
+            rfc: rfcCliente || '',
+            curp: curpCliente || '',
+          },
+          plantillas: plantillasProducto,
+          supabase,
+          projectId,
+          tipoDocumento: req.tipoDocumento,
+          fase: descripcionFase || req.fase,
+          faseId: Number(faseIdActual) || undefined,
+        });
+        if (!r.exito) errores.push(`${req.tipoDocumento}: ${r.error}`);
+        else if (r.documentosCreados.length) {
+          creados.push(req.tipoDocumento);
+          if (!r.registradosEnExpediente && r.error) errores.push(r.error);
+        }
+      }
+      const fresh = loadFromSession<DocumentoCargado[]>(solicitudId, 'documentos')
+        ?? loadFromSavedStore<DocumentoCargado[]>(solicitudId, 'documentos');
+      if (fresh) setDocumentos(fresh);
+      if (creados.length) {
+        toast.success(`${creados.length} documento(s) generado(s)`, {
+          description: `${creados.join(', ')} — falta validarlos con IA.`,
+          duration: 8000,
+        });
+      }
+      if (errores.length) {
+        toast.error('Algunos documentos no se pudieron generar', { description: errores.join(' · '), duration: 12000 });
+      }
+    } catch (err: any) {
+      toast.error('Error al generar los documentos de la fase', { description: err?.message || String(err) });
+    } finally {
+      setGenerandoFase(false);
+    }
+  };
+
   const handleGenerarKitLegal = async () => {
     setGenerandoKit(true);
     try {
-      const resultado = await autoCrearKitLegal({
+      const datosKit = {
+          noSol: noSolicitud || '',
+          cliente: nombreSolicitante || 'Cliente',
+          lineaProducto: lineaProducto || '',
+          tipoProducto: tipoProducto || '',
+          productoNombre: nombreProducto || tipoProducto || '',
+          terminos: loadFromSession<any>(solicitudId, 'terminos') || loadFromSavedStore<any>(solicitudId, 'terminos') || {},
+          rfc: rfcCliente || '',
+          curp: curpCliente || '',
+      };
+      const resultado = esCreditoIndividual ? await generarKitCreditoIndividual(datosKit) : await autoCrearKitLegal({
         storageId: solicitudId,
         datos: {
           noSol: noSolicitud || '',
@@ -1405,8 +1643,7 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
     }
 
     const reqInfo = requisitos.find(r => r.tipoDocumento === newDoc.tipoDocumento);
-    const now = new Date();
-    const fecha = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    const fecha = fechaHoraActual();
 
     // ── Subir archivo a Supabase Storage (estrategia 3-intentos) ──
     setUploading(true);
@@ -1427,7 +1664,7 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
     const doc: DocumentoCargado = {
       id: generateId(),
       fecha,
-      usuario: CURRENT_USER,
+      usuario: getUsuarioSesion(),
       tipoDocumento: newDoc.tipoDocumento,
       archivo: uploadResult.nombre,
       tipoArchivo: uploadResult.mime.split('/').pop()?.toUpperCase() || 'PDF',
@@ -1442,6 +1679,8 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
       storageBucket: BUCKET_EXPEDIENTES,
       mime: uploadResult.mime,
       tamanoKB: uploadResult.tamanoKB,
+      version: '1.0',
+      fechaActualizacion: fecha,
     };
 
     // También guardar data URL local para preview inmediato
@@ -1724,7 +1963,6 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
       const confianza = typeof result.confianza === 'number' ? Math.round(result.confianza * 100) : null;
       const modeloUsado: string = result.modelo || 'desconocido';
       setLastModeloIA(modeloUsado);
-      const modeloCorto = modeloUsado.includes('/') ? modeloUsado.split('/').pop()! : modeloUsado;
 
       // Actualizar documento con resultado IA
       setDocumentos(prev => prev.map(d =>
@@ -1738,8 +1976,8 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
               nota: d.nota
                 ? d.nota
                 : esValido
-                  ? `IA: Validado${confianza ? ` (${confianza}%)` : ''} · ${modeloCorto}`
-                  : `IA: Rechazado — ${(result.motivos || []).join('; ').substring(0, 80)} · ${modeloCorto}`,
+                  ? `IA: Validado${confianza ? ` (${confianza}%)` : ''}`
+                  : `IA: Rechazado — ${(result.motivos || []).join('; ').substring(0, 80)}`,
             }
           : d
       ));
@@ -1748,12 +1986,12 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
 
       if (esValido) {
         toast.success('Documento VALIDADO por IA', {
-          description: `${doc.tipoDocumento}${confianza ? ` · ${confianza}%` : ''} · 🤖 ${modeloCorto}`,
+          description: `${doc.tipoDocumento}${confianza ? ` · ${confianza}%` : ''}`,
           duration: 6000,
         });
       } else {
         toast.error('Documento RECHAZADO por IA', {
-          description: `${doc.tipoDocumento} · ${(result.motivos || ['Sin motivo']).slice(0, 1).join('')} · 🤖 ${modeloCorto}`,
+          description: `${doc.tipoDocumento} · ${(result.motivos || ['Sin motivo']).slice(0, 1).join('')}`,
           duration: 8000,
         });
       }
@@ -1775,7 +2013,10 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
   const handleEliminar = (docId: number) => {
     const doc = documentos.find(d => d.id === docId);
     if (!doc) return;
-    if (doc.storagePath) deleteFileFromStorage(doc.storagePath);
+    // REQ-03: un clon pendiente comparte el archivo de su versión origen;
+    // borrarlo de Storage dejaría a la otra versión sin archivo.
+    const archivoCompartido = documentos.some(d => d.id !== docId && d.storagePath === doc.storagePath);
+    if (doc.storagePath && !archivoCompartido) deleteFileFromStorage(doc.storagePath);
     const updated = documentos.filter(d => d.id !== docId);
     // Marca la baja como intencional: sin esto, el guardia anti-copia-vieja
     // (bajaSospechosa) bloquearía este mismo borrado por verse igual que una
@@ -1784,6 +2025,120 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
     setDocumentos(updated);
     saveToSession(solicitudId, 'documentos', documentosParaSessionStorage(updated));
     toast.success('Documento eliminado', { description: doc.tipoDocumento, duration: 3000 });
+  };
+
+  // ══════════════════════════════════════════════════════════════════
+  // REQ-03 — Nueva Versión: clona el registro (mismos datos y archivo) y
+  // obliga a reemplazar el archivo del clon por uno con contenido distinto.
+  // ══════════════════════════════════════════════════════════════════
+  const [versionDocId, setVersionDocId] = useState<number | null>(null);
+  const [versionFile, setVersionFile] = useState<File | null>(null);
+  const [subiendoVersion, setSubiendoVersion] = useState(false);
+  const versionFileRef = useRef<HTMLInputElement>(null);
+
+  const handleNuevaVersion = (docId: number) => {
+    const origen = documentos.find(d => d.id === docId);
+    if (!origen) return;
+    const ahora = fechaHoraActual();
+    const raiz = raizVersion(origen);
+    const clon: DocumentoCargado = {
+      ...origen,
+      id: generateId(),
+      fecha: ahora,
+      fechaActualizacion: ahora,
+      usuario: getUsuarioSesion(),
+      version: siguienteVersion(documentos, origen),
+      versionDe: origen.id,
+      versionRaiz: raiz,
+      archivoPendiente: true,
+      // El contenido va a cambiar: la validación IA de la versión anterior no aplica.
+      estatus: 'Pendiente',
+      validadoIA: false,
+      iaMotivos: undefined,
+      iaExtraido: undefined,
+    };
+    // El clon va justo después de la última versión del mismo documento.
+    const ultimo = documentos.reduce((pos, d, i) => (raizVersion(d) === raiz ? i : pos), -1);
+    const updated = documentos.map(d => (d.id === origen.id
+      ? { ...d, version: versionDoc(d), versionRaiz: raiz, fechaActualizacion: ahora }
+      : d));
+    updated.splice(ultimo + 1, 0, clon);
+
+    if (fileDataUrls[origen.id]) setFileDataUrls(prev => ({ ...prev, [clon.id]: prev[origen.id] }));
+    versionadoRef.current = true;
+    setDocumentos(updated);
+    setVersionesAbiertas(prev => new Set(prev).add(raiz));
+    setVersionFile(null);
+    setVersionDocId(clon.id);
+  };
+
+  /** ¿El archivo nuevo tiene el mismo contenido que el de la versión origen? */
+  const mismoContenido = async (file: File, origen: DocumentoCargado): Promise<boolean> => {
+    try {
+      const fuente = fileDataUrls[origen.id] || origen.fileData || origen.url;
+      if (!fuente || !crypto?.subtle) return false;
+      const res = await fetch(fuente);
+      if (!res.ok) return false;
+      const [a, b] = await Promise.all([file.arrayBuffer(), res.arrayBuffer()]);
+      if (a.byteLength !== b.byteLength) return false;
+      const [ha, hb] = await Promise.all([crypto.subtle.digest('SHA-256', a), crypto.subtle.digest('SHA-256', b)]);
+      const hex = (h: ArrayBuffer) => Array.from(new Uint8Array(h)).map(x => x.toString(16).padStart(2, '0')).join('');
+      return hex(ha) === hex(hb);
+    } catch {
+      // URL vencida o sin CORS: no se puede comparar; no se bloquea la carga.
+      return false;
+    }
+  };
+
+  const handleConfirmarVersion = async () => {
+    const doc = documentos.find(d => d.id === versionDocId);
+    if (!doc) return;
+    if (!versionFile) {
+      toast.error('Adjunte el archivo actualizado de la nueva versión');
+      return;
+    }
+    if (versionFile.size > 10 * 1024 * 1024) {
+      toast.error('Archivo demasiado grande', { description: 'El tamaño máximo permitido es 10 MB.' });
+      return;
+    }
+    setSubiendoVersion(true);
+    try {
+      const origen = documentos.find(d => d.id === doc.versionDe);
+      if (origen && await mismoContenido(versionFile, origen)) {
+        toast.error('El archivo es idéntico a la versión anterior', {
+          description: 'Adjunte el archivo con el contenido actualizado.',
+        });
+        return;
+      }
+      const solIdStr = String(solicitudId === 'new' ? `new_${Date.now()}` : solicitudId);
+      const up = await uploadFileToStorage(versionFile, solIdStr).catch(() => null);
+      if (!up) {
+        toast.error('Error al subir archivo', { description: 'No se pudo cargar el archivo. Intente de nuevo.' });
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = (e) => setFileDataUrls(prev => ({ ...prev, [doc.id]: e.target?.result as string }));
+      reader.readAsDataURL(versionFile);
+
+      versionadoRef.current = true;
+      setDocumentos(prev => prev.map(d => (d.id === doc.id ? {
+        ...d,
+        archivo: up.nombre,
+        tipoArchivo: up.mime.split('/').pop()?.toUpperCase() || 'PDF',
+        url: up.url,
+        storagePath: up.storagePath,
+        storageBucket: BUCKET_EXPEDIENTES,
+        mime: up.mime,
+        tamanoKB: up.tamanoKB,
+        fileData: undefined,
+        archivoPendiente: false,
+      } : d)));
+      setVersionDocId(null);
+      setVersionFile(null);
+      toast.success(`Versión ${versionDoc(doc)} creada`, { description: `${doc.tipoDocumento} — ${up.nombre}` });
+    } finally {
+      setSubiendoVersion(false);
+    }
   };
 
   const handleFileSelect = () => {
@@ -1846,8 +2201,8 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-3">
             <h4 className="text-sm font-medium text-gray-800">
-              Requisitos del Producto
-              <span className="text-gray-500 font-normal ml-1">(Fase Actual: {faseIdActual})</span>
+              Requisitos Documentales
+              <span className="text-gray-500 font-normal ml-1">(Etapa Actual: {faseIdActual})</span>
             </h4>
             {fasePromptIA && (
               <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-purple-100 text-purple-700 text-[10px] font-medium rounded-full">
@@ -1903,8 +2258,8 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
               {!productoId
                 ? 'Seleccione un producto en el header para ver sus requisitos.'
                 : reqSource === 'fallback'
-                  ? 'El producto seleccionado es del catálogo local (fallback) y no tiene requisitos configurados en la base de datos. Seleccione un producto registrado en J_PRODUCTOS.'
-                  : 'El producto seleccionado no tiene requisitos/documentos configurados en su JSONB (data.requisitos). Verifique la configuración del producto en el módulo Productos → Requisitos.'
+                  ? 'El producto seleccionado es del catálogo local (fallback) y no tiene requisitos configurados en la base de datos. Seleccione un producto registrado en el catálogo de Productos.'
+                  : 'El producto seleccionado no tiene requisitos documentales configurados. Verifique la configuración del producto en el módulo Productos → Requisitos.'
               }
             </p>
             {productoId && (
@@ -1919,7 +2274,7 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
         {!loadingReqs && requisitos.length > 0 && (
           <div className="border border-gray-300 overflow-hidden rounded">
             <table className="w-full text-xs">
-              <thead className="bg-[#2E5C91] text-white">
+              <thead className="bg-[color:var(--theme-secondary)] text-white">
                 <tr>
                   {/* La columna "Fase" desaparecio: ahora es la cabecera del
                       grupo. Repetirla por fila obligaba a un ancho de 64px con
@@ -2111,7 +2466,7 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
                       </span>
                       <p className="text-xs text-blue-700">{req.promptIA}</p>
                     </div>
-                    <button onClick={() => setExpandedPrompt(null)} className="ml-auto text-blue-400 hover:text-blue-600">
+                    <button type="button" aria-label="Cerrar" title="Cerrar" onClick={() => setExpandedPrompt(null)} className="ml-auto text-blue-400 hover:text-blue-600">
                       <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2">
                         <path d="M2 2l8 8M10 2l-8 8" />
                       </svg>
@@ -2165,20 +2520,20 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#4A6FA5] to-[#607698] flex items-center justify-center shadow-sm">
+              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[color:var(--theme-primary)] to-[#607698] flex items-center justify-center shadow-sm">
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="white" strokeWidth="1.5" strokeLinecap="round">
                   <path d="M2 4h12M2 8h12M2 12h8" />
                 </svg>
               </div>
               <div>
-                <h4 className="text-sm font-semibold text-gray-800">Documentos Cargados</h4>
+                <h4 className="text-sm font-semibold text-gray-800">Documentos del Expediente</h4>
                 <p className="text-[10px] text-gray-400 leading-tight">
-                  {CURRENT_USER} &middot; {solicitudId === 'new' ? 'Nueva Solicitud' : `Sol. ${solicitudId}`}
+                  {getUsuarioSesion()} &middot; {solicitudId === 'new' ? 'Nueva Solicitud' : `Sol. ${solicitudId}`}
                 </p>
               </div>
             </div>
             {documentosFiltrados.length > 0 && (
-              <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full text-[10px] font-bold bg-[#4A6FA5] text-white shadow-sm">
+              <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full text-[10px] font-bold bg-[color:var(--theme-primary)] text-white shadow-sm">
                 {documentosFiltrados.length}
               </span>
             )}
@@ -2210,13 +2565,29 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
               <button
                 onClick={handleGenerarReporteBuro}
                 disabled={generandoBuro}
-                className="px-3.5 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all duration-200 shadow-sm bg-[#1E4078] text-white hover:bg-[#16305C] disabled:opacity-60"
+                className="px-3.5 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all duration-200 shadow-sm bg-[color:var(--theme-secondary-hover)] text-white hover:bg-[color:var(--theme-secondary-hover)] disabled:opacity-60"
               >
                 <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                   <path d="M2 1h6l2 2v8H2V1z" />
                   <path d="M6.5 1v2.5H9" />
                 </svg>
                 {generandoBuro ? 'Generando...' : 'Generar Autorización Buró'}
+              </button>
+            )}
+            {/* Genera de una vez los documentos de plantilla que pide la fase actual */}
+            {!isRO && generablesDeLaFase.length > 0 && (
+              <button
+                onClick={handleGenerarDocumentosFase}
+                disabled={generandoFase}
+                title={`Genera desde las plantillas del producto: ${generablesDeLaFase.map(r => r.tipoDocumento).join(', ')}`}
+                className="px-3.5 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all duration-200 shadow-sm bg-[color:var(--theme-action)] text-white hover:bg-[color:var(--theme-action-hover)] disabled:opacity-60"
+              >
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M2 1.5h5L10 4v6.5H2z" />
+                  <path d="M7 1.5V4h3" />
+                  <path d="M6 6v3M4.5 7.5h3" />
+                </svg>
+                {generandoFase ? 'Generando...' : `Generar documentos de la fase (${generablesDeLaFase.length})`}
               </button>
             )}
             {/* REQ-23 HU-23.1 — Pagaré solo, para productos cuya fase lo declara
@@ -2237,11 +2608,13 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
                 {generandoPagare ? 'Generando...' : 'Generar Pagaré'}
               </button>
             )}
-            {!isRO && aplicaBuroYKitLegal && tienePlantillaContrato && !kitLegalCompleto && (
+            {!isRO && aplicaBuroYKitLegal && tienePlantillaContrato && !kitLegalCompleto && (!esCreditoIndividual || kitDeclaradoCI.length > 0) && (
               <button
                 onClick={handleGenerarKitLegal}
                 disabled={generandoKit}
-                title="Genera Contrato, Anexo de Rentas y Pagaré desde las plantillas del producto"
+                title={esCreditoIndividual
+                  ? `Genera desde las plantillas del producto: ${kitDeclaradoCI.map(r => r.tipoDocumento).join(', ')}`
+                  : 'Genera Contrato, Anexo de Rentas y Pagaré desde las plantillas del producto'}
                 className="px-3.5 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all duration-200 shadow-sm bg-[#7C3AED] text-white hover:bg-[#6D28D9] disabled:opacity-60"
               >
                 <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -2255,7 +2628,7 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
             {!isRO && (
               <button
                 onClick={() => setShowAgregarModal(true)}
-                className="px-3.5 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all duration-200 shadow-sm bg-[#4A6FA5] text-white hover:bg-[#3A5A8A]"
+                className="px-3.5 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all duration-200 shadow-sm bg-[color:var(--theme-primary)] text-white hover:bg-[color:var(--theme-primary-hover)]"
               >
                 <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                   <path d="M6 1v10M1 6h10" />
@@ -2271,17 +2644,13 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
           <div className="mb-3 border border-violet-200 rounded-xl bg-violet-50/60 overflow-hidden">
             <div className="px-4 py-2.5 bg-violet-100/80 border-b border-violet-200 flex items-center justify-between">
               <span className="text-[11px] font-bold text-violet-800 uppercase tracking-wider">🤖 Debug IA</span>
-              <button onClick={() => setShowIADebug(false)} className="text-violet-400 hover:text-violet-700">
+              <button type="button" aria-label="Cerrar" title="Cerrar" onClick={() => setShowIADebug(false)} className="text-violet-400 hover:text-violet-700">
                 <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2"><path d="M2 2l8 8M10 2l-8 8" /></svg>
               </button>
             </div>
             <div className="p-4 space-y-3 text-xs">
               {/* Modelo y contexto */}
               <div className="grid grid-cols-2 gap-2">
-                <div className="bg-white border border-violet-100 rounded-lg p-2.5">
-                  <p className="text-[10px] text-violet-500 font-medium mb-1">Último modelo</p>
-                  <p className="font-mono text-violet-800 text-[11px]">{lastModeloIA || '(sin validaciones aún)'}</p>
-                </div>
                 <div className="bg-white border border-violet-100 rounded-lg p-2.5">
                   <p className="text-[10px] text-violet-500 font-medium mb-1">Fase / Producto</p>
                   <p className="font-mono text-violet-800 text-[11px]">Fase {faseIdActual} · {productoId?.substring(0, 8) || 'sin producto'}…</p>
@@ -2344,49 +2713,150 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
           </div>
         ) : (
           <div className="border border-gray-200 overflow-hidden rounded-xl shadow-sm">
+            <div className="px-3 py-1.5 bg-white border-b border-gray-200 flex items-center justify-end gap-3">
+              <button onClick={() => setFasesAbiertas(new Set(gruposDocs.map(([fid]) => fid)))} className="text-[10px] text-gray-500 hover:text-[color:var(--theme-primary)] hover:underline">
+                Expandir todo
+              </button>
+              <button onClick={() => setFasesAbiertas(new Set())} className="text-[10px] text-gray-500 hover:text-[color:var(--theme-primary)] hover:underline">
+                Colapsar todo
+              </button>
+            </div>
             <div className="overflow-x-auto">
               <table className="w-full text-xs">
                 <thead>
                   <tr className="bg-gradient-to-r from-slate-50 to-gray-50 border-b border-gray-200">
-                    <th className="px-3 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Fecha</th>
+                    <th className="px-3 py-2.5 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Versión</th>
+                    <th className="px-3 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Fecha Creación</th>
+                    <th className="px-3 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Fecha Actualización</th>
                     <th className="px-3 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Usuario</th>
                     <th className="px-3 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Tipo Documento</th>
                     <th className="px-3 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Archivo</th>
                     <th className="px-3 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Formato</th>
                     <th className="px-3 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Nota</th>
-                    <th className="px-3 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Fase</th>
                     <th className="px-3 py-2.5 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Estatus</th>
                     <th className="px-3 py-2.5 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Acciones</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {documentosFiltrados.map((doc, idx) => (
-                    <tr key={doc.id} className="hover:bg-blue-50/40 transition-colors" style={{ backgroundColor: idx % 2 === 1 ? '#FAFBFC' : '#FFFFFF' }}>
+                {gruposDocs.map(([fid, grupo]) => {
+                  const plegada = !fasesAbiertas.has(fid);
+                  const esActual = fid === faseIdActual;
+                  // Conteos por documento, según su versión vigente.
+                  const vigentes = documentosConVersiones(grupo.items).map(vs => vs[0]);
+                  const validados = vigentes.filter(d => d.validadoIA && d.estatus === 'Validado').length;
+                  const pendientes = vigentes.filter(d => d.archivoPendiente).length;
+                  const conHistorial = grupo.items.length - vigentes.length;
+                  return (
+                <tbody key={`docs-fase-${fid}`} className="divide-y divide-gray-100">
+                  <tr
+                    className="cursor-pointer hover:bg-gray-100 border-b border-gray-200"
+                    style={{ backgroundColor: esActual ? '#EFF6FF' : '#F3F4F6' }}
+                    onClick={() => toggleFaseDocs(fid)}
+                    aria-expanded={!plegada}
+                  >
+                    <td colSpan={10} className="px-3 py-1.5">
+                      <div className="flex items-center gap-2">
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"
+                             strokeLinecap="round" strokeLinejoin="round"
+                             className={`transition-transform ${plegada ? '-rotate-90' : ''} ${esActual ? 'text-blue-700' : 'text-gray-500'}`}>
+                          <path d="M6 9l6 6 6-6" />
+                        </svg>
+                        <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"
+                             className={esActual ? 'text-blue-700' : 'text-gray-500'}>
+                          <path d="M1.5 4.5v8a1 1 0 001 1h11a1 1 0 001-1v-6a1 1 0 00-1-1H8L6.5 3.5h-4a1 1 0 00-1 1z" />
+                        </svg>
+                        <span className={`text-[11px] font-semibold ${esActual ? 'text-blue-800' : 'text-gray-700'}`}>{grupo.fase}</span>
+                        {esActual && (
+                          <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-blue-600 text-white">Fase actual</span>
+                        )}
+                        {pendientes > 0 && (
+                          <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800">
+                            {pendientes} por actualizar
+                          </span>
+                        )}
+                        <span className="ml-auto text-[10px] text-gray-500">
+                          {vigentes.length} documento{vigentes.length !== 1 ? 's' : ''} · {validados} validado{validados !== 1 ? 's' : ''}
+                          {conHistorial > 0 && ` · ${conHistorial} versión${conHistorial !== 1 ? 'es' : ''} anterior${conHistorial !== 1 ? 'es' : ''}`}
+                        </span>
+                      </div>
+                    </td>
+                  </tr>
+                  {!plegada && filasDocumentos(grupo.items).map(({ doc, tipo, total, raiz, ultima }) => (
+                    <tr
+                      key={doc.id}
+                      className={`transition-colors ${tipo === 'anterior' ? 'opacity-70 hover:opacity-100 hover:bg-slate-100/70' : 'hover:bg-blue-50/40'}`}
+                      style={{ backgroundColor: tipo === 'anterior' ? '#F8FAFC' : '#FFFFFF' }}
+                    >
+                      <td className="px-3 py-2 whitespace-nowrap">
+                        {tipo === 'vigente' ? (
+                          <div className="flex items-center gap-1.5">
+                            {total > 1 ? (
+                              <button
+                                onClick={() => toggleVersiones(raiz)}
+                                className="w-4 h-4 flex items-center justify-center rounded text-gray-500 hover:text-[color:var(--theme-primary)] hover:bg-blue-50"
+                                aria-expanded={versionesAbiertas.has(raiz)}
+                                title={versionesAbiertas.has(raiz) ? 'Ocultar versiones anteriores' : 'Ver versiones anteriores'}
+                              >
+                                <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"
+                                     className={`transition-transform ${versionesAbiertas.has(raiz) ? '' : '-rotate-90'}`}>
+                                  <path d="M6 9l6 6 6-6" />
+                                </svg>
+                              </button>
+                            ) : <span className="w-4" />}
+                            <div className="flex flex-col items-start leading-tight">
+                              <span className="inline-flex px-1.5 py-0.5 rounded font-mono text-[11px] font-semibold text-[color:var(--theme-secondary)] bg-blue-50 border border-blue-200">v{versionDoc(doc)}</span>
+                              {total > 1 && (
+                                <button onClick={() => toggleVersiones(raiz)} className="mt-0.5 text-[10px] text-gray-500 hover:text-[color:var(--theme-primary)] hover:underline">
+                                  Vigente · {total} versiones
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-1.5 pl-2">
+                            {/* conector del árbol: └ en la última versión, ├ en las demás */}
+                            <span className="relative w-4 h-6 shrink-0">
+                              <span className={`absolute left-1.5 top-0 border-l border-slate-300 ${ultima ? 'h-3' : 'h-full'}`} />
+                              <span className="absolute left-1.5 top-3 w-2.5 border-t border-slate-300" />
+                            </span>
+                            <div className="flex flex-col items-start leading-tight">
+                              <span className="inline-flex px-1.5 py-0.5 rounded font-mono text-[11px] text-slate-500 bg-slate-100 border border-slate-200">v{versionDoc(doc)}</span>
+                              <span className="mt-0.5 text-[10px] text-slate-400">Anterior</span>
+                            </div>
+                          </div>
+                        )}
+                      </td>
                       <td className="px-3 py-2 text-gray-500 whitespace-nowrap">
                         <span className="font-mono text-[11px]">{doc.fecha}</span>
+                      </td>
+                      <td className="px-3 py-2 text-gray-500 whitespace-nowrap">
+                        <span className="font-mono text-[11px]">{doc.fechaActualizacion || doc.fecha}</span>
                       </td>
                       <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{doc.usuario}</td>
                       <td className="px-3 py-2">
                         <span className="font-medium text-gray-800">{doc.tipoDocumento}</span>
                       </td>
                       <td className="px-3 py-2">
-                        <button onClick={() => handlePreview(doc.id)} className="inline-flex items-center gap-1 text-[#4A6FA5] hover:text-[#3A5A8A] font-medium cursor-pointer text-left group">
+                        <button onClick={() => handlePreview(doc.id)} className="inline-flex items-center gap-1 text-[color:var(--theme-primary)] hover:text-[color:var(--theme-primary-hover)] font-medium cursor-pointer text-left group">
                           <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" className="shrink-0 opacity-60 group-hover:opacity-100 transition-opacity">
                             <path d="M1 6s2-4 5-4 5 4 5 4-2 4-5 4-5-4-5-4z" />
                             <circle cx="6" cy="6" r="1.5" />
                           </svg>
                           <span className="truncate max-w-[140px] hover:underline">{doc.archivo}</span>
                         </button>
+                        {doc.archivoPendiente && (
+                          <span className="block mt-0.5 text-[10px] font-medium text-amber-700" title="Copia del archivo de la versión anterior: debe reemplazarse por el archivo actualizado">
+                            Archivo por actualizar
+                          </span>
+                        )}
                       </td>
                       <td className="px-3 py-2">
                         <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-medium bg-slate-100 text-slate-500 border border-slate-200/60">
                           {doc.tipoArchivo}
                         </span>
                       </td>
-                      <td className="px-3 py-2 text-gray-500 max-w-[130px] truncate" title={doc.nota}>
-                        {doc.nota || <span className="text-gray-300 italic">--</span>}
+                      <td className="px-3 py-2 text-gray-500 max-w-[130px] truncate" title={quitarModeloIA(doc.nota || '')}>
+                        {quitarModeloIA(doc.nota || '') || <span className="text-gray-300 italic">--</span>}
                       </td>
-                      <td className="px-3 py-2 text-gray-600">{doc.fase}</td>
                       <td className="px-3 py-2 text-center">
                         {doc.validadoIA ? (
                           <button onClick={() => handleVerResultadoIA(doc)} className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-semibold border cursor-pointer hover:shadow-sm transition-all ${
@@ -2413,7 +2883,7 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
                             </button>
                           )}
                           {/* Validar IA — solo si aún no validado */}
-                          {!doc.validadoIA && !isRO && (
+                          {!doc.validadoIA && !isRO && !doc.archivoPendiente && tipo === 'vigente' && (
                             <button onClick={() => handleValidarIA(doc.id)} disabled={validatingId === doc.id}
                               className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium border transition-all ${
                                 validatingId === doc.id ? 'text-blue-400 bg-blue-50 border-blue-200/60 cursor-wait' : 'text-blue-700 bg-blue-50 hover:bg-blue-100 border-blue-200/60 hover:shadow-sm'
@@ -2427,7 +2897,7 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
                             </button>
                           )}
                           {/* Reintentar — si validado por IA y no es Validado (puede ser Rechazado u otro) */}
-                          {doc.validadoIA && (doc.estatus || '').toLowerCase() !== 'validado' && !isRO && (
+                          {doc.validadoIA && (doc.estatus || '').toLowerCase() !== 'validado' && !isRO && tipo === 'vigente' && (
                             <button onClick={() => handleValidarIA(doc.id)} disabled={validatingId === doc.id}
                               title="Reintentar validación IA"
                               className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium border transition-all ${
@@ -2441,6 +2911,25 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
                                 <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M1.5 5A3.5 3.5 0 1 0 3 2"/><path d="M1.5 2v3h3"/></svg>
                               )}
                               {validatingId === doc.id ? 'Reintentando...' : 'Reintentar'}
+                            </button>
+                          )}
+                          {/* REQ-03 — versionado */}
+                          {puedeVersionar && doc.archivoPendiente && (
+                            <button
+                              onClick={() => { setVersionFile(null); setVersionDocId(doc.id); }}
+                              className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-300 transition-colors"
+                              title="Adjuntar el archivo actualizado de esta versión"
+                            >
+                              Actualizar archivo
+                            </button>
+                          )}
+                          {puedeVersionar && !doc.archivoPendiente && tipo === 'vigente' && (
+                            <button
+                              onClick={() => handleNuevaVersion(doc.id)}
+                              className="px-1 py-1 text-[10px] text-gray-400 hover:text-[color:var(--theme-primary)] hover:underline transition-colors"
+                              title="Clonar este registro como nueva versión y adjuntar el archivo actualizado"
+                            >
+                              Nueva Versión
                             </button>
                           )}
                           {!isRO && (
@@ -2458,6 +2947,8 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
                     </tr>
                   ))}
                 </tbody>
+                  );
+                })}
               </table>
             </div>
             <div className="px-3 py-2 bg-gray-50/80 border-t border-gray-100 flex items-center justify-between">
@@ -2468,6 +2959,86 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
         )}
       </div>
 
+      {/* ═══ REQ-03 — Modal Nueva Versión: reemplazo obligatorio del archivo clonado ═══ */}
+      {versionDocId !== null && (() => {
+        const doc = documentos.find(d => d.id === versionDocId);
+        if (!doc) return null;
+        const origen = documentos.find(d => d.id === doc.versionDe);
+        const cerrar = () => {
+          if (subiendoVersion) return;
+          setVersionDocId(null);
+          setVersionFile(null);
+          if (doc.archivoPendiente) {
+            toast.warning(`Versión ${versionDoc(doc)} pendiente`, {
+              description: 'Debe actualizar el archivo antes de validar el documento o avanzar de fase.',
+            });
+          }
+        };
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={cerrar}>
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-md border border-gray-200" onClick={e => e.stopPropagation()}>
+              <div className="px-5 py-3.5 border-b border-gray-200">
+                <h3 className="text-sm font-semibold text-gray-800">Nueva Versión {versionDoc(doc)}</h3>
+                <p className="text-[11px] text-gray-500 mt-0.5">{doc.tipoDocumento}</p>
+              </div>
+              <div className="px-5 py-4 space-y-3 text-xs">
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <p className="text-[10px] text-gray-500">Clonada de</p>
+                    <p className="text-gray-800">Versión {origen ? versionDoc(origen) : '—'}</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] text-gray-500">Fecha Creación</p>
+                    <p className="font-mono text-gray-800">{doc.fecha}</p>
+                  </div>
+                  <div className="col-span-2">
+                    <p className="text-[10px] text-gray-500">Archivo clonado</p>
+                    <p className="text-gray-800 truncate">{origen?.archivo || doc.archivo}</p>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-[11px] font-medium text-gray-700 mb-1">
+                    Archivo actualizado <span className="text-red-600">*</span>
+                  </label>
+                  <input
+                    ref={versionFileRef}
+                    type="file"
+                    className="hidden"
+                    onChange={e => { setVersionFile(e.target.files?.[0] || null); e.target.value = ''; }}
+                  />
+                  <button
+                    onClick={() => versionFileRef.current?.click()}
+                    disabled={subiendoVersion}
+                    className="w-full px-3 py-2 rounded-lg border border-dashed border-gray-300 text-left text-gray-600 hover:border-[color:var(--theme-primary)] hover:bg-blue-50/40 transition-colors"
+                  >
+                    {versionFile ? `${versionFile.name} (${(versionFile.size / 1024).toFixed(1)} KB)` : 'Seleccionar archivo...'}
+                  </button>
+                  <p className="text-[10px] text-gray-500 mt-1">
+                    Es obligatorio reemplazar el archivo clonado por uno con el contenido actualizado.
+                  </p>
+                </div>
+              </div>
+              <div className="px-5 py-3 border-t border-gray-200 flex justify-end gap-2">
+                <button
+                  onClick={cerrar}
+                  disabled={subiendoVersion}
+                  className="px-3 py-1.5 rounded-lg text-xs font-medium text-gray-600 border border-gray-300 hover:bg-gray-50"
+                >
+                  Más tarde
+                </button>
+                <button
+                  onClick={handleConfirmarVersion}
+                  disabled={!versionFile || subiendoVersion}
+                  className="px-3 py-1.5 rounded-lg text-xs font-medium text-white bg-[color:var(--theme-primary)] hover:bg-[color:var(--theme-primary-hover)] disabled:opacity-50"
+                >
+                  {subiendoVersion ? 'Subiendo...' : 'Actualizar archivo'}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       <AgregarDocumentoModal
         isOpen={showAgregarModal}
         onClose={() => setShowAgregarModal(false)}
@@ -2476,7 +3047,7 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
         requisitos={requisitos}
         documentos={documentos}
         onAdd={(doc) => {
-          const updated = [...documentos, doc];
+          const updated = [...documentos, { ...doc, version: '1.0', fechaActualizacion: doc.fecha }];
           setDocumentos(updated);
           saveToSession(solicitudId, 'documentos', documentosParaSessionStorage(updated));
         }}
@@ -2507,8 +3078,6 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
         const r = iaResultModal.result;
         const esValido = r.valido === true;
         const confianza = typeof r.confianza === 'number' ? Math.round(r.confianza * 100) : null;
-        const modelo = r.modelo || 'desconocido';
-        const modeloCorto = modelo.includes('/') ? modelo.split('/').pop() : modelo;
         const docModal = documentos.find(d => d.id === iaResultModal.docId);
         return (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setIaResultModal(null)}>
@@ -2530,7 +3099,7 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
                     {docModal && <p className="text-[11px] text-gray-500 truncate mt-0.5">{docModal.tipoDocumento}</p>}
                   </div>
                 </div>
-                <button onClick={() => setIaResultModal(null)} className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-white/60 transition-colors shrink-0">
+                <button type="button" aria-label="Cerrar" title="Cerrar" onClick={() => setIaResultModal(null)} className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-white/60 transition-colors shrink-0">
                   <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 3l8 8M11 3l-8 8" /></svg>
                 </button>
               </div>
@@ -2546,9 +3115,6 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
                     <span className={`text-xs font-bold tabular-nums ${confianza >= 80 ? 'text-emerald-600' : confianza >= 50 ? 'text-amber-600' : 'text-red-600'}`}>{confianza}%</span>
                   </div>
                 )}
-                <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-mono bg-violet-50 text-violet-700 border border-violet-200 shrink-0">
-                  🤖 {modeloCorto}
-                </span>
               </div>
 
               {/* Body */}

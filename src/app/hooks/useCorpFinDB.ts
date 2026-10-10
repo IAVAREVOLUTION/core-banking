@@ -89,7 +89,7 @@ export function useCorpFinDB(cotizacionId?: string | null) {
       if (rpcError) throw rpcError;
       setSolicitudes(Array.isArray(data) ? data.map(mapRow) : []);
     } catch (err: any) {
-      const msg = err?.message || 'Error consultando J_CORP_FIN';
+      const msg = err?.message || 'No se pudo consultar la información financiera';
       console.error('[useCorpFinDB] fetch:', msg);
       setError(msg);
       setSolicitudes([]);

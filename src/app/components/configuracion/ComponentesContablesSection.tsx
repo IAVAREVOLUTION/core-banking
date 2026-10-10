@@ -4,11 +4,11 @@ import {
   FileSpreadsheet, FileText, FileDown, Printer, AlertTriangle,
   Eye, Pencil, RefreshCw, Loader2, CloudOff, Cloud, Layers,
 } from 'lucide-react';
-import { toast } from 'sonner';
-import * as XLSX from 'xlsx';
-import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
+import { toast } from '@/app/lib/notificaciones';
+import { useOrdenTabla, coincideBusqueda } from '@/app/lib/ordenTabla';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
+import { cargarXLSX, cargarPDF } from '@/app/lib/librerias';
+import { formatearFecha } from '@/app/lib/fechas';
 
 // ═══════════════════════════════════════════════════════════════════
 // TIPOS — Tabla EFINANCIANET_DB.J_CATALOGO_COMPONENTES
@@ -162,14 +162,20 @@ export function ComponentesContablesSection() {
 
   const [formData, setFormData] = useState({ codigo: '', nombre: '' });
 
-  const filteredData = useMemo(() => {
-    if (!filterText) return db.data;
-    const q = filterText.toLowerCase();
-    return db.data.filter(item =>
-      item.codigo.toLowerCase().includes(q) ||
-      item.nombre.toLowerCase().includes(q)
-    );
-  }, [db.data, filterText]);
+  const filtradosData = useMemo(() => db.data.filter(item =>
+    coincideBusqueda(filterText, [item.codigo, item.nombre])
+  ), [db.data, filterText]);
+
+  // Catálogo: orden natural por clave/código; cualquier encabezado ordena por su columna.
+  const orden = useOrdenTabla(filtradosData, {
+    id: 'componentes-contables',
+    columnas: {
+      codigo: item => item.codigo,
+      nombre: item => item.nombre,
+    },
+    porDefecto: { campo: 'codigo', dir: 'asc' },
+  });
+  const filteredData = orden.filas;
 
   // ─── CRUD handlers ─────────────────────────────────────────────
   const handleNew = () => {
@@ -238,12 +244,13 @@ export function ComponentesContablesSection() {
       setSelectedId(null);
       setDeleteTargetId(null);
       setShowDeleteModal(false);
-      toast.success('Componente eliminado de J_CATALOGO_COMPONENTES');
+      toast.success('Componente eliminado');
     }
   };
 
   // ─── Exports ───────────────────────────────────────────────────
-  const exportExcel = () => {
+  const exportExcel = async () => {
+    const XLSX = await cargarXLSX();
     const ws = XLSX.utils.json_to_sheet(db.data.map(d => ({ ID: d.id, Código: d.codigo, Nombre: d.nombre })));
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Componentes');
@@ -251,7 +258,8 @@ export function ComponentesContablesSection() {
     toast.success('Exportado a Excel');
   };
 
-  const exportCSV = () => {
+  const exportCSV = async () => {
+    const XLSX = await cargarXLSX();
     const ws = XLSX.utils.json_to_sheet(db.data.map(d => ({ ID: d.id, Código: d.codigo, Nombre: d.nombre })));
     const csv = XLSX.utils.sheet_to_csv(ws);
     const blob = new Blob([csv], { type: 'text/csv' });
@@ -260,12 +268,13 @@ export function ComponentesContablesSection() {
     toast.success('Exportado a CSV');
   };
 
-  const exportPDF = () => {
+  const exportPDF = async () => {
+    const { jsPDF, autoTable } = await cargarPDF();
     const doc = new jsPDF({ orientation: 'landscape' });
     doc.setFontSize(14);
     doc.text('Componentes Contables', 14, 15);
     doc.setFontSize(8);
-    doc.text(`Generado: ${new Date().toLocaleDateString('es-MX')} | Fuente: J_CATALOGO_COMPONENTES`, 14, 21);
+    doc.text(`Generado: ${formatearFecha(new Date())}`, 14, 21);
     autoTable(doc, {
       startY: 26,
       head: [['Código', 'Nombre']],
@@ -290,8 +299,8 @@ export function ComponentesContablesSection() {
     return (
       <div className="p-6 bg-[#FAFBFC] min-h-[600px] flex items-center justify-center">
         <div className="flex flex-col items-center gap-3 text-gray-500">
-          <Loader2 size={32} className="animate-spin text-[#2E5C91]" />
-          <span className="text-sm">Cargando desde J_CATALOGO_COMPONENTES...</span>
+          <Loader2 size={32} className="animate-spin text-[color:var(--theme-secondary)]" />
+          <span className="text-sm">Cargando...</span>
         </div>
       </div>
     );
@@ -302,7 +311,7 @@ export function ComponentesContablesSection() {
     return (
       <div className="p-6 bg-[#FAFBFC] min-h-[600px]">
         <div className="max-w-4xl mx-auto">
-          <div className="bg-gradient-to-r from-[#2E5C91] to-[#4A6FA5] px-5 py-3 flex items-center justify-between">
+          <div className="bg-gradient-to-r from-[color:var(--theme-secondary)] to-[color:var(--theme-primary)] px-5 py-3 flex items-center justify-between">
             <div className="flex items-center gap-3">
               <Layers size={18} className="text-white/80" />
               <span className="text-sm font-semibold text-white tracking-wide uppercase">
@@ -322,7 +331,7 @@ export function ComponentesContablesSection() {
             </div>
           </div>
           <div className="bg-white border-2 border-gray-400 border-t-0 p-6">
-            <div className="bg-[#E7E6E6] px-3 py-1.5 mb-5 border-l-4 border-[#2E5C91] rounded-r">
+            <div className="bg-[#E7E6E6] px-3 py-1.5 mb-5 border-l-4 border-[color:var(--theme-secondary)] rounded-r">
               <span className="text-[11px] font-semibold text-gray-700 uppercase tracking-wide">Datos del Componente Contable</span>
             </div>
             <div className="grid grid-cols-3 gap-x-6 gap-y-4 mb-6">
@@ -371,7 +380,7 @@ export function ComponentesContablesSection() {
   // ─── List view ─────────────────────────────────────────────────
   return (
     <div className="p-6 bg-[#FAFBFC] min-h-[600px]">
-      <div className="bg-gradient-to-r from-[#2E5C91] to-[#4A6FA5] px-5 py-3 flex items-center justify-between">
+      <div className="bg-gradient-to-r from-[color:var(--theme-secondary)] to-[color:var(--theme-primary)] px-5 py-3 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Layers size={18} className="text-white/80" />
           <span className="text-sm font-semibold text-white tracking-wide uppercase">Componentes Contables</span>
@@ -400,7 +409,7 @@ export function ComponentesContablesSection() {
       {/* Filtros */}
       <div className="bg-white border-x-2 border-gray-400 px-4 py-3 flex items-center gap-3 flex-wrap">
         <div className="relative">
-          <button onClick={() => setShowMenu(!showMenu)} className="flex items-center gap-1.5 px-3 py-1.5 bg-[#4A6FA5] text-white text-xs hover:bg-[#3E5C91] border border-[#3E5C91] rounded-sm">
+          <button onClick={() => setShowMenu(!showMenu)} className="flex items-center gap-1.5 px-3 py-1.5 bg-[color:var(--theme-primary)] text-white text-xs hover:bg-[color:var(--theme-secondary)] border border-[color:var(--theme-secondary)] rounded-sm">
             <Menu size={12} /> Menú
           </button>
           {showMenu && (
@@ -431,10 +440,10 @@ export function ComponentesContablesSection() {
         <div className="overflow-x-auto">
           <table className="w-full text-xs">
             <thead>
-              <tr className="bg-[#2E5C91]">
+              <tr className="bg-[color:var(--theme-secondary)]">
                 {deleteMode && <th className="text-center px-2 py-2.5 font-semibold text-white/90 text-[11px] uppercase tracking-wide w-12"><Trash2 size={13} className="mx-auto text-white/70" /></th>}
-                <th className="text-left px-3 py-2.5 font-semibold text-white/90 text-[11px] uppercase tracking-wide w-48">Código</th>
-                <th className="text-left px-3 py-2.5 font-semibold text-white/90 text-[11px] uppercase tracking-wide">Nombre</th>
+                <th className="text-left px-3 py-2.5 font-semibold text-white/90 text-[11px] uppercase tracking-wide w-48" {...orden.th('codigo')}>Código{orden.flecha('codigo')}</th>
+                <th className="text-left px-3 py-2.5 font-semibold text-white/90 text-[11px] uppercase tracking-wide" {...orden.th('nombre')}>Nombre{orden.flecha('nombre')}</th>
                 <th className="text-center px-2 py-2.5 font-semibold text-white/90 text-[11px] uppercase tracking-wide w-24">Acciones</th>
               </tr>
             </thead>
@@ -445,7 +454,7 @@ export function ComponentesContablesSection() {
                     <div className="flex flex-col items-center gap-2">
                       <Layers size={32} className="text-gray-300" />
                       <span className="font-medium text-gray-500">
-                        {db.data.length === 0 ? 'No hay registros en J_CATALOGO_COMPONENTES' : 'No se encontraron resultados'}
+                        {db.data.length === 0 ? 'No hay componentes contables registrados' : 'No se encontraron resultados'}
                       </span>
                       {db.data.length === 0 && <span className="text-gray-400">Haga clic en "+ Nuevo" para agregar un componente</span>}
                     </div>
@@ -467,7 +476,7 @@ export function ComponentesContablesSection() {
                       </td>
                     )}
                     <td className="px-3 py-2 border-b border-gray-200">
-                      <span className="font-mono font-semibold text-[#2E5C91] text-[11px]">{item.codigo}</span>
+                      <span className="font-mono font-semibold text-[color:var(--theme-secondary)] text-[11px]">{item.codigo}</span>
                     </td>
                     <td className="px-3 py-2 border-b border-gray-200 font-medium text-gray-800">{item.nombre}</td>
                     <td className="px-2 py-2 border-b border-gray-200 text-center">
@@ -497,7 +506,7 @@ export function ComponentesContablesSection() {
       {showDeleteModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 backdrop-blur-sm">
           <div className="bg-white rounded-sm shadow-2xl w-[440px] mx-4 overflow-hidden border-2 border-gray-400">
-            <div className="bg-gradient-to-r from-[#2E5C91] to-[#4A6FA5] px-5 py-3">
+            <div className="bg-gradient-to-r from-[color:var(--theme-secondary)] to-[color:var(--theme-primary)] px-5 py-3">
               <h3 className="text-sm font-semibold text-white">Confirmar Eliminación</h3>
             </div>
             <div className="px-6 py-6 flex items-start gap-3">
@@ -506,7 +515,7 @@ export function ComponentesContablesSection() {
               </div>
               <div>
                 <p className="text-sm font-medium text-gray-800 mb-1">¿Eliminar este componente?</p>
-                <p className="text-xs text-gray-500">El registro será eliminado permanentemente de J_CATALOGO_COMPONENTES.</p>
+                <p className="text-xs text-gray-500">El registro será eliminado permanentemente.</p>
               </div>
             </div>
             <div className="bg-gray-50 px-6 py-3 flex justify-end gap-2.5 border-t border-gray-200">

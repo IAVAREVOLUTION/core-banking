@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 import { DatePicker } from '@/app/components/ui/DatePicker';
 import {
   CargoSolicitud, TerminosCondiciones, EMPTY_TERMINOS, SimulacionRow,
@@ -9,6 +9,7 @@ import {
 } from './solicitudCreditoStore';
 import type { SimulacionArrendamiento } from '../cotizaciones/cotizacionArrendamientoTypes';
 import { useComponentesContablesCatalogo } from '@/app/hooks/useComponentesContablesCatalogo';
+import { CampoMonto } from '@/app/components/ui/CampoMonto';
 
 /** Un renglón de `cargosLinea` — lo que escribe el subtab Movimientos de la Línea. */
 export interface CargoLineaTDC {
@@ -297,7 +298,7 @@ export function SolicitudCargosTab({ mode, solicitudId, lineaProducto, tipoProdu
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#4A6FA5] to-[#607698] flex items-center justify-center shadow-sm">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[color:var(--theme-primary)] to-[#607698] flex items-center justify-center shadow-sm">
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="white" strokeWidth="1.5" strokeLinecap="round">
                 <path d="M8 2v12M4 6l4-4 4 4M4 10l4 4 4-4" />
               </svg>
@@ -310,14 +311,14 @@ export function SolicitudCargosTab({ mode, solicitudId, lineaProducto, tipoProdu
             </div>
           </div>
           {itemsManuales.length > 0 && (
-            <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full text-[10px] font-bold bg-[#4A6FA5] text-white shadow-sm">
+            <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full text-[10px] font-bold bg-[color:var(--theme-primary)] text-white shadow-sm">
               {itemsManuales.length}
             </span>
           )}
         </div>
         {!isRO && (
           <div className="flex items-center gap-2">
-            <button onClick={handleNuevo} className="px-3.5 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all duration-200 shadow-sm bg-[#4A6FA5] text-white hover:bg-[#3A5A8A]">
+            <button onClick={handleNuevo} className="px-3.5 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all duration-200 shadow-sm bg-[color:var(--theme-primary)] text-white hover:bg-[color:var(--theme-primary-hover)]">
               <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                 <path d="M6 1v10M1 6h10" />
               </svg>
@@ -369,7 +370,7 @@ export function SolicitudCargosTab({ mode, solicitudId, lineaProducto, tipoProdu
                       className={`cursor-pointer ${selectedId === c.id ? 'bg-blue-50' : cargoBloqueado(c) ? 'bg-gray-50' : 'hover:bg-gray-50'}`}
                       onClick={() => !isRO && setSelectedId(c.id)}>
                     <td className="px-3 py-2">
-                      <select value={c.tipoCargo} onChange={e => { e.stopPropagation(); update(c.id, 'tipoCargo', e.target.value); }} disabled={isRO || cargoBloqueado(c)} onClick={e => e.stopPropagation()} className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-lg bg-white focus:ring-2 focus:ring-[#4A6FA5]/30 focus:border-[#4A6FA5]">
+                      <select value={c.tipoCargo} onChange={e => { e.stopPropagation(); update(c.id, 'tipoCargo', e.target.value); }} disabled={isRO || cargoBloqueado(c)} onClick={e => e.stopPropagation()} className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-lg bg-white focus:ring-2 focus:ring-[color:var(--theme-primary)]/30 focus:border-[color:var(--theme-primary)]">
                         <option value="">Seleccione...</option>
                         {opcionesTipo.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
                         {c.tipoCargo && !opcionesTipo.some(t => t.value === c.tipoCargo) && (
@@ -378,16 +379,16 @@ export function SolicitudCargosTab({ mode, solicitudId, lineaProducto, tipoProdu
                       </select>
                     </td>
                     <td className="px-3 py-2">
-                      <input type="text" value={c.descripcion} onChange={e => { e.stopPropagation(); update(c.id, 'descripcion', e.target.value); }} disabled={isRO || cargoBloqueado(c)} onClick={e => e.stopPropagation()} className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-lg bg-white focus:ring-2 focus:ring-[#4A6FA5]/30 focus:border-[#4A6FA5]" placeholder="Descripción..." />
+                      <input type="text" value={c.descripcion} onChange={e => { e.stopPropagation(); update(c.id, 'descripcion', e.target.value); }} disabled={isRO || cargoBloqueado(c)} onClick={e => e.stopPropagation()} className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-lg bg-white focus:ring-2 focus:ring-[color:var(--theme-primary)]/30 focus:border-[color:var(--theme-primary)]" placeholder="Descripción..." />
                     </td>
                     <td className="px-3 py-2">
-                      <input type="number" step="0.01" min="0" value={c.monto} onChange={e => { e.stopPropagation(); update(c.id, 'monto', parseFloat(e.target.value) || 0); }} disabled={isRO || cargoBloqueado(c)} onClick={e => e.stopPropagation()} className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-lg bg-white text-right focus:ring-2 focus:ring-[#4A6FA5]/30 focus:border-[#4A6FA5]" />
+                      <CampoMonto min="0" value={c.monto} onChange={e => { e.stopPropagation(); update(c.id, 'monto', parseFloat(e.target.value) || 0); }} disabled={isRO || cargoBloqueado(c)} onClick={e => e.stopPropagation()} className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-lg bg-white text-right focus:ring-2 focus:ring-[color:var(--theme-primary)]/30 focus:border-[color:var(--theme-primary)]" />
                     </td>
                     <td className="px-3 py-2" onClick={e => e.stopPropagation()}>
                       <DatePicker value={c.fechaCargo} onChange={v => update(c.id, 'fechaCargo', v)} disabled={isRO || cargoBloqueado(c)} placeholder="dd/mm/aaaa" className="px-2 py-1.5" />
                     </td>
                     <td className="px-3 py-2">
-                      <select value={c.estatus} onChange={e => { e.stopPropagation(); update(c.id, 'estatus', e.target.value); }} disabled={isRO || cargoBloqueado(c)} onClick={e => e.stopPropagation()} className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-lg bg-white focus:ring-2 focus:ring-[#4A6FA5]/30 focus:border-[#4A6FA5]">
+                      <select value={c.estatus} onChange={e => { e.stopPropagation(); update(c.id, 'estatus', e.target.value); }} disabled={isRO || cargoBloqueado(c)} onClick={e => e.stopPropagation()} className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-lg bg-white focus:ring-2 focus:ring-[color:var(--theme-primary)]/30 focus:border-[color:var(--theme-primary)]">
                         {CAT_ESTATUS_CARGO.map(s => <option key={s} value={s}>{s}</option>)}
                       </select>
                     </td>
@@ -407,7 +408,7 @@ export function SolicitudCargosTab({ mode, solicitudId, lineaProducto, tipoProdu
                         : <span className="text-gray-300">—</span>}
                     </td>
                     <td className="px-3 py-2">
-                      <input type="text" value={c.notas} onChange={e => { e.stopPropagation(); update(c.id, 'notas', e.target.value); }} disabled={isRO || cargoBloqueado(c)} onClick={e => e.stopPropagation()} className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-lg bg-white focus:ring-2 focus:ring-[#4A6FA5]/30 focus:border-[#4A6FA5]" placeholder="Notas..." />
+                      <input type="text" value={c.notas} onChange={e => { e.stopPropagation(); update(c.id, 'notas', e.target.value); }} disabled={isRO || cargoBloqueado(c)} onClick={e => e.stopPropagation()} className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-lg bg-white focus:ring-2 focus:ring-[color:var(--theme-primary)]/30 focus:border-[color:var(--theme-primary)]" placeholder="Notas..." />
                     </td>
                   </tr>
                 ))}

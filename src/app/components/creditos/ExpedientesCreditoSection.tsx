@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 import {
   CreditoExpediente,
   saveToSession, loadFromSession, loadFromSavedStore, generateId,
@@ -187,7 +187,7 @@ export function ExpedientesCreditoSection({ sid, mode, isRO }: Props) {
           <div className="bg-white rounded shadow-xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
             <div className="bg-primary-theme px-6 py-4 flex items-center justify-between">
               <h3 className="text-base text-white">Agregar Documento desde Web</h3>
-              <button onClick={() => { setShowWebModal(false); setWebUrl(''); }} className="text-white hover:text-gray-200">
+              <button type="button" aria-label="Cerrar" title="Cerrar" onClick={() => { setShowWebModal(false); setWebUrl(''); }} className="text-white hover:text-gray-200">
                 <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor"><path d="M10 8.586L2.929 1.515 1.515 2.929 8.586 10l-7.071 7.071 1.414 1.414L10 11.414l7.071 7.071 1.414-1.414L11.414 10l7.071-7.071-1.414-1.414L10 8.586z"/></svg>
               </button>
             </div>
@@ -223,7 +223,7 @@ export function ExpedientesCreditoSection({ sid, mode, isRO }: Props) {
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" className="stroke-accent-theme" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
                   <h3 className="text-sm text-gray-800">Visualizador de Documento</h3>
                 </div>
-                <button onClick={() => { setShowViewer(false); setCurrentFile(null); }} className="text-gray-500 hover:text-gray-700">
+                <button type="button" aria-label="Cerrar" title="Cerrar" onClick={() => { setShowViewer(false); setCurrentFile(null); }} className="text-gray-500 hover:text-gray-700">
                   <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor"><path d="M10 8.586L2.929 1.515 1.515 2.929 8.586 10l-7.071 7.071 1.414 1.414L10 11.414l7.071 7.071 1.414-1.414L11.414 10l7.071-7.071-1.414-1.414L10 8.586z"/></svg>
                 </button>
               </div>

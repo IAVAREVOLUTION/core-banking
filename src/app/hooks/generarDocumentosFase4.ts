@@ -30,13 +30,14 @@ import logoSrc from '../../assets/7b6cb23c00b7817818c638af3eae0a416e1e9f57.png';
 import type { DocumentoCargado } from '../components/solicitudes/solicitudCreditoStore';
 import {
   loadFromSession, loadFromSavedStore, saveToSession, generateId, documentosParaSessionStorage,
-  INSTITUCION_RAZON_SOCIAL,
+  INSTITUCION_RAZON_SOCIAL, versionToDB,
 } from '../components/solicitudes/solicitudCreditoStore';
 import type { PlantillaInstitucional } from '../types/product';
 import type { Estructura2oPisoData } from '../components/solicitudes/EstructuraOperativa2oPisoTab';
 import type { ValidacionClausulasData } from '../components/solicitudes/ValidacionClausulasFiduciariasTab';
 import { getTipoPlantillaMeta } from '../types/product';
 import { projectId as SUPA_PROJECT_ID, publicAnonKey } from '/utils/supabase/info';
+import { formatearFecha } from '@/app/lib/fechas';
 
 type SolId = number | string;
 
@@ -116,6 +117,7 @@ async function persistirDocumentosEnBD(
     storage_bucket: (d as any).storageBucket || BUCKET_EXPEDIENTES,
     mime: d.mime || '',
     tamano_kb: d.tamanoKB ?? 0,
+    ...versionToDB(d),
   }));
 
   try {
@@ -365,7 +367,7 @@ export function generarContratoPDF(datos: DatosSolicitud): string {
 
   return buildPDFDataUrl('CONTRATO DE CREDITO', [
     ['No. Solicitud',   datos.noSol],
-    ['Fecha',           new Date().toLocaleDateString('es-MX')],
+    ['Fecha',           formatearFecha(new Date())],
     ['Producto',        datos.productoNombre || datos.tipoProducto],
     ['Linea',          datos.lineaProducto],
     ['Cliente',         datos.cliente],
@@ -389,13 +391,13 @@ export function generarPagePDF(datos: DatosSolicitud): string {
   const monto   = t.montoSolicitado || t.monto || '0.00';
   const moneda  = t.moneda || 'MXN';
   const plazo   = t.plazo  || t.plazoMeses || '';
-  const fecha   = new Date().toLocaleDateString('es-MX');
+  const fecha   = formatearFecha(new Date());
   const meses   = parseInt(String(plazo)) || 0;
   let fechaVence = 'Sin definir';
   if (meses > 0) {
     const d = new Date();
     d.setMonth(d.getMonth() + meses);
-    fechaVence = d.toLocaleDateString('es-MX');
+    fechaVence = formatearFecha(d);
   }
 
   return buildPDFDataUrl('PAGARE', [
@@ -604,7 +606,7 @@ export function generarReporteBuroPDF(datos: DatosSolicitud): string {
   doc.setFontSize(7);
   doc.setTextColor(120, 120, 120);
   doc.text('Nombre y firma del titular', W / 2, y + 10, { align: 'center' });
-  doc.text(`Fecha: ${new Date().toLocaleDateString('es-MX')}`, W / 2, y + 15, { align: 'center' });
+  doc.text(`Fecha: ${formatearFecha(new Date())}`, W / 2, y + 15, { align: 'center' });
 
   return doc.output('datauristring');
 }
@@ -1134,7 +1136,7 @@ export function generarAnexoRentasPDF(datos: DatosSolicitud, filas: FilaAnexo[])
   doc.setFontSize(7.5);
   doc.setFont('helvetica', 'normal');
   doc.text(`Contrato: ${datos.noSol || '—'}`, W - 14, 9, { align: 'right' });
-  doc.text(`Fecha: ${new Date().toLocaleDateString('es-MX')}`, W - 14, 15, { align: 'right' });
+  doc.text(`Fecha: ${formatearFecha(new Date())}`, W - 14, 15, { align: 'right' });
   doc.text(`Arrendatario: ${datos.cliente || '—'}`, W - 14, 21, { align: 'right' });
 
   let y = HEADER_H + 8;
@@ -1405,7 +1407,26 @@ export async function autoCrearKitLegal(opts: AutoCrearOpts): Promise<AutoCrearR
  * qué falta. Un pagaré no es un documento que convenga improvisar.
  * CA-10: si el documento ya existe en el expediente, no se duplica.
  */
-export async function generarPagareDesdePlantilla(opts: AutoCrearOpts & {
+export type TipoPlantillaGenerable = 'contrato' | 'pagare' | 'solicitud';
+const NOMBRE_PLANTILLA: Record<TipoPlantillaGenerable, string> = {
+  contrato: 'Contrato', pagare: 'Pagaré', solicitud: 'Solicitud de Crédito',
+};
+
+/**
+ * ¿Qué plantilla genera este requisito del producto? null = lo entrega el
+ * cliente (INE, comprobante, acta, constancia…) y no se puede generar.
+ */
+export function plantillaParaRequisito(tipoDocumento: string): TipoPlantillaGenerable | null {
+  const t = String(tipoDocumento || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  if (/pagare/.test(t)) return 'pagare';
+  if (/contrato/.test(t) && !/arrendamiento puro|anexo/.test(t)) return 'contrato';
+  if (/solicitud/.test(t) && !/activacion|extraordinari/.test(t)) return 'solicitud';
+  return null;
+}
+
+export async function generarDocumentoDesdePlantilla(opts: AutoCrearOpts & {
+  /** Tipo de plantilla del producto: contrato | pagare | solicitud. */
+  tipoPlantilla: TipoPlantillaGenerable;
   /** Nombre con el que se registra en el expediente (el requisito del producto). */
   tipoDocumento?: string;
   /** Fase a la que pertenece el documento en el expediente. */
@@ -1413,7 +1434,9 @@ export async function generarPagareDesdePlantilla(opts: AutoCrearOpts & {
   faseId?: number;
 }): Promise<AutoCrearResult> {
   const { storageId, datos, plantillas, supabase, projectId: pid } = opts;
-  const tipoDoc = opts.tipoDocumento || CLAVE_PAGARE_REQ;
+  const tp = opts.tipoPlantilla;
+  const nombreTp = NOMBRE_PLANTILLA[tp];
+  const tipoDoc = opts.tipoDocumento || (tp === 'pagare' ? CLAVE_PAGARE_REQ : nombreTp);
   const fecha = new Date().toLocaleString('es-MX');
 
   const vacio = (error?: string): AutoCrearResult => ({
@@ -1424,25 +1447,26 @@ export async function generarPagareDesdePlantilla(opts: AutoCrearOpts & {
     registradosEnExpediente: !error,
     error,
     validacionPlantillas: {
+      valido: !error,
       puedeGenerarDocumentos: !error,
       motivos: error ? [error] : [],
+      faltantes: [],
       plantillasDetectadas: [],
     } as ValidacionPlantillasResult,
   });
 
   const plantillaPagare = (plantillas || []).find(
-    p => p.tipoPlantilla === 'pagare' && p.estatus === 'Activo',
+    p => p.tipoPlantilla === tp && p.estatus === 'Activo' && p.archivoData,
   );
-  if (!plantillaPagare) {
-    const hayInactiva = (plantillas || []).some(p => p.tipoPlantilla === 'pagare');
+  // La Solicitud tiene formato genérico con los datos del formulario; Contrato y
+  // Pagaré no se improvisan (CA-09): sin plantilla se informa qué falta.
+  if (!plantillaPagare && tp !== 'solicitud') {
+    const hayInactiva = (plantillas || []).some(p => p.tipoPlantilla === tp);
     return vacio(
       hayInactiva
-        ? 'El producto tiene una plantilla de Pagaré, pero no está Activa. Actívela en el subtab Plantillas.'
-        : 'El producto no tiene plantilla de tipo "Pagaré". Cárguela en el subtab Plantillas del producto.',
+        ? `El producto tiene una plantilla de ${nombreTp}, pero no está Activa o no tiene archivo. Revísela en el subtab Plantillas.`
+        : `El producto no tiene plantilla de tipo "${nombreTp}". Cárguela en el subtab Plantillas del producto.`,
     );
-  }
-  if (!plantillaPagare.archivoData) {
-    return vacio(`La plantilla "${plantillaPagare.nombre}" no tiene archivo cargado.`);
   }
 
   const docsPrevios: DocumentoCargado[] =
@@ -1458,13 +1482,14 @@ export async function generarPagareDesdePlantilla(opts: AutoCrearOpts & {
 
   let fileData: string;
   try {
-    const html = sustituirPlaceholders(decodificarArchivoData(plantillaPagare.archivoData), datos);
-    fileData = await htmlToPdfBlobUrl(html, 'datauri');
+    fileData = plantillaPagare
+      ? await htmlToPdfBlobUrl(sustituirPlaceholders(decodificarArchivoData(plantillaPagare.archivoData || ""), datos), 'datauri')
+      : generarSolicitudPDF(datos);
   } catch (e: any) {
-    return vacio(`No se pudo renderizar la plantilla del pagaré: ${e?.message || String(e)}`);
+    return vacio(`No se pudo renderizar la plantilla de ${nombreTp}: ${e?.message || String(e)}`);
   }
 
-  const archivo = 'pagare.pdf';
+  const archivo = `${tp}.pdf`;
   let uploadInfo: UploadResult | null = null;
   if (supabase && pid) {
     uploadInfo = await uploadGeneratedPDF(supabase, fileData, archivo, String(storageId), pid);
@@ -1477,9 +1502,11 @@ export async function generarPagareDesdePlantilla(opts: AutoCrearOpts & {
     tipoDocumento: tipoDoc,
     archivo,
     tipoArchivo: 'pdf',
-    nota: `Generado desde la plantilla "${plantillaPagare.nombre}" (v${plantillaPagare.version}). Pendiente de firma y Validación IA.`,
+    nota: plantillaPagare
+      ? `Generado desde la plantilla "${plantillaPagare.nombre}" (v${plantillaPagare.version}). Pendiente de Validación IA.`
+      : `Generado con los datos de la solicitud (formato estándar). Pendiente de Validación IA.`,
     area: 'Comercial',
-    fase: opts.fase || 'Formalización de Pagaré',
+    fase: opts.fase || `Formalización de ${nombreTp}`,
     faseId: opts.faseId ?? 1,
     estatus: 'Pendiente Validación IA',
     validadoIA: false,
@@ -1502,16 +1529,25 @@ export async function generarPagareDesdePlantilla(opts: AutoCrearOpts & {
     pdfGenerados: [archivo],
     subidosASupabase: Boolean(uploadInfo?.url),
     registradosEnExpediente: persist.ok,
-    error: persist.ok ? undefined : `Pagaré generado pero NO persistido en BD: ${persist.error}`,
+    error: persist.ok ? undefined : `${nombreTp} generado pero NO persistido en BD: ${persist.error}`,
     validacionPlantillas: {
+      valido: true,
       puedeGenerarDocumentos: true,
       motivos: [],
-      plantillasDetectadas: [plantillaPagare.nombre],
+      faltantes: [],
+      plantillasDetectadas: plantillaPagare ? [plantillaPagare.nombre] : [],
     } as ValidacionPlantillasResult,
     documentoCreadoId: doc.id,
     fileData,
     documentosGenerados: [{ tipo: tipoDoc, archivo, fileData }],
   };
+}
+
+/** Pagaré desde su plantilla (REQ-23 HU-23.1). */
+export async function generarPagareDesdePlantilla(opts: AutoCrearOpts & {
+  tipoDocumento?: string; fase?: string; faseId?: number;
+}): Promise<AutoCrearResult> {
+  return generarDocumentoDesdePlantilla({ ...opts, tipoPlantilla: 'pagare' });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1525,7 +1561,7 @@ export function generarSolicitudPDF(datos: DatosSolicitud): string {
   const plazo  = t.plazo || t.plazoMeses ? `${t.plazo || t.plazoMeses} meses` : 'Sin definir';
   const tasa   = t.tasa  || t.tasaAnual  ? `${t.tasa  || t.tasaAnual}%` : 'Sin definir';
   const moneda = t.moneda || 'MXN';
-  const fecha  = new Date().toLocaleDateString('es-MX');
+  const fecha  = formatearFecha(new Date());
 
   const tpNorm = (datos.tipoProducto || '').toLowerCase();
   const esInversion = tpNorm.includes('invers');
@@ -1663,7 +1699,7 @@ export function importeALetra(monto: number, moneda = 'MXN'): string {
 
 export function sustituirPlaceholders(html: string, datos: DatosSolicitud): string {
   const t = datos.terminos ?? {};
-  const fechaStr = new Date().toLocaleDateString('es-MX');
+  const fechaStr = formatearFecha(new Date());
   const monto = t.montoSolicitado || t.monto || '';
   const plazoRaw = String(t.plazo || t.plazoMeses || '');
   const tasaValor = String(t.tasa || t.tasaAnual || t.tasaMinInteres || '');
@@ -1707,7 +1743,7 @@ export function sustituirPlaceholders(html: string, datos: DatosSolicitud): stri
     if (!mesesPlazo) return 'N/A';
     const d = new Date();
     d.setMonth(d.getMonth() + mesesPlazo);
-    return d.toLocaleDateString('es-MX');
+    return formatearFecha(d);
   })();
 
   // Pago periódico (pagoMensual, primerPago, pagoPeriodico, etc.)
@@ -2194,7 +2230,7 @@ export function generarComprobanteSPEIPDF(datos: DatosSolicitud): string {
     head: [['Campo', 'Valor', 'Campo', 'Valor']],
     body: [
       ['Clave de rastreo', claveRastreo, 'Referencia numérica', referencia],
-      ['Fecha de operación', ahora.toLocaleDateString('es-MX'), 'Hora', ahora.toLocaleTimeString('es-MX')],
+      ['Fecha de operación', formatearFecha(ahora), 'Hora', ahora.toLocaleTimeString('es-MX')],
       ['Tipo de pago', 'Transferencia SPEI (Tercero a Tercero)', 'Divisa', 'MXN'],
       ['Estado', 'Liquidada', 'Medio de entrega', 'Electrónico'],
     ],

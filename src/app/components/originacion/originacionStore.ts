@@ -4,6 +4,7 @@
 // ============================================================
 
 export interface OriginacionFormData {
+  tipoAmortizacion?: string;
   noOriginacion: string;
   noSolicitud: string;
   cliente: string;
@@ -116,22 +117,22 @@ export interface CotizacionRow {
 }
 
 // ---- Persistencia ----
-function storageKey(id: number | 'new', subtab: string): string {
+function storageKey(id: number | string, subtab: string): string {
   return `originacion_${id}_${subtab}`;
 }
 
-export function saveToSession<T>(id: number | 'new', subtab: string, data: T): void {
+export function saveToSession<T>(id: number | string, subtab: string, data: T): void {
   try { sessionStorage.setItem(storageKey(id, subtab), JSON.stringify(data)); } catch { /* */ }
 }
 
-export function loadFromSession<T>(id: number | 'new', subtab: string): T | null {
+export function loadFromSession<T>(id: number | string, subtab: string): T | null {
   try {
     const raw = sessionStorage.getItem(storageKey(id, subtab));
     return raw ? JSON.parse(raw) : null;
   } catch { return null; }
 }
 
-export function clearSession(id: number | 'new'): void {
+export function clearSession(id: number | string): void {
   const prefix = `originacion_${id}_`;
   const keys: string[] = [];
   for (let i = 0; i < sessionStorage.length; i++) {
@@ -144,13 +145,13 @@ export function clearSession(id: number | 'new'): void {
 // ---- Saved store (in-memory) ----
 const SAVED_DATA: Record<string, Record<string, any>> = {};
 
-export function saveToSavedStore<T>(id: number | 'new', subtab: string, data: T): void {
+export function saveToSavedStore<T>(id: number | string, subtab: string, data: T): void {
   const key = String(id);
   if (!SAVED_DATA[key]) SAVED_DATA[key] = {};
   SAVED_DATA[key][subtab] = structuredClone(data);
 }
 
-export function loadFromSavedStore<T>(id: number | 'new', subtab: string): T | null {
+export function loadFromSavedStore<T>(id: number | string, subtab: string): T | null {
   const key = String(id);
   const data = SAVED_DATA[key]?.[subtab];
   return data ? structuredClone(data) as T : null;
@@ -178,7 +179,7 @@ export function migrateSavedStore(fromId: number | 'new', toId: number): void {
   });
 }
 
-export function commitAndClearSession(id: number | 'new'): void {
+export function commitAndClearSession(id: number | string): void {
   const prefix = `originacion_${id}_`;
   const keys: string[] = [];
   for (let i = 0; i < sessionStorage.length; i++) {

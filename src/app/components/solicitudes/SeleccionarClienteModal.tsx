@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-7e2d13d9`;
@@ -152,7 +152,7 @@ export function SeleccionarClienteModal({ isOpen, onClose, onSelect }: Props) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
       <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[85vh] overflow-hidden border border-gray-200/50 flex flex-col" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 bg-gradient-to-r from-[#4A6FA5] to-[#607698]">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 bg-gradient-to-r from-[color:var(--theme-primary)] to-[#607698]">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-lg bg-white/20 flex items-center justify-center">
               <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="white" strokeWidth="1.5" strokeLinecap="round">
@@ -165,7 +165,7 @@ export function SeleccionarClienteModal({ isOpen, onClose, onSelect }: Props) {
               <p className="text-[10px] text-white/70">{filtered.length} cliente{filtered.length !== 1 ? 's' : ''} disponible{filtered.length !== 1 ? 's' : ''}</p>
             </div>
           </div>
-          <button onClick={onClose} className="w-8 h-8 rounded-lg flex items-center justify-center text-white/80 hover:text-white hover:bg-white/20 transition-colors">
+          <button type="button" aria-label="Cerrar" title="Cerrar" onClick={onClose} className="w-8 h-8 rounded-lg flex items-center justify-center text-white/80 hover:text-white hover:bg-white/20 transition-colors">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
               <path d="M4 4l8 8M12 4l-8 8" />
             </svg>
@@ -183,7 +183,7 @@ export function SeleccionarClienteModal({ isOpen, onClose, onSelect }: Props) {
               value={search}
               onChange={e => { setSearch(e.target.value); setSelectedIdx(null); }}
               placeholder="Buscar por nombre, ID, RFC o CURP..."
-              className="w-full pl-10 pr-4 py-2 text-xs border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#4A6FA5]/30 focus:border-[#4A6FA5]"
+              className="w-full pl-10 pr-4 py-2 text-xs border border-gray-200 rounded-lg focus:ring-2 focus:ring-[color:var(--theme-primary)]/30 focus:border-[color:var(--theme-primary)]"
               autoFocus
             />
           </div>
@@ -192,7 +192,7 @@ export function SeleccionarClienteModal({ isOpen, onClose, onSelect }: Props) {
         <div className="flex-1 overflow-auto">
           {loading ? (
             <div className="flex items-center justify-center py-12">
-              <svg className="animate-spin h-6 w-6 text-[#4A6FA5]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <svg className="animate-spin h-6 w-6 text-[color:var(--theme-primary)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <circle cx="12" cy="12" r="10" strokeOpacity="0.25" />
                 <path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round" />
               </svg>
@@ -206,7 +206,7 @@ export function SeleccionarClienteModal({ isOpen, onClose, onSelect }: Props) {
             <table className="w-full text-xs">
               <thead className="sticky top-0 bg-gray-50">
                 <tr className="border-b border-gray-200">
-                  <th className="px-4 py-2 text-left text-[11px] font-semibold text-gray-500 uppercase">ID</th>
+                  <th className="px-4 py-2 text-left text-[11px] font-semibold text-gray-500 uppercase">No. Interlocutor</th>
                   <th className="px-4 py-2 text-left text-[11px] font-semibold text-gray-500 uppercase">Nombre</th>
                   <th className="px-4 py-2 text-left text-[11px] font-semibold text-gray-500 uppercase">RFC</th>
                   <th className="px-4 py-2 text-center text-[11px] font-semibold text-gray-500 uppercase">Tipo</th>
@@ -254,7 +254,7 @@ export function SeleccionarClienteModal({ isOpen, onClose, onSelect }: Props) {
               Cancelar
             </button>
             <button onClick={handleConfirm} disabled={selectedIdx === null}
-              className="px-5 py-2 bg-[#4A6FA5] text-white rounded-lg text-xs font-medium flex items-center gap-1.5 disabled:opacity-50 hover:bg-[#3A5A8A] transition-colors shadow-sm">
+              className="px-5 py-2 bg-[color:var(--theme-primary)] text-white rounded-lg text-xs font-medium flex items-center gap-1.5 disabled:opacity-50 hover:bg-[color:var(--theme-primary-hover)] transition-colors shadow-sm">
               <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                 <path d="M2.5 6l2.5 2.5 4.5-4.5" />
               </svg>

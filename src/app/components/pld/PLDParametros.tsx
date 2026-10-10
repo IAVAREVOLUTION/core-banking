@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 import * as store from './pldStore';
+import { CampoMonto } from '@/app/components/ui/CampoMonto';
 
 interface Props { onBack?: () => void; }
 
@@ -31,7 +32,7 @@ export function PLDParametros({ onBack }: Props) {
             <h2 className="text-lg text-gray-800">Parámetros PLD</h2>
           </div>
           <div className="flex items-center gap-2">
-            <button onClick={handleSave} className="px-5 py-1.5 bg-[#0099CC] text-white text-sm rounded hover:bg-[#0088BB]" style={{ fontWeight: 500 }}>Guardar</button>
+            <button onClick={handleSave} className="px-5 py-1.5 bg-[color:var(--theme-action)] text-white text-sm rounded hover:bg-[color:var(--theme-action-hover)]" style={{ fontWeight: 500 }}>Guardar</button>
             <button onClick={onBack} className="px-4 py-1.5 bg-white border border-gray-400 text-gray-700 text-sm rounded hover:bg-gray-50">Cancelar</button>
           </div>
         </div>
@@ -46,9 +47,10 @@ export function PLDParametros({ onBack }: Props) {
           </div>
           <div className="p-4 grid grid-cols-2 gap-x-8 gap-y-2.5">
             <div className="flex items-center gap-2"><label className={labelCls}>FACTOR RIESGO</label><input type="text" value={data.factorRiesgo} onChange={e => update('factorRiesgo', e.target.value)} className={inputCls} /></div>
-            <div className="flex items-center gap-2"><label className={labelCls}>MONTO MÁX. OPERACIÓN USD</label><input type="text" value={data.montoMaxOperacionUSD} onChange={e => update('montoMaxOperacionUSD', e.target.value)} className={inputCls} /></div>
-            <div className="flex items-center gap-2"><label className={labelCls}>MONTO MÁX. PERSONA FÍSICA</label><input type="text" value={data.montoMaxPersonaFisica} onChange={e => update('montoMaxPersonaFisica', e.target.value)} className={inputCls} /></div>
-            <div className="flex items-center gap-2"><label className={labelCls}>MONTO MÁX. PERSONA MORAL</label><input type="text" value={data.montoMaxPersonaMoral} onChange={e => update('montoMaxPersonaMoral', e.target.value)} className={inputCls} /></div>
+            <div className="flex items-center gap-2"><label className={labelCls}>MONTO MÁX. OPERACIÓN USD</label><CampoMonto value={data.montoMaxOperacionUSD} onChange={e => update('montoMaxOperacionUSD', e.target.value)} className={inputCls} /></div>
+            <div className="flex items-center gap-2"><label className={labelCls}>TIPO DE CAMBIO USD</label><input type="text" inputMode="decimal" value={data.tipoCambioUSD ?? '18.50'} onChange={e => update('tipoCambioUSD' as any, e.target.value.replace(/[^0-9.]/g, ''))} className={inputCls} title="MXN por dólar para los umbrales en USD del monitoreo" /></div>
+            <div className="flex items-center gap-2"><label className={labelCls}>MONTO MÁX. PERSONA FÍSICA</label><CampoMonto value={data.montoMaxPersonaFisica} onChange={e => update('montoMaxPersonaFisica', e.target.value)} className={inputCls} /></div>
+            <div className="flex items-center gap-2"><label className={labelCls}>MONTO MÁX. PERSONA MORAL</label><CampoMonto value={data.montoMaxPersonaMoral} onChange={e => update('montoMaxPersonaMoral', e.target.value)} className={inputCls} /></div>
             <div className="flex items-center gap-2"><label className={labelCls}>APLICA PERSONA FÍSICA</label>
               <select value={data.aplicaPersonaFisica} onChange={e => update('aplicaPersonaFisica', e.target.value)} className={inputCls}>
                 <option>Sí</option><option>No</option>
@@ -86,11 +88,11 @@ export function PLDParametros({ onBack }: Props) {
           <div className="px-4 pb-4 grid grid-cols-2 gap-x-8 gap-y-2.5">
             <div className="flex items-center gap-3">
               <label className="text-xs text-gray-700 flex-1">ALERTAS AUTOMÁTICAS</label>
-              <input type="checkbox" checked={data.alertasAutomaticas} onChange={e => update('alertasAutomaticas', e.target.checked)} className="w-3.5 h-3.5 accent-[#4A6FA5]" />
+              <input type="checkbox" checked={data.alertasAutomaticas} onChange={e => update('alertasAutomaticas', e.target.checked)} className="w-3.5 h-3.5 accent-[color:var(--theme-primary)]" />
             </div>
             <div className="flex items-center gap-3">
               <label className="text-xs text-gray-700 flex-1">ENVÍO AUTOMÁTICO CNBV</label>
-              <input type="checkbox" checked={data.envioAutomaticoCNBV} onChange={e => update('envioAutomaticoCNBV', e.target.checked)} className="w-3.5 h-3.5 accent-[#4A6FA5]" />
+              <input type="checkbox" checked={data.envioAutomaticoCNBV} onChange={e => update('envioAutomaticoCNBV', e.target.checked)} className="w-3.5 h-3.5 accent-[color:var(--theme-primary)]" />
             </div>
           </div>
         </div>

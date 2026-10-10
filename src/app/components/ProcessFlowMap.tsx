@@ -64,20 +64,20 @@ const FLOW_STEPS: FlowStep[] = [
       { label: 'Productos Seguros', status: 'ok', detail: '2 productos seed (Auto Total + GMM Grupal) con todos los subtabs' },
     ],
     outgoingFlows: [
-      { targetStep: 'prospectos', label: '→ Prospectos', status: 'ok', detail: 'Navegación por tab en barra principal' },
+      { targetStep: 'prospectos', label: '→ Tipo Interlocutor', status: 'ok', detail: 'Navegación por tab en barra principal' },
     ],
   },
   {
     id: 'prospectos',
     number: '3',
-    label: 'Gestión de Prospectos',
+    label: 'Gestión de Tipos Interlocutor',
     moduleId: 'prospectos',
     icon: <UserPlus size={20} />,
     status: 'ok',
     statusDetail: 'Completo: Dashboard + Lista + Form con Supabase (J_CLIENTES type=Prospecto/Contacto)',
     outgoingFlows: [
       { targetStep: 'clientes', label: '→ Convertir a Cliente', status: 'missing', detail: 'NO IMPLEMENTADO: No existe botón "Promover a Cliente" en ProspectoForm' },
-      { targetStep: 'solicitudes', label: '→ Solicitudes (directo)', status: 'missing', detail: 'NO IMPLEMENTADO: No hay flujo directo Prospecto → Solicitud' },
+      { targetStep: 'solicitudes', label: '→ Solicitudes (directo)', status: 'missing', detail: 'NO IMPLEMENTADO: No hay flujo directo Tipo Interlocutor → Solicitud' },
     ],
   },
   {
@@ -128,7 +128,7 @@ const FLOW_STEPS: FlowStep[] = [
     subSteps: [
       { label: 'Términos y Condiciones', status: 'ok', detail: 'Tab con condiciones del crédito' },
       { label: 'Simulación', status: 'ok', detail: 'Tabla de amortización' },
-      { label: 'Expediente Electrónico', status: 'ok', detail: 'Documentos del expediente' },
+      { label: 'KM Digital', status: 'ok', detail: 'Documentos del expediente' },
       { label: 'Garantías', status: 'ok', detail: 'Garantías de la solicitud' },
       { label: 'Comisiones', status: 'ok', detail: 'Comisiones aplicables' },
       { label: 'Autorizaciones', status: 'ok', detail: 'Niveles de autorización' },
@@ -166,7 +166,7 @@ const FLOW_STEPS: FlowStep[] = [
     subSteps: [
       { label: 'Beneficiarios', status: 'ok', detail: 'Tab de beneficiarios de la cuenta' },
       { label: 'Co-titulares', status: 'ok', detail: 'Tab de co-titulares' },
-      { label: 'Expedientes Electrónicos', status: 'ok', detail: 'Documentos de la cuenta' },
+      { label: 'KM Digital', status: 'ok', detail: 'Documentos de la cuenta' },
       { label: 'Cargos', status: 'ok', detail: 'Cargos asociados' },
       { label: 'Impuestos', status: 'ok', detail: 'Configuración de impuestos' },
       { label: 'Movimientos', status: 'ok', detail: 'Movimientos de la cuenta' },
@@ -394,11 +394,11 @@ export function ProcessFlowMap({ onNavigateToModule }: ProcessFlowMapProps) {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-[11px] text-gray-600">
           <div className="flex items-start gap-2">
             <AlertCircle size={14} className="text-red-500 mt-0.5 flex-shrink-0" />
-            <span><strong>3→4:</strong> Prospectos → Clientes — Falta botón "Promover a Cliente" en ProspectoForm que cree un registro tipo=Cliente en J_CLIENTES con los datos del prospecto</span>
+            <span><strong>3→4:</strong> Tipos Interlocutor → Clientes — Falta botón "Promover a Cliente" en ProspectoForm que cree un registro tipo=Cliente en J_CLIENTES con los datos del tipo interlocutor</span>
           </div>
           <div className="flex items-start gap-2">
             <AlertCircle size={14} className="text-red-500 mt-0.5 flex-shrink-0" />
-            <span><strong>3→6:</strong> Prospectos → Solicitudes (directo) — Diagrama muestra flujo directo para prospectos pre-aprobados</span>
+            <span><strong>3→6:</strong> Tipos Interlocutor → Solicitudes (directo) — Diagrama muestra flujo directo para tipos interlocutor pre-aprobados</span>
           </div>
           <div className="flex items-start gap-2">
             <AlertCircle size={14} className="text-red-500 mt-0.5 flex-shrink-0" />

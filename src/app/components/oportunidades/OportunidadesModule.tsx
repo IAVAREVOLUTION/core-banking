@@ -15,7 +15,7 @@
  * la Oportunidad prellenada.
  */
 import { useState, useEffect, useRef } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 
 import { OportunidadesDashboard } from './OportunidadesDashboard';
 import { OportunidadesList } from './OportunidadesList';

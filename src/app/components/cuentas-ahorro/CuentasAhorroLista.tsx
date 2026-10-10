@@ -14,7 +14,8 @@
  * ═══════════════════════════════════════════════════════════════════
  */
 import { useState, useRef } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
+import { useOrdenTabla, coincideBusqueda } from '@/app/lib/ordenTabla';
 import { useCuentasAhorroDB } from '@/app/hooks/useCuentasAhorroDB';
 import type { CuentaAhorroListItem } from '@/app/hooks/useCuentasAhorroDB';
 
@@ -28,7 +29,6 @@ export function CuentasAhorroLista({ onEdit, onView, onNew }: CuentasAhorroLista
   const { cuentas, loading, backendStatus, refetch } = useCuentasAhorroDB();
 
   const [searchTerm, setSearchTerm] = useState('');
-  const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 8;
   const tableRef = useRef<HTMLDivElement>(null);
@@ -96,31 +96,40 @@ export function CuentasAhorroLista({ onEdit, onView, onNew }: CuentasAhorroLista
   // ── Filtrado y ordenamiento ──
   const parseDate = (dateStr: string) => new Date(dateStr || '1970-01-01');
 
-  const filteredCuentas = cuentas
-    .filter((cuenta: CuentaAhorroListItem) => {
-      if (!searchTerm) return true;
-      const s = searchTerm.toLowerCase();
-      return (
-        cuenta.noCuenta.toLowerCase().includes(s) ||
-        (cuenta.noReferenc1 || '').toLowerCase().includes(s) ||
-        cuenta.clienteNombre.toLowerCase().includes(s) ||
-        cuenta.productoNombre.toLowerCase().includes(s) ||
-        cuenta.estatusCuen.toLowerCase().includes(s)
-      );
-    })
-    .sort((a: CuentaAhorroListItem, b: CuentaAhorroListItem) => {
-      const dateA = parseDate(a.fechaSol).getTime();
-      const dateB = parseDate(b.fechaSol).getTime();
-      return sortOrder === 'desc' ? dateB - dateA : dateA - dateB;
-    });
+  const filteredCuentas = cuentas.filter((c: CuentaAhorroListItem) => coincideBusqueda(searchTerm, [
+    c.noCuenta, c.noReferenc1, c.clienteNombre, c.productoNombre, formatDate(c.fechaSol), formatDate(c.fechaAutori),
+    c.estatusCuen, c.estatusCart, c.estatusSol, c.estatusDisp,
+  ]));
+
+  // Más recientes primero (fecha de solicitud; a igual fecha, el número de cuenta).
+  const orden = useOrdenTabla(filteredCuentas, {
+    id: 'cuentas-ahorro',
+    columnas: {
+      cuenta: c => c.noCuenta,
+      referencia: c => c.noReferenc1,
+      cliente: c => c.clienteNombre,
+      producto: c => c.productoNombre,
+      fechaSol: c => parseDate(c.fechaSol),
+      fechaAut: c => (c.fechaAutori ? parseDate(c.fechaAutori) : null),
+      saldo: c => c.saldoActual,
+      estCuenta: c => c.estatusCuen,
+      estCartera: c => c.estatusCart,
+      estSolicitud: c => c.estatusSol,
+      estDispersion: c => c.estatusDisp,
+      eje: c => c.ctaEjeChec,
+    },
+    porDefecto: { campo: 'fechaSol', dir: 'desc' },
+    desempate: c => c.noCuenta,
+    alCambiar: () => setCurrentPage(1),
+  });
 
   // ── Paginación ──
   const totalPages = Math.max(1, Math.ceil(filteredCuentas.length / itemsPerPage));
   const startIndex = (currentPage - 1) * itemsPerPage;
-  const currentCuentas = filteredCuentas.slice(startIndex, startIndex + itemsPerPage);
+  const currentCuentas = orden.filas.slice(startIndex, startIndex + itemsPerPage);
 
   const handleSearchChange = (value: string) => { setSearchTerm(value); setCurrentPage(1); };
-  const handleSortChange = (value: 'desc' | 'asc') => { setSortOrder(value); setCurrentPage(1); };
+  const handleSortChange = (value: 'desc' | 'asc') => orden.fijar(orden.campo, value);
   const handleFirstPage = () => setCurrentPage(1);
   const handlePreviousPage = () => { if (currentPage > 1) setCurrentPage(currentPage - 1); };
   const handleNextPage = () => { if (currentPage < totalPages) setCurrentPage(currentPage + 1); };
@@ -238,7 +247,7 @@ export function CuentasAhorroLista({ onEdit, onView, onNew }: CuentasAhorroLista
               <span>Orden</span>
               <div className="relative">
                 <select
-                  value={sortOrder}
+                  value={orden.dir}
                   onChange={(e) => handleSortChange(e.target.value as 'desc' | 'asc')}
                   className="px-2 py-1 border border-gray-400 rounded text-sm bg-white pr-6 appearance-none"
                 >
@@ -272,18 +281,18 @@ export function CuentasAhorroLista({ onEdit, onView, onNew }: CuentasAhorroLista
             <thead>
               <tr className="border-b border-gray-300" style={{ backgroundColor: 'var(--theme-table-header)' }}>
                 <th className="px-3 py-2.5 text-left font-medium text-xs text-gray-700 whitespace-nowrap">Editar | Ver</th>
-                <th className="px-3 py-2.5 text-left font-medium text-xs text-gray-700 whitespace-nowrap">NO. CUENTA</th>
-                <th className="px-3 py-2.5 text-left font-medium text-xs text-gray-700 whitespace-nowrap">NO. REFERENCIA</th>
-                <th className="px-3 py-2.5 text-left font-medium text-xs text-gray-700 whitespace-nowrap">CLIENTE</th>
-                <th className="px-3 py-2.5 text-left font-medium text-xs text-gray-700 whitespace-nowrap">PRODUCTO</th>
-                <th className="px-3 py-2.5 text-left font-medium text-xs text-gray-700 whitespace-nowrap">FECHA SOLICITUD</th>
-                <th className="px-3 py-2.5 text-left font-medium text-xs text-gray-700 whitespace-nowrap">FECHA AUTORIZACIÓN</th>
-                <th className="px-3 py-2.5 text-right font-medium text-xs text-gray-700 whitespace-nowrap">SALDO ACTUAL</th>
-                <th className="px-3 py-2.5 text-center font-medium text-xs text-gray-700 whitespace-nowrap">EST. CUENTA</th>
-                <th className="px-3 py-2.5 text-center font-medium text-xs text-gray-700 whitespace-nowrap">EST. CARTERA</th>
-                <th className="px-3 py-2.5 text-center font-medium text-xs text-gray-700 whitespace-nowrap">EST. SOLICITUD</th>
-                <th className="px-3 py-2.5 text-center font-medium text-xs text-gray-700 whitespace-nowrap">EST. DISPERSIÓN</th>
-                <th className="px-3 py-2.5 text-left font-medium text-xs text-gray-700 whitespace-nowrap">CTA EJE / CHEQUERA</th>
+                <th className="px-3 py-2.5 text-left font-medium text-xs text-gray-700 whitespace-nowrap" {...orden.th('cuenta')}>NO. CUENTA{orden.flecha('cuenta')}</th>
+                <th className="px-3 py-2.5 text-left font-medium text-xs text-gray-700 whitespace-nowrap" {...orden.th('referencia')}>NO. REFERENCIA{orden.flecha('referencia')}</th>
+                <th className="px-3 py-2.5 text-left font-medium text-xs text-gray-700 whitespace-nowrap" {...orden.th('cliente')}>NOMBRE INTERLOCUTOR{orden.flecha('cliente')}</th>
+                <th className="px-3 py-2.5 text-left font-medium text-xs text-gray-700 whitespace-nowrap" {...orden.th('producto')}>PRODUCTO{orden.flecha('producto')}</th>
+                <th className="px-3 py-2.5 text-left font-medium text-xs text-gray-700 whitespace-nowrap" {...orden.th('fechaSol')}>FECHA SOLICITUD{orden.flecha('fechaSol')}</th>
+                <th className="px-3 py-2.5 text-left font-medium text-xs text-gray-700 whitespace-nowrap" {...orden.th('fechaAut')}>FECHA AUTORIZACIÓN{orden.flecha('fechaAut')}</th>
+                <th className="px-3 py-2.5 text-right font-medium text-xs text-gray-700 whitespace-nowrap" {...orden.th('saldo')}>SALDO ACTUAL{orden.flecha('saldo')}</th>
+                <th className="px-3 py-2.5 text-center font-medium text-xs text-gray-700 whitespace-nowrap" {...orden.th('estCuenta')}>EST. CUENTA{orden.flecha('estCuenta')}</th>
+                <th className="px-3 py-2.5 text-center font-medium text-xs text-gray-700 whitespace-nowrap" {...orden.th('estCartera')}>EST. CARTERA{orden.flecha('estCartera')}</th>
+                <th className="px-3 py-2.5 text-center font-medium text-xs text-gray-700 whitespace-nowrap" {...orden.th('estSolicitud')}>EST. SOLICITUD{orden.flecha('estSolicitud')}</th>
+                <th className="px-3 py-2.5 text-center font-medium text-xs text-gray-700 whitespace-nowrap" {...orden.th('estDispersion')}>EST. DISPERSIÓN{orden.flecha('estDispersion')}</th>
+                <th className="px-3 py-2.5 text-left font-medium text-xs text-gray-700 whitespace-nowrap" {...orden.th('eje')}>CTA EJE / CHEQUERA{orden.flecha('eje')}</th>
               </tr>
             </thead>
             <tbody>
@@ -291,11 +300,11 @@ export function CuentasAhorroLista({ onEdit, onView, onNew }: CuentasAhorroLista
                 <tr>
                   <td colSpan={12} className="px-3 py-12 text-center text-xs text-gray-500">
                     <div className="flex items-center justify-center gap-2">
-                      <svg className="animate-spin h-5 w-5 text-[#0099CC]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <svg className="animate-spin h-5 w-5 text-[color:var(--theme-action)]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
                       </svg>
-                      Cargando cuentas de ahorro desde J_CUENTAS_CORP_CLIENTES...
+                      Cargando cuentas de ahorro...
                     </div>
                   </td>
                 </tr>
@@ -331,9 +340,9 @@ export function CuentasAhorroLista({ onEdit, onView, onNew }: CuentasAhorroLista
                   >
                     {/* Editar | Ver */}
                     <td className="px-3 py-2.5 text-xs whitespace-nowrap">
-                      <a href="#" className="text-[#0066CC] hover:underline" onClick={(e) => { e.preventDefault(); onEdit?.(cuenta.id); }}>Editar</a>
+                      <button type="button" className="enlace-accion text-[color:var(--theme-link)] hover:underline" onClick={() => { onEdit?.(cuenta.id); }}>Editar</button>
                       <span className="text-gray-700"> | </span>
-                      <a href="#" className="text-[#0066CC] hover:underline" onClick={(e) => { e.preventDefault(); onView?.(cuenta.id); }}>Ver</a>
+                      <button type="button" className="enlace-accion text-[color:var(--theme-link)] hover:underline" onClick={() => { onView?.(cuenta.id); }}>Ver</button>
                     </td>
                     {/* No. Cuenta */}
                     <td className="px-3 py-2.5 text-xs text-gray-700 whitespace-nowrap">{cuenta.noCuenta || '—'}</td>

@@ -10,7 +10,7 @@
  *   - Solo se permiten tipos de comisión configurados en el producto
  */
 import { useState, useEffect, useMemo } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 import {
   Comision, saveToSession, loadFromSession, loadFromSavedStore, generateId,
@@ -211,7 +211,7 @@ export function ComisionesTab({ mode, solicitudId, montoSolicitado, productoId }
         {!loadingProducto && comisionesProducto.length > 0 && (
           <div className="border border-gray-300 overflow-hidden rounded">
             <table className="w-full text-xs">
-              <thead className="bg-[#2E5C91] text-white">
+              <thead className="bg-[color:var(--theme-secondary)] text-white">
                 <tr>
                   <th className="px-3 py-2 text-left font-medium">Tipo Comisión</th>
                   <th className="px-3 py-2 text-left font-medium">Descripción</th>

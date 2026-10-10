@@ -1,8 +1,27 @@
 import { BarChart, Bar, PieChart, Pie, Cell, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { Cliente } from './ClientesList';
 
+/** Recibe registros reales de BD (personalidad = subtipo, p. ej. "Persona Fisica") o de ejemplo. */
+type ClienteResumen = {
+  id?: string | number; nombre?: string; nombreCompleto?: string;
+  personalidad?: string | null; fechaActivacion?: string; sucursal?: string;
+};
+
+/**
+ * Antes se comparaba contra 'Persona Física' exacto y los registros reales
+ * ("Persona Fisica", sin acento, o "Persona Física con Actividad Empresarial")
+ * no coincidían: los indicadores salían en 0.
+ */
+function tipoPersonalidad(p?: string | null): 'fisica' | 'pfae' | 'moral' | 'otra' {
+  const v = (p || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  if (v.includes('moral')) return 'moral';
+  if (v === 'pfae' || (v.includes('fisica') && v.includes('actividad'))) return 'pfae';
+  if (v.includes('fisica')) return 'fisica';
+  return 'otra';
+}
+
 interface ClientesDashboardProps {
-  clientes: Cliente[];
+  clientes: ClienteResumen[];
   onNew: () => void;
   onEdit: (cliente: Cliente) => void;
   onView: (cliente: Cliente) => void;
@@ -45,16 +64,13 @@ export function ClientesDashboard({ clientes, onNew, onEdit, onView, onClientesC
 
   // Calcular KPIs
   const totalClientes = clientes.length;
-  const personasFisicas = clientes.filter(c => c.personalidad === 'Persona Física').length;
-  const personasFisicasActividad = clientes.filter(c => 
-    c.personalidad === 'Persona Física c/ Actividad empresarial' || 
-    c.personalidad === 'Persona Física c/Actividad empresarial'
-  ).length;
-  const personasMorales = clientes.filter(c => c.personalidad === 'Persona Moral').length;
+  const personasFisicas = clientes.filter(c => tipoPersonalidad(c.personalidad) === 'fisica').length;
+  const personasFisicasActividad = clientes.filter(c => tipoPersonalidad(c.personalidad) === 'pfae').length;
+  const personasMorales = clientes.filter(c => tipoPersonalidad(c.personalidad) === 'moral').length;
   
   // Clientes recientes (últimos 8)
   const clientesRecientes = [...clientes]
-    .sort((a, b) => parseDate(b.fechaActivacion) - parseDate(a.fechaActivacion))
+    .sort((a, b) => parseDate(b.fechaActivacion ?? '') - parseDate(a.fechaActivacion ?? ''))
     .slice(0, 8);
 
   // KPI 1: Evolución de nuevos clientes por mes
@@ -69,7 +85,7 @@ export function ClientesDashboard({ clientes, onNew, onEdit, onView, onClientesC
 
   // KPI 2: Distribución por tipo de personalidad
   const distribucionTipo = [
-    { name: 'Persona Física', tipo: 'Persona Física', cantidad: personasFisicas, color: '#2E5C91' },
+    { name: 'Persona Física', tipo: 'Persona Física', cantidad: personasFisicas, color: 'var(--theme-secondary)' },
     { name: 'PF c/ Act. Emp.', tipo: 'PF c/ Act. Emp.', cantidad: personasFisicasActividad, color: 'var(--theme-accent)' },
     { name: 'Persona Moral', tipo: 'Persona Moral', cantidad: personasMorales, color: 'var(--theme-primary)' },
   ].filter(item => item.cantidad > 0);
@@ -199,20 +215,21 @@ export function ClientesDashboard({ clientes, onNew, onEdit, onView, onClientesC
               <tbody>
                 {clientesRecientes.map((cliente, idx) => (
                   <tr key={cliente.id} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                    <td className="px-3 py-2 text-gray-900">{(cliente as any).nombreCompleto || cliente.nombre}</td>
+                    <td className="px-3 py-2 text-gray-900">{cliente.nombreCompleto || cliente.nombre}</td>
                     <td className="px-3 py-2">
-                      <span className={`px-2 py-0.5 rounded text-xs ${
-                        cliente.personalidad === 'Persona Física' 
-                          ? 'bg-blue-50 text-blue-700' 
-                          : cliente.personalidad.includes('Actividad') 
-                            ? 'bg-cyan-50 text-cyan-700'
-                            : 'bg-purple-50 text-purple-700'
-                      }`}>
-                        {cliente.personalidad === 'Persona Física' ? 'PF' : 
-                         cliente.personalidad.includes('Actividad') ? 'PFAE' : 'PM'}
-                      </span>
+                      {(() => {
+                        // Antes: 'Persona Fisica' (sin acento) salía como PM, y una
+                        // personalidad vacía rompía el tablero con .includes().
+                        const t = tipoPersonalidad(cliente.personalidad);
+                        const estilo = t === 'fisica' ? 'bg-blue-50 text-blue-700' : t === 'pfae' ? 'bg-cyan-50 text-cyan-700' : t === 'moral' ? 'bg-purple-50 text-purple-700' : 'bg-gray-100 text-gray-600';
+                        return (
+                          <span className={`px-2 py-0.5 rounded text-xs ${estilo}`}>
+                            {t === 'fisica' ? 'PF' : t === 'pfae' ? 'PFAE' : t === 'moral' ? 'PM' : '—'}
+                          </span>
+                        );
+                      })()}
                     </td>
-                    <td className="px-3 py-2 text-gray-700">{formatDate(cliente.fechaActivacion)}</td>
+                    <td className="px-3 py-2 text-gray-700">{formatDate(cliente.fechaActivacion ?? '')}</td>
                     <td className="px-3 py-2 text-gray-700">{cliente.sucursal}</td>
                   </tr>
                 ))}

@@ -6,7 +6,7 @@
  * directamente en el formulario de alta con los campos pre-rellenados.
  */
 import { useState, useEffect } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/app/lib/notificaciones';
 import { SolicitudActivacionList } from '../solicitudes-activacion/SolicitudActivacionList';
 import {
   type SolicitudActivacionFormData,
@@ -38,6 +38,8 @@ export interface SolicitudActivacionModalProps {
     numeroDocumento?: string;
     /** Institución de gobierno / institución financiera */
     institucionFinanciera?: string;
+    /** Cuenta destino de la dispersión (de la Cuenta Beneficiaria). Si viene, manda sobre la cuenta de ahorro del cliente. */
+    cuentaBancaria?: string;
   };
   /** Registro existente (si ya hay una Solicitud de Activación para esta originación) */
   existingActivacion?: SolicitudActivacionListItem;
@@ -70,7 +72,7 @@ export function SolicitudActivacionModal({
    const isNew = !existingActivacion;
 
 
-  const [cuentaBancaria,    setCuentaBancaria]    = useState<string>('');
+  const [cuentaBancaria,    setCuentaBancaria]    = useState<string>(seed.cuentaBancaria || '');
   const [clienteNombreDB,   setClienteNombreDB]   = useState<string>('');
   // Para modo nuevo: esperar hasta que el fetch termine antes de montar el formulario
   const [accountReady, setAccountReady] = useState(!isNew);
@@ -87,7 +89,7 @@ export function SolicitudActivacionModal({
         if (!error && Array.isArray(data)) {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const cuenta = (data as any[]).find((r: any) => r.cliente_id === seed.clienteId);
-          if (cuenta?.no_cuenta) setCuentaBancaria(String(cuenta.no_cuenta));
+          if (cuenta?.no_cuenta && !seed.cuentaBancaria) setCuentaBancaria(String(cuenta.no_cuenta));
           if (!seed.cliente) {
             const nombre = [cuenta?.cliente_nombre, cuenta?.cliente_ap_paterno, cuenta?.cliente_ap_materno]
               .filter(Boolean).join(' ');

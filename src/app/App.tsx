@@ -1,77 +1,118 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, Suspense } from 'react';
 import { Product, FormMode } from './types/product';
 import { creditProducts, mockProducts, organizations, currentUser } from './data/mockData';
-import { Toaster } from './components/ui/sonner';
-import { toast } from 'sonner';
-import { PLDHome } from './components/pld/PLDHome';
-import { PLDKYCInfo } from './components/pld/PLDKYCInfo';
-import { PLDPerfilTransaccional } from './components/pld/PLDPerfilTransaccional';
-import { PLDCalificacionRiesgo } from './components/pld/PLDCalificacionRiesgo';
-import { PLDAlertasPLD } from './components/pld/PLDAlertasPLD';
-import { PLDAlertasInternas } from './components/pld/PLDAlertasInternas';
-import { PLDParametros } from './components/pld/PLDParametros';
-import { PLDCatalogos } from './components/pld/PLDCatalogos';
-import { PLDReportesCNBV } from './components/pld/PLDReportesCNBV';
-import { ProductosList } from './components/productos/ProductosList';
-import { ProductoCaptacionForm } from './components/productos/ProductoCaptacionForm';
-import { ProductoForm } from './components/productos/ProductoForm';
-import { ProductosLineaCreditoModule } from './components/productos-linea-credito/ProductosLineaCreditoModule';
-import { Garantias } from './components/garantias/Garantias';
-import { CarteraArrendamientoList } from './components/cartera/CarteraArrendamientoList';
+import { Toaster } from './lib/notificaciones';
+import { toast } from '@/app/lib/notificaciones';
 import { Cliente, mockClientes } from './data/mockClientesData';
-import { ClientesList } from './components/clientes/ClientesList';
-import { ClientesDashboard } from './components/clientes/ClientesDashboard';
-import { AltaClienteDefault } from './components/clientes/AltaClienteDefault';
-import { ClienteDireccionForm } from './components/clientes/ClienteDireccionForm';
-import { Prospecto } from './components/prospectos/ProspectosList';
-import { ProspectosList } from './components/prospectos/ProspectosList';
-import { ProspectosDashboard } from './components/prospectos/ProspectosDashboard';
-import { ProspectoForm } from './components/prospectos/ProspectoForm';
-import { OportunidadesModule } from './components/oportunidades/OportunidadesModule';
-import { CarteraTDCModule } from './components/cartera-tdc/CarteraTDCModule';
+import type { Prospecto } from './components/prospectos/ProspectosList';
 import { useProspectosDB } from './hooks/useProspectosDB';
 import { useClientesDB } from './hooks/useClientesDB';
 import { SolicitudCredito } from '@/types/solicitudCredito';
 import { solicitudesCredito } from '@/data/solicitudesData';
-import { SolicitudesDashboard } from './components/solicitudes/SolicitudesDashboard';
-import { SolicitudCreditoList } from './components/solicitudes/SolicitudCreditoList';
-import { SOLICITUDES_LISTA } from './components/solicitudes/solicitudCreditoStore';
 // SolicitudCreditoForm is managed internally by SolicitudCreditoList
 import { Credito } from '@/types/credito';
 import { creditos as creditosData } from '@/data/creditosData';
-import { CreditosModule } from './components/creditos/CreditosModule';
-import { Inversion, inversionesData } from './components/inversiones/InversionesModule';
-import { InversionesModule } from './components/inversiones/InversionesModule';
-import { CuentasAhorroModule } from './components/cuentas-ahorro/CuentasAhorroModule';
-import { Dashboard } from './components/Dashboard';
+import type { Inversion } from '@/types/inversion';
+import * as inversionesStore from './components/inversiones/inversionesStore';
 import { SplashScreen } from './components/SplashScreen';
 import { LoginScreen, type PerfilUsuario } from './components/LoginScreen';
-import { OriginacionModule } from './components/originacion/OriginacionModule';
-import { SolicitudActivacionDashboard } from './components/solicitudes-activacion/SolicitudActivacionDashboard';
-import { SolicitudActivacionList } from './components/solicitudes-activacion/SolicitudActivacionList';
+import { CATALOGO_MODULOS, useModulosOcultos } from './lib/modulosVisibles';
 import { useSolicitudesActivacionDB } from './hooks/useSolicitudesActivacionDB';
-import { AvisosVencimientoModule } from './components/avisos-vencimiento/AvisosVencimientoModule';
-import { ConfiguracionModule } from './components/configuracion/ConfiguracionModule';
-import { EjecReportesModule } from './components/reportes-regulatorios/EjecReportesModule';
-import { PagosReferenciadosModule } from './components/pagos-referenciados/PagosReferenciadosModule';
-import { CasosCobranzaModule } from './components/casos-cobranza/CasosCobranzaModule';
-import { CarteraList } from './components/cartera/CarteraList';
-import { Banca2oPisoModule } from './components/banca-2o-piso/Banca2oPisoModule';
-import { AportacionesModule } from './components/cartera/AportacionesModule';
-import { CobranzaModule } from './components/cartera/CobranzaModule';
-import { CotizacionesModule } from './components/cotizaciones/CotizacionesModule';
-import { PolizasContablesModule } from './components/polizas-contables/PolizasContablesModule';
-import { GestionRiesgosModule } from './components/gestion-riesgos/GestionRiesgosModule';
-import { UNEHome } from './components/une/UNEHome';
 import efinanciaLogo from '@/assets/7b6cb23c00b7817818c638af3eae0a416e1e9f57.png';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { useProductosCredito } from './hooks/useProductosCredito';
 import { useProductosSeguros } from './hooks/useProductosSeguros';
 import { useProductosCaptacionDB } from './hooks/useProductosCaptacionDB';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
+import { setUsuarioSesion } from './lib/sesion';
+import { SOLICITUDES_LISTA } from './components/solicitudes/solicitudCreditoStore';
+import { perezoso, CargandoModulo, LimiteCargaModulo } from './lib/cargaModulos';
+import { formatearFecha } from '@/app/lib/fechas';
+
+// ── Módulos bajo demanda: cada uno se descarga al entrar a él (ver lib/cargaModulos) ──
+const PLDHome = perezoso(() => import('./components/pld/PLDHome'), 'PLDHome');
+const PLDKYCInfo = perezoso(() => import('./components/pld/PLDKYCInfo'), 'PLDKYCInfo');
+const PLDPerfilTransaccional = perezoso(() => import('./components/pld/PLDPerfilTransaccional'), 'PLDPerfilTransaccional');
+const PLDCalificacionRiesgo = perezoso(() => import('./components/pld/PLDCalificacionRiesgo'), 'PLDCalificacionRiesgo');
+const PLDAlertasPLD = perezoso(() => import('./components/pld/PLDAlertasPLD'), 'PLDAlertasPLD');
+const PLDAlertasInternas = perezoso(() => import('./components/pld/PLDAlertasInternas'), 'PLDAlertasInternas');
+const PLDParametros = perezoso(() => import('./components/pld/PLDParametros'), 'PLDParametros');
+const PLDCatalogos = perezoso(() => import('./components/pld/PLDCatalogos'), 'PLDCatalogos');
+const PLDReportesCNBV = perezoso(() => import('./components/pld/PLDReportesCNBV'), 'PLDReportesCNBV');
+const ProductosList = perezoso(() => import('./components/productos/ProductosList'), 'ProductosList');
+const ProductoCaptacionForm = perezoso(() => import('./components/productos/ProductoCaptacionForm'), 'ProductoCaptacionForm');
+const ProductoForm = perezoso(() => import('./components/productos/ProductoForm'), 'ProductoForm');
+const ProductosLineaCreditoModule = perezoso(() => import('./components/productos-linea-credito/ProductosLineaCreditoModule'), 'ProductosLineaCreditoModule');
+const Garantias = perezoso(() => import('./components/garantias/Garantias'), 'Garantias');
+const CarteraArrendamientoList = perezoso(() => import('./components/cartera/CarteraArrendamientoList'), 'CarteraArrendamientoList');
+const ClientesList = perezoso(() => import('./components/clientes/ClientesList'), 'ClientesList');
+const ClientesDashboard = perezoso(() => import('./components/clientes/ClientesDashboard'), 'ClientesDashboard');
+const AltaClienteDefault = perezoso(() => import('./components/clientes/AltaClienteDefault'), 'AltaClienteDefault');
+const ClienteDireccionForm = perezoso(() => import('./components/clientes/ClienteDireccionForm'), 'ClienteDireccionForm');
+const ProspectosList = perezoso(() => import('./components/prospectos/ProspectosList'), 'ProspectosList');
+const ProspectosDashboard = perezoso(() => import('./components/prospectos/ProspectosDashboard'), 'ProspectosDashboard');
+const ProspectoForm = perezoso(() => import('./components/prospectos/ProspectoForm'), 'ProspectoForm');
+const OportunidadesModule = perezoso(() => import('./components/oportunidades/OportunidadesModule'), 'OportunidadesModule');
+const SolicitudesDashboard = perezoso(() => import('./components/solicitudes/SolicitudesDashboard'), 'SolicitudesDashboard');
+const SolicitudCreditoList = perezoso(() => import('./components/solicitudes/SolicitudCreditoList'), 'SolicitudCreditoList');
+const CreditosModule = perezoso(() => import('./components/creditos/CreditosModule'), 'CreditosModule');
+const InversionesModule = perezoso(() => import('./components/inversiones/InversionesModule'), 'InversionesModule');
+const CuentasAhorroModule = perezoso(() => import('./components/cuentas-ahorro/CuentasAhorroModule'), 'CuentasAhorroModule');
+const Dashboard = perezoso(() => import('./components/Dashboard'), 'Dashboard');
+const OriginacionModule = perezoso(() => import('./components/originacion/OriginacionModule'), 'OriginacionModule');
+const SolicitudActivacionDashboard = perezoso(() => import('./components/solicitudes-activacion/SolicitudActivacionDashboard'), 'SolicitudActivacionDashboard');
+const SolicitudActivacionList = perezoso(() => import('./components/solicitudes-activacion/SolicitudActivacionList'), 'SolicitudActivacionList');
+const AvisosVencimientoModule = perezoso(() => import('./components/avisos-vencimiento/AvisosVencimientoModule'), 'AvisosVencimientoModule');
+const ConfiguracionModule = perezoso(() => import('./components/configuracion/ConfiguracionModule'), 'ConfiguracionModule');
+const EjecReportesModule = perezoso(() => import('./components/reportes-regulatorios/EjecReportesModule'), 'EjecReportesModule');
+const PagosReferenciadosModule = perezoso(() => import('./components/pagos-referenciados/PagosReferenciadosModule'), 'PagosReferenciadosModule');
+const CasosCobranzaModule = perezoso(() => import('./components/casos-cobranza/CasosCobranzaModule'), 'CasosCobranzaModule');
+const CarteraList = perezoso(() => import('./components/cartera/CarteraList'), 'CarteraList');
+const CarteraTDCModule = perezoso(() => import('./components/cartera-tdc/CarteraTDCModule'), 'CarteraTDCModule');
+const Banca2oPisoModule = perezoso(() => import('./components/banca-2o-piso/Banca2oPisoModule'), 'Banca2oPisoModule');
+const AportacionesModule = perezoso(() => import('./components/cartera/AportacionesModule'), 'AportacionesModule');
+const CobranzaModule = perezoso(() => import('./components/cartera/CobranzaModule'), 'CobranzaModule');
+const CotizacionesModule = perezoso(() => import('./components/cotizaciones/CotizacionesModule'), 'CotizacionesModule');
+const PolizasContablesModule = perezoso(() => import('./components/polizas-contables/PolizasContablesModule'), 'PolizasContablesModule');
+const GestionRiesgosModule = perezoso(() => import('./components/gestion-riesgos/GestionRiesgosModule'), 'GestionRiesgosModule');
+const UNEHome = perezoso(() => import('./components/une/UNEHome'), 'UNEHome');
+
+// Pestaña → módulos que muestra; se precargan al pasar el mouse por la pestaña.
+const PRECARGA_MODULOS: Partial<Record<string, Array<{ precargar: () => void }>>> = {
+  'dashboard': [Dashboard],
+  'productos': [ProductosList, ProductoCaptacionForm, ProductoForm, ProductosLineaCreditoModule],
+  'garantias': [Garantias],
+  'clientes': [ClientesList, ClientesDashboard, AltaClienteDefault, ClienteDireccionForm],
+  'prospectos': [ProspectosList, ProspectosDashboard, ProspectoForm],
+  'oportunidades': [OportunidadesModule],
+  'cotizaciones': [CotizacionesModule],
+  'solicitudes-creditos': [SolicitudesDashboard, SolicitudCreditoList],
+  'solicitudes-activacion': [SolicitudActivacionDashboard, SolicitudActivacionList],
+  'originacion': [OriginacionModule],
+  'creditos': [CreditosModule],
+  'inversiones': [InversionesModule],
+  'cuentas-ahorro': [CuentasAhorroModule],
+  'avisos-vencimiento': [AvisosVencimientoModule],
+  'pld': [PLDHome, PLDKYCInfo, PLDPerfilTransaccional, PLDCalificacionRiesgo, PLDAlertasPLD, PLDAlertasInternas, PLDParametros, PLDCatalogos, PLDReportesCNBV],
+  'configuracion': [ConfiguracionModule],
+  'pagos-referenciados': [PagosReferenciadosModule],
+  'casos-cobranza': [CasosCobranzaModule],
+  'cobranza': [CobranzaModule],
+  'banca-2o-piso': [Banca2oPisoModule],
+  'cartera-arrendamiento': [CarteraArrendamientoList],
+  'cartera-credito': [CarteraList],
+  'cartera-credito-individual': [CarteraList],
+  'cartera-tdc': [CarteraTDCModule],
+  'cartera-inversion': [AportacionesModule],
+  'cartera-ahorro': [AportacionesModule],
+  'ejec-reportes': [EjecReportesModule],
+  'polizas-contables': [PolizasContablesModule],
+  'gestion-riesgos': [GestionRiesgosModule],
+  'une': [UNEHome],
+};
 
 type View = 'list' | 'form' | 'direccion';
-type Module = 'dashboard' | 'configuracion' | 'productos' | 'garantias' | 'prospectos' | 'clientes' | 'oportunidades' | 'cotizaciones' | 'cuentas-ahorro' | 'solicitudes-creditos' | 'solicitudes-activacion' | 'originacion' | 'creditos' | 'inversiones' | 'cartera-credito' | 'cartera-tdc' | 'cartera-arrendamiento' | 'cartera-inversion' | 'cartera-ahorro' | 'avisos-vencimiento' | 'pld' | 'pagos-referenciados' | 'casos-cobranza' | 'cobranza' | 'ejec-reportes' | 'polizas-contables' | 'gestion-riesgos' | 'banca-2o-piso' | 'une';
+type Module = 'dashboard' | 'configuracion' | 'productos' | 'garantias' | 'prospectos' | 'clientes' | 'oportunidades' | 'cotizaciones' | 'cuentas-ahorro' | 'solicitudes-creditos' | 'solicitudes-activacion' | 'originacion' | 'creditos' | 'inversiones' | 'cartera-credito' | 'cartera-credito-individual' | 'cartera-tdc' | 'cartera-arrendamiento' | 'cartera-inversion' | 'cartera-ahorro' | 'avisos-vencimiento' | 'pld' | 'pagos-referenciados' | 'casos-cobranza' | 'cobranza' | 'ejec-reportes' | 'polizas-contables' | 'gestion-riesgos' | 'banca-2o-piso' | 'une';
 type ClienteView = 'dashboard' | 'list' | 'form' | 'direccion';
 type ProspectoView = 'dashboard' | 'list' | 'form';
 type SolicitudView = 'dashboard' | 'list' | 'form';
@@ -92,6 +133,7 @@ function App() {
   const [currentModule, setCurrentModule] = useState<Module>('dashboard');
   /** REQ-25 — perfil de la sesion; sin `modulosPermitidos` se ve todo (RN-03). */
   const [perfil, setPerfil] = useState<PerfilUsuario | null>(null);
+  const modulosOcultos = useModulosOcultos(perfil?.usuario || 'admin');
   const [products, setProducts] = useState<Product[]>(creditProducts);
 
   const [currentView, setCurrentView] = useState<View>('list');
@@ -118,7 +160,7 @@ function App() {
   const [creditoFormMode, setCreditoFormMode] = useState<FormMode>('view');
   const [selectedCredito, setSelectedCredito] = useState<Credito | undefined>();
   const [creditos, setCreditos] = useState<Credito[]>(creditosData);
-  const [inversiones, setInversiones] = useState<Inversion[]>(inversionesData);
+  const [inversiones, setInversiones] = useState<Inversion[]>(inversionesStore.getAllLegacy());
   const [inversionView, setInversionView] = useState<InversionView>('list');
   const [inversionFormMode, setInversionFormMode] = useState<FormMode>('view');
   const [selectedInversion, setSelectedInversion] = useState<Inversion | undefined>();
@@ -204,6 +246,7 @@ function App() {
 
   const handleLogin = (p: PerfilUsuario) => {
     setPerfil(p);
+    setUsuarioSesion(p.usuario);
     setIsAuthenticated(true);
     toast.success('Bienvenido al sistema', {
       description: 'Sesión iniciada correctamente',
@@ -211,6 +254,7 @@ function App() {
   };
 
   const handleLogout = () => {
+    setUsuarioSesion(null);
     setIsAuthenticated(false);
     setShowUserMenu(false);
     toast.success('Sesión cerrada', {
@@ -229,7 +273,7 @@ function App() {
     if (lineaProducto === 'Crédito') {
       const creditProducts = products.filter(p => p.lineaProducto === 'Crédito' && p.clave);
       if (creditProducts.length > 0) {
-        const maxClave = Math.max(...creditProducts.map(p => p.clave || 0));
+        const maxClave = Math.max(...creditProducts.map(p => Number(p.clave) || 0));
         nextClave = maxClave + 1;
       }
     }
@@ -436,11 +480,11 @@ function App() {
     // ═══════════════════════════════════════════════════════════════
     if (clienteFormMode === 'create') {
       toast.success('Persona creada exitosamente', {
-        description: `"${clienteData.nombre || 'Nueva Persona'}" ha sido registrada en J_CLIENTES.`,
+        description: `"${clienteData.nombre || 'Nueva Persona'}" ha sido registrada.`,
       });
     } else if (clienteFormMode === 'edit') {
       toast.success('Persona actualizada', {
-        description: `Los cambios en "${clienteData.nombre || ''}" han sido guardados en J_CLIENTES.`,
+        description: `Los cambios en "${clienteData.nombre || ''}" han sido guardados.`,
       });
     }
     
@@ -474,11 +518,11 @@ function App() {
 
   const handleDeleteProspecto = async (prospecto: Prospecto) => {
     if (!prospecto.dbUuid) {
-      toast.error('No se puede eliminar', { description: 'Este registro no tiene UUID de J_CLIENTES.' });
+      toast.error('No se puede eliminar', { description: 'Este registro aún no se ha guardado.' });
       return;
     }
     const confirmDelete = window.confirm(
-      `¿Eliminar el prospecto "${prospecto.nombre}" (ID: ${prospecto.dbUuid.substring(0, 8)}...)?\n\nEsta acción eliminará el registro de J_CLIENTES y no se puede deshacer.`
+      `¿Eliminar el tipo interlocutor "${prospecto.nombre}"?\n\nEsta acción no se puede deshacer.`
     );
     if (!confirmDelete) return;
 
@@ -492,8 +536,8 @@ function App() {
       );
       const result = await res.json();
       if (res.ok && result.success) {
-        toast.success('Prospecto eliminado', {
-          description: `"${prospecto.nombre}" ha sido eliminado de J_CLIENTES.`,
+        toast.success('Tipo Interlocutor eliminado', {
+          description: `"${prospecto.nombre}" ha sido eliminado.`,
         });
         refetchProspectos();
       } else {
@@ -501,7 +545,7 @@ function App() {
       }
     } catch (err) {
       console.error('[handleDeleteProspecto] Error:', err);
-      toast.error('Error de conexión al eliminar prospecto', { description: String(err) });
+      toast.error('Error de conexión al eliminar tipo interlocutor', { description: String(err) });
     }
   };
 
@@ -517,12 +561,12 @@ function App() {
     // el mismo registro dos veces con IDs diferentes.
     // ═══════════════════════════════════════════════════════════════════
     if (prospectoFormMode === 'create') {
-      toast.success('Prospecto creado exitosamente', {
-        description: `El prospecto "${prospectoData.nombre}" ha sido registrado en J_CLIENTES.`,
+      toast.success('Tipo Interlocutor creado exitosamente', {
+        description: `El tipo interlocutor "${prospectoData.nombre}" ha sido registrado.`,
       });
     } else if (prospectoFormMode === 'edit') {
-      toast.success('Prospecto actualizado', {
-        description: `Los cambios en "${prospectoData.nombre}" han sido guardados en J_CLIENTES.`,
+      toast.success('Tipo Interlocutor actualizado', {
+        description: `Los cambios en "${prospectoData.nombre}" han sido guardados.`,
       });
     }
     
@@ -592,7 +636,7 @@ function App() {
         id: inversiones.length > 0 ? Math.max(...inversiones.map(i => i.id)) + 1 : 1,
         noCuentaInversion: `INV-${String(inversiones.length + 1).padStart(6, '0')}`,
         cliente: inversionData.cliente || 'Nuevo Cliente',
-        fechaInicio: inversionData.fechaInicio || new Date().toLocaleDateString('es-MX'),
+        fechaInicio: inversionData.fechaInicio || formatearFecha(new Date()),
         fechaFin: inversionData.fechaVencimiento || '',
         montoPagare: parseFloat(inversionData.montoInversion) || 0,
         montoIntereses: 0,
@@ -668,24 +712,10 @@ function App() {
     if (!prod) return null;
     return {
       productoNombre: prod.producto || prod.nombre || '(sin nombre)',
-      productoClave: prod.clave || '(sin clave)',
-      productoDbUuid: prod.dbUuid || prod.identificacion || '',
+      productoClave: String(prod.clave || '(sin clave)'),
+      productoDbUuid: String(prod.dbUuid || prod.identificacion || ''),
     };
   }, [productosCaptacionDB]);
-
-  const nextProspectoId = useMemo(() => {
-    // Extraer el mayor consecutivo numérico de los idProspecto existentes (PROS-XXX)
-    let maxNum = 0;
-    for (const p of prospectosDB) {
-      const id = p.idProspecto || '';
-      const match = id.match(/^PROS-(\d+)$/);
-      if (match) {
-        const n = parseInt(match[1], 10);
-        if (n > maxNum) maxNum = n;
-      }
-    }
-    return `PROS-${String(maxNum + 1).padStart(3, '0')}`;
-  }, [prospectosDB]);
 
   if (showSplash) {
     return <SplashScreen onFinish={() => setShowSplash(false)} />;
@@ -708,38 +738,11 @@ function App() {
     || !perfil?.modulosPermitidos
     || perfil.modulosPermitidos.includes(id);
 
-  const navigationTabsTodos = [
-    { id: 'configuracion', label: 'Configuración' },
-    { id: 'productos', label: 'Productos' },
-    { id: 'garantias', label: 'Bienes' },
-    { id: 'prospectos', label: 'Prospectos' },
-    { id: 'clientes', label: 'Personas' },
-    { id: 'oportunidades', label: 'Oportunidades' },
-    { id: 'cotizaciones', label: 'Cotizaciones' },
-    { id: 'cuentas-ahorro', label: 'Cuentas ahorro' },
-    { id: 'solicitudes-creditos', label: 'Solicitudes' },
-    { id: 'solicitudes-activacion', label: 'Sol. Activación' },
-    { id: 'originacion', label: 'Originación' },
-    { id: 'creditos', label: 'Créditos' },
-    { id: 'inversiones', label: 'Inversiones' },
-    { id: 'pld', label: 'PLD' },
-    { id: 'pagos-referenciados', label: 'Pagos Referenciados' },
-    { id: 'casos-cobranza', label: 'Casos de Cobranza' },
-    { id: 'cobranza', label: 'Cobranza' },
-    { id: 'avisos-vencimiento', label: 'Avisos de Vencimiento' },
-    { id: 'banca-2o-piso', label: 'Banca 2º Piso' },
-    { id: 'cartera-credito', label: 'Cartera de Crédito 2º Piso' },
-    { id: 'cartera-tdc', label: 'Cartera TDC' },
-    { id: 'cartera-arrendamiento', label: 'Cartera Arrendamiento' },
-    { id: 'cartera-inversion', label: 'Cartera inversión' },
-    { id: 'cartera-ahorro', label: 'Cartera ahorro' },
-    { id: 'ejec-reportes', label: 'Ejec. Reportes Regulatorios' },
-    { id: 'polizas-contables', label: 'Pólizas Contables' },
-    { id: 'gestion-riesgos', label: 'Gestión de Riesgos' },
-    { id: 'une', label: 'UNE — Quejas y Reclamaciones' },
-  ];
+  // Catálogo de módulos (lib/modulosVisibles): lo comparte Configuración → Módulos visibles.
+  const navigationTabsTodos = CATALOGO_MODULOS;
 
-  const navigationTabs = navigationTabsTodos.filter(t => permitido(t.id));
+  // Permiso (perfil) + preferencia de visibilidad del usuario (Configuración → Módulos visibles).
+  const navigationTabs = navigationTabsTodos.filter(t => permitido(t.id) && !modulosOcultos.includes(t.id));
 
   // RN-02 — esconder del menu no restringe: si el modulo activo no esta
   // permitido (sesion previa, estado heredado), se cae al primero permitido.
@@ -780,7 +783,7 @@ function App() {
                 placeholder="Buscar"
                 className="w-full px-3 py-1.5 border border-gray-400 rounded text-sm"
               />
-              <button className="absolute right-2 top-1/2 -translate-y-1/2">
+              <button type="button" aria-label="Buscar" title="Buscar" className="absolute right-2 top-1/2 -translate-y-1/2">
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#666" strokeWidth="2">
                   <circle cx="7" cy="7" r="5"/>
                   <path d="M11 11l3 3"/>
@@ -897,6 +900,8 @@ function App() {
               <button
                 key={tab.id}
                 onClick={() => handleModuleChange(tab.id as Module)}
+                onMouseEnter={() => PRECARGA_MODULOS[tab.id]?.forEach(m => m.precargar())}
+                onFocus={() => PRECARGA_MODULOS[tab.id]?.forEach(m => m.precargar())}
                 className={`px-4 py-2.5 text-xs whitespace-nowrap transition-colors ${
                   moduloActivo === tab.id
                     ? 'bg-white font-medium'
@@ -915,6 +920,8 @@ function App() {
 
       {/* Main Content */}
       <main>
+        <LimiteCargaModulo clave={moduloActivo}>
+        <Suspense fallback={<CargandoModulo />}>
         {moduloActivo === 'dashboard' ? (
           <Dashboard onNavigateToModule={(moduleId) => handleModuleChange(moduleId as Module)} modulos={navigationTabs} />
         ) : moduloActivo === 'productos' ? (
@@ -1030,13 +1037,13 @@ function App() {
                         <circle cx="8" cy="8" r="6" stroke="#3B82F6" strokeWidth="2" opacity="0.3"/>
                         <path d="M8 2a6 6 0 014.9 9.4" stroke="#3B82F6" strokeWidth="2" strokeLinecap="round"/>
                       </svg>
-                      Consultando J_PRODUCTOS tipo=Credito...
+                      Cargando productos de crédito...
                     </div>
                   )}
                   {errorProductosCredito && (
                     <div className="px-4 py-2 bg-red-50 border-b border-red-200 text-red-700 text-sm flex items-center justify-between">
                       <span>Error: {errorProductosCredito}</span>
-                      <button onClick={refetchProductosCredito} className="px-3 py-1 bg-red-100 hover:bg-red-200 rounded text-xs font-medium">Reintentar</button>
+                      <button onClick={() => refetchProductosCredito()} className="px-3 py-1 bg-red-100 hover:bg-red-200 rounded text-xs font-medium">Reintentar</button>
                     </div>
                   )}
                   <ProductosList
@@ -1055,7 +1062,7 @@ function App() {
                   {loadingCaptacion && (
                     <div className="px-4 py-2 bg-blue-50 border-b border-blue-200 text-blue-700 text-sm flex items-center gap-2">
                       <div className="w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
-                      Cargando productos de captacion desde J_PRODUCTOS...
+                      Cargando productos de captacion...
                     </div>
                   )}
                   {errorCaptacion && (
@@ -1159,7 +1166,7 @@ function App() {
                     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
                       <path d="M3 3h10M3 8h10M3 13h10"/>
                     </svg>
-                    <span>Lista de Personas</span>
+                    <span>Lista de Interlocutores Comerciales</span>
                   </button>
                   
                   {/* Tab dinámico que muestra el modo actual */}
@@ -1178,7 +1185,7 @@ function App() {
                       </svg>
                       <span>
                         {clienteFormMode === 'create' ? 'Nueva Persona' :
-                         clienteFormMode === 'edit' ? 'Editar Persona' :
+                         clienteFormMode === 'edit' ? 'Editar Interlocutor Comercial' :
                          'Ver Persona'}
                       </span>
                     </button>
@@ -1242,7 +1249,7 @@ function App() {
                         ? 'tab-active'
                         : 'tab-inactive'
                     }`}
-                    title="Dashboard de Prospectos"
+                    title="Dashboard de Tipos Interlocutor"
                   >
                     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
                       <path d="M2 8l6-5 6 5v6a1 1 0 01-1 1H3a1 1 0 01-1-1z"/>
@@ -1261,7 +1268,7 @@ function App() {
                     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
                       <path d="M3 3h10M3 8h10M3 13h10"/>
                     </svg>
-                    <span>Lista de Prospectos</span>
+                    <span>Lista de Tipos Interlocutor</span>
                   </button>
                   
                   {/* Tab dinámico que muestra el modo actual */}
@@ -1279,9 +1286,9 @@ function App() {
                         )}
                       </svg>
                       <span>
-                        {prospectoFormMode === 'create' ? 'Nuevo Prospecto' : 
-                         prospectoFormMode === 'edit' ? 'Editar Prospecto' : 
-                         'Ver Prospecto'}
+                        {prospectoFormMode === 'create' ? 'Nuevo Tipo Interlocutor' : 
+                         prospectoFormMode === 'edit' ? 'Editar Tipo Interlocutor' : 
+                         'Ver Tipo Interlocutor'}
                       </span>
                     </button>
                   )}
@@ -1321,7 +1328,6 @@ function App() {
                 prospecto={selectedProspecto}
                 onSave={handleSaveProspecto}
                 onBack={handleCancel}
-                nextId={nextProspectoId}
                 onCalificarLead={handleCalificarLead}
               />
             )}
@@ -1503,6 +1509,9 @@ function App() {
           <Banca2oPisoModule />
         ) : moduloActivo === 'cartera-credito' ? (
           <CarteraModule />
+        ) : moduloActivo === 'cartera-credito-individual' ? (
+          // Clon de Cartera de Crédito 2º Piso fijo a la sublínea Crédito Individual.
+          <CarteraList sublineaFija="Crédito Individual" etiqueta="Cartera Crédito Individual" />
         ) : moduloActivo === 'cartera-tdc' ? (
           <CarteraTDCModule />
         ) : moduloActivo === 'cartera-arrendamiento' ? (
@@ -1524,6 +1533,8 @@ function App() {
             Módulo en desarrollo
           </div>
         )}
+        </Suspense>
+        </LimiteCargaModulo>
       </main>
 
       <Toaster position="top-right" />

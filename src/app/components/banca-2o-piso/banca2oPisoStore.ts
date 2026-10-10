@@ -9,7 +9,9 @@ import { useState, useEffect, useCallback } from 'react';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 import { fechasCobroComision } from '../../lib/fechasComisionGPO';
 import type { CarteraCredito } from '../cartera/CarteraForm';
-import { loadFromSession, loadFromSavedStore } from '../solicitudes/solicitudCreditoStore';
+import { loadFromSession, loadFromSavedStore, versionFromDB } from '../solicitudes/solicitudCreditoStore';
+import type { DocumentoCargado } from '../solicitudes/solicitudCreditoStore';
+import { repararDataSolicitud } from '@/app/lib/repararDataSolicitud';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-7e2d13d9`;
 const HDR = { Authorization: `Bearer ${publicAnonKey}` };
@@ -41,6 +43,59 @@ export function esLineaCredito2oPisoRow(lineaProducto: string, estatus: string):
   const linea = norm(lineaProducto);
   const esLineaCredito = linea.includes('linea') && linea.includes('credito');
   return esLineaCredito && ESTATUS_ACTIVOS_2O_PISO.includes(norm(estatus));
+}
+
+/**
+ * Tarjeta de Crédito: es Línea de Crédito pero NO se administra en Banca 2º Piso.
+ * Se excluye sólo de este módulo; no se toca `esLineaCredito2oPisoRow` para no
+ * cambiar qué muestra Cartera de Crédito.
+ */
+export function esTarjetaCreditoRow(tipoProducto: string, productoNombre = ''): boolean {
+  const t = norm(tipoProducto);
+  return (t.includes('tarjeta') && t.includes('credito')) || /^tdc\b/.test(norm(productoNombre));
+}
+
+/**
+ * `data.solicitud.expediente_electronico.documentos` → `DocumentoCargado[]`.
+ *
+ * El Core persiste el expediente en snake_case (`tipo_documento`,
+ * `archivo_adjunto`, `fase_id`…) mientras que ExpedienteElectronicoTab consume
+ * camelCase. Sin esta traduccion los documentos llegaban pero se veian en
+ * blanco: cada fila existia con todos sus campos en undefined.
+ */
+function mapDocumentosExpediente(rawSolicitud: any, dataObj: any): DocumentoCargado[] {
+  const raw =
+    (Array.isArray(rawSolicitud?.expediente_electronico?.documentos)
+      ? rawSolicitud.expediente_electronico.documentos : null) ??
+    (Array.isArray(dataObj?.expediente_electronico?.documentos)
+      ? dataObj.expediente_electronico.documentos : null) ??
+    // Formas alternas por si algun flujo guardo el arreglo plano.
+    (Array.isArray(rawSolicitud?.documentos) ? rawSolicitud.documentos : null) ??
+    (Array.isArray(dataObj?.documentos) ? dataObj.documentos : null) ??
+    [];
+
+  return raw.map((d: any, idx: number) => ({
+    id: Number(d?.id) || idx + 1,
+    fecha:         String(d?.fecha_creacion   ?? d?.fecha         ?? ''),
+    usuario:       String(d?.usuario          ?? ''),
+    tipoDocumento: String(d?.tipo_documento   ?? d?.tipoDocumento ?? ''),
+    archivo:       String(d?.archivo_adjunto  ?? d?.archivo       ?? ''),
+    tipoArchivo:   String(d?.tipo_archivo     ?? d?.tipoArchivo   ?? ''),
+    nota:          String(d?.nota             ?? ''),
+    area:          String(d?.area             ?? ''),
+    fase:          String(d?.fase             ?? ''),
+    faseId:        Number(d?.fase_id          ?? d?.faseId        ?? 0) || 0,
+    estatus:      (d?.estatus ?? 'Pendiente') as DocumentoCargado['estatus'],
+    validadoIA:    Boolean(d?.validado_ia     ?? d?.validadoIA    ?? false),
+    url:           d?.url           ?? undefined,
+    storagePath:   d?.storage_path  ?? d?.storagePath   ?? undefined,
+    storageBucket: d?.storage_bucket?? d?.storageBucket ?? undefined,
+    mime:          d?.mime          ?? undefined,
+    tamanoKB:      d?.tamano_kb     ?? d?.tamanoKB      ?? undefined,
+    iaMotivos:     d?.ia_motivos    ?? d?.iaMotivos     ?? undefined,
+    iaExtraido:    d?.ia_extraido   ?? d?.iaExtraido    ?? undefined,
+    ...versionFromDB(d),
+  }));
 }
 
 /** Cargo tal como viaja en `data.solicitud.cargos` (snake_case del Core). */
@@ -147,6 +202,17 @@ export interface LineaCreditoRow extends CarteraCredito {
   sucursal?: string;
   idGarantiaCartera?: string;
   polizaContableApertura?: string;
+  /**
+   * Documentos del Expediente Electrónico, leídos de
+   * `data.solicitud.expediente_electronico.documentos`.
+   *
+   * Mismo motivo que `cargos`: ExpedienteElectronicoTab sólo mira
+   * sessionStorage/savedStore del namespace `sol_credito_`, que este módulo
+   * nunca llena porque se puede abrir sin haber pasado por el formulario de la
+   * Solicitud. Sin esto, la pestaña salía siempre vacía aunque la Solicitud y
+   * Originación sí tuvieran archivos cargados.
+   */
+  documentos: DocumentoCargado[];
   /** REQ-18 — `data.solicitud.banca2oPiso`, ya normalizado. */
   banca2oPiso: Banca2oPisoData;
   /**
@@ -232,19 +298,7 @@ export function extraerCalendarioComisiones(
     return rawBanca2oPiso.calendarioComisiones.map((r: any, idx: number) => normalizarFilaComision(r, idx + 1));
   }
 
-  // 2. Revisar sesión activa (sessionStorage / savedStore)
-  const sessionSim = (typeof window !== 'undefined')
-    ? (
-        (rowId ? (loadFromSession<any[]>(rowId, 'simulacion') || loadFromSavedStore<any[]>(rowId, 'simulacion') || loadFromSession<any[]>(rowId, 'calendarioComisiones') || loadFromSavedStore<any[]>(rowId, 'calendarioComisiones')) : null) ||
-        (noSol ? (loadFromSession<any[]>(noSol, 'simulacion') || loadFromSavedStore<any[]>(noSol, 'simulacion') || loadFromSession<any[]>(noSol, 'calendarioComisiones') || loadFromSavedStore<any[]>(noSol, 'calendarioComisiones')) : null)
-      )
-    : null;
-
-  if (Array.isArray(sessionSim) && sessionSim.length > 0) {
-    return sessionSim.map((r: any, idx: number) => normalizarFilaComision(r, idx + 1));
-  }
-
-  // 3. Buscar en el JSONB de la solicitud (data.solicitud.simulacion o data.simulacion o data.cotizacion)
+  // 2. Buscar en el JSONB de la solicitud (BD) (data.solicitud.simulacion o data.simulacion o data.cotizacion)
   const simObj = rawSolicitud?.simulacion || dataObj?.simulacion || {};
   const rawSimRows = Array.isArray(simObj?.resultado_simulacion) && simObj.resultado_simulacion.length > 0
     ? simObj.resultado_simulacion
@@ -262,6 +316,18 @@ export function extraerCalendarioComisiones(
 
   if (rawSimRows.length > 0) {
     return rawSimRows.map((r: any, idx: number) => normalizarFilaComision(r, idx + 1));
+  }
+
+  // 3. Sólo si la BD no trae nada: sesión activa del navegador (respaldo)
+  const sessionSim = (typeof window !== 'undefined')
+    ? (
+        (rowId ? (loadFromSession<any[]>(rowId, 'simulacion') || loadFromSavedStore<any[]>(rowId, 'simulacion') || loadFromSession<any[]>(rowId, 'calendarioComisiones') || loadFromSavedStore<any[]>(rowId, 'calendarioComisiones')) : null) ||
+        (noSol ? (loadFromSession<any[]>(noSol, 'simulacion') || loadFromSavedStore<any[]>(noSol, 'simulacion') || loadFromSession<any[]>(noSol, 'calendarioComisiones') || loadFromSavedStore<any[]>(noSol, 'calendarioComisiones')) : null)
+      )
+    : null;
+
+  if (Array.isArray(sessionSim) && sessionSim.length > 0) {
+    return sessionSim.map((r: any, idx: number) => normalizarFilaComision(r, idx + 1));
   }
 
   return [];
@@ -534,8 +600,7 @@ export async function fetchCuentasBeneficiarias(solicitudId: string | number): P
     const json = await res.json();
     if (!res.ok) return [];
     const fila = (json.data || []).find((r: any) => String(r.id) === String(solicitudId));
-    let d = fila?.data;
-    if (typeof d === 'string') { try { d = JSON.parse(d); } catch { d = {}; } }
+    const d = repararDataSolicitud(fila?.data);
     const arr = d?.solicitud?.cuentasBeneficiarias;
     return Array.isArray(arr) ? arr : [];
   } catch {
@@ -568,7 +633,7 @@ export async function fetchLineaPadre(solicitudId: string): Promise<string> {
 
 /** CA-17 — lee el vínculo al padre del JSONB de una solicitud, venga como venga. */
 export function lineaPadreDe(dataObj: any): string {
-  const d = typeof dataObj === 'string' ? (() => { try { return JSON.parse(dataObj); } catch { return {}; } })() : (dataObj || {});
+  const d = repararDataSolicitud(dataObj);
   return String(d?.solicitud?.disposicionDe || d?.disposicionDe || '');
 }
 
@@ -652,8 +717,8 @@ export async function aplicarDisposicionALinea(params: {
   }
   if (!linea) return { ok: false, aplicada: false, error: `No se encontró la línea ${lineaId}` };
 
-  let dataObj = linea.data;
-  if (typeof dataObj === 'string') { try { dataObj = JSON.parse(dataObj); } catch { dataObj = {}; } }
+  // Repara data corrupta (texto JSON / llaves "0"…) antes de leer o reescribir la línea.
+  let dataObj: any = repararDataSolicitud(linea.data);
   const rawSol = dataObj?.solicitud || {};
   const nodo = (rawSol.banca2oPiso || {}) as Banca2oPisoData;
   const aplicadas: DisposicionAplicada[] = Array.isArray(nodo.disposicionesAplicadas)
@@ -827,26 +892,21 @@ export function useLineasCreditoActivas() {
       if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
       const mapped: LineaCreditoRow[] = (json.data || [])
         .filter((r: any) => {
-          let dataObj = r.data;
-          if (typeof dataObj === 'string') {
-            try { dataObj = JSON.parse(dataObj); } catch { dataObj = {}; }
-          }
+          const dataObj = repararDataSolicitud(r.data);
           const h = dataObj?.solicitud?.header || {};
+          if (esTarjetaCreditoRow(r.tipo_produc || h.tipo_producto || '', r.producto_nombre || h.nombre_producto || '')) return false;
           return esLineaCredito2oPisoRow(
             r.linea_produc || h.linea_producto || '',
             r.estatus_sol || h.estatus || '',
           );
         })
         .map((r: any) => {
-          let dataObj = r.data;
-          if (typeof dataObj === 'string') {
-            try { dataObj = JSON.parse(dataObj); } catch { dataObj = {}; }
-          }
+          const dataObj = repararDataSolicitud(r.data);
           const rawSolicitud = dataObj?.solicitud || {};
           const h = rawSolicitud.header || {};
           const t = rawSolicitud.terminos_condiciones?._raw || {};
 
-          // Buscar cargos en sesión activa (sessionStorage / savedStore) por UUID o No. Solicitud
+          // Respaldo: cargos en sesión activa (sólo si la BD no trae ninguno)
           const sessionCargos = (typeof window !== 'undefined')
             ? (loadFromSession<any[]>(r.id, 'cargos') ||
                loadFromSavedStore<any[]>(r.id, 'cargos') ||
@@ -854,9 +914,8 @@ export function useLineasCreditoActivas() {
                (h.no_sol ? (loadFromSession<any[]>(h.no_sol, 'cargos') || loadFromSavedStore<any[]>(h.no_sol, 'cargos')) : null))
             : null;
 
-          const cargosRaw = (Array.isArray(sessionCargos) && sessionCargos.length > 0)
-            ? sessionCargos
-            : Array.isArray(rawSolicitud.cargos) && rawSolicitud.cargos.length > 0
+          // La BD manda: la sesión sólo se usa si la solicitud no trae cargos guardados.
+          const cargosRaw = Array.isArray(rawSolicitud.cargos) && rawSolicitud.cargos.length > 0
               ? rawSolicitud.cargos
               : Array.isArray(rawSolicitud.cargo) && rawSolicitud.cargo.length > 0
                 ? rawSolicitud.cargo
@@ -868,7 +927,7 @@ export function useLineasCreditoActivas() {
                       ? r.cargos
                       : Array.isArray(rawSolicitud.comisiones) && rawSolicitud.comisiones.length > 0
                         ? rawSolicitud.comisiones
-                        : [];
+                        : (Array.isArray(sessionCargos) ? sessionCargos : []);
 
           return {
             id: r.id,
@@ -890,6 +949,7 @@ export function useLineasCreditoActivas() {
             gobierno: r.institucion_gobierno || undefined,
             fechaSol: r.fecha_sol || r.fecha_autori || '',
             terminosRaw: t,
+            documentos: mapDocumentosExpediente(rawSolicitud, dataObj),
             cargos: cargosRaw.map((c: any) => ({
               tipoCargo: String(c?.tipo_cargo ?? c?.tipoCargo ?? c?.tipo_comision ?? c?.tipoComision ?? ''),
               descripcion: String(c?.descripcion ?? c?.tipo_comision ?? c?.tipoComision ?? ''),

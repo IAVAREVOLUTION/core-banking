@@ -68,6 +68,22 @@ interface RawRow {
  *  3. Edge Function — /clientes-prospectos (legacy fallback)
  */
 async function fetchAllJClientes(): Promise<{ rows: RawRow[]; method: string }> {
+  // RPC primero: la llave anon no puede leer J_CLIENTES directo (42501).
+  // ── INTENTO 2: Supabase RPC ──
+  try {
+    console.log('[CatalogoInstitucionGobierno] INTENTO 2: supabase.rpc("get_all_jclientes")');
+    const { data, error } = await supabase.rpc('get_all_jclientes');
+
+    if (!error && data && (data as any[]).length > 0) {
+      const rows = data as RawRow[];
+      console.log(`[CatalogoInstitucionGobierno] INTENTO 2 ÉXITO: ${rows.length} registros via RPC`);
+      return { rows, method: 'supabase-rpc' };
+    }
+    if (error) console.log('[CatalogoInstitucionGobierno] INTENTO 2 FALLÓ:', error.message);
+  } catch (err: any) {
+    console.log('[CatalogoInstitucionGobierno] INTENTO 2 EXCEPCIÓN:', err.message);
+  }
+
   // ── INTENTO 1: Supabase JS directo ──
   try {
     console.log('[CatalogoInstitucionGobierno] INTENTO 1: supabase.schema("EFINANCIANET_DB").from("J_CLIENTES")');
@@ -83,21 +99,6 @@ async function fetchAllJClientes(): Promise<{ rows: RawRow[]; method: string }> 
     if (error) console.log('[CatalogoInstitucionGobierno] INTENTO 1 FALLÓ:', error.message);
   } catch (err: any) {
     console.log('[CatalogoInstitucionGobierno] INTENTO 1 EXCEPCIÓN:', err.message);
-  }
-
-  // ── INTENTO 2: Supabase RPC ──
-  try {
-    console.log('[CatalogoInstitucionGobierno] INTENTO 2: supabase.rpc("get_all_jclientes")');
-    const { data, error } = await supabase.rpc('get_all_jclientes');
-
-    if (!error && data && (data as any[]).length > 0) {
-      const rows = data as RawRow[];
-      console.log(`[CatalogoInstitucionGobierno] INTENTO 2 ÉXITO: ${rows.length} registros via RPC`);
-      return { rows, method: 'supabase-rpc' };
-    }
-    if (error) console.log('[CatalogoInstitucionGobierno] INTENTO 2 FALLÓ:', error.message);
-  } catch (err: any) {
-    console.log('[CatalogoInstitucionGobierno] INTENTO 2 EXCEPCIÓN:', err.message);
   }
 
   // ── INTENTO 3: Edge Function ──
@@ -156,7 +157,7 @@ export function CatalogoInstitucionGobierno({ isOpen, onClose, onSelect }: Catal
 
       if (rawRows.length === 0) {
         console.warn('[CatalogoInstitucionGobierno] Los 3 intentos fallaron o devolvieron 0 registros');
-        setError('No se pudo consultar J_CLIENTES (3 estrategias fallaron)');
+        setError('No se pudo cargar el catálogo de instituciones');
         setInstituciones([]);
         return;
       }
@@ -208,7 +209,7 @@ export function CatalogoInstitucionGobierno({ isOpen, onClose, onSelect }: Catal
       setInstituciones(filtradas);
     } catch (err) {
       console.warn('[CatalogoInstitucionGobierno] Error inesperado:', err);
-      setError('Error inesperado al consultar J_CLIENTES');
+      setError('No se pudo cargar el catálogo de instituciones');
       setInstituciones([]);
     } finally {
       setLoading(false);
@@ -258,7 +259,7 @@ export function CatalogoInstitucionGobierno({ isOpen, onClose, onSelect }: Catal
             <Building2 className="w-4 h-4" />
             <span className="text-sm font-medium">Catalogo de Instituciones - Gobierno Magisterio</span>
           </div>
-          <button onClick={onClose} className="text-white/80 hover:text-white">
+          <button aria-label="Cerrar" title="Cerrar" onClick={onClose} className="text-white/80 hover:text-white">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -277,8 +278,8 @@ export function CatalogoInstitucionGobierno({ isOpen, onClose, onSelect }: Catal
             />
           </div>
           <div className="mt-1 text-[10px] text-gray-500">
-            Filtro: J_CLIENTES &rarr; Clasificacion Cliente = &quot;Gobierno Magisterio&quot; | {institucionesFiltradas.length} registro(s)
-            {queryMethod && <span className="ml-2 text-gray-400">via {queryMethod}</span>}
+            Clasificación: Gobierno Magisterio | {institucionesFiltradas.length} registro(s)
+            
           </div>
         </div>
 
@@ -287,7 +288,7 @@ export function CatalogoInstitucionGobierno({ isOpen, onClose, onSelect }: Catal
           {loading ? (
             <div className="flex items-center justify-center py-10">
               <Loader2 className="w-5 h-5 animate-spin text-blue-500 mr-2" />
-              <span className="text-xs text-gray-500">Consultando J_CLIENTES...</span>
+              <span className="text-xs text-gray-500">Cargando...</span>
             </div>
           ) : error ? (
             <div className="text-center py-10 text-xs text-red-500">{error}</div>
@@ -296,7 +297,7 @@ export function CatalogoInstitucionGobierno({ isOpen, onClose, onSelect }: Catal
               <thead>
                 <tr className="bg-gray-100 border-b">
                   <th className="text-left px-2 py-2 w-8"></th>
-                  <th className="text-left px-2 py-2">ID</th>
+                  <th className="text-left px-2 py-2">NO. INTERLOCUTOR</th>
                   <th className="text-left px-2 py-2">NOMBRE / RAZON SOCIAL</th>
                   <th className="text-left px-2 py-2">RFC</th>
                   <th className="text-left px-2 py-2">CLASIFICACION</th>
@@ -401,9 +402,13 @@ interface CampoInstitucionGobiernoProps {
   disabled?: boolean;
   /** Estilo visual: 'prospectos' usa layout inline, 'clientes' usa layout apilado */
   variant?: 'prospectos' | 'clientes';
+  /** Texto del label (solo layout inline). Por defecto "INST. GOBIERNO" */
+  label?: string;
+  /** Clase Tailwind de ancho del label (solo layout inline). Por defecto "w-28" */
+  labelWidthClass?: string;
 }
 
-export function CampoInstitucionGobierno({ value, onChange, disabled = false, variant = 'prospectos' }: CampoInstitucionGobiernoProps) {
+export function CampoInstitucionGobierno({ value, onChange, disabled = false, variant = 'prospectos', label = 'INST. GOBIERNO', labelWidthClass = 'w-28' }: CampoInstitucionGobiernoProps) {
   const [showCatalogo, setShowCatalogo] = useState(false);
 
   const handleSelect = (inst: InstitucionGobiernoSeleccion) => {
@@ -468,8 +473,8 @@ export function CampoInstitucionGobierno({ value, onChange, disabled = false, va
   return (
     <>
       <div className="flex items-center gap-2">
-        <label className="text-xs w-28 flex-shrink-0 text-gray-700">
-          INST. GOBIERNO
+        <label className={`text-xs ${labelWidthClass} flex-shrink-0 text-gray-700 leading-tight`}>
+          {label}
           <span className="ml-0.5 text-[9px] text-gray-400">(opc.)</span>
         </label>
         {disabled ? (
