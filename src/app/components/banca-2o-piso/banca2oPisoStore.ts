@@ -298,19 +298,7 @@ export function extraerCalendarioComisiones(
     return rawBanca2oPiso.calendarioComisiones.map((r: any, idx: number) => normalizarFilaComision(r, idx + 1));
   }
 
-  // 2. Revisar sesión activa (sessionStorage / savedStore)
-  const sessionSim = (typeof window !== 'undefined')
-    ? (
-        (rowId ? (loadFromSession<any[]>(rowId, 'simulacion') || loadFromSavedStore<any[]>(rowId, 'simulacion') || loadFromSession<any[]>(rowId, 'calendarioComisiones') || loadFromSavedStore<any[]>(rowId, 'calendarioComisiones')) : null) ||
-        (noSol ? (loadFromSession<any[]>(noSol, 'simulacion') || loadFromSavedStore<any[]>(noSol, 'simulacion') || loadFromSession<any[]>(noSol, 'calendarioComisiones') || loadFromSavedStore<any[]>(noSol, 'calendarioComisiones')) : null)
-      )
-    : null;
-
-  if (Array.isArray(sessionSim) && sessionSim.length > 0) {
-    return sessionSim.map((r: any, idx: number) => normalizarFilaComision(r, idx + 1));
-  }
-
-  // 3. Buscar en el JSONB de la solicitud (data.solicitud.simulacion o data.simulacion o data.cotizacion)
+  // 2. Buscar en el JSONB de la solicitud (BD) (data.solicitud.simulacion o data.simulacion o data.cotizacion)
   const simObj = rawSolicitud?.simulacion || dataObj?.simulacion || {};
   const rawSimRows = Array.isArray(simObj?.resultado_simulacion) && simObj.resultado_simulacion.length > 0
     ? simObj.resultado_simulacion
@@ -328,6 +316,18 @@ export function extraerCalendarioComisiones(
 
   if (rawSimRows.length > 0) {
     return rawSimRows.map((r: any, idx: number) => normalizarFilaComision(r, idx + 1));
+  }
+
+  // 3. Sólo si la BD no trae nada: sesión activa del navegador (respaldo)
+  const sessionSim = (typeof window !== 'undefined')
+    ? (
+        (rowId ? (loadFromSession<any[]>(rowId, 'simulacion') || loadFromSavedStore<any[]>(rowId, 'simulacion') || loadFromSession<any[]>(rowId, 'calendarioComisiones') || loadFromSavedStore<any[]>(rowId, 'calendarioComisiones')) : null) ||
+        (noSol ? (loadFromSession<any[]>(noSol, 'simulacion') || loadFromSavedStore<any[]>(noSol, 'simulacion') || loadFromSession<any[]>(noSol, 'calendarioComisiones') || loadFromSavedStore<any[]>(noSol, 'calendarioComisiones')) : null)
+      )
+    : null;
+
+  if (Array.isArray(sessionSim) && sessionSim.length > 0) {
+    return sessionSim.map((r: any, idx: number) => normalizarFilaComision(r, idx + 1));
   }
 
   return [];
@@ -906,7 +906,7 @@ export function useLineasCreditoActivas() {
           const h = rawSolicitud.header || {};
           const t = rawSolicitud.terminos_condiciones?._raw || {};
 
-          // Buscar cargos en sesión activa (sessionStorage / savedStore) por UUID o No. Solicitud
+          // Respaldo: cargos en sesión activa (sólo si la BD no trae ninguno)
           const sessionCargos = (typeof window !== 'undefined')
             ? (loadFromSession<any[]>(r.id, 'cargos') ||
                loadFromSavedStore<any[]>(r.id, 'cargos') ||
@@ -914,9 +914,8 @@ export function useLineasCreditoActivas() {
                (h.no_sol ? (loadFromSession<any[]>(h.no_sol, 'cargos') || loadFromSavedStore<any[]>(h.no_sol, 'cargos')) : null))
             : null;
 
-          const cargosRaw = (Array.isArray(sessionCargos) && sessionCargos.length > 0)
-            ? sessionCargos
-            : Array.isArray(rawSolicitud.cargos) && rawSolicitud.cargos.length > 0
+          // La BD manda: la sesión sólo se usa si la solicitud no trae cargos guardados.
+          const cargosRaw = Array.isArray(rawSolicitud.cargos) && rawSolicitud.cargos.length > 0
               ? rawSolicitud.cargos
               : Array.isArray(rawSolicitud.cargo) && rawSolicitud.cargo.length > 0
                 ? rawSolicitud.cargo
@@ -928,7 +927,7 @@ export function useLineasCreditoActivas() {
                       ? r.cargos
                       : Array.isArray(rawSolicitud.comisiones) && rawSolicitud.comisiones.length > 0
                         ? rawSolicitud.comisiones
-                        : [];
+                        : (Array.isArray(sessionCargos) ? sessionCargos : []);
 
           return {
             id: r.id,

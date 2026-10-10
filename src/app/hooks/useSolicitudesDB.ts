@@ -343,6 +343,10 @@ function formToDBPayload(form: SolicitudFormData, allSubtabs?: Record<string, an
   const comisiones: any[] = subtabArr('comisiones', 'comisiones');
   const autorizaciones: any[] = subtabArr('autorizaciones', 'autorizaciones');
   const notas: any[] = subtabArr('notas', 'notas');
+  // Comités de la solicitud: antes sólo vivían en memoria (se perdían al recargar).
+  const comites: any[] = subtabArr('comites', 'comites');
+  // Activaciones de dispersión ya generadas (evita duplicarlas al reabrir).
+  const activacionesDispersion: any[] = subtabArr('activacionesDispersion', 'activaciones_dispersion');
   const partesRelacionadas: any[] = subtabArr('partesRelacionadas', 'partes_relacionadas');
   // REQ-9 — Estructura Operativa de 2o Piso. Objeto, no arreglo: si el subtab no
   // se abrió en esta sesión se conserva lo que ya había en el JSONB.
@@ -615,6 +619,11 @@ function formToDBPayload(form: SolicitudFormData, allSubtabs?: Record<string, an
       puesto: n.puesto || null, nota: n.nota || null,
       archivo_adjunto: n.archivoAdjunto || null,
     })),
+    comites: comites.map((c: any) => ({
+      id: c.id ?? null, autoridad: c.autoridad || null, estatus: c.estatus || null,
+      fecha: c.fecha || null, observaciones: c.observaciones || null,
+    })),
+    activaciones_dispersion: activacionesDispersion.map((x: any) => String(x)),
     // REQ-11 — sólo viaja si hay al menos un voto.
     ...(votacionCPC.length > 0
       ? {

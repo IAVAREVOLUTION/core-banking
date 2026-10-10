@@ -413,6 +413,63 @@ console.log("[SERVER BOOT] PostgreSQL client created (SUPABASE_DB_URL)");
  * - Claves escalares con valor real en incoming → sobreescriben
  * - Claves que solo existen en existing → se CONSERVAN intactas
  */
+/**
+ * Repara el `data` de una solicitud (J_CUENTAS_CORP_CLIENTES) antes de usarlo.
+ * Mismo algoritmo que el frontend (src/app/lib/repararDataSolicitud.ts).
+ *
+ * Algunos registros guardan `data` como texto JSON codificado varias veces. Al
+ * leerlo con un solo JSON.parse quedaba un string, y al fusionarlo se partía
+ * letra por letra en llaves "0","1",… que se volvían a anidar y re-escapar en
+ * cada guardado: 32 solicitudes llegaron a 28 MB y el listado tardaba >100 s.
+ * Aquí se decodifica todas las veces necesarias y se desenvuelven las llaves
+ * numéricas fusionándolas con el resto (lo más reciente gana).
+ */
+function repararDataJsonb(raw: unknown): Record<string, any> {
+  const esObj = (v: unknown): v is Record<string, any> => !!v && typeof v === 'object' && !Array.isArray(v);
+  const vacio = (v: unknown) => v === null || v === undefined || v === '';
+  const decodificar = (v: unknown): unknown => {
+    let x = v;
+    for (let i = 0; i < 10 && typeof x === 'string'; i++) {
+      const t = x.trim();
+      if (!(t.startsWith('{') || t.startsWith('[') || t.startsWith('"'))) break;
+      try { x = JSON.parse(t); } catch { break; }
+    }
+    return x;
+  };
+  const fusionarArreglos = (a: any[], b: any[]): any[] => {
+    const conId = (xs: any[]) => xs.length > 0 && xs.every(x => esObj(x) && x.id != null);
+    if (!conId(a) || !conId(b)) return b.length > 0 ? b : a;
+    const porId = new Map<string, any>(a.map(x => [String(x.id), x]));
+    const vistos = new Set<string>();
+    const r = b.map(x => { const k = String(x.id); vistos.add(k); return porId.has(k) ? fusionar(porId.get(k), x) : x; });
+    for (const x of a) if (!vistos.has(String(x.id))) r.push(x);
+    return r;
+  };
+  const fusionar = (a: unknown, b: unknown): any => {
+    if (vacio(b)) return vacio(a) ? b : a;
+    if (esObj(a) && esObj(b)) {
+      const r: Record<string, any> = { ...a };
+      for (const [k, v] of Object.entries(b)) r[k] = k in a ? fusionar(a[k], v) : v;
+      return r;
+    }
+    if (Array.isArray(a) && Array.isArray(b)) return fusionarArreglos(a, b);
+    return b;
+  };
+  const reparar = (v: unknown): Record<string, any> => {
+    const d = decodificar(v);
+    if (Array.isArray(d)) return d.reduce<Record<string, any>>((acc, x) => fusionar(acc, reparar(x)), {});
+    if (!esObj(d)) return {};
+    const numericas = Object.keys(d).filter(k => /^\d+$/.test(k)).sort((x, y) => Number(x) - Number(y));
+    if (numericas.length === 0) return d;
+    let base: Record<string, any> = {};
+    for (const k of numericas) base = fusionar(base, reparar(d[k]));
+    const resto: Record<string, any> = {};
+    for (const [k, val] of Object.entries(d)) if (!/^\d+$/.test(k)) resto[k] = val;
+    return fusionar(base, resto);
+  };
+  return reparar(raw);
+}
+
 function deepMergeData(
   existing: Record<string, any>,
   incoming: Record<string, any>,
@@ -3456,11 +3513,10 @@ const putSolicitudesHandler = async (c: any) => {
       `;
       let existingData: Record<string, any> = {};
       if (existingRows.length > 0 && existingRows[0].data) {
-        existingData = typeof existingRows[0].data === "string"
-          ? JSON.parse(existingRows[0].data)
-          : (existingRows[0].data as Record<string, any>);
+        // Decodifica todas las capas y desenvuelve llaves "0","1",… (ver repararDataJsonb).
+        existingData = repararDataJsonb(existingRows[0].data);
       }
-      const merged = deepMergeData(existingData, incomingData as Record<string, any>);
+      const merged = deepMergeData(existingData, repararDataJsonb(incomingData));
       finalDataJson = JSON.stringify(merged);
       console.log(`[SOLICITUDES] PUT deep-merge data: existing=${Object.keys(existingData).length} keys → incoming=${Object.keys(incomingData as object).length} keys → merged=${Object.keys(merged).length} keys`);
     }
@@ -4800,14 +4856,10 @@ const carteraCobranzaHandler = async (c: any) => {
 // ═══════════════════════════════════════════════════════════════════
 // GENERACIÓN CONTABLE — Eventos por crédito (almacenados en JSONB)
 // ═══════════════════════════════════════════════════════════════════
-const parseJsonbData = (raw: any): Record<string, any> => {
-  if (!raw) return {};
-  if (typeof raw === 'string') { try { return JSON.parse(raw); } catch { return {}; } }
-  if (typeof raw === 'object' && !Array.isArray(raw) && '0' in raw) {
-    try { return JSON.parse(Object.values(raw).join('')); } catch { return {}; }
-  }
-  return typeof raw === 'object' ? raw : {};
-};
+// Decodifica todas las capas y desenvuelve llaves "0","1",… (ver repararDataJsonb).
+// Antes un JSON.parse de una sola capa dejaba strings que luego se esparcían
+// letra por letra al escribir movimientos.
+const parseJsonbData = (raw: any): Record<string, any> => (raw ? repararDataJsonb(raw) : {});
 
 const carteraContableGetHandler = async (c: any) => {
   try {

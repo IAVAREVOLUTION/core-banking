@@ -172,10 +172,28 @@ export function EstructuraOperativa2oPisoTab({
     setDatos(prev => ({ ...prev, [campo]: valor }));
   };
 
+  /**
+   * Número de Fideicomiso provisional: "F/" + fecha y consecutivo del folio de la
+   * Solicitud (BAN-DIGITAL-20261007-000004 → F/20261007-000004). El número real lo
+   * asigna la Institución Fiduciaria al constituir el fideicomiso; éste sirve para
+   * avanzar y se puede reemplazar cuando llegue el definitivo.
+   */
+  const generarNumeroFideicomiso = (): string => {
+    const m = String(folioSolicitudLOS || '').match(/(\d{8})-(\d+)\s*$/);
+    if (m) return `F/${m[1]}-${m[2]}`;
+    const d = new Date();
+    const p2 = (n: number) => String(n).padStart(2, '0');
+    return `F/${d.getFullYear()}${p2(d.getMonth() + 1)}${p2(d.getDate())}-${String(Math.floor(Math.random() * 1e6)).padStart(6, '0')}`;
+  };
+
   const elegirParte = (destino: 'fiduciario' | 'representante', p: ParteRelacionada) => {
     const id = p.personaId || p.clienteId || '';
     if (destino === 'fiduciario') {
-      setDatos(prev => ({ ...prev, institucionFiduciaria: nombreDeParte(p), institucionFiduciariaId: id }));
+      // Al elegir la fiduciaria, si aún no hay número se propone el provisional.
+      setDatos(prev => ({
+        ...prev, institucionFiduciaria: nombreDeParte(p), institucionFiduciariaId: id,
+        numeroFideicomisoFuentePago: prev.numeroFideicomisoFuentePago || generarNumeroFideicomiso(),
+      }));
     } else {
       setDatos(prev => ({ ...prev, representanteComun: nombreDeParte(p), representanteComunId: id }));
     }
@@ -300,14 +318,31 @@ export function EstructuraOperativa2oPisoTab({
           <label className="block text-xs text-gray-700 mb-1">
             Número de Fideicomiso de Fuente de Pago <span className="text-red-500">*</span>
           </label>
-          <input
-            type="text"
-            value={datos.numeroFideicomisoFuentePago}
-            onChange={e => set('numeroFideicomisoFuentePago', e.target.value)}
-            disabled={isRO}
-            placeholder="Ej. F/482910"
-            className={isRO ? roClass : inputClass}
-          />
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={datos.numeroFideicomisoFuentePago}
+              onChange={e => set('numeroFideicomisoFuentePago', e.target.value)}
+              disabled={isRO}
+              placeholder="Ej. F/482910"
+              className={isRO ? roClass : inputClass}
+            />
+            {!isRO && (
+              <button
+                type="button"
+                onClick={() => set('numeroFideicomisoFuentePago', generarNumeroFideicomiso())}
+                title="Generar un número provisional a partir del folio de la Solicitud"
+                className="px-3 py-1.5 text-xs text-white rounded bg-[color:var(--theme-primary)] hover:bg-[color:var(--theme-primary-hover)] whitespace-nowrap"
+              >
+                Generar
+              </button>
+            )}
+          </div>
+          {!isRO && (
+            <span className="text-[10px] text-gray-400">
+              Provisional: reemplácelo por el número que asigne la Institución Fiduciaria.
+            </span>
+          )}
         </div>
         {renderBuscador({
           destino: 'representante',

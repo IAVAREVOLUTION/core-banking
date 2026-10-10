@@ -305,12 +305,15 @@ function AvisoForm({ aviso: inicial, mode, onBack, onPagado }: {
   const [paying, setPaying] = useState(false);
   const [activeTab, setActiveTab] = useState('default');
   const [detalle, setDetalle] = useState<DetalleRow[]>([]);
-  const [loadingDetalle, setLoadingDetalle] = useState(false);
+  // Arranca en "cargando": el detalle se pide a la BD al abrir el aviso.
+  const [loadingDetalle, setLoadingDetalle] = useState(true);
   const detalleLoaded = useRef(false);
 
-  // Cargar detalle desde backend cuando se abre el tab Detail
+  // Cargar el detalle desde la BD al abrir el aviso — no sólo al entrar a Detail:
+  // la Generación Contable necesita esos componentes para armar la póliza, y si
+  // el usuario iba directo a esa pestaña la póliza salía sin componentes.
   useEffect(() => {
-    if (activeTab !== 'detail' || detalleLoaded.current) return;
+    if (detalleLoaded.current) return;
     detalleLoaded.current = true;
     setLoadingDetalle(true);
     fetch(`${API_BASE}/cartera/facturas/${aviso.id}/detalle`, { headers: HDR })
@@ -351,7 +354,7 @@ function AvisoForm({ aviso: inicial, mode, onBack, onPagado }: {
       })
       .catch(() => {})
       .finally(() => setLoadingDetalle(false));
-  }, [activeTab, aviso.id]);
+  }, [aviso.id]);
 
   const change = (field: keyof Aviso, value: string) => {
     setAviso(prev => ({ ...prev, [field]: value }));
@@ -533,7 +536,9 @@ function AvisoForm({ aviso: inicial, mode, onBack, onPagado }: {
           {/* Generación Contable tab */}
           {activeTab === 'contable' && (
             <div className="p-4">
-              {aviso.solicitud_id ? (
+              {aviso.solicitud_id && loadingDetalle ? (
+                <div className="py-8 text-center text-xs text-gray-500">Cargando componentes del aviso…</div>
+              ) : aviso.solicitud_id ? (
                 <GeneracionContableTab
                   solicitudId={aviso.solicitud_id}
                   credito={{

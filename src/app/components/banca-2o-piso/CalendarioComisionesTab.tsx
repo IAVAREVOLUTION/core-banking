@@ -13,6 +13,8 @@
  * Garantizado se mantiene constante y cada periodo sólo devenga comisión + IVA.
  */
 import { useState, useMemo, useEffect, useCallback } from 'react';
+import { aFecha } from '@/app/lib/fechas';
+import { cuentaEjeConSaldo } from '@/app/lib/aplicacionPagosCartera';
 import { toast } from '@/app/lib/notificaciones';
 import { crearAvisoVencimiento, type Amortizacion } from '../../hooks/useCarteraDB';
 import {
@@ -113,6 +115,33 @@ export function CalendarioComisionesTab({
 
   const pendientes = useMemo(() => rows.filter(esPendiente), [rows]);
   const seleccionadas = useMemo(() => rows.filter(r => seleccion.has(r.noPago)), [rows, seleccion]);
+
+  /**
+   * Abre el modal con los campos ya llenos:
+   *   - Fecha Compromiso: la fecha de pago más próxima de las comisiones elegidas.
+   *   - Cuenta Bancaria: la cuenta de la línea o, si no tiene, la Cuenta EJE del
+   *     cliente (de donde se cobra la comisión).
+   * Todo sigue editable; sólo se llena lo que esté vacío.
+   */
+  const abrirAvisoModal = async () => {
+    if (seleccion.size === 0) { toast.error('Seleccione al menos una comisión'); return; }
+    const p2 = (n: number) => String(n).padStart(2, '0');
+    const fechas = seleccionadas
+      .map(r => aFecha(r.fechaPago))
+      .filter((d): d is Date => !!d)
+      .sort((a, b) => a.getTime() - b.getTime());
+    if (fechas.length > 0) {
+      const d = fechas[0];
+      setFechaCompromiso(`${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`);
+    }
+    if (!referencia) setReferencia(row.noSol || '');
+    if (!institucion) setInstitucion('eFinancianet');
+    setShowAvisoModal(true);
+    if (!cuentaBancaria) {
+      const cuenta = row.noCuenta || (await cuentaEjeConSaldo(String(row.clienteId || ''))).noCuenta;
+      if (cuenta) setCuentaBancaria(prev => prev || cuenta);
+    }
+  };
   const todasSeleccionadas = pendientes.length > 0 && seleccion.size === pendientes.length;
 
   const totalesSeleccion = useMemo(() => seleccionadas.reduce(
@@ -290,7 +319,7 @@ export function CalendarioComisionesTab({
           {generando ? 'Generando…' : rows.length > 0 ? 'Regenerar Calendario' : 'Generar Calendario'}
         </button>
         <button
-          onClick={() => seleccion.size > 0 ? setShowAvisoModal(true) : toast.error('Seleccione al menos una comisión')}
+          onClick={() => { void abrirAvisoModal(); }}
           disabled={seleccion.size === 0}
           className="px-3 py-1.5 text-xs font-medium rounded border border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5 transition-colors"
         >

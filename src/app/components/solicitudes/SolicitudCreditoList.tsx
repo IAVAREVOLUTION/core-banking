@@ -411,6 +411,16 @@ export function preloadSubtabsFromDBData(
       puesto: n.puesto || '', nota: n.nota || '', archivoAdjunto: n.archivo_adjunto || '',
     })));
   }
+  // Comités y activaciones de dispersión: ahora se leen de la BD al abrir.
+  if (Array.isArray(sol.comites) && sol.comites.length > 0) {
+    saveToSession(storageId, 'comites', sol.comites.map((c: any, i: number) => ({
+      id: c.id ?? i + 1, autoridad: c.autoridad || '', estatus: c.estatus || 'Pendiente',
+      fecha: c.fecha || '', observaciones: c.observaciones || '',
+    })));
+  }
+  if (Array.isArray(sol.activaciones_dispersion) && sol.activaciones_dispersion.length > 0) {
+    saveToSession(storageId, 'activacionesDispersion', sol.activaciones_dispersion.map((x: any) => String(x)));
+  }
   // REQ-11 — Votación del Comité de Prepago y Crédito.
   if (sol.votacion_cpc?.votos?.length > 0) {
     saveToSession(storageId, 'votacionCPC', {
