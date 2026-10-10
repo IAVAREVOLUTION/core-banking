@@ -979,21 +979,48 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, onCa
   };
 
   // ── HU-CRM-02: validación de la pestaña Perfil ──
-  // Devuelve la lista de campos obligatorios sin capturar.
-  // Todos los datos del Perfil son opcionales: no bloquean la calificación.
-  const validarPerfil = (): string[] => [];
+  // Banobras (2º piso): el Perfil del proyecto es obligatorio para calificar.
+  // Tarjeta de Crédito: el Lead se califica con su Perfil TDC y estos campos de
+  // proyecto no aplican, así que no se exigen (criterio de la rama TDC).
+  const esLeadTDC = (() => {
+    const p = (formData as any).perfilTDC;
+    return !!p && typeof p === 'object' && Object.values(p).some(v => String(v ?? '').trim() !== '');
+  })();
+
+  const validarPerfil = (): string[] => {
+    if (esLeadTDC) return [];
+    const f = formData as any;
+    const faltantes: string[] = [];
+    if (!f.sectorInfraestructura?.trim()) faltantes.push('Sector de Atención');
+    const monto = parseFloat(String(f.montoInversion ?? '').replace(/,/g, ''));
+    if (isNaN(monto) || monto <= 0) faltantes.push('Monto Inversión');
+    if (!f.monedaInversion?.trim()) faltantes.push('Moneda');
+    if (!f.tipoFinanciamiento?.trim()) faltantes.push('Tipo Financiamiento');
+    if (!f.descripcionObra?.trim()) faltantes.push('Descripción Obra');
+    return faltantes;
+  };
+
+  // ── HU-CRM-03 RN-01 / CA-01 / CA-02 ── (no aplica a Leads TDC)
+  const montoInversionNum = (() => {
+    const n = parseFloat(String((formData as any).montoInversion ?? '').replace(/,/g, ''));
+    return isNaN(n) ? 0 : n;
+  })();
+  const sectorCapturado = !!(formData as any).sectorInfraestructura?.trim();
 
   // ── HU-CRM-03 RN-03 — idempotencia ──
-  // Los campos del Perfil pasaron a ser opcionales, así que ya no condicionan el
-  // botón (antes RN-01/CA-01/CA-02 exigían Sector capturado y Monto > 0). Sólo
-  // queda el candado de no calificar dos veces el mismo Lead.
   const leadYaCalificado = formData.estatusProspecto === 'Calificado';
 
-  const puedeCalificar = !leadYaCalificado;
+  const puedeCalificar = !leadYaCalificado && (esLeadTDC || (sectorCapturado && montoInversionNum > 0));
 
   const motivoNoCalificable = leadYaCalificado
     ? 'Este Lead ya fue calificado previamente.'
-    : '';
+    : esLeadTDC
+      ? ''
+      : !sectorCapturado
+        ? 'Capture el Sector de Atención para poder calificar.'
+        : montoInversionNum <= 0
+          ? 'El Monto Inversión debe ser mayor a cero.'
+          : '';
 
   const [calificando, setCalificando] = useState(false);
   // Mientras el campo está enfocado se edita el número crudo; al salir se formatea
@@ -2177,7 +2204,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, onCa
 
                 {/* Tipo Financiamiento */}
                 <div className="flex items-center gap-2">
-                  <label className="text-xs w-40 flex-shrink-0 text-gray-700">TIPO FINANCIAMIENTO</label>
+                  <label className="text-xs w-40 flex-shrink-0 text-gray-700">TIPO FINANCIAMIENTO <span className="text-red-600">*</span></label>
                   {isView ? (
                     <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100">{(formData as any).tipoFinanciamiento || '—'}</div>
                   ) : (
@@ -2196,7 +2223,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, onCa
 
                 {/* Monto Inversión */}
                 <div className="flex items-center gap-2">
-                  <label className="text-xs w-40 flex-shrink-0 text-gray-700">MONTO INVERSIÓN</label>
+                  <label className="text-xs w-40 flex-shrink-0 text-gray-700">MONTO INVERSIÓN <span className="text-red-600">*</span></label>
                   {isView ? (
                     <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100 text-right font-mono">
                       {formatMiles((formData as any).montoInversion)}
@@ -2219,7 +2246,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, onCa
 
                 {/* Moneda */}
                 <div className="flex items-center gap-2">
-                  <label className="text-xs w-40 flex-shrink-0 text-gray-700">MONEDA</label>
+                  <label className="text-xs w-40 flex-shrink-0 text-gray-700">MONEDA <span className="text-red-600">*</span></label>
                   {isView ? (
                     <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100">{(formData as any).monedaInversion || 'MXN'}</div>
                   ) : (
@@ -2238,7 +2265,7 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, onCa
 
               {/* Descripción Obra */}
               <div className="flex items-start gap-2 mb-4">
-                <label className="text-xs w-40 flex-shrink-0 text-gray-700 pt-1">DESCRIPCIÓN OBRA</label>
+                <label className="text-xs w-40 flex-shrink-0 text-gray-700 pt-1">DESCRIPCIÓN OBRA <span className="text-red-600">*</span></label>
                 {isView ? (
                   <div className="flex-1 px-2 py-1 text-xs text-gray-700 bg-gray-100 min-h-[64px] whitespace-pre-wrap">
                     {(formData as any).descripcionObra || '—'}
