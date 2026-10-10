@@ -23,9 +23,13 @@ import { CargoTab } from '../productos/tabs/CargoTab';
 import { FasesTab } from '../productos/tabs/FasesTab';
 import { GarantiaTab } from '../productos/tabs/GarantiaTab';
 import { ComisionesTab } from '../productos/tabs/ComisionesTab';
-import { OpcionesConfigTab } from './OpcionesConfigTab';
-import { Prelacion2oPisoTab } from './Prelacion2oPisoTab';
 import { PrelacionTab } from '../productos/tabs/PrelacionTab';
+import { OpcionesConfigTab } from './OpcionesConfigTab';
+import { ReglasPagoCorteTDCTab } from './ReglasPagoCorteTDCTab';
+import { ComisionesIvaTab } from './ComisionesIvaTab';
+import { AfectacionLineaTab } from './AfectacionLineaTab';
+import { PromComisImpuestosTab } from './PromComisImpuestosTab';
+import { Prelacion2oPisoTab } from './Prelacion2oPisoTab';
 import { Cobertura2oPisoTab } from './Cobertura2oPisoTab';
 import { ExpedientesProductoTab } from '../productos/tabs/ExpedientesProductoTab';
 import { PlantillasTab } from '../productos/tabs/PlantillasTab';
@@ -412,9 +416,17 @@ export function ProductoLineaCreditoForm({
           motorContable: motorContable,
           // Subtabs de Garantía Financiera 2o Piso (REQ-8)
           prelacion2oPiso: prelacion2oPisoRef.current?.getData() || formData.prelacion2oPiso || [],
-          // "Prelación de cargos": orden en que la Aplicación de Pagos reparte cada pago.
-          prelacionCargos: prelacionCargosRef.current?.getData() || product?.prelacionCargos || [],
           cobertura2oPiso: cobertura2oPisoRef.current?.getData() || formData.cobertura2oPiso || [],
+          // Subtab Reglas de Pago y Corte TDC (configuración única, no lista)
+          reglasPagoCorteTDC: reglasPagoCorteTDCRef.current?.getData() || formData.reglasPagoCorteTDC || null,
+          // Prelación de cargos — mismo nodo que Producto Activo
+          prelacionCargos: prelacionRef.current?.getData() || formData.prelacionCargos || [],
+          // Comisiones e IVA por cargo permitido
+          comisionesIva: comisionesIvaRef.current?.getData() || formData.comisionesIva || [],
+          // Afectación de la línea por cargo permitido
+          afectacionLinea: afectacionLineaRef.current?.getData() || formData.afectacionLinea || [],
+          // Prom Comis e Impue
+          promComisImpuestos: promComisImpuestosRef.current?.getData() || formData.promComisImpuestos || [],
         };
 
         const existingDbUuid = product?.dbUuid || null;
@@ -472,8 +484,15 @@ export function ProductoLineaCreditoForm({
   const plantillasRef = useRef<{ getData: () => any[] }>(null);
   // Subtabs de Garantía Financiera 2o Piso (REQ-8)
   const prelacion2oPisoRef = useRef<{ getData: () => any[] }>(null);
-  const prelacionCargosRef = useRef<{ getData: () => any[] }>(null);
   const cobertura2oPisoRef = useRef<{ getData: () => any[] }>(null);
+  // Subtab Reglas de Pago y Corte TDC (configuración única, no lista)
+  const reglasPagoCorteTDCRef = useRef<{ getData: () => any }>(null);
+  // Prelación de cargos — mismo tab que Producto Activo
+  const prelacionRef = useRef<{ getData: () => any[] }>(null);
+  // Comisiones e IVA / Afectación de la línea — conceptos del Catálogo de Componentes
+  const comisionesIvaRef = useRef<{ getData: () => any[] }>(null);
+  const afectacionLineaRef = useRef<{ getData: () => any[] }>(null);
+  const promComisImpuestosRef = useRef<{ getData: () => any[] }>(null);
   const [motorContable, setMotorContable] = useState<any[]>(() =>
     Array.isArray((product as any)?.motorContable) ? (product as any).motorContable : []
   );
@@ -573,6 +592,7 @@ export function ProductoLineaCreditoForm({
 
   const tabs = [
     { id: 'default', label: 'Default' },
+    { id: 'reglas-pago-corte-tdc', label: 'Reglas de Pago y Corte TDC' },
     // === Tabs homologados desde Producto Crédito (orden idéntico) ===
     { id: 'periodos', label: 'Periodos' },
     { id: 'matriz-tasa-fija', label: 'Matriz Tasa Fija' },
@@ -580,8 +600,12 @@ export function ProductoLineaCreditoForm({
     { id: 'matriz-tasa-variable', label: 'Matriz Tasa Variable' },
     { id: 'fases', label: 'Fases' },
     { id: 'expedientes', label: 'Requisitos OK' },
-    { id: 'cargo', label: 'Cargos' },
+    { id: 'cargo', label: 'Cargos Permitidos' },
+    { id: 'comisiones-iva', label: 'Comisiones e IVA' },
+    { id: 'afectacion-linea', label: 'Afectación de la línea' },
+    { id: 'prom-comis-impue', label: 'Prom Comis e Impue' },
     { id: 'comisiones', label: 'Comisiones' },
+    { id: 'prelacion', label: 'Prelación de cargos' },
     // === Cotizador de Arrendamiento Puro — solo si sublínea es Arrendamiento ===
     ...(isArrendamiento ? [
       { id: 'comision-apertura', label: 'Comisiones por Apertura' },
@@ -597,7 +621,6 @@ export function ProductoLineaCreditoForm({
     { id: 'sucursal', label: 'Sucursal' },
     { id: 'garantias', label: 'Bienes' },
     { id: 'motor-contable', label: 'Motor Contable' },
-    { id: 'prelacion-cargos', label: 'Prelación de cargos' },
     // === Garantía Financiera 2o Piso ===
     { id: 'prelacion-2o-piso', label: 'Prelación 2o Piso' },
     { id: 'cobertura-2o-piso', label: 'Cobertura y Comisiones 2o Piso' },
@@ -729,6 +752,16 @@ export function ProductoLineaCreditoForm({
                 />
               </div>
             )}
+
+            <div style={{ display: activeTab === 'reglas-pago-corte-tdc' ? 'block' : 'none' }}>
+              <ReglasPagoCorteTDCTab
+                ref={reglasPagoCorteTDCRef}
+                mode={mode}
+                productId={productId}
+                persistToStorage
+                initialData={product?.reglasPagoCorteTDC}
+              />
+            </div>
 
             {activeTab === 'comites' && (
               <ComitesCreditoLineaCreditoTab
@@ -980,6 +1013,36 @@ export function ProductoLineaCreditoForm({
               <GarantiaTab ref={garantiasRef} mode={mode} productId={productId} initialData={product?.garantias} persistToStorage storagePrefix="linea_credito" />
             </div>
 
+            <div style={{ display: activeTab === 'comisiones-iva' ? 'block' : 'none' }}>
+              <ComisionesIvaTab
+                ref={comisionesIvaRef}
+                mode={mode}
+                productId={productId}
+                persistToStorage
+                initialData={product?.comisionesIva}
+              />
+            </div>
+
+            <div style={{ display: activeTab === 'afectacion-linea' ? 'block' : 'none' }}>
+              <AfectacionLineaTab
+                ref={afectacionLineaRef}
+                mode={mode}
+                productId={productId}
+                persistToStorage
+                initialData={product?.afectacionLinea}
+              />
+            </div>
+
+            <div style={{ display: activeTab === 'prom-comis-impue' ? 'block' : 'none' }}>
+              <PromComisImpuestosTab
+                ref={promComisImpuestosRef}
+                mode={mode}
+                productId={productId}
+                persistToStorage
+                initialData={product?.promComisImpuestos}
+              />
+            </div>
+
             <div style={{ display: activeTab === 'comisiones' ? 'block' : 'none' }}>
               <ComisionesTab
                 ref={comisionesRef}
@@ -987,6 +1050,17 @@ export function ProductoLineaCreditoForm({
                 productId={productId}
                 initialData={product?.comisiones as any}
                 storagePrefix="linea_credito"
+              />
+            </div>
+
+            <div style={{ display: activeTab === 'prelacion' ? 'block' : 'none' }}>
+              <PrelacionTab
+                ref={prelacionRef}
+                mode={mode}
+                productId={productId}
+                persistToStorage
+                storagePrefix="linea_credito"
+                initialData={Array.isArray((product as any)?.prelacionCargos) ? (product as any).prelacionCargos : undefined}
               />
             </div>
 
@@ -1062,6 +1136,7 @@ export function ProductoLineaCreditoForm({
                 fasesProducto={product?.fases}
                 persistToStorage
                 storagePrefix="linea_credito"
+                titulo="Cargos Permitidos"
               />
             </div>
 
@@ -1084,18 +1159,6 @@ export function ProductoLineaCreditoForm({
                 readOnly={isView}
               />
             )}
-
-            {/* Prelación de cargos — mismo subtab que Producto Activo */}
-            <div style={{ display: activeTab === 'prelacion-cargos' ? 'block' : 'none' }}>
-              <PrelacionTab
-                ref={prelacionCargosRef}
-                mode={mode}
-                productId={productId}
-                persistToStorage
-                storagePrefix="linea_credito"
-                initialData={Array.isArray(product?.prelacionCargos) ? product.prelacionCargos : undefined}
-              />
-            </div>
 
             {/* Garantía Financiera 2o Piso */}
             <div style={{ display: activeTab === 'prelacion-2o-piso' ? 'block' : 'none' }}>

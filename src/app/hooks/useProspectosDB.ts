@@ -109,6 +109,16 @@ function mapRowToProspecto(row: ClienteProspectoRow, index: number): Prospecto {
     monedaInversion:   (d.monedaInversion as string) || '',
     tipoFinanciamiento: (d.tipoFinanciamiento as string) || '',
     descripcionObra:   (d.descripcionObra as string) || '',
+    // ── Perfil TDC — datos financieros del solicitante ──
+    // Sin estas líneas el JSONB sí guardaba los campos, pero al reabrir el
+    // Prospecto llegaban undefined y el subtab se veía vacío: parecía que no
+    // se había guardado nada.
+    tdcIngresoComprobado:  (d.tdcIngresoComprobado as string) || '',
+    tdcOtrosIngresos:      (d.tdcOtrosIngresos as string) || '',
+    tdcDeudaMensual:       (d.tdcDeudaMensual as string) || '',
+    tdcGastosMensuales:    (d.tdcGastosMensuales as string) || '',
+    tdcAntiguedadLaboral:  (d.tdcAntiguedadLaboral as string) || '',
+    tdcActividadEconomica: (d.tdcActividadEconomica as string) || '',
     direcciones:       Array.isArray(d.direcciones) ? d.direcciones : undefined,
     cotizaciones:      Array.isArray(d.cotizaciones) ? d.cotizaciones : undefined,
     consultas:         Array.isArray(d.sic) ? d.sic : (Array.isArray(d.consultas) ? d.consultas : undefined),

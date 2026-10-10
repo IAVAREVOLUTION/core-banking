@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<title>Carta Oferta — Tarjeta de Crédito</title>
+
+<!--
+  Plantilla institucional — tipo "Carta Oferta" (HU-CRM-10).
+
+  La consume Oportunidades → Archivos Adjuntos → [Generar Carta Oferta].
+  El motor sustituye {{CLAVE}} y {CLAVE}; lo que no reconoce lo deja intacto,
+  así que un placeholder mal escrito se ve tal cual en el PDF y es fácil de
+  detectar en la primera prueba.
+
+  Placeholders disponibles (construirDatosCartaOferta en cartaOfertaPDF.ts):
+    ID_OPORTUNIDAD · FECHA · FECHA_HORA · ESTATUS
+    CLIENTE_EMISOR · CLAVE_CLIENTE · INSTITUCION_GOBIERNO
+    SECTOR · DESCRIPCION_OBRA · TIPO_FINANCIAMIENTO
+    PRODUCTO · MONEDA · MONTO_INVERSION · MONTO_EMISION
+    PLAZO_BONOS · TASA_BONOS
+    PORCENTAJE_COBERTURA_GPO · MONTO_MAXIMO_GARANTIZADO
+    TASA_COMISION_ANUAL · PERIODICIDAD_COBRO · INGRESO_ANUAL_COMISIONES
+
+  En Tarjeta de Crédito los cinco últimos van vacíos — son de la Garantía de
+  Pago Oportuno — por eso esta plantilla NO los usa. MONTO_EMISION es el
+  Monto de la línea y TASA_BONOS es la Tasa, que es como se rotulan en el
+  formulario cuando la Oportunidad es TDC.
+-->
+
+<style>
+  body {
+    font-family: "Helvetica Neue", Arial, sans-serif;
+    margin: 0;
+    color: #1a1a1a;
+    font-size: 12px;
+  }
+
+  .page {
+    width: 210mm;
+    min-height: 297mm;
+    padding: 28mm 25mm 20mm 25mm;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+  }
+
+  /* ── Encabezado ── */
+  .header {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: flex-start;
+    border-bottom: 2px solid #2E5C91;
+    padding-bottom: 10px;
+    margin-bottom: 22px;
+  }
+
+  .brand-name {
+    font-size: 17px;
+    font-weight: 700;
+    color: #2E5C91;
+    letter-spacing: .5px;
+  }
+
+  .brand-sub {
+    font-size: 10px;
+    color: #6b7280;
+    margin-top: 2px;
+  }
+
+  .folio {
+    text-align: right;
+    font-size: 10px;
+    color: #444;
+    line-height: 1.6;
+  }
+
+  .folio b { color: #2E5C91; }
+
+  h1 {
+    font-size: 15px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: #1a1a1a;
+    margin: 0 0 4px;
+  }
+
+  .subtitulo {
+    font-size: 11px;
+    color: #6b7280;
+    margin-bottom: 20px;
+  }
+
+  p { line-height: 1.65; margin: 0 0 12px; }
+
+  /* ── Secciones ── */
+  .seccion-titulo {
+    background: #EDF1F6;
+    border-left: 4px solid #2E5C91;
+    padding: 6px 10px;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .6px;
+    color: #2E5C91;
+    margin: 20px 0 10px;
+  }
+
+  table.datos {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 11px;
+  }
+
+  table.datos td {
+    padding: 7px 10px;
+    border-bottom: 1px solid #E3E8EF;
+    vertical-align: top;
+  }
+
+  table.datos td.k {
+    width: 42%;
+    color: #4b5563;
+  }
+
+  table.datos td.v {
+    font-weight: 600;
+    color: #111827;
+  }
+
+  table.datos tr:last-child td { border-bottom: 0; }
+
+  .destacado {
+    background: #F5F8FC;
+    border: 1px solid #D9E2F3;
+    padding: 12px 14px;
+    margin: 16px 0;
+    font-size: 11px;
+  }
+
+  .destacado .monto {
+    font-size: 20px;
+    font-weight: 700;
+    color: #2E5C91;
+    letter-spacing: -.5px;
+  }
+
+  ul.condiciones {
+    font-size: 10.5px;
+    color: #4b5563;
+    line-height: 1.6;
+    padding-left: 18px;
+    margin: 0;
+  }
+
+  ul.condiciones li { margin-bottom: 5px; }
+
+  /* ── Firmas ── */
+  .firmas {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 40px;
+    margin-top: 34px;
+  }
+
+  .firma {
+    text-align: center;
+    font-size: 10px;
+    color: #4b5563;
+  }
+
+  .firma .linea {
+    border-top: 1px solid #1a1a1a;
+    margin-bottom: 6px;
+    padding-top: 6px;
+  }
+
+  .firma b { color: #111827; display: block; font-size: 11px; }
+
+  .pie {
+    border-top: 1px solid #E3E8EF;
+    margin-top: 26px;
+    padding-top: 8px;
+    font-size: 8.5px;
+    color: #9ca3af;
+    line-height: 1.5;
+  }
+</style>
+</head>
+
+<body>
+<div class="page">
+  <div>
+
+    <div class="header">
+      <div>
+        <div class="brand-name">CACAO Banking</div>
+        <div class="brand-sub">Core Bancario · Banca Digital</div>
+      </div>
+      <div class="folio">
+        Folio: <b>{{ID_OPORTUNIDAD}}</b><br />
+        Fecha: {{FECHA}}<br />
+        Estatus: {{ESTATUS}}
+      </div>
+    </div>
+
+    <h1>Carta Oferta — Tarjeta de Crédito</h1>
+    <div class="subtitulo">Propuesta comercial de línea de crédito revolvente</div>
+
+    <p>
+      Estimado(a) <b>{{CLIENTE_EMISOR}}</b>:
+    </p>
+
+    <p>
+      Derivado del análisis de su solicitud, nos complace presentarle la siguiente propuesta
+      para la contratación del producto <b>{{PRODUCTO}}</b>. Las condiciones que se detallan a
+      continuación son las que aplicarían a su línea de crédito revolvente en caso de aceptar
+      esta oferta.
+    </p>
+
+    <div class="destacado">
+      Límite de crédito autorizado
+      <div class="monto">{{MONTO_EMISION}} {{MONEDA}}</div>
+    </div>
+
+    <div class="seccion-titulo">Datos del solicitante</div>
+    <table class="datos">
+      <tr><td class="k">Nombre</td><td class="v">{{CLIENTE_EMISOR}}</td></tr>
+      <tr><td class="k">Clave de cliente</td><td class="v">{{CLAVE_CLIENTE}}</td></tr>
+      <tr><td class="k">Producto</td><td class="v">{{PRODUCTO}}</td></tr>
+    </table>
+
+    <div class="seccion-titulo">Condiciones de la línea</div>
+    <table class="datos">
+      <tr><td class="k">Límite de crédito autorizado</td><td class="v">{{MONTO_EMISION}}</td></tr>
+      <tr><td class="k">Moneda</td><td class="v">{{MONEDA}}</td></tr>
+      <tr><td class="k">Tasa de interés ordinaria anual</td><td class="v">{{TASA_BONOS}}</td></tr>
+      <tr><td class="k">Modalidad</td><td class="v">Línea de crédito revolvente</td></tr>
+    </table>
+
+    <div class="seccion-titulo">Consideraciones</div>
+    <ul class="condiciones">
+      <li>
+        El pago mínimo, la fecha de corte y la fecha límite de pago se rigen por las reglas
+        configuradas para el producto y se informan en su primer estado de cuenta.
+      </li>
+      <li>
+        Las comisiones, el IVA aplicable y las promociones a meses se determinan por concepto,
+        conforme al tarifario vigente del producto.
+      </li>
+      <li>
+        La disposición de la línea está sujeta al saldo disponible; cada cargo consume el
+        disponible y se restituye conforme se realizan los pagos.
+      </li>
+      <li>
+        Las tasas expresadas son anuales, no incluyen IVA y aplican sobre saldos insolutos.
+      </li>
+      <li>
+        Esta oferta tiene una vigencia de 30 días naturales contados a partir de la fecha de
+        emisión y está sujeta a la verificación de la información proporcionada.
+      </li>
+    </ul>
+
+    <p style="margin-top:16px">
+      De estar conforme, le solicitamos firmar la presente carta y devolverla por este mismo
+      medio para continuar con la formalización.
+    </p>
+
+    <div class="firmas">
+      <div class="firma">
+        <div class="linea"></div>
+        <b>{{CLIENTE_EMISOR}}</b>
+        Acepto las condiciones
+      </div>
+      <div class="firma">
+        <div class="linea"></div>
+        <b>CACAO Banking</b>
+        Por la Institución
+      </div>
+    </div>
+
+  </div>
+
+  <div class="pie">
+    Documento generado automáticamente desde la Oportunidad {{ID_OPORTUNIDAD}} el {{FECHA_HORA}}.
+    Este documento constituye una propuesta comercial y no obliga a las partes hasta la firma
+    del contrato correspondiente. Las condiciones están sujetas a la verificación de la
+    información y a las políticas de crédito vigentes de la Institución.
+  </div>
+</div>
+</body>
+</html>
