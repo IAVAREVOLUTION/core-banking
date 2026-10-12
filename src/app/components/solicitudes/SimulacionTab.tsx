@@ -9,6 +9,7 @@ import {
 import { FlujInversionRow, calcularFlujInversion, TASA_ISR_ANUAL } from '../cotizaciones/cotizacionCaptacionTypes';
 import { generarTablaArrendamiento, generarTablaArrendamientoFinanciero, type SimulacionArrendamiento } from '../cotizaciones/cotizacionArrendamientoTypes';
 import { fechasCobroComision } from '../../lib/fechasComisionGPO';
+import { SimulacionTDC } from './SimulacionTDC';
 
 interface AportacionRow {
   noAportacion: number;
@@ -40,6 +41,14 @@ interface Props {
   frecuenciaHeader?: string;
   /** Notifica la fecha del último pago cuando cambia la tabla/calendario */
   onFechaFinChange?: (fecha: string) => void;
+  /** Solo TDC — nodo `reglasPagoCorteTDC` del producto (definición de pago mínimo). */
+  reglaTDC?: Record<string, any>;
+  /** Solo TDC — % anual de interés moratorio del producto. */
+  porcentajeMoratorioProducto?: string | number;
+  /** Solo TDC — factor moratorio del producto (Ordinaria × factor). */
+  factorMoratorioProducto?: string | number;
+  /** Solo TDC — % de IVA del producto. */
+  ivaProducto?: string | number;
 }
 
 /** Determina si el producto es de tipo Captación/Aportación (no crédito) */
@@ -195,7 +204,7 @@ function sumarDias(fechaIso: string, dias: number): string {
   return d.toISOString().split('T')[0];
 }
 
-export function SimulacionTab({ mode, solicitudId, lineaProducto, tipoProducto, calendarioAportaciones, simulacionInicial, montoAutorizado, montoSolicitadoHeader, plazoHeader, tasaHeader, fechaInicioHeader, frecuenciaHeader, onFechaFinChange }: Props) {
+export function SimulacionTab({ mode, solicitudId, lineaProducto, tipoProducto, calendarioAportaciones, simulacionInicial, montoAutorizado, montoSolicitadoHeader, plazoHeader, tasaHeader, fechaInicioHeader, frecuenciaHeader, onFechaFinChange, reglaTDC, porcentajeMoratorioProducto, factorMoratorioProducto, ivaProducto }: Props) {
   const isRO = mode === 'ver';
   const isCap = esCaptacion(lineaProducto, tipoProducto);
   const _tpRaw = (tipoProducto || lineaProducto || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
@@ -698,6 +707,26 @@ export function SimulacionTab({ mode, solicitudId, lineaProducto, tipoProducto, 
       duration: 3000,
     });
   };
+
+  // ════════════════════════════════════════════════
+  // TARJETA DE CRÉDITO — simulación de pagos por escenario
+  // ════════════════════════════════════════════════
+  if (esTDCSim && !isCap) {
+    return (
+      <SimulacionTDC
+        mode={mode}
+        solicitudId={solicitudId}
+        montoAutorizado={montoAutorizado}
+        montoSolicitadoHeader={montoSolicitadoHeader}
+        tasaHeader={tasaHeader}
+        fechaInicioHeader={fechaInicioHeader}
+        reglaTDC={reglaTDC}
+        porcentajeMoratorioProducto={porcentajeMoratorioProducto}
+        factorMoratorioProducto={factorMoratorioProducto}
+        ivaProducto={ivaProducto}
+      />
+    );
+  }
 
   // ════════════════════════════════════════════════
   // INVERSIÓN A PLAZO — tabla de flujo
