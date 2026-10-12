@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { toast } from '@/app/lib/notificaciones';
 import {
   useAmortizaciones, crearAvisoVencimiento,
@@ -34,7 +34,18 @@ export function AmortizacionesTab({ solicitudId, cliente, noSol, noCuenta, moned
   const isCaptacion = (tipoProducto || '').toLowerCase().includes('captaci') ||
                       (tipoProducto || '').toLowerCase().includes('ahorro') ||
                       (tipoProducto || '').toLowerCase().includes('aportaci');
-  const { rows, loading, error, refetch } = useAmortizaciones(solicitudId);
+  const { rows: rowsBD, loading, error, refetch } = useAmortizaciones(solicitudId);
+  /**
+   * Total Pago = suma de TODOS los conceptos de la fila. La simulación guardada
+   * trae un `pago_total` sin el IVA del seguro, mientras que la tabla y el
+   * detalle del aviso sí lo incluyen: el aviso quedaba por menos de lo que suma
+   * su detalle. En Captación (aportaciones) se respeta el total original.
+   */
+  const rows = useMemo(() => (isCaptacion ? rowsBD : rowsBD.map(r => {
+    const suma = Math.round(((Number(r.pago_capital) || 0) + (Number(r.pago_interes) || 0) + (Number(r.iva_interes) || 0)
+      + (Number(r.pago_seguro) || 0) + (Number(r.iva_seguro) || 0)) * 100) / 100;
+    return suma > 0 ? { ...r, pago_total: suma } : r;
+  })), [rowsBD, isCaptacion]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [showAvisoModal, setShowAvisoModal] = useState(false);
   const [enviando, setEnviando] = useState(false);

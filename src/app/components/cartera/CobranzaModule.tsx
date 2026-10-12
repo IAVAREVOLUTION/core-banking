@@ -308,6 +308,37 @@ function AvisoForm({ aviso: inicial, mode, onBack, onPagado }: {
   // Arranca en "cargando": el detalle se pide a la BD al abrir el aviso.
   const [loadingDetalle, setLoadingDetalle] = useState(true);
   const detalleLoaded = useRef(false);
+  // Lo pagado de cada línea del aviso (J_PAGOS.factura_detalle_id) — para la
+  // póliza de pago, que sólo contabiliza lo cobrado.
+  const [pagadoPorLinea, setPagadoPorLinea] = useState<Record<string, number>>({});
+  const [pagosSinLinea, setPagosSinLinea] = useState(0);
+  const [cargandoPagos, setCargandoPagos] = useState(true);
+
+  useEffect(() => {
+    if (!aviso.solicitud_id) { setCargandoPagos(false); return; }
+    setCargandoPagos(true);
+    fetch(`${API_BASE}/cartera/pagos/${aviso.solicitud_id}`, { headers: HDR })
+      .then(r => r.json())
+      .then(json => {
+        const porLinea: Record<string, number> = {};
+        let sinLinea = 0;
+        for (const p of (Array.isArray(json?.data) ? json.data : [])) {
+          if (String(p?.factura_id ?? '') !== String(aviso.id)) continue;
+          if (String(p?.estatus || '') === 'Cancelado') continue;
+          const monto = parseFloat(String(p?.monto ?? 0).replace(/[^0-9.-]/g, '')) || 0;
+          if (p?.detalle_linea_id != null) {
+            const k = String(p.detalle_linea_id);
+            porLinea[k] = Math.round(((porLinea[k] || 0) + monto) * 100) / 100;
+          } else {
+            sinLinea += monto;
+          }
+        }
+        setPagadoPorLinea(porLinea);
+        setPagosSinLinea(sinLinea);
+      })
+      .catch(() => {})
+      .finally(() => setCargandoPagos(false));
+  }, [aviso.id, aviso.solicitud_id]);
 
   // Cargar el detalle desde la BD al abrir el aviso — no sólo al entrar a Detail:
   // la Generación Contable necesita esos componentes para armar la póliza, y si
@@ -536,7 +567,7 @@ function AvisoForm({ aviso: inicial, mode, onBack, onPagado }: {
           {/* Generación Contable tab */}
           {activeTab === 'contable' && (
             <div className="p-4">
-              {aviso.solicitud_id && loadingDetalle ? (
+              {aviso.solicitud_id && (loadingDetalle || cargandoPagos) ? (
                 <div className="py-8 text-center text-xs text-gray-500">Cargando componentes del aviso…</div>
               ) : aviso.solicitud_id ? (
                 <GeneracionContableTab
@@ -550,6 +581,18 @@ function AvisoForm({ aviso: inicial, mode, onBack, onPagado }: {
                     id_componente: r.descripcion_subproducto || r.cve_subproducto,
                     monto:         Number(r.monto),
                   }))}
+                  // Póliza de pago: sólo lo pagado de cada concepto. Si el aviso
+                  // se pagó completo sin desglose por línea (pago total antiguo),
+                  // lo pagado es el monto de cada concepto.
+                  componentesPagados={detalle.map(r => {
+                    const porLinea = pagadoPorLinea[String(r.id)];
+                    const pagadoCompletoSinDesglose = Object.keys(pagadoPorLinea).length === 0
+                      && (pagosSinLinea > 0 || aviso.estatus === 'Pagado');
+                    return {
+                      id_componente: r.descripcion_subproducto || r.cve_subproducto,
+                      monto: porLinea ?? (pagadoCompletoSinDesglose ? Number(r.monto) || 0 : 0),
+                    };
+                  }).filter(c => c.monto > 0)}
                 />
               ) : (
                 <div className="py-8 text-center text-xs text-gray-400">

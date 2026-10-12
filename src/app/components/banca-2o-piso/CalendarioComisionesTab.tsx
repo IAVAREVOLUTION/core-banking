@@ -117,6 +117,18 @@ export function CalendarioComisionesTab({
   const seleccionadas = useMemo(() => rows.filter(r => seleccion.has(r.noPago)), [rows, seleccion]);
 
   /**
+   * Deudor del aviso de comisión: el Fideicomiso de Fuente de Pago capturado en
+   * "Estructura Operativa de 2o Piso" (no el Emisor). Si la solicitud aún no lo
+   * tiene, se conserva el Emisor para no dejar el aviso sin deudor.
+   */
+  const deudorAviso = row.fideicomiso
+    ? [
+        row.fideicomiso.numero ? `Fideicomiso ${row.fideicomiso.numero}` : 'Fideicomiso',
+        row.fideicomiso.fiduciaria ? `(${row.fideicomiso.fiduciaria})` : '',
+      ].filter(Boolean).join(' ')
+    : row.cliente;
+
+  /**
    * Abre el modal con los campos ya llenos:
    *   - Fecha Compromiso: la fecha de pago más próxima de las comisiones elegidas.
    *   - Cuenta Bancaria: la cuenta de la línea o, si no tiene, la Cuenta EJE del
@@ -237,7 +249,7 @@ export function CalendarioComisionesTab({
       solicitud_id: row.id,
       amortizaciones,
       sub_tipo: SUB_TIPO_COMISION_GPO,
-      cliente: row.cliente,
+      cliente: deudorAviso,
       forma_pago: formaPago,
       fecha_compromiso: fechaCompromiso || undefined,
       moneda: row.moneda || 'MXN',
@@ -438,8 +450,8 @@ export function CalendarioComisionesTab({
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="col-span-2">
-                  <label className="block text-[10px] font-medium text-gray-600 mb-1 uppercase tracking-wide">Nombre Interlocutor</label>
-                  <input value={row.cliente} disabled className="w-full px-3 py-1.5 text-xs border border-gray-200 rounded-lg bg-gray-100 text-gray-600" />
+                  <label className="block text-[10px] font-medium text-gray-600 mb-1 uppercase tracking-wide">{row.fideicomiso ? 'Deudor (Fideicomiso de Fuente de Pago)' : 'Nombre Interlocutor'}</label>
+                  <input value={deudorAviso} disabled className="w-full px-3 py-1.5 text-xs border border-gray-200 rounded-lg bg-gray-100 text-gray-600" />
                 </div>
                 <div className="col-span-2">
                   <label className="block text-[10px] font-medium text-gray-600 mb-1 uppercase tracking-wide">Forma de Pago *</label>

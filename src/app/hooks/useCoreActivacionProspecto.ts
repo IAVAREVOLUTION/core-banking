@@ -134,6 +134,28 @@ const CAMPOS_GENERALES_REQUERIDOS: string[] = [
 ];
 
 /**
+ * Persona Moral y demás entes colectivos (Dependencia, Fideicomiso, Consorcio…):
+ * no tienen CURP, nombre/apellidos, fecha de nacimiento ni sexo, y el estatus
+ * del SIC no aplica para activarlos. Misma regla que ProspectoForm: sólo
+ * Persona Física y PFAE son personas físicas; todo lo demás es moral.
+ */
+const PERSONERIAS_FISICAS = ['persona fisica', 'persona fisica con actividad empresarial'];
+function esPersonaMoral(tipo: unknown): boolean {
+  const t = String(tipo ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
+  if (!t) return false;
+  return !PERSONERIAS_FISICAS.includes(t);
+}
+
+/** Campos obligatorios de una Persona Moral (sin CURP, apellidos, nacimiento, sexo ni estatus SIC). */
+const CAMPOS_REQUERIDOS_MORAL: string[] = [
+  'denominacionRazonSocial',
+  'telefono',
+  'rfc',
+  'correoElectronico',
+  'estatusListaNegra',
+];
+
+/**
  * Valida que todos los datos del Prospecto esten completos.
  * REGLA INSTITUCIONAL: JSON plano, SIN nodo "default". Todo se valida en raíz.
  * Retorna un array de mensajes de error (vacio si todo OK).
@@ -142,7 +164,8 @@ function validarDatosCompletos(data: Record<string, any>): string[] {
   const errores: string[] = [];
 
   // ── 2.1.1 Datos Generales (raíz plana) ──
-  for (const campo of CAMPOS_GENERALES_REQUERIDOS) {
+  const requeridos = esPersonaMoral(data.tipo) ? CAMPOS_REQUERIDOS_MORAL : CAMPOS_GENERALES_REQUERIDOS;
+  for (const campo of requeridos) {
     const valor = data[campo];
     if (valor === undefined || valor === null || (typeof valor === 'string' && valor.trim() === '')) {
       errores.push(`Campo obligatorio vacio en Datos Generales: "${campo}"`);
@@ -181,6 +204,8 @@ function validarDatosCompletos(data: Record<string, any>): string[] {
  * 2.2 — Validacion de SIC: estatusSIC debe ser "NEGATIVO"
  */
 function validarSIC(data: Record<string, any>): string | null {
+  // Persona Moral: el estatus del SIC no condiciona la activación.
+  if (esPersonaMoral(data.tipo)) return null;
   const estatus = (data.estatusSIC || '').toString().toUpperCase().trim();
   if (estatus !== 'NEGATIVO') {
     return `Estatus SIC no es NEGATIVO (valor actual: "${data.estatusSIC || 'vacio'}"). No se puede activar.`;
@@ -220,7 +245,9 @@ function validarEstructuraJSON(data: Record<string, any>): string[] {
   // Si aún existe un nodo default legacy, se ignora (no es error).
 
   // Verificar que no haya nodos con valor null criticos
-  const camposCriticos = ['nombre', 'curp', 'rfc', 'correoElectronico', 'telefono'];
+  const camposCriticos = esPersonaMoral(data.tipo)
+    ? ['rfc', 'correoElectronico', 'telefono']
+    : ['nombre', 'curp', 'rfc', 'correoElectronico', 'telefono'];
   for (const campo of camposCriticos) {
     if (data[campo] === null) {
       errores.push(`Campo critico "${campo}" es null en la estructura JSON.`);

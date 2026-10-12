@@ -546,7 +546,7 @@ function formToDBPayload(form: SolicitudFormData, allSubtabs?: Record<string, an
         resultado_simulacion: simulacion.map((r: any) => ({
           no_pago: r.noPago, fecha_pago: r.fechaPago, saldo_insoluto: r.saldoInsoluto,
           pago_capital: r.pagoCapital, pago_interes: r.pagoInteres, iva_interes: r.ivaInteres,
-          pago_periodo: r.pagoPeriodo, pago_seguro: r.pagoSeguro, pago_total: r.pagoTotal,
+          pago_periodo: r.pagoPeriodo, pago_seguro: r.pagoSeguro, iva_seguro: r.ivaSeguro ?? undefined, pago_total: r.pagoTotal,
         })),
         calendario_aportaciones: (() => {
           const fromSession = allSubtabs?.simulacion_cal;

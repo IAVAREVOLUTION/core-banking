@@ -569,6 +569,7 @@ export function CotizacionesModule({ deepLinkCotizacionId, deepLinkLinea, onDeep
           ivaInteres: r.ivaInteres,
           pagoPeriodo: r.pagoPeriodo,
           pagoSeguro: r.pagoSeguro || 0,
+          ivaSeguro: r.ivaSeguro || 0,
           pagoTotal: r.pagoTotal,
         })),
       },

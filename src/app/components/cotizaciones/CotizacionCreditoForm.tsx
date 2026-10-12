@@ -32,6 +32,7 @@ import {
   generarNoCotizaCredito,
   calcularPagoPeriodo,
   generarTablaAmortizacionCredito,
+  IVA_RATE,
   crearCotizacionCreditoVacia,
   validarCotizacionCredito,
   TIPOS_CALCULO_AMORTIZACION,
@@ -346,7 +347,7 @@ export function CotizacionCreditoForm({ mode, lineaProducto, cotizacion, onSave,
     const pago = calcularPagoPeriodo(data.montoSolicitado, data.tasaCotizada, data.plazo, diasP);
     const interes = pago * data.plazo - data.montoSolicitado;
     const pagoSegPer = data.seguroFinanciado && data.totalSeguro > 0 ? Math.round((data.totalSeguro / data.plazo) * 100) / 100 : 0;
-    const total = Math.round((pago + pagoSegPer) * 100) / 100;
+    const total = Math.round((pago + pagoSegPer + Math.round(pagoSegPer * IVA_RATE * 100) / 100) * 100) / 100;
 
     setData({
       pagoPeriodo: Math.round(pago * 100) / 100,
@@ -1304,6 +1305,7 @@ export function CotizacionCreditoForm({ mode, lineaProducto, cotizacion, onSave,
                             <th className="px-2 py-2.5 text-right font-normal text-xs text-gray-700">IVA Interés</th>
                             <th className="px-2 py-2.5 text-right font-normal text-xs text-gray-700">Pago Periodo</th>
                             <th className="px-2 py-2.5 text-right font-normal text-xs text-gray-700">Pago Seguro</th>
+                            <th className="px-2 py-2.5 text-right font-normal text-xs text-gray-700">IVA Seguro</th>
                             <th className="px-2 py-2.5 text-right font-normal text-xs text-gray-700 bg-gray-200">Pago Total</th>
                           </tr>
                         </thead>
@@ -1324,6 +1326,7 @@ export function CotizacionCreditoForm({ mode, lineaProducto, cotizacion, onSave,
                               <td className="px-2 py-2 text-xs text-right">{formatMoney(row.ivaInteres)}</td>
                               <td className="px-2 py-2 text-xs text-right">{formatMoney(row.pagoPeriodo)}</td>
                               <td className="px-2 py-2 text-xs text-right">{row.pagoSeguro > 0 ? formatMoney(row.pagoSeguro) : '—'}</td>
+                              <td className="px-2 py-2 text-xs text-right">{(row.ivaSeguro || 0) > 0 ? formatMoney(row.ivaSeguro) : '—'}</td>
                               <td className="px-2 py-2 text-xs text-right font-medium bg-gray-50">{formatMoney(row.pagoTotal)}</td>
                             </tr>
                           ))}
@@ -1336,6 +1339,7 @@ export function CotizacionCreditoForm({ mode, lineaProducto, cotizacion, onSave,
                             <td className="px-2 py-2.5 text-xs font-medium text-right">{formatMoney(tablaAmort.reduce((s, r) => s + r.ivaInteres, 0))}</td>
                             <td className="px-2 py-2.5 text-xs font-medium text-right">{formatMoney(tablaAmort.reduce((s, r) => s + r.pagoPeriodo, 0))}</td>
                             <td className="px-2 py-2.5 text-xs font-medium text-right">{formatMoney(tablaAmort.reduce((s, r) => s + r.pagoSeguro, 0))}</td>
+                            <td className="px-2 py-2.5 text-xs font-medium text-right">{formatMoney(tablaAmort.reduce((s, r) => s + (r.ivaSeguro || 0), 0))}</td>
                             <td className="px-2 py-2.5 text-xs font-medium text-right bg-gray-200">{formatMoney(tablaAmort.reduce((s, r) => s + r.pagoTotal, 0))}</td>
                           </tr>
                         </tfoot>

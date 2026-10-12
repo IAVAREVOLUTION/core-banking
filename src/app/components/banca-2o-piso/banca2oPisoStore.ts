@@ -188,6 +188,12 @@ export interface LineaCreditoRow extends CarteraCredito {
   /** `data.solicitud.terminos_condiciones._raw` — alimenta la pestaña de Términos. */
   terminosRaw: Record<string, any>;
   /**
+   * Fideicomiso de Fuente de Pago instrumentado en la Solicitud (subtab
+   * "Estructura Operativa de 2o Piso", `data.solicitud.estructura_2o_piso`).
+   * Es el deudor de los avisos de comisión de la línea.
+   */
+  fideicomiso?: { numero: string; fiduciaria: string };
+  /**
    * `data.solicitud.cargos` — alimenta la pestaña de Cargos.
    * Se leen de la BD y NO de sessionStorage: este módulo puede abrirse sin haber
    * pasado nunca por el formulario de la Solicitud, que es quien llena la sesión.
@@ -949,6 +955,12 @@ export function useLineasCreditoActivas() {
             gobierno: r.institucion_gobierno || undefined,
             fechaSol: r.fecha_sol || r.fecha_autori || '',
             terminosRaw: t,
+            fideicomiso: (() => {
+              const e = rawSolicitud.estructura_2o_piso || {};
+              const numero = String(e.numero_fideicomiso_fuente_pago || '').trim();
+              const fiduciaria = String(e.institucion_fiduciaria || '').trim();
+              return numero || fiduciaria ? { numero, fiduciaria } : undefined;
+            })(),
             documentos: mapDocumentosExpediente(rawSolicitud, dataObj),
             cargos: cargosRaw.map((c: any) => ({
               tipoCargo: String(c?.tipo_cargo ?? c?.tipoCargo ?? c?.tipo_comision ?? c?.tipoComision ?? ''),

@@ -249,6 +249,8 @@ export interface AmortizacionRow {
   ivaInteres: number;
   pagoPeriodo: number;
   pagoSeguro: number;
+  /** IVA del seguro (16 %). Forma parte del Pago Total, igual que en Cartera. */
+  ivaSeguro: number;
   pagoTotal: number;
   moneda: string;
 }
@@ -422,7 +424,10 @@ export function generarTablaAmortizacionCredito(
 
     const pagoPeriodo = Math.round((pagoCapital + pagoInteres + ivaInteres) * 100) / 100;
     const pagoSeguro = Math.round(seguroPorPeriodo * 100) / 100;
-    const pagoTotal = Math.round((pagoPeriodo + pagoSeguro) * 100) / 100;
+    // El Pago Total incluye TODOS los conceptos: capital, interés, IVA interés,
+    // seguro e IVA del seguro (antes faltaba éste y el aviso quedaba por menos).
+    const ivaSeguro = Math.round(pagoSeguro * IVA_RATE * 100) / 100;
+    const pagoTotal = Math.round((pagoPeriodo + pagoSeguro + ivaSeguro) * 100) / 100;
 
     saldo = Math.round((saldo - pagoCapital) * 100) / 100;
     if (saldo < saldoFinal) saldo = saldoFinal;
@@ -436,6 +441,7 @@ export function generarTablaAmortizacionCredito(
       ivaInteres,
       pagoPeriodo,
       pagoSeguro,
+      ivaSeguro,
       pagoTotal,
       moneda: 'MXN',
     });

@@ -279,7 +279,7 @@ export function preloadSubtabsFromDBData(
       const simRows = sim.resultado_simulacion.map((r: any) => ({
         noPago: r.no_pago, fechaPago: r.fecha_pago, saldoInsoluto: r.saldo_insoluto,
         pagoCapital: r.pago_capital, pagoInteres: r.pago_interes, ivaInteres: r.iva_interes,
-        pagoPeriodo: r.pago_periodo, pagoSeguro: r.pago_seguro, pagoTotal: r.pago_total,
+        pagoPeriodo: r.pago_periodo, pagoSeguro: r.pago_seguro, ivaSeguro: r.iva_seguro, pagoTotal: r.pago_total,
       }));
       saveToSession(storageId, 'simulacion', simRows);
       saveToSavedStore(storageId, 'simulacion', simRows);
@@ -869,7 +869,7 @@ estatusSolicitud: s.estatusSolicitud || d.estatusSolicitud || 'Pendiente',
       saveToSession(storageId, 'simulacion', sim.resultado_simulacion.map((r: any) => ({
         noPago: r.no_pago, fechaPago: r.fecha_pago, saldoInsoluto: r.saldo_insoluto,
         pagoCapital: r.pago_capital, pagoInteres: r.pago_interes, ivaInteres: r.iva_interes,
-        pagoPeriodo: r.pago_periodo, pagoSeguro: r.pago_seguro, pagoTotal: r.pago_total,
+        pagoPeriodo: r.pago_periodo, pagoSeguro: r.pago_seguro, ivaSeguro: r.iva_seguro, pagoTotal: r.pago_total,
       })));
     }
     if (sim.calendario_aportaciones?.length > 0) {

@@ -63,6 +63,19 @@ interface Props {
    * Motor Contable del producto para el evento elegido.
    */
   readonly componentes?: ComponenteContable[];
+  /**
+   * Lo efectivamente PAGADO de cada concepto del aviso. Los eventos de pago
+   * (p. ej. LOAN_PAYMENT "Pago de crédito") contabilizan esto, no el total
+   * facturado: un aviso pagado en parte sólo genera póliza por lo cobrado.
+   */
+  readonly componentesPagados?: ComponenteContable[];
+}
+
+/** ¿El evento contabiliza un PAGO recibido? (usa montos pagados, no facturados) */
+function esEventoDePago(ev: { evento_codigo?: string; evento_nombre?: string }): boolean {
+  const t = `${ev.evento_codigo || ''} ${ev.evento_nombre || ''}`
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  return /payment|\bpago\b|cobranza|cobro/.test(t);
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -93,7 +106,11 @@ const ESTATUS_CLS: Record<string, string> = {
 
 // ── Componente ─────────────────────────────────────────────────────────────────
 
-export function GeneracionContableTab({ solicitudId, credito, componentes }: Props) {
+export function GeneracionContableTab({ solicitudId, credito, componentes, componentesPagados }: Props) {
+  /** Componentes que corresponden a cada evento: pagados para eventos de pago. */
+  const componentesDe = (ev: { evento_codigo?: string; evento_nombre?: string } | null) =>
+    (ev && componentesPagados && esEventoDePago(ev) ? componentesPagados : componentes) || [];
+
   const isUUID = UUID_RE.test(solicitudId || '');
 
   // ── Catálogo de eventos ────────────────────────────────────────────
@@ -212,7 +229,7 @@ export function GeneracionContableTab({ solicitudId, credito, componentes }: Pro
       // Con la lista vacia el backend usa las lineas del Motor Contable del
       // producto para ese evento — que es la configuracion real — en vez de un
       // nombre inventado aqui.
-      const comps: ComponenteContable[] = (componentes || []).filter(c => c.monto > 0);
+      const comps: ComponenteContable[] = componentesDe(ev).filter(c => c.monto > 0);
 
       if (!isUUID) {
         // Modo local (sesión) — simular generación
@@ -560,10 +577,8 @@ export function GeneracionContableTab({ solicitudId, credito, componentes }: Pro
                       </tr>
                     </thead>
                     <tbody>
-                      {(componentes && componentes.filter(c => c.monto > 0).length > 0
-                        ? componentes.filter(c => c.monto > 0)
-                        : []   /* ver nota en handleGenerarPoliza: no se inventa CAPITAL */
-                      ).map((c, i) => (
+                      {componentesDe(confirmEv).filter(c => c.monto > 0)   /* ver nota en handleGenerarPoliza: no se inventa CAPITAL */
+                      .map((c, i) => (
                         <tr key={i} className="border-t border-gray-100">
                           <td className="px-2.5 py-1.5 font-medium text-gray-800">{c.id_componente}</td>
                           <td className="px-2.5 py-1.5 text-right font-mono text-gray-800">{fmt(c.monto)}</td>

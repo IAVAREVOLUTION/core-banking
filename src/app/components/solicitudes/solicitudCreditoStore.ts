@@ -1586,6 +1586,7 @@ export function generarSimulacion(
     ivaInteres:    r.ivaInteres,
     pagoPeriodo:   r.pagoPeriodo,
     pagoSeguro:    r.pagoSeguro,
+    ivaSeguro:     r.ivaSeguro,
     pagoTotal:     r.pagoTotal,
   }));
 }
