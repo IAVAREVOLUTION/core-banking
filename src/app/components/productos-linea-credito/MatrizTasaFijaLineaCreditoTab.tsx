@@ -1,3 +1,4 @@
+import { MontoInput } from '../ui/MontoInput';
 import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import { MatrizTasaFijaLineaCredito } from '@/app/types/productoLineaCredito';
@@ -372,8 +373,8 @@ function FormModal({ mode, item, onSave, onClose }: FormModalProps) {
 
                 <div>
                   <label className="block text-xs text-gray-700 mb-1 font-medium">Valor residual <span className="text-red-600">*</span></label>
-                  <input 
-                    type="number" 
+                  <MontoInput 
+ 
                     value={formData.valorResidual} 
                     onChange={(e) => handleChange('valorResidual', e.target.value)} 
                     disabled={isViewMode} 

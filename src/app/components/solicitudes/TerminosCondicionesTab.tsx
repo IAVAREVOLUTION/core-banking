@@ -1,3 +1,4 @@
+import { MontoInput } from '../ui/MontoInput';
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { DatePicker } from '@/app/components/ui/DatePicker';
 import {
@@ -1119,8 +1120,8 @@ export function TerminosCondicionesTab({ mode, solicitudId, lineaProducto, tipoP
             <label className="block text-xs text-gray-700 mb-1">Monto Autorizado <span className="text-red-500">*</span></label>
             <div className="relative">
               <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-500">$</span>
-              <input
-                type="text" inputMode="decimal"
+              <MontoInput
+
                 value={data.montoSolicitado}
                 onChange={e => handleNumeric('montoSolicitado', e.target.value)}
                 onBlur={() => handleCurrencyBlur('montoSolicitado')}
@@ -1518,7 +1519,7 @@ export function TerminosCondicionesTab({ mode, solicitudId, lineaProducto, tipoP
                 <label className="block text-xs text-gray-700 mb-1">Monto Autorizado</label>
                 <div className="relative">
                   <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-500">$</span>
-                  <input type="text" value={data.montoGarantia || ''}
+                  <MontoInput value={data.montoGarantia || ''}
                     readOnly disabled placeholder="0.00"
                     className={`${ic(true)} pl-5 bg-gray-50`} />
                 </div>

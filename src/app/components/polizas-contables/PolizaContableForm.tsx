@@ -1,3 +1,4 @@
+import { MontoInput } from '../ui/MontoInput';
 import { useState, useEffect } from 'react';
 import { Search, Plus, Trash2, X } from 'lucide-react';
 import { toast } from 'sonner';
@@ -606,8 +607,8 @@ export function PolizaContableForm({ mode, poliza, onSave, onCancel }: Props) {
                     <label className="block text-xs font-medium text-gray-700 mb-1">
                       Débito <span className="text-red-500">*</span>
                     </label>
-                    <input
-                      type="number"
+                    <MontoInput
+
                       step="0.01"
                       min="0"
                       placeholder="0.00"
@@ -623,8 +624,8 @@ export function PolizaContableForm({ mode, poliza, onSave, onCancel }: Props) {
                     <label className="block text-xs font-medium text-gray-700 mb-1">
                       Crédito <span className="text-red-500">*</span>
                     </label>
-                    <input
-                      type="number"
+                    <MontoInput
+
                       step="0.01"
                       min="0"
                       placeholder="0.00"

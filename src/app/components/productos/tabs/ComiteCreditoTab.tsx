@@ -1,3 +1,4 @@
+import { MontoInput } from '../../ui/MontoInput';
 import { useState } from 'react';
 import { toast } from 'sonner';
 
@@ -269,12 +270,12 @@ function FormModal({ mode, item, onSave, onClose }: FormModalProps) {
 
                 <div>
                   <label className="block text-xs text-gray-700 mb-1 font-medium">Desde Monto <span className="text-red-600">*</span></label>
-                  <input type="number" step="0.01" value={formData.desdeMonto} onChange={(e) => handleChange('desdeMonto', parseFloat(e.target.value))} disabled={isViewMode} placeholder="$1.00" className={inputClassName()} />
+                  <MontoInput step="0.01" value={formData.desdeMonto} onChange={(e) => handleChange('desdeMonto', parseFloat(e.target.value))} disabled={isViewMode} placeholder="$1.00" className={inputClassName()} />
                 </div>
 
                 <div>
                   <label className="block text-xs text-gray-700 mb-1 font-medium">Hasta Monto <span className="text-red-600">*</span></label>
-                  <input type="number" step="0.01" value={formData.hastaMonto} onChange={(e) => handleChange('hastaMonto', parseFloat(e.target.value))} disabled={isViewMode} placeholder="$500,000" className={inputClassName()} />
+                  <MontoInput step="0.01" value={formData.hastaMonto} onChange={(e) => handleChange('hastaMonto', parseFloat(e.target.value))} disabled={isViewMode} placeholder="$500,000" className={inputClassName()} />
                 </div>
 
                 <div>

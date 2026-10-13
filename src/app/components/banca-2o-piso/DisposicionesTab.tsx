@@ -15,6 +15,7 @@
  * Esa es una HU propia (revolvencia) y hacerla a medias aquí produciría un saldo
  * que se desvía en silencio.
  */
+import { MontoInput } from '../ui/MontoInput';
 import { useState, useMemo } from 'react';
 import { toast } from 'sonner';
 import { useSolicitudesDB, fetchNextNoSol } from '../../hooks/useSolicitudesDB';
@@ -350,7 +351,7 @@ export function DisposicionesTab({
 
                 {/* CA-11 — precargado con el saldo, editable (§Decisión 4) */}
                 <Campo label="Monto Solicitado *">
-                  <input type="text" value={montoSolicitado}
+                  <MontoInput value={montoSolicitado}
                     onChange={e => setMontoSolicitado(e.target.value)}
                     className="w-full px-2 py-1.5 border border-gray-300 rounded text-right font-mono" />
                   <span className="text-[10px] text-gray-500">

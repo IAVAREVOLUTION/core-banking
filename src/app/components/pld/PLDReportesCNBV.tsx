@@ -1,3 +1,4 @@
+import { MontoInput } from '../ui/MontoInput';
 import { useState, useMemo } from 'react';
 import { toast } from 'sonner';
 import { DatePicker } from '@/app/components/ui/DatePicker';
@@ -287,7 +288,7 @@ export function PLDReportesCNBV({ onBack }: Props) {
                   <div className="flex items-center gap-2">
                     <label className={labelCls}>MONTO <span className="text-red-600">*</span></label>
                     {isView ? <div className={viewCls}>{current.monto}</div>
-                      : <input type="text" value={current.monto} onChange={e => setCurrent(c => ({ ...c, monto: e.target.value }))} className={inputCls} placeholder="$0.00" />}
+                      : <MontoInput value={current.monto} onChange={e => setCurrent(c => ({ ...c, monto: e.target.value }))} className={inputCls} placeholder="$0.00" />}
                   </div>
                   <div className="flex items-center gap-2">
                     <label className={labelCls}>ESTATUS</label>

@@ -1,3 +1,4 @@
+import { MontoInput } from '../ui/MontoInput';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { toast } from 'sonner';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
@@ -347,7 +348,7 @@ export function Movimientos({ mode, clienteId, saldoCuentaEje, onSaldoChange }: 
                 </div>
                 <div>
                   <label className="block text-[10px] font-medium text-gray-600 mb-1 uppercase tracking-wide">Monto *</label>
-                  <input type="text" value={monto} onChange={e => setMonto(e.target.value)}
+                  <MontoInput value={monto} onChange={e => setMonto(e.target.value)}
                     placeholder="$ 0.00"
                     className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded" />
                 </div>

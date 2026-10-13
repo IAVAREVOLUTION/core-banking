@@ -15,6 +15,7 @@
  * es un concepto DISTINTO de `plazo` (duración del financiamiento) y de la
  * periodicidad de cobro de comisión. Ver REQ-9 §Contexto técnico.
  */
+import { MontoInput } from '../ui/MontoInput';
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
@@ -432,9 +433,9 @@ export function ModeloViabilidadFinancieraTab({
           <label className="block text-xs text-gray-700 mb-1">
             Monto Fondo de Reserva del Fideicomiso <span className="text-red-500">*</span>
           </label>
-          <input
-            type="text"
-            inputMode="decimal"
+          <MontoInput
+
+
             value={datos.montoFondoReservaFideicomiso}
             onChange={e => {
               const l = e.target.value.replace(/[^0-9.]/g, '');

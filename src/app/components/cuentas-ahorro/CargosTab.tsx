@@ -1,4 +1,5 @@
 ﻿import { useState, useEffect } from 'react';
+import { MontoInput } from '../ui/MontoInput';
 import { toast } from 'sonner';
 import { DatePicker } from '@/app/components/ui/DatePicker';
 import {
@@ -91,7 +92,7 @@ export function CargosTab({ mode, accountId }: CargosTabProps) {
                   <input type="text" value={c.descripcion} disabled={isReadOnly} onChange={e => { e.stopPropagation(); update(idx, 'descripcion', e.target.value); }} onClick={e => e.stopPropagation()} className="w-full px-1 py-1 text-xs border border-gray-300 rounded bg-white" placeholder="Descripción..." />
                 </td>
                 <td className="px-2 py-1.5 border-r border-gray-300">
-                  <input type="number" step="0.01" min="0" value={c.monto} disabled={isReadOnly} onChange={e => { e.stopPropagation(); update(idx, 'monto', parseFloat(e.target.value) || 0); }} onClick={e => e.stopPropagation()} className="w-full px-1 py-1 text-xs border border-gray-300 rounded bg-white text-right" />
+                  <MontoInput step="0.01" min="0" value={c.monto} disabled={isReadOnly} onChange={e => { e.stopPropagation(); update(idx, 'monto', parseFloat(e.target.value) || 0); }} onClick={e => e.stopPropagation()} className="w-full px-1 py-1 text-xs border border-gray-300 rounded bg-white text-right" />
                 </td>
                 <td className="px-2 py-1.5 border-r border-gray-300" onClick={e => e.stopPropagation()}>
                   <DatePicker value={fromISODate(c.fechaCargo)} onChange={v => updateDate(idx, 'fechaCargo', v)} disabled={isReadOnly} placeholder="dd/mm/aaaa" className="px-1 py-1" />

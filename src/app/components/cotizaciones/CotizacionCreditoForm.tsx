@@ -13,6 +13,7 @@
  *   4. Garantía             — §5
  *   5. Condiciones          — §6, §7, §8
  */
+import { MontoInput } from '../ui/MontoInput';
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Search, X, Building2, AlertTriangle, Shield, Calculator, CalendarDays, CheckCircle2 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -875,8 +876,8 @@ export function CotizacionCreditoForm({ mode, lineaProducto, cotizacion, onSave,
                             Monto Solicitado <span className="text-red-500">*</span>
                             <span className="text-gray-400 ml-1">({formatMoney(data.montoMinimo)}–{formatMoney(data.montoMaximo)})</span>
                           </label>
-                          <input
-                            type="number"
+                          <MontoInput
+
                             value={data.montoSolicitado || ''}
                             disabled={isView}
                             onChange={e => setData({ montoSolicitado: parseFloat(e.target.value) || 0 })}

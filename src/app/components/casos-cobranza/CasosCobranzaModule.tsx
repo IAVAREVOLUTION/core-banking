@@ -1,3 +1,4 @@
+import { MontoInput } from '../ui/MontoInput';
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { toast } from 'sonner';
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
@@ -1025,7 +1026,7 @@ function ConvenioModal({ mode, convenio, onClose, onSave }: {
             </ModalRow>
             <ModalRow label="MONTO" required>
               {readOnly ? <div className="flex-1 px-2 py-1 text-xs text-gray-700 text-right">{formatCurrency(conv.monto)}</div> : (
-                <input type="text" value={conv.monto === 0 && mode === 'nuevo' ? '' : String(conv.monto)}
+                <MontoInput value={conv.monto === 0 && mode === 'nuevo' ? '' : String(conv.monto)}
                   onChange={e => { const v = e.target.value.replace(/[^0-9.]/g, ''); update('monto', parseFloat(v) || 0); }}
                   className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded text-right" />
               )}

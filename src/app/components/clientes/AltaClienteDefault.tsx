@@ -1,3 +1,4 @@
+import { MontoInput } from '../ui/MontoInput';
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { toast } from 'sonner';
 import { Zap } from 'lucide-react';
@@ -2364,8 +2365,8 @@ export function AltaClienteDefault({ onBack, onSave, mode, cliente, onNavigateTo
                       {!camposEditables ? (
                         <div className="px-2 py-1 text-xs text-gray-700">{formData.saldoCuentaEje || ''}</div>
                       ) : (
-                        <input 
-                          type="text" 
+                        <MontoInput 
+ 
                           value={formData.saldoCuentaEje || ''}
                           disabled
                           className="px-2 py-1 text-xs border border-gray-300 rounded bg-gray-100 text-gray-600"
@@ -2801,8 +2802,8 @@ export function AltaClienteDefault({ onBack, onSave, mode, cliente, onNavigateTo
                         {!camposEditables ? (
                           <div className="px-2 py-1 text-xs text-gray-700">{formData.otrosIngresos}</div>
                         ) : (
-                          <input 
-                            type="text" 
+                          <MontoInput 
+ 
                             value={formData.otrosIngresos}
                             onChange={(e) => handleChange('otrosIngresos', e.target.value)}
                             className="px-2 py-1 text-xs border border-gray-300 rounded"
@@ -3016,8 +3017,8 @@ export function AltaClienteDefault({ onBack, onSave, mode, cliente, onNavigateTo
                         {!camposEditables ? (
                           <div className="px-2 py-1 text-xs text-gray-700">{formData.minimoLiquidez}</div>
                         ) : (
-                          <input 
-                            type="number" 
+                          <MontoInput 
+ 
                             value={formData.minimoLiquidez}
                             onChange={(e) => handleChange('minimoLiquidez', e.target.value)}
                             min="0"

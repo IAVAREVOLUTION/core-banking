@@ -1,3 +1,4 @@
+import { MontoInput } from '../ui/MontoInput';
 import { useState, useEffect, useMemo } from 'react';
 import { toast } from 'sonner';
 import * as store from './pldStore';
@@ -446,8 +447,8 @@ export function PLDPerfilTransaccional({ mode = 'editar', onBack }: Props) {
                     <div className="grid grid-cols-2 gap-4">
                       <div className="flex items-center gap-2">
                         <label className="text-xs w-24 flex-shrink-0 text-gray-700">MÁX. RETIROS <span className="text-red-600">*</span></label>
-                        <input
-                          type="text"
+                        <MontoInput
+
                           value={modalForm.montoMaxRetiros}
                           onChange={e => setModalForm(f => ({ ...f, montoMaxRetiros: e.target.value }))}
                           className="flex-1 px-2 py-1.5 text-xs border border-gray-300 rounded"
@@ -456,8 +457,8 @@ export function PLDPerfilTransaccional({ mode = 'editar', onBack }: Props) {
                       </div>
                       <div className="flex items-center gap-2">
                         <label className="text-xs w-24 flex-shrink-0 text-gray-700">MÁX. DEPÓSITOS <span className="text-red-600">*</span></label>
-                        <input
-                          type="text"
+                        <MontoInput
+
                           value={modalForm.montoMaxDepositos}
                           onChange={e => setModalForm(f => ({ ...f, montoMaxDepositos: e.target.value }))}
                           className="flex-1 px-2 py-1.5 text-xs border border-gray-300 rounded"

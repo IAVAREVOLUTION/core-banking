@@ -1,3 +1,4 @@
+import { MontoInput } from '../ui/MontoInput';
 import { useState, useEffect } from 'react';
 import { saveToSession, loadFromSession, loadFromSavedStore, MOCK_FORMS, parseCurrency } from './solicitudCreditoStore';
 
@@ -138,15 +139,15 @@ export function MontosPlazosTab({ mode, solicitudId }: Props) {
             <label className="block text-xs text-gray-700 mb-1">MONTO MÍNIMO</label>
             <div className="relative">
               <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-600">$</span>
-              <input type="text" value={data.montoMinimo} disabled className={`${ic(true)} pl-5`} />
+              <MontoInput value={data.montoMinimo} disabled className={`${ic(true)} pl-5`} />
             </div>
           </div>
           <div>
             <label className="block text-xs text-gray-700 mb-1">MONTO AUTORIZADO <span className="text-red-600">*</span></label>
             <div className="relative">
               <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-600">$</span>
-              <input
-                type="text"
+              <MontoInput
+
                 value={data.montoAutorizado}
                 onChange={e => set('montoAutorizado', e.target.value.replace(/[^0-9.,-]/g, ''))}
                 onBlur={handleMontoBlur}
@@ -165,7 +166,7 @@ export function MontosPlazosTab({ mode, solicitudId }: Props) {
             <label className="block text-xs text-gray-700 mb-1">MONTO MÁXIMO</label>
             <div className="relative">
               <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-600">$</span>
-              <input type="text" value={data.montoMaximo} disabled className={`${ic(true)} pl-5`} />
+              <MontoInput value={data.montoMaximo} disabled className={`${ic(true)} pl-5`} />
             </div>
           </div>
 

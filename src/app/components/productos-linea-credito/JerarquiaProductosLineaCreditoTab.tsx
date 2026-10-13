@@ -1,3 +1,4 @@
+import { MontoInput } from '../ui/MontoInput';
 import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import { JerarquiaProductoLineaCredito } from '@/app/types/productoLineaCredito';
@@ -463,8 +464,8 @@ function FormModal({ mode, item, onSave, onClose }: FormModalProps) {
 
                 <div>
                   <label className="block text-xs text-gray-700 mb-1 font-medium">MONTO SGA</label>
-                  <input 
-                    type="number" 
+                  <MontoInput 
+ 
                     step="0.01"
                     value={formData.montoSga} 
                     onChange={(e) => handleChange('montoSga', e.target.value)} 

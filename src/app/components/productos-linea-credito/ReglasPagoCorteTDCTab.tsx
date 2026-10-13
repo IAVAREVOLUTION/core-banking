@@ -13,6 +13,7 @@
  * Todo se persiste dentro del JSON institucional de J_PRODUCTOS.data,
  * en el nodo `reglasPagoCorteTDC` (el Form lo recoge vía ref.getData()).
  */
+import { MontoInput } from '../ui/MontoInput';
 import { useState, useEffect, useRef, forwardRef, useImperativeHandle } from 'react';
 import { useProductoPersistence } from '@/app/hooks/useProductoPersistence';
 import { useComponentesContablesCatalogo } from '@/app/hooks/useComponentesContablesCatalogo';
@@ -582,8 +583,8 @@ export const ReglasPagoCorteTDCTab = forwardRef<{ getData: () => ReglasPagoCorte
                         : 'No definido'}
                     </div>
                   ) : (
-                    <input
-                      type="number"
+                    <MontoInput
+
                       min={0}
                       step="0.01"
                       value={data.pagoMinimoMontoAbsoluto}

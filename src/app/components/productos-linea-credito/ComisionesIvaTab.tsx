@@ -15,6 +15,7 @@
  *
  * Persiste en el nodo `comisionesIva` de J_PRODUCTOS.data.
  */
+import { MontoInput } from '../ui/MontoInput';
 import { useState, useRef, useEffect, forwardRef, useImperativeHandle } from 'react';
 import { toast } from 'sonner';
 import { useProductoPersistence } from '@/app/hooks/useProductoPersistence';
@@ -433,8 +434,8 @@ function FormModal({
                 <label className="block text-xs text-gray-700 mb-1 font-medium">Comisión Fija</label>
                 <div className="relative">
                   <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-600">$</span>
-                  <input
-                    type="text"
+                  <MontoInput
+
                     value={form.comisionFija}
                     onChange={e => set('comisionFija', soloNumero(e.target.value))}
                     onBlur={() => blurMonto('comisionFija')}

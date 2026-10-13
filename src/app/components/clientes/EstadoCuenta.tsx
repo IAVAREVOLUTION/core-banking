@@ -1,3 +1,4 @@
+import { MontoInput } from '../ui/MontoInput';
 import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
@@ -502,8 +503,8 @@ function ModalCredito({ mode, credito, onSave, onClose }: ModalCreditoProps) {
 
                   <div>
                     <label className="block text-xs text-gray-700 mb-1 font-medium">Monto Solicitado <span className="text-red-600">*</span></label>
-                    <input
-                      type="number"
+                    <MontoInput
+
                       value={formData.montoSolicitado}
                       onChange={(e) => handleChange('montoSolicitado', parseFloat(e.target.value) || 0)}
                       step="0.01"
@@ -540,8 +541,8 @@ function ModalCredito({ mode, credito, onSave, onClose }: ModalCreditoProps) {
 
                   <div>
                     <label className="block text-xs text-gray-700 mb-1 font-medium">Pago por Periodo</label>
-                    <input
-                      type="number"
+                    <MontoInput
+
                       value={formData.pagoPeriodo}
                       onChange={(e) => handleChange('pagoPeriodo', parseFloat(e.target.value) || 0)}
                       step="0.01"
@@ -580,8 +581,8 @@ function ModalCredito({ mode, credito, onSave, onClose }: ModalCreditoProps) {
 
                   <div>
                     <label className="block text-xs text-gray-700 mb-1 font-medium">Monto Total</label>
-                    <input
-                      type="number"
+                    <MontoInput
+
                       value={formData.montoTotal}
                       onChange={(e) => handleChange('montoTotal', parseFloat(e.target.value) || 0)}
                       step="0.01"
@@ -594,8 +595,8 @@ function ModalCredito({ mode, credito, onSave, onClose }: ModalCreditoProps) {
                 <div className="grid grid-cols-3 gap-6">
                   <div>
                     <label className="block text-xs text-gray-700 mb-1 font-medium">Total Pagado</label>
-                    <input
-                      type="number"
+                    <MontoInput
+
                       value={formData.totalPagado}
                       onChange={(e) => handleChange('totalPagado', parseFloat(e.target.value) || 0)}
                       step="0.01"
@@ -755,8 +756,8 @@ function ModalPago({ mode, pago, onSave, onClose }: ModalPagoProps) {
 
                   <div>
                     <label className="block text-xs text-gray-700 mb-1 font-medium">Monto del Pago <span className="text-red-600">*</span></label>
-                    <input
-                      type="number"
+                    <MontoInput
+
                       value={formData.pago}
                       onChange={(e) => handleChange('pago', parseFloat(e.target.value) || 0)}
                       step="0.01"
@@ -807,8 +808,8 @@ function ModalPago({ mode, pago, onSave, onClose }: ModalPagoProps) {
                 <div className="grid grid-cols-3 gap-6">
                   <div>
                     <label className="block text-xs text-gray-700 mb-1 font-medium">Proporción Capital</label>
-                    <input
-                      type="number"
+                    <MontoInput
+
                       value={formData.propCapital}
                       onChange={(e) => handleChange('propCapital', parseFloat(e.target.value) || 0)}
                       step="0.01"
@@ -818,8 +819,8 @@ function ModalPago({ mode, pago, onSave, onClose }: ModalPagoProps) {
 
                   <div>
                     <label className="block text-xs text-gray-700 mb-1 font-medium">Proporción Interés</label>
-                    <input
-                      type="number"
+                    <MontoInput
+
                       value={formData.propInteres}
                       onChange={(e) => handleChange('propInteres', parseFloat(e.target.value) || 0)}
                       step="0.01"
@@ -829,8 +830,8 @@ function ModalPago({ mode, pago, onSave, onClose }: ModalPagoProps) {
 
                   <div>
                     <label className="block text-xs text-gray-700 mb-1 font-medium">Proporción IVA</label>
-                    <input
-                      type="number"
+                    <MontoInput
+
                       value={formData.propIVA}
                       onChange={(e) => handleChange('propIVA', parseFloat(e.target.value) || 0)}
                       step="0.01"
@@ -843,8 +844,8 @@ function ModalPago({ mode, pago, onSave, onClose }: ModalPagoProps) {
                 <div className="grid grid-cols-3 gap-6">
                   <div>
                     <label className="block text-xs text-gray-700 mb-1 font-medium">Proporción Seguro</label>
-                    <input
-                      type="number"
+                    <MontoInput
+
                       value={formData.propSeguro}
                       onChange={(e) => handleChange('propSeguro', parseFloat(e.target.value) || 0)}
                       step="0.01"
@@ -854,8 +855,8 @@ function ModalPago({ mode, pago, onSave, onClose }: ModalPagoProps) {
 
                   <div>
                     <label className="block text-xs text-gray-700 mb-1 font-medium">Proporción IVA Seguro</label>
-                    <input
-                      type="number"
+                    <MontoInput
+
                       value={formData.propIVASeguro}
                       onChange={(e) => handleChange('propIVASeguro', parseFloat(e.target.value) || 0)}
                       step="0.01"

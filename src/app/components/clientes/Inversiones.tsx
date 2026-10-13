@@ -1,3 +1,4 @@
+import { MontoInput } from '../ui/MontoInput';
 import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import { useClienteSubtabList } from '@/app/hooks/useClientePersistence';
@@ -509,8 +510,8 @@ export function Inversiones({ onBack, mode, clienteId }: InversionesProps) {
                       <label className="block text-xs text-gray-700 mb-1 font-medium">
                         Monto Pagaré <span className="text-red-600">*</span>
                       </label>
-                      <input
-                        type="text"
+                      <MontoInput
+
                         value={formData.montoPagare}
                         onChange={(e) => setFormData(prev => ({ ...prev, montoPagare: e.target.value }))}
                         placeholder="$ 0.00"
@@ -522,8 +523,8 @@ export function Inversiones({ onBack, mode, clienteId }: InversionesProps) {
                       <label className="block text-xs text-gray-700 mb-1 font-medium">
                         Monto Intereses (Calculado)
                       </label>
-                      <input
-                        type="text"
+                      <MontoInput
+
                         value={formData.montoIntereses}
                         readOnly
                         className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded bg-gray-100 text-gray-600"

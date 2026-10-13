@@ -1,3 +1,4 @@
+import { MontoInput } from '../ui/MontoInput';
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { toast } from 'sonner';
 import { useClienteSubtabList } from '@/app/hooks/useClientePersistence';
@@ -493,8 +494,8 @@ export function PerfilTransaccional({ onBack, mode, clienteId }: PerfilTransacci
                       <label className="block text-xs text-gray-700 mb-1 font-medium">
                         Monto Max. Retiros <span className="text-red-600">*</span>
                       </label>
-                      <input
-                        type="text"
+                      <MontoInput
+
                         value={formData.montoMaxRetiros}
                         onChange={(e) => setFormData(prev => ({ ...prev, montoMaxRetiros: e.target.value }))}
                         placeholder="$0.00"
@@ -506,8 +507,8 @@ export function PerfilTransaccional({ onBack, mode, clienteId }: PerfilTransacci
                       <label className="block text-xs text-gray-700 mb-1 font-medium">
                         Monto Max. Depósitos <span className="text-red-600">*</span>
                       </label>
-                      <input
-                        type="text"
+                      <MontoInput
+
                         value={formData.montoMaxDepositos}
                         onChange={(e) => setFormData(prev => ({ ...prev, montoMaxDepositos: e.target.value }))}
                         placeholder="$0.00"

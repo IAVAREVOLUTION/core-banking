@@ -1,3 +1,4 @@
+import { MontoInput } from '../ui/MontoInput';
 import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import * as store from './pldStore';
@@ -46,9 +47,9 @@ export function PLDParametros({ onBack }: Props) {
           </div>
           <div className="p-4 grid grid-cols-2 gap-x-8 gap-y-2.5">
             <div className="flex items-center gap-2"><label className={labelCls}>FACTOR RIESGO</label><input type="text" value={data.factorRiesgo} onChange={e => update('factorRiesgo', e.target.value)} className={inputCls} /></div>
-            <div className="flex items-center gap-2"><label className={labelCls}>MONTO MÁX. OPERACIÓN USD</label><input type="text" value={data.montoMaxOperacionUSD} onChange={e => update('montoMaxOperacionUSD', e.target.value)} className={inputCls} /></div>
-            <div className="flex items-center gap-2"><label className={labelCls}>MONTO MÁX. PERSONA FÍSICA</label><input type="text" value={data.montoMaxPersonaFisica} onChange={e => update('montoMaxPersonaFisica', e.target.value)} className={inputCls} /></div>
-            <div className="flex items-center gap-2"><label className={labelCls}>MONTO MÁX. PERSONA MORAL</label><input type="text" value={data.montoMaxPersonaMoral} onChange={e => update('montoMaxPersonaMoral', e.target.value)} className={inputCls} /></div>
+            <div className="flex items-center gap-2"><label className={labelCls}>MONTO MÁX. OPERACIÓN USD</label><MontoInput value={data.montoMaxOperacionUSD} onChange={e => update('montoMaxOperacionUSD', e.target.value)} className={inputCls} /></div>
+            <div className="flex items-center gap-2"><label className={labelCls}>MONTO MÁX. PERSONA FÍSICA</label><MontoInput value={data.montoMaxPersonaFisica} onChange={e => update('montoMaxPersonaFisica', e.target.value)} className={inputCls} /></div>
+            <div className="flex items-center gap-2"><label className={labelCls}>MONTO MÁX. PERSONA MORAL</label><MontoInput value={data.montoMaxPersonaMoral} onChange={e => update('montoMaxPersonaMoral', e.target.value)} className={inputCls} /></div>
             <div className="flex items-center gap-2"><label className={labelCls}>APLICA PERSONA FÍSICA</label>
               <select value={data.aplicaPersonaFisica} onChange={e => update('aplicaPersonaFisica', e.target.value)} className={inputCls}>
                 <option>Sí</option><option>No</option>

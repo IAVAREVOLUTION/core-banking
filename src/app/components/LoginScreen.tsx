@@ -12,6 +12,16 @@ export const MODULOS_DEMO = [
   'cobranza', 'polizas-contables',
 ];
 
+/**
+ * Usuario TDC-DEMO — demostración del flujo de Tarjeta de Crédito, del Taller
+ * del producto a la Cartera TDC y sus pólizas. Misma restricción de INTERFAZ
+ * que DEMO.
+ */
+export const MODULOS_TDC_DEMO = [
+  'productos', 'prospectos', 'clientes', 'oportunidades',
+  'solicitudes-creditos', 'originacion', 'cartera-tdc', 'polizas-contables',
+];
+
 export interface PerfilUsuario {
   usuario: string;
   /** Sin lista = acceso completo (RN-03). */
@@ -44,7 +54,7 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
     setError('');
     setLoading(true);
 
-    // Validación básica: admin / admin · demo / demo
+    // Validación básica: admin / admin · demo / demo · tdc-demo / tdc-demo
     setTimeout(() => {
       const u = usuario.trim().toLowerCase();
       const p = password.trim().toLowerCase();
@@ -52,6 +62,8 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
         onLogin({ usuario: 'admin' });          // sin lista = ve todo
       } else if (u === 'demo' && p === 'demo') {
         onLogin({ usuario: 'demo', modulosPermitidos: MODULOS_DEMO });
+      } else if (u === 'tdc-demo' && p === 'tdc-demo') {
+        onLogin({ usuario: 'TDC-DEMO', modulosPermitidos: MODULOS_TDC_DEMO });
       } else {
         setError('Usuario o contraseña incorrectos');
         setLoading(false);

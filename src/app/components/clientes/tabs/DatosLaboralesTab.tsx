@@ -1,4 +1,5 @@
 import { Input } from '../../ui/input';
+import { MontoInput } from '../../ui/MontoInput';
 import { Label } from '../../ui/label';
 import {
   Select,
@@ -87,9 +88,9 @@ export function DatosLaboralesTab({ formData, updateFormData, isView }: DatosLab
             <Label htmlFor="ingresosMensuales" className="text-[#3C3C3C]">
               Ingresos Mensuales
             </Label>
-            <Input
+            <MontoInput
+              componente={Input}
               id="ingresosMensuales"
-              type="number"
               value={formData.ingresosMensuales || ''}
               onChange={(e) => updateFormData('ingresosMensuales', parseFloat(e.target.value) || 0)}
               disabled={isView}
@@ -102,9 +103,9 @@ export function DatosLaboralesTab({ formData, updateFormData, isView }: DatosLab
             <Label htmlFor="otrosIngresos" className="text-[#3C3C3C]">
               Otros Ingresos
             </Label>
-            <Input
+            <MontoInput
+              componente={Input}
               id="otrosIngresos"
-              type="number"
               value={formData.otrosIngresos || ''}
               onChange={(e) => updateFormData('otrosIngresos', parseFloat(e.target.value) || 0)}
               disabled={isView}

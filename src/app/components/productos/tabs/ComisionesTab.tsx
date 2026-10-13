@@ -1,3 +1,4 @@
+import { MontoInput } from '../../ui/MontoInput';
 import { useState, useEffect, useRef, forwardRef, useImperativeHandle } from 'react';
 import { toast } from 'sonner';
 import { useTabPersistence } from '@/app/hooks/useProductoPersistence';
@@ -659,8 +660,8 @@ function ComisionFormModal({ mode, item, cargosDisponibles, onSave, onClose }: C
                     {isMonto && (
                       <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-gray-400">$</span>
                     )}
-                    <input
-                      type="text"
+                    <MontoInput
+
                       maxLength={30}
                       value={formData.amount}
                       onChange={(e) => handleChange('amount', e.target.value.replace(/[^0-9.]/g, ''))}

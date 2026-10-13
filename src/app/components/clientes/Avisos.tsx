@@ -1,3 +1,4 @@
+import { MontoInput } from '../ui/MontoInput';
 import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import { DatePicker } from './DatePicker';
@@ -406,8 +407,8 @@ export function Avisos({ onBack, mode, clienteId }: AvisosProps) {
                       <label className="block text-xs text-gray-700 mb-1 font-medium">
                         Monto Total <span className="text-red-600">*</span>
                       </label>
-                      <input
-                        type="text"
+                      <MontoInput
+
                         value={formData.montoTotal}
                         onChange={(e) => setFormData(prev => ({ ...prev, montoTotal: e.target.value }))}
                         placeholder="$ 0.00"
@@ -419,8 +420,8 @@ export function Avisos({ onBack, mode, clienteId }: AvisosProps) {
                       <label className="block text-xs text-gray-700 mb-1 font-medium">
                         Pago Total
                       </label>
-                      <input
-                        type="text"
+                      <MontoInput
+
                         value={formData.pagoTotal}
                         onChange={(e) => setFormData(prev => ({ ...prev, pagoTotal: e.target.value }))}
                         placeholder="$ 0.00"
@@ -432,8 +433,8 @@ export function Avisos({ onBack, mode, clienteId }: AvisosProps) {
                       <label className="block text-xs text-gray-700 mb-1 font-medium">
                         Saldo (Calculado)
                       </label>
-                      <input
-                        type="text"
+                      <MontoInput
+
                         value={formData.saldo}
                         readOnly
                         className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded bg-gray-100 text-gray-600"

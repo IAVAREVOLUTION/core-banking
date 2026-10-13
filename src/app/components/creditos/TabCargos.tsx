@@ -1,3 +1,4 @@
+import { MontoInput } from '../ui/MontoInput';
 import { useState } from 'react';
 
 interface TabCargosProps {
@@ -290,8 +291,8 @@ export function TabCargos({ mode, camposEditables }: TabCargosProps) {
                   <label className="block text-xs font-normal text-gray-700 mb-1">
                     Monto <span className="text-red-500">*</span>
                   </label>
-                  <input 
-                    type="text"
+                  <MontoInput 
+
                     value={nuevoCargo.monto}
                     onChange={(e) => setNuevoCargo(prev => ({ ...prev, monto: e.target.value }))}
                     className="w-full px-2 py-1.5 text-xs border border-gray-300 bg-white"

@@ -75,7 +75,19 @@ ok_('E3 pagado cuadra', Math.abs(t3.pagado - (t3.capital + t3.interesOrdinario +
 // ── Pago que no amortiza ──
 const nx = M.simularTDC({ ...base, pagoPeriodo: 100 });
 ok_('No amortiza: no liquida', !nx.liquida);
-ok_('No amortiza: corta pronto', nx.renglones.length < 20);
+eq('No amortiza: muestra 12 periodos', nx.renglones.length, 12);
+const pml = nx.pagoMinimoParaLiquidar;
+ok_('No amortiza: calcula pago para liquidar', pml > 100 && pml <= 10000);
+const conPml = M.simularTDC({ ...base, pagoPeriodo: pml });
+ok_('Con ese pago sí liquida', conPml.liquida && conPml.renglones.length === nx.periodosParaLiquidar);
+ok_('Un centavo menos ya no liquida', !M.simularTDC({ ...base, pagoPeriodo: pml - 0.01 }).liquida);
+
+// Caso reportado: moratoria 2,800% (factor 70 × 40%), pago 5,000
+const rep = M.simularTDC({ ...base, montoDisposicion: 100000, tasaOrdinariaAnual: 40, tasaMoratoriaAnual: 2800,
+  pagoPeriodo: 5000, fechaInicio: '2026-10-12', diaCorte: 15 });
+ok_('Reportado: nunca se paga', !rep.liquida);
+eq('Reportado: 12 periodos', rep.renglones.length, 12);
+console.log(`  [caso reportado] pago para liquidar ${rep.pagoMinimoParaLiquidar} en ${rep.periodosParaLiquidar} periodos`);
 
 // Validaciones
 ok_('Disposición 0 → error', !M.simularTDC({ ...base, montoDisposicion: 0, pagoPeriodo: 100 }).ok);

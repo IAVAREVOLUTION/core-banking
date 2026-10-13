@@ -17,6 +17,7 @@
  * confusión: dos tablas con la misma forma visual ("rango de monto → algo")
  * pero datos sin relación entre sí.
  */
+import { MontoInput } from '../ui/MontoInput';
 import { useState, useMemo, forwardRef, useImperativeHandle } from 'react';
 import { toast } from 'sonner';
 import { useProductoPersistence } from '../../hooks/useProductoPersistence';
@@ -167,8 +168,8 @@ export const ComitesCreditoLineaCreditoTab = forwardRef<ComitesCreditoLineaCredi
               <div className="grid grid-cols-3 gap-3 mb-2">
                 <div>
                   <label className="block text-xs text-gray-700 mb-1 font-medium">Monto desde</label>
-                  <input
-                    type="text"
+                  <MontoInput
+
                     value={filters.montoDesde}
                     onChange={(e) => setFilters({ ...filters, montoDesde: e.target.value })}
                     placeholder="Buscar monto desde..."
@@ -177,8 +178,8 @@ export const ComitesCreditoLineaCreditoTab = forwardRef<ComitesCreditoLineaCredi
                 </div>
                 <div>
                   <label className="block text-xs text-gray-700 mb-1 font-medium">Monto hasta</label>
-                  <input
-                    type="text"
+                  <MontoInput
+
                     value={filters.montoHasta}
                     onChange={(e) => setFilters({ ...filters, montoHasta: e.target.value })}
                     placeholder="Buscar monto hasta..."
@@ -355,8 +356,8 @@ function FormModal({ mode, item, onSave, onClose }: FormModalProps) {
               <div className="grid grid-cols-1 gap-y-3">
                 <div>
                   <label className="block text-xs text-gray-700 mb-1 font-medium">Monto desde (MXN) <span className="text-red-600">*</span></label>
-                  <input
-                    type="number"
+                  <MontoInput
+
                     value={formData.montoDesde}
                     onChange={(e) => handleChange('montoDesde', e.target.value)}
                     disabled={isViewMode}
@@ -367,8 +368,8 @@ function FormModal({ mode, item, onSave, onClose }: FormModalProps) {
 
                 <div>
                   <label className="block text-xs text-gray-700 mb-1 font-medium">Monto hasta (MXN) <span className="text-red-600">*</span></label>
-                  <input
-                    type="number"
+                  <MontoInput
+
                     value={formData.montoHasta}
                     onChange={(e) => handleChange('montoHasta', e.target.value)}
                     disabled={isViewMode}

@@ -1,3 +1,4 @@
+import { MontoInput } from '../ui/MontoInput';
 import { useState, useRef, useMemo, useEffect } from 'react';
 import { toast } from 'sonner';
 import { K_PERIODS } from '../../data/mockData';
@@ -1246,8 +1247,8 @@ export function ProductoCaptacionForm({ mode, productoId, producto, onCancel, on
           <div className="grid grid-cols-3 gap-x-8 gap-y-3">
             <div>
               <label className="block text-xs text-gray-700 mb-1">MONTO MÍNIMO</label>
-              <input
-                type="text"
+              <MontoInput
+
                 value={formData.montoMinimo}
                 onChange={(e) => handleInputChange('montoMinimo', e.target.value)}
                 disabled={isViewMode}
@@ -1258,8 +1259,8 @@ export function ProductoCaptacionForm({ mode, productoId, producto, onCancel, on
 
             <div>
               <label className="block text-xs text-gray-700 mb-1">MONTO MÁXIMO</label>
-              <input
-                type="text"
+              <MontoInput
+
                 value={formData.montoMaximo}
                 onChange={(e) => handleInputChange('montoMaximo', e.target.value)}
                 disabled={isViewMode}
@@ -1518,8 +1519,8 @@ export function ProductoCaptacionForm({ mode, productoId, producto, onCancel, on
 
               <div>
                 <label className="block text-xs text-gray-700 mb-1">MONTO MÍNIMO</label>
-                <input
-                  type="text"
+                <MontoInput
+
                   value={formData.montoMinimo}
                   onChange={(e) => handleInputChange('montoMinimo', e.target.value)}
                   disabled={isViewMode}
@@ -1581,8 +1582,8 @@ export function ProductoCaptacionForm({ mode, productoId, producto, onCancel, on
 
               <div>
                 <label className="block text-xs text-gray-700 mb-1">MONTO MÁXIMO</label>
-                <input
-                  type="text"
+                <MontoInput
+
                   value={formData.montoMaximo}
                   onChange={(e) => handleInputChange('montoMaximo', e.target.value)}
                   disabled={isViewMode}

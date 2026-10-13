@@ -1,3 +1,4 @@
+import { MontoInput } from '../ui/MontoInput';
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { DatePicker } from './DatePicker';
@@ -410,8 +411,8 @@ export function Creditos({ onBack, mode, clienteId }: CreditosProps) {
                       <label className="block text-xs text-gray-700 mb-1 font-medium">
                         Monto Solicitado <span className="text-red-600">*</span>
                       </label>
-                      <input
-                        type="text"
+                      <MontoInput
+
                         value={formData.montoSolicitado}
                         onChange={(e) => setFormData(prev => ({ ...prev, montoSolicitado: e.target.value }))}
                         placeholder="$ 0.00"
@@ -426,8 +427,8 @@ export function Creditos({ onBack, mode, clienteId }: CreditosProps) {
                       <label className="block text-xs text-gray-700 mb-1 font-medium">
                         Monto Autorizado <span className="text-red-600">*</span>
                       </label>
-                      <input
-                        type="text"
+                      <MontoInput
+
                         value={formData.montoAutorizado}
                         onChange={(e) => setFormData(prev => ({ ...prev, montoAutorizado: e.target.value }))}
                         placeholder="$ 0.00"
@@ -439,8 +440,8 @@ export function Creditos({ onBack, mode, clienteId }: CreditosProps) {
                       <label className="block text-xs text-gray-700 mb-1 font-medium">
                         Monto Entregado <span className="text-red-600">*</span>
                       </label>
-                      <input
-                        type="text"
+                      <MontoInput
+
                         value={formData.montoEntregado}
                         onChange={(e) => setFormData(prev => ({ ...prev, montoEntregado: e.target.value }))}
                         placeholder="$ 0.00"

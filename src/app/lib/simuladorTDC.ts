@@ -56,9 +56,12 @@ export interface ParamsSimulacionTDC {
   diaCorte?: number;
   /** Días entre corte y fecha límite de pago. */
   diasParaPago?: number;
-  /** Tope de periodos para no ciclar cuando el pago no amortiza. */
+  /** Horizonte máximo de la proyección; si no liquida dentro de él, "nunca se paga". */
   maxPeriodos?: number;
 }
+
+/** Renglones que se muestran cuando la deuda nunca se liquida. */
+export const PERIODOS_MUESTRA_NO_LIQUIDA = 12;
 
 export interface RenglonSimulacionTDC {
   periodo: number;
@@ -94,8 +97,16 @@ export interface ResultadoSimulacionTDC {
   /** Del primer corte. */
   pagoMinimoPeriodo: number;
   renglones: RenglonSimulacionTDC[];
-  /** false cuando el pago no alcanza a amortizar y se cortó la proyección. */
+  /**
+   * false cuando con este pago la deuda no llega a cero dentro del horizonte
+   * (`maxPeriodos`). En ese caso `renglones` trae solo los primeros
+   * PERIODOS_MUESTRA_NO_LIQUIDA periodos.
+   */
   liquida: boolean;
+  /** Sólo si no liquida: menor Pago Periodo fijo con el que la deuda sí se salda. */
+  pagoMinimoParaLiquidar?: number;
+  /** Periodos que tardaría en saldarse con `pagoMinimoParaLiquidar`. */
+  periodosParaLiquidar?: number;
   /** true si en algún periodo el pago quedó por debajo del mínimo. */
   generoMoratorio: boolean;
   totales: {
@@ -173,7 +184,8 @@ export function clasificarEscenario(pago: number, pagoNoIntereses: number, pagoM
   return 3;
 }
 
-export function simularTDC(p: ParamsSimulacionTDC): ResultadoSimulacionTDC {
+/** Proyección completa: hasta saldar la deuda o agotar `maxPeriodos`. */
+function proyectar(p: ParamsSimulacionTDC): ResultadoSimulacionTDC {
   const vacio = (error: string): ResultadoSimulacionTDC => ({
     ok: false, error, escenario: 1, pagoNoGenerarIntereses: 0, pagoMinimoPeriodo: 0,
     renglones: [], liquida: false, generoMoratorio: false,
@@ -204,8 +216,6 @@ export function simularTDC(p: ParamsSimulacionTDC): ResultadoSimulacionTDC {
   let pagoMinimo1 = 0;
   let liquida = false;
   let generoMoratorio = false;
-  let saldoPrevio = Infinity;
-  let periodosSinAmortizar = 0;
 
   for (let k = 1; k <= maxPeriodos; k++) {
     // Primer corte: la disposición está dentro del periodo de gracia.
@@ -266,17 +276,9 @@ export function simularTDC(p: ParamsSimulacionTDC): ResultadoSimulacionTDC {
     });
 
     if (saldoFinal <= 0.005) { liquida = true; break; }
-
-    // Si el pago ni siquiera cubre lo que se genera, la deuda no baja nunca.
-    if (saldoFinal >= saldoPrevio - 0.005) {
-      if (++periodosSinAmortizar >= 3) break;
-    } else {
-      periodosSinAmortizar = 0;
-    }
-    saldoPrevio = saldoFinal;
+    // Saldo mil veces mayor a lo dispuesto: ya no hay forma de que baje a cero.
+    if (saldoFinal > D * 1000) break;
   }
-
-  const suma = (f: (r: RenglonSimulacionTDC) => number) => money(renglones.reduce((a, r) => a + f(r), 0));
 
   return {
     ok: true,
@@ -286,13 +288,53 @@ export function simularTDC(p: ParamsSimulacionTDC): ResultadoSimulacionTDC {
     renglones,
     liquida,
     generoMoratorio,
-    totales: {
-      pagado: suma(r => r.pagoRealizado),
-      capital: suma(r => r.aplicadoCapital),
-      interesOrdinario: suma(r => r.interesOrdinario),
-      interesMoratorio: suma(r => r.interesMoratorio),
-      iva: suma(r => r.iva),
-    },
+    totales: totalesDe(renglones),
+  };
+}
+
+const totalesDe = (renglones: RenglonSimulacionTDC[]): ResultadoSimulacionTDC['totales'] => {
+  const suma = (f: (r: RenglonSimulacionTDC) => number) => money(renglones.reduce((a, r) => a + f(r), 0));
+  return {
+    pagado: suma(r => r.pagoRealizado),
+    capital: suma(r => r.aplicadoCapital),
+    interesOrdinario: suma(r => r.interesOrdinario),
+    interesMoratorio: suma(r => r.interesMoratorio),
+    iva: suma(r => r.iva),
+  };
+};
+
+/**
+ * Simulación de pagos TDC.
+ *
+ * Si con el Pago Periodo la deuda no llega a cero dentro del horizonte
+ * (`maxPeriodos`, 360 por default), "nunca se paga": se muestran sólo los
+ * primeros 12 periodos para ver cómo evoluciona y se calcula el menor pago
+ * fijo con el que sí se saldaría — búsqueda binaria al centavo entre el pago
+ * capturado (no liquida) y el Pago para No Generar Intereses (liquida en el
+ * primer corte).
+ */
+export function simularTDC(p: ParamsSimulacionTDC): ResultadoSimulacionTDC {
+  const r = proyectar(p);
+  if (!r.ok || r.liquida) return r;
+
+  let bajo = Math.round(money(Number(p.pagoPeriodo) || 0) * 100);   // centavos: no liquida
+  let alto = Math.round(r.pagoNoGenerarIntereses * 100);            // centavos: liquida
+  let periodosAlto = 1;
+  while (alto - bajo > 1) {
+    const medio = Math.floor((bajo + alto) / 2);
+    const prueba = proyectar({ ...p, pagoPeriodo: medio / 100 });
+    if (prueba.liquida) { alto = medio; periodosAlto = prueba.renglones.length; }
+    else bajo = medio;
+  }
+
+  const renglones = r.renglones.slice(0, PERIODOS_MUESTRA_NO_LIQUIDA);
+  return {
+    ...r,
+    renglones,
+    generoMoratorio: renglones.some(x => x.interesMoratorio > 0),
+    totales: totalesDe(renglones),
+    pagoMinimoParaLiquidar: alto / 100,
+    periodosParaLiquidar: periodosAlto,
   };
 }
 

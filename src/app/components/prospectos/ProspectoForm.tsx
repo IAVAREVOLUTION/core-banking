@@ -1,3 +1,4 @@
+import { MontoInput } from '../ui/MontoInput';
 import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import { Prospecto } from './ProspectosList';
@@ -3147,8 +3148,8 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, next
                   <label className="block text-xs font-medium text-gray-700 mb-1.5">
                     Monto Solicitado <span className="text-red-600">*</span>
                   </label>
-                  <input
-                    type="text"
+                  <MontoInput
+
                     value={nuevaCotizacion.montoSolicitado}
                     onChange={(e) => handleChangeCotizacion('montoSolicitado', e.target.value)}
                     placeholder="$0.00"

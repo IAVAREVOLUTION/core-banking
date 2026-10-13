@@ -1,3 +1,4 @@
+import { MontoInput } from '../../ui/MontoInput';
 import { useState, useEffect, forwardRef, useImperativeHandle } from 'react';
 import { toast } from 'sonner';
 import { K_PERIODS } from '@/app/data/mockData';
@@ -389,8 +390,8 @@ function FormModal({ mode, item, productId, periodosDisponibles, onSave, onClose
 
                 <div>
                   <label className="block text-xs text-gray-700 mb-1 font-medium">Monto Mínimo <span className="text-red-600">*</span></label>
-                  <input 
-                    type="number" 
+                  <MontoInput 
+ 
                     step="0.01" 
                     value={formData.montoMinimo || ''} 
                     onChange={(e) => handleChange('montoMinimo', e.target.value === '' ? 0 : parseFloat(e.target.value))} 
@@ -402,8 +403,8 @@ function FormModal({ mode, item, productId, periodosDisponibles, onSave, onClose
 
                 <div>
                   <label className="block text-xs text-gray-700 mb-1 font-medium">Monto Máximo <span className="text-red-600">*</span></label>
-                  <input 
-                    type="number" 
+                  <MontoInput 
+ 
                     step="0.01" 
                     value={formData.montoMaximo || ''} 
                     onChange={(e) => handleChange('montoMaximo', e.target.value === '' ? 0 : parseFloat(e.target.value))} 
@@ -415,8 +416,8 @@ function FormModal({ mode, item, productId, periodosDisponibles, onSave, onClose
 
                 <div>
                   <label className="block text-xs text-gray-700 mb-1 font-medium">Monto Default <span className="text-red-600">*</span></label>
-                  <input 
-                    type="number" 
+                  <MontoInput 
+ 
                     step="0.01" 
                     value={formData.montoDefault || ''} 
                     onChange={(e) => handleChange('montoDefault', e.target.value === '' ? 0 : parseFloat(e.target.value))} 

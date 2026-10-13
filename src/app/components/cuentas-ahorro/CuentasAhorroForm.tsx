@@ -17,6 +17,7 @@
  *   - Respetar llaves foráneas (cliente_id, producto_id)
  * ═══════════════════════════════════════════════════════════════════
  */
+import { MontoInput } from '../ui/MontoInput';
 import { useState, useEffect, useCallback } from 'react';
 import { toast } from 'sonner';
 import { BeneficiariosTab } from './BeneficiariosTab';
@@ -954,8 +955,8 @@ export function CuentasAhorroForm({ mode, accountId, onCancel, onSave }: Cuentas
             {isNew ? (
               <input type="text" value="$0.00" disabled className={inputCls(false, true)} />
             ) : (
-              <input
-                type="text"
+              <MontoInput
+
                 value={dbForm.saldo_actual}
                 onChange={e => handleDbNumeric('saldo_actual', e.target.value)}
                 onBlur={() => handleDbCurrencyBlur('saldo_actual')}
@@ -967,8 +968,8 @@ export function CuentasAhorroForm({ mode, accountId, onCancel, onSave }: Cuentas
           </div>
           <div>
             <Lbl>Monto Solicitado</Lbl>
-            <input
-              type="text"
+            <MontoInput
+
               value={dbForm.monto_sol}
               onChange={e => handleDbNumeric('monto_sol', e.target.value)}
               onBlur={() => handleDbCurrencyBlur('monto_sol')}
@@ -979,8 +980,8 @@ export function CuentasAhorroForm({ mode, accountId, onCancel, onSave }: Cuentas
           </div>
           <div>
             <Lbl>Monto Autorizado</Lbl>
-            <input
-              type="text"
+            <MontoInput
+
               value={dbForm.monto_aut}
               onChange={e => handleDbNumeric('monto_aut', e.target.value)}
               onBlur={() => handleDbCurrencyBlur('monto_aut')}
@@ -991,8 +992,8 @@ export function CuentasAhorroForm({ mode, accountId, onCancel, onSave }: Cuentas
           </div>
           <div>
             <Lbl>Monto Dispersado</Lbl>
-            <input
-              type="text"
+            <MontoInput
+
               value={dbForm.monto_disp}
               onChange={e => handleDbNumeric('monto_disp', e.target.value)}
               onBlur={() => handleDbCurrencyBlur('monto_disp')}

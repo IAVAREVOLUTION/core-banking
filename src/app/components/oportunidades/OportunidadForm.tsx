@@ -12,6 +12,7 @@
  * Una Oportunidad es una Cotización de Línea de Crédito (decisión HU-CRM-03),
  * así que persiste sobre el mismo registro de J_COTIZACIONES.
  */
+import { MontoInput } from '../ui/MontoInput';
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { toast } from 'sonner';
 import { generarCuentaEje, buscarCuentaEje } from '../../hooks/useCuentaEjeGenerator';
@@ -1397,9 +1398,9 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
                 {/* Monto Emisión — base del cálculo de CA-06. En TDC es el monto de la línea. */}
                 <div className="flex flex-col">
                   <label className="text-[10px] text-gray-600 mb-0.5">{esTDC ? 'MONTO' : 'MONTO EMISIÓN'}</label>
-                  <input
-                    type="text"
-                    inputMode="decimal"
+                  <MontoInput
+
+
                     value={data.montoEmision ?? ''}
                     disabled={isView}
                     onChange={e => { const c = limpiarDecimal(e.target.value); if (c !== null) setData({ montoEmision: c }); }}
@@ -1485,9 +1486,9 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
                 {!esTDC && (
                   <div className="flex flex-col">
                     <label className="text-[10px] text-gray-600 mb-0.5">MONTO INVERSIÓN</label>
-                    <input
-                      type="text"
-                      inputMode="decimal"
+                    <MontoInput
+
+
                       value={data.montoInversion ?? ''}
                       disabled={isView}
                       onChange={e => { const c = limpiarDecimal(e.target.value); if (c !== null) setData({ montoInversion: c }); }}
@@ -1746,9 +1747,9 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-x-4 gap-y-2 p-3">
                     <div className="flex flex-col">
                       <label className="text-[10px] text-gray-600 mb-0.5">MONTO</label>
-                      <input
-                        type="text"
-                        inputMode="decimal"
+                      <MontoInput
+
+
                         value={data.montoEmision ?? ''}
                         disabled={cierreLocked}
                         onChange={e => { const c = limpiarDecimal(e.target.value); if (c !== null) setData({ montoEmision: c }); }}
@@ -1793,9 +1794,9 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-x-4 gap-y-2 p-3">
                       <div className="flex flex-col">
                         <label className="text-[10px] text-gray-600 mb-0.5">INGRESO MENSUAL COMPROBADO</label>
-                        <input
-                          type="text"
-                          inputMode="decimal"
+                        <MontoInput
+
+
                           value={perfilTDC.ingresoComprobado ?? ''}
                           disabled={cierreLocked}
                           onChange={e => { const c = limpiarDecimal(e.target.value); if (c !== null) setPerfilTDC('ingresoComprobado', c); }}
@@ -1806,9 +1807,9 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
                       </div>
                       <div className="flex flex-col">
                         <label className="text-[10px] text-gray-600 mb-0.5">OTROS INGRESOS</label>
-                        <input
-                          type="text"
-                          inputMode="decimal"
+                        <MontoInput
+
+
                           value={perfilTDC.otrosIngresos ?? ''}
                           disabled={cierreLocked}
                           onChange={e => { const c = limpiarDecimal(e.target.value); if (c !== null) setPerfilTDC('otrosIngresos', c); }}
@@ -1837,9 +1838,9 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
                       </div>
                       <div className="flex flex-col">
                         <label className="text-[10px] text-gray-600 mb-0.5">GASTOS MENSUALES ESTIMADOS</label>
-                        <input
-                          type="text"
-                          inputMode="decimal"
+                        <MontoInput
+
+
                           value={perfilTDC.gastosMensuales ?? ''}
                           disabled={cierreLocked}
                           onChange={e => { const c = limpiarDecimal(e.target.value); if (c !== null) setPerfilTDC('gastosMensuales', c); }}
@@ -2475,9 +2476,9 @@ function CorpFinModal({ item, monedaDefault, onSave, onClose }: CorpFinModalProp
             </div>
             <div>
               <label className="block text-[11px] font-semibold text-gray-600 uppercase mb-1.5">Monto <span className="text-red-500">*</span></label>
-              <input
-                type="text"
-                inputMode="decimal"
+              <MontoInput
+
+
                 value={f.monto}
                 onChange={e => { const c = limpiarDecimal(e.target.value); if (c !== null) set('monto', c); }}
                 className={`${inputCls} text-right font-mono`}

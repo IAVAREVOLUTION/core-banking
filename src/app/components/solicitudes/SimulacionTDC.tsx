@@ -39,6 +39,10 @@ interface Props {
   factorMoratorioProducto?: string | number;
   /** % de IVA del producto. */
   ivaProducto?: string | number;
+  /** Fecha Inicio del encabezado ← fecha de la disposición simulada (DD/MM/YYYY). */
+  onFechaInicioChange?: (fecha: string) => void;
+  /** Fecha Fin del encabezado ← fecha límite de pago del último periodo (DD/MM/YYYY). */
+  onFechaFinChange?: (fecha: string) => void;
 }
 
 interface EstadoGuardado {
@@ -58,6 +62,16 @@ const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'o
 const fmtFecha = (iso: string) => {
   const [y, m, d] = (iso || '').split('-');
   return y && m && d ? `${d}-${MESES[parseInt(m, 10) - 1]}-${y}` : '—';
+};
+
+/** 100000 → "100,000.00" — los montos capturados se muestran con separador de miles. */
+const fmtMonto = (n: number) =>
+  n.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+/** YYYY-MM-DD → DD/MM/YYYY, el formato del DatePicker del encabezado. */
+const aDDMMYYYY = (iso: string) => {
+  const [y, m, d] = (iso || '').split('-');
+  return y && m && d ? `${d}/${m}/${y}` : '';
 };
 
 const hoyISO = () => {
@@ -94,6 +108,7 @@ const ESCENARIOS: Record<EscenarioTDC, { titulo: string; detalle: string; cls: s
 export function SimulacionTDC({
   mode, solicitudId, montoAutorizado, montoSolicitadoHeader, tasaHeader, fechaInicioHeader,
   reglaTDC, porcentajeMoratorioProducto, factorMoratorioProducto, ivaProducto,
+  onFechaInicioChange, onFechaFinChange,
 }: Props) {
   const isRO = mode === 'ver';
 
@@ -137,7 +152,7 @@ export function SimulacionTDC({
     const s = loadFromSession<EstadoGuardado>(solicitudId, 'simulacion_tdc') ??
       loadFromSavedStore<EstadoGuardado>(solicitudId, 'simulacion_tdc');
     return {
-      montoDisposicion: s?.montoDisposicion ?? (autorizado > 0 ? autorizado.toFixed(2) : ''),
+      montoDisposicion: s?.montoDisposicion ?? (autorizado > 0 ? fmtMonto(autorizado) : ''),
       pagoPeriodo: s?.pagoPeriodo ?? '',
       tasaOrdinaria: s?.tasaOrdinaria || (tasaOrdDefault ? String(tasaOrdDefault) : ''),
       tasaMoratoria: s?.tasaMoratoria || (tasaMorDefault ? String(tasaMorDefault) : ''),
@@ -221,15 +236,24 @@ export function SimulacionTDC({
       return;
     }
     setSt(prev => ({ ...prev, resultado: r }));
+
+    // Vigencia de la solicitud = vigencia de la cotización: inicia con la
+    // disposición y termina en la fecha límite de pago del último periodo.
+    // Si la deuda nunca se paga no hay fecha fin que proponer.
+    onFechaInicioChange?.(aDDMMYYYY(fechaInicio));
+    const ultimo = r.renglones[r.renglones.length - 1];
+    if (r.liquida && ultimo) onFechaFinChange?.(aDDMMYYYY(ultimo.fechaLimitePago));
     if (r.liquida) {
       toast.success('Simulación generada', {
         description: `${ESCENARIOS[r.escenario].titulo} · ${r.renglones.length} periodo(s) · Total pagado ${formatCurrency(r.totales.pagado)}`,
         duration: 4000,
       });
     } else {
-      toast.warning('El pago no liquida la deuda', {
-        description: 'El Pago Periodo no cubre los intereses que se generan: el saldo no disminuye.',
-        duration: 5000,
+      toast.warning('Bajo este escenario la deuda nunca se paga', {
+        description: r.pagoMinimoParaLiquidar !== undefined
+          ? `Pago mínimo para liquidarla: ${formatCurrency(r.pagoMinimoParaLiquidar)} por periodo (${r.periodosParaLiquidar} periodos).`
+          : 'El Pago Periodo no cubre los intereses que se generan.',
+        duration: 6000,
       });
     }
   };
@@ -252,7 +276,7 @@ export function SimulacionTDC({
           value={st[k]}
           disabled={isRO}
           onChange={e => set(k, e.target.value)}
-          onBlur={() => { const n = num(st[k]); if (n > 0) set(k, n.toFixed(2)); }}
+          onBlur={() => { const n = num(st[k]); if (n > 0) set(k, fmtMonto(n)); }}
           className={`${inputClass} pl-5 text-right ${error ? 'border-red-400' : ''}`}
         />
       </div>
@@ -339,14 +363,14 @@ export function SimulacionTDC({
               <div className="flex gap-2 mt-1.5">
                 <button
                   type="button"
-                  onClick={() => set('pagoPeriodo', pagoNoIntereses.toFixed(2))}
+                  onClick={() => set('pagoPeriodo', fmtMonto(pagoNoIntereses))}
                   className="px-2 py-0.5 text-[11px] border border-gray-300 rounded hover:bg-gray-50 text-gray-700"
                 >
                   Usar Pago No Intereses
                 </button>
                 <button
                   type="button"
-                  onClick={() => set('pagoPeriodo', pagoMinimo.toFixed(2))}
+                  onClick={() => set('pagoPeriodo', fmtMonto(pagoMinimo))}
                   className="px-2 py-0.5 text-[11px] border border-gray-300 rounded hover:bg-gray-50 text-gray-700"
                 >
                   Usar Pago Mínimo
@@ -385,10 +409,31 @@ export function SimulacionTDC({
             </div>
 
             {!res.liquida && (
-              <div className="px-3 py-2 bg-red-50 border border-red-300 rounded text-xs text-red-800">
-                Con este Pago Periodo la deuda <strong>no se liquida</strong>: el pago no cubre los intereses e IVA que se
-                generan cada periodo y el saldo no disminuye. La proyección se detuvo en el periodo {res.renglones.length}.
-              </div>
+              <>
+                <div className="px-3 py-2 bg-red-50 border border-red-300 rounded text-xs text-red-800">
+                  Bajo este escenario <strong>la deuda nunca se paga</strong>: con un Pago Periodo de{' '}
+                  {formatCurrency(num(st.pagoPeriodo))} los intereses, el IVA y el moratorio que se generan cada periodo
+                  no permiten que el saldo llegue a cero. Se muestran los primeros {res.renglones.length} periodos.
+                </div>
+                {res.pagoMinimoParaLiquidar !== undefined && (
+                  <div className="px-3 py-2 bg-blue-50 border border-blue-300 rounded text-xs text-blue-900 flex items-center justify-between gap-3">
+                    <span>
+                      Pago mínimo para que la deuda sí se pague:{' '}
+                      <strong>{formatCurrency(res.pagoMinimoParaLiquidar)}</strong> por periodo — se liquidaría en{' '}
+                      {res.periodosParaLiquidar} periodo(s).
+                    </span>
+                    {!isRO && (
+                      <button
+                        type="button"
+                        onClick={() => set('pagoPeriodo', fmtMonto(res.pagoMinimoParaLiquidar!))}
+                        className="px-2 py-0.5 text-[11px] border border-blue-300 rounded bg-white hover:bg-blue-100 text-blue-900 whitespace-nowrap"
+                      >
+                        Usar este pago
+                      </button>
+                    )}
+                  </div>
+                )}
+              </>
             )}
             {res.escenario === 2 && res.generoMoratorio && (
               <div className="px-3 py-2 bg-amber-50 border border-amber-300 rounded text-xs text-amber-800">

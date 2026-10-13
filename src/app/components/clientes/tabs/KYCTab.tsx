@@ -1,3 +1,4 @@
+import { MontoInput } from '../../ui/MontoInput';
 import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import { Trash2 } from 'lucide-react';
@@ -442,8 +443,8 @@ export function KYCTab({ formData, updateFormData, isView, mode, clienteId }: KY
 
                     <div className="flex items-center gap-2">
                       <label className="text-xs w-40 text-gray-700">Ingreso Mensual *</label>
-                      <input
-                        type="text"
+                      <MontoInput
+
                         value={kycData.ingresoMensual}
                         onChange={(e) => handleChange('ingresoMensual', e.target.value)}
                         placeholder="$0.00"

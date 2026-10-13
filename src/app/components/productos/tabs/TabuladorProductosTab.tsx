@@ -1,3 +1,4 @@
+import { MontoInput } from '../../ui/MontoInput';
 import { useState, useEffect, forwardRef, useImperativeHandle } from 'react';
 import { FormMode } from '../../../types/product';
 
@@ -164,8 +165,8 @@ export const TabuladorProductosTab = forwardRef<{ getData: () => TabuladorItem[]
                 </div>
                 <div className="flex items-center gap-2">
                   <label className="text-xs w-32 flex-shrink-0 text-gray-700">Monto solicitado <span className="text-red-600">*</span></label>
-                  <input 
-                    type="number"
+                  <MontoInput 
+
                     step="0.01"
                     value={nuevoItem.montoSolicitado || ''}
                     onChange={(e) => setNuevoItem({ ...nuevoItem, montoSolicitado: parseFloat(e.target.value) || 0 })}
@@ -177,8 +178,8 @@ export const TabuladorProductosTab = forwardRef<{ getData: () => TabuladorItem[]
               <div className="grid grid-cols-3 gap-x-4">
                 <div className="flex items-center gap-2">
                   <label className="text-xs w-32 flex-shrink-0 text-gray-700">Monto total a pagar <span className="text-red-600">*</span></label>
-                  <input 
-                    type="number"
+                  <MontoInput 
+
                     step="0.01"
                     value={nuevoItem.montoTotalPagar || ''}
                     onChange={(e) => setNuevoItem({ ...nuevoItem, montoTotalPagar: parseFloat(e.target.value) || 0 })}
@@ -188,8 +189,8 @@ export const TabuladorProductosTab = forwardRef<{ getData: () => TabuladorItem[]
                 </div>
                 <div className="flex items-center gap-2">
                   <label className="text-xs w-32 flex-shrink-0 text-gray-700">Pago quincenal <span className="text-red-600">*</span></label>
-                  <input 
-                    type="number"
+                  <MontoInput 
+
                     step="0.01"
                     value={nuevoItem.pagoQuincenal || ''}
                     onChange={(e) => setNuevoItem({ ...nuevoItem, pagoQuincenal: parseFloat(e.target.value) || 0 })}

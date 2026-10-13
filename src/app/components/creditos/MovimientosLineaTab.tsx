@@ -17,6 +17,7 @@
  * `supabase/migrations/create_rpc_movimiento_tdc.sql`; esta pantalla es el
  * disparador por interfaz gráfica del mismo contrato (CA-03).
  */
+import { MontoInput } from '../ui/MontoInput';
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { toast } from 'sonner';
 import {
@@ -382,9 +383,9 @@ export function MovimientosLineaTab({
                 </div>
                 <div>
                   <label className="block text-xs text-gray-700 mb-1 font-medium">Monto <span className="text-red-600">*</span></label>
-                  <input
-                    type="text"
-                    inputMode="decimal"
+                  <MontoInput
+
+
                     value={draft.monto || ''}
                     onChange={e => onCambio({ ...draft, monto: parseFloat(e.target.value.replace(/[^0-9.]/g, '')) || 0 })}
                     placeholder="0.00"

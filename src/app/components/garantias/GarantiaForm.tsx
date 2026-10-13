@@ -1,3 +1,4 @@
+import { MontoInput } from '../ui/MontoInput';
 import { useState, useEffect, useCallback } from 'react';
 import { Garantia, DocumentoExpediente } from '@/types/garantia';
 import { FormMode } from '@/types/product';
@@ -884,8 +885,8 @@ export function GarantiaForm({
                   {isView ? (
                     <ViewValue>{formatCurrencyMXN(formData.valorNominal)}</ViewValue>
                   ) : (
-                    <input
-                      type="number"
+                    <MontoInput
+
                       value={formData.valorNominal === 0 ? '' : formData.valorNominal}
                       onChange={(e) => handleChange('valorNominal', e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
                       step="0.01"
@@ -898,8 +899,8 @@ export function GarantiaForm({
                   {isView ? (
                     <ViewValue>{formData.valorTasacion ? formatCurrencyMXN(formData.valorTasacion) : '—'}</ViewValue>
                   ) : (
-                    <input
-                      type="number"
+                    <MontoInput
+
                       value={formData.valorTasacion || ''}
                       onChange={(e) => handleChange('valorTasacion', parseFloat(e.target.value) || 0)}
                       step="0.01"
@@ -952,8 +953,8 @@ export function GarantiaForm({
                   ) : (
                     <div className="relative">
                       <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-400">$</span>
-                      <input
-                        type="number"
+                      <MontoInput
+
                         value={formData.montoCubrirGarantia ?? ''}
                         onChange={(e) => handleChange('montoCubrirGarantia', e.target.value === '' ? (undefined as any) : parseFloat(e.target.value) || 0)}
                         step="0.01"

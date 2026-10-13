@@ -1,3 +1,4 @@
+import { MontoInput } from '../ui/MontoInput';
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { DatePicker } from './DatePicker';
@@ -340,11 +341,11 @@ export function SolicitudesCredito({ mode, clienteId, cliente, onVerSolicitudCom
                   </div>
                   <div>
                     <label className="block text-xs text-gray-700 mb-1 font-medium">Monto Solicitado <span className="text-red-600">*</span></label>
-                    <input type="text" value={formData.montoSolicitado} onChange={e => setFormData(p => ({ ...p, montoSolicitado: e.target.value }))} placeholder="$ 0.00" className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded bg-white" />
+                    <MontoInput value={formData.montoSolicitado} onChange={e => setFormData(p => ({ ...p, montoSolicitado: e.target.value }))} placeholder="$ 0.00" className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded bg-white" />
                   </div>
                   <div>
                     <label className="block text-xs text-gray-700 mb-1 font-medium">Monto Autorizado</label>
-                    <input type="text" value={formData.montoAutorizado} onChange={e => setFormData(p => ({ ...p, montoAutorizado: e.target.value }))} placeholder="$ 0.00" className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded bg-white" />
+                    <MontoInput value={formData.montoAutorizado} onChange={e => setFormData(p => ({ ...p, montoAutorizado: e.target.value }))} placeholder="$ 0.00" className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded bg-white" />
                   </div>
                 </div>
 

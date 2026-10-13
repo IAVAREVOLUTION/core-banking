@@ -65,6 +65,7 @@ import { ComisionesTab } from './ComisionesTab';
 import { AutorizacionTab } from './AutorizacionTab';
 import { NotasTab } from './NotasTab';
 import { DatePicker } from '../ui/DatePicker';
+import { MontoInput } from '../ui/MontoInput';
 import { FasesSolicitudTab } from './tabs/FasesSolicitudTab';
 import { SeleccionarClienteModal } from './SeleccionarClienteModal';
 import { PartesRelacionadasTab } from './tabs/PartesRelacionadasTab';
@@ -4573,8 +4574,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
             <Lbl req error={errors.montoSolicitado}>Monto Autorizado</Lbl>
             <div className="relative">
               <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-500">$</span>
-              <input
-                type="text" inputMode="decimal"
+              <MontoInput
                 value={formData.montoSolicitado}
                 onChange={e => handleNumeric('montoSolicitado', e.target.value)}
                 onBlur={() => handleCurrencyBlur('montoSolicitado')}
@@ -4919,6 +4919,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
                     porcentajeMoratorioProducto={(productoSeleccionado as any)?.rawData?.porcentajeInteresMoratorio}
                     factorMoratorioProducto={(productoSeleccionado as any)?.rawData?.factorMoratorio}
                     ivaProducto={(productoSeleccionado as any)?.rawData?.iva}
+                    onFechaInicioChange={v => set('fechaInicio', v)}
                   />
                 )}
                 {sec.id === 'facturas' && (

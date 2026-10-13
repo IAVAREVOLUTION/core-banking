@@ -1,3 +1,4 @@
+import { MontoInput } from '../ui/MontoInput';
 import { useState, useMemo, useEffect, useCallback, useImperativeHandle, forwardRef } from 'react';
 import { toast } from 'sonner';
 import { DatePicker } from './DatePicker';
@@ -332,7 +333,7 @@ export const AltaCuentaAhorro = forwardRef<AltaCuentaAhorroHandle, AltaCuentaAho
                 {!camposEditables ? (
                   <div className="px-2 py-1 text-xs text-gray-700">{formData.saldoActual}</div>
                 ) : (
-                  <input type="text" value={formData.saldoActual} onChange={(e) => handleChange('saldoActual', e.target.value)}
+                  <MontoInput value={formData.saldoActual} onChange={(e) => handleChange('saldoActual', e.target.value)}
                     placeholder="$ 0.00" className="px-2 py-1 text-xs border border-gray-300 rounded" />
                 )}
               </div>
@@ -472,7 +473,7 @@ export const AltaCuentaAhorro = forwardRef<AltaCuentaAhorroHandle, AltaCuentaAho
                 {!camposEditables ? (
                   <div className="px-2 py-1 text-xs text-gray-700">{formData.minimoLiquidez}</div>
                 ) : (
-                  <input type="number" value={formData.minimoLiquidez} onChange={(e) => handleChange('minimoLiquidez', e.target.value)}
+                  <MontoInput value={formData.minimoLiquidez} onChange={(e) => handleChange('minimoLiquidez', e.target.value)}
                     min="0" step="0.01" className="px-2 py-1 text-xs border border-gray-300 rounded" />
                 )}
               </div>

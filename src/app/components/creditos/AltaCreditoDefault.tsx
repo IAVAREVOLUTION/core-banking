@@ -1,3 +1,4 @@
+import { MontoInput } from '../ui/MontoInput';
 import { useState, useEffect } from 'react';
 import { TabExpedientes } from './TabExpedientes';
 import { TabAutorizacion } from './TabAutorizacion';
@@ -426,8 +427,8 @@ export function AltaCreditoDefault({ onBack, onSave, mode }: AltaCreditoDefaultP
                 {!camposEditables ? (
                   <div className={readOnlyTextClass}>{formData.montoSolicitado || 'N/A'}</div>
                 ) : (
-                  <input
-                    type="text"
+                  <MontoInput
+
                     value={formData.montoSolicitado}
                     onChange={(e) => handleInputChange('montoSolicitado', e.target.value)}
                     className={inputClass}
@@ -625,8 +626,8 @@ export function AltaCreditoDefault({ onBack, onSave, mode }: AltaCreditoDefaultP
                 {!camposEditables ? (
                   <div className={readOnlyTextClass}>{formData.montoAutorizado || 'N/A'}</div>
                 ) : (
-                  <input
-                    type="text"
+                  <MontoInput
+
                     value={formData.montoAutorizado}
                     onChange={(e) => handleInputChange('montoAutorizado', e.target.value)}
                     className={inputClass}
@@ -929,8 +930,8 @@ export function AltaCreditoDefault({ onBack, onSave, mode }: AltaCreditoDefaultP
                   <div className="space-y-3">
                     <div>
                       <label className="block text-[10px] text-gray-600 mb-0.5">MONTO MÍNIMO</label>
-                      <input 
-                        type="text" 
+                      <MontoInput 
+ 
                         value={formData.montoMinimo}
                         disabled
                         className={disabledInputClass}
@@ -942,8 +943,8 @@ export function AltaCreditoDefault({ onBack, onSave, mode }: AltaCreditoDefaultP
                       {!camposEditables ? (
                         <div className={readOnlyTextClass}>{formData.montoAutorizado || 'N/A'}</div>
                       ) : (
-                        <input
-                          type="text"
+                        <MontoInput
+
                           value={formData.montoAutorizado}
                           onChange={(e) => handleInputChange('montoAutorizado', e.target.value)}
                           className={inputClass}
@@ -954,8 +955,8 @@ export function AltaCreditoDefault({ onBack, onSave, mode }: AltaCreditoDefaultP
 
                     <div>
                       <label className="block text-[10px] text-gray-600 mb-0.5">MONTO MÁXIMO</label>
-                      <input 
-                        type="text" 
+                      <MontoInput 
+ 
                         value={formData.montoMaximo}
                         disabled
                         className={disabledInputClass}

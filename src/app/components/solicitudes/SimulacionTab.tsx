@@ -41,6 +41,8 @@ interface Props {
   frecuenciaHeader?: string;
   /** Notifica la fecha del último pago cuando cambia la tabla/calendario */
   onFechaFinChange?: (fecha: string) => void;
+  /** Solo TDC — la simulación fija la Fecha Inicio del encabezado. */
+  onFechaInicioChange?: (fecha: string) => void;
   /** Solo TDC — nodo `reglasPagoCorteTDC` del producto (definición de pago mínimo). */
   reglaTDC?: Record<string, any>;
   /** Solo TDC — % anual de interés moratorio del producto. */
@@ -204,7 +206,7 @@ function sumarDias(fechaIso: string, dias: number): string {
   return d.toISOString().split('T')[0];
 }
 
-export function SimulacionTab({ mode, solicitudId, lineaProducto, tipoProducto, calendarioAportaciones, simulacionInicial, montoAutorizado, montoSolicitadoHeader, plazoHeader, tasaHeader, fechaInicioHeader, frecuenciaHeader, onFechaFinChange, reglaTDC, porcentajeMoratorioProducto, factorMoratorioProducto, ivaProducto }: Props) {
+export function SimulacionTab({ mode, solicitudId, lineaProducto, tipoProducto, calendarioAportaciones, simulacionInicial, montoAutorizado, montoSolicitadoHeader, plazoHeader, tasaHeader, fechaInicioHeader, frecuenciaHeader, onFechaFinChange, onFechaInicioChange, reglaTDC, porcentajeMoratorioProducto, factorMoratorioProducto, ivaProducto }: Props) {
   const isRO = mode === 'ver';
   const isCap = esCaptacion(lineaProducto, tipoProducto);
   const _tpRaw = (tipoProducto || lineaProducto || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
@@ -339,7 +341,8 @@ export function SimulacionTab({ mode, solicitudId, lineaProducto, tipoProducto, 
   // final del plazo contratado. Si faltan datos para la formula se conserva el
   // comportamiento anterior en vez de dejar el campo vacio.
   useEffect(() => {
-    if (!onFechaFinChange || isCap) return;
+    // TDC: la vigencia la fija SimulacionTDC al simular (no hay plazo × periodo).
+    if (!onFechaFinChange || isCap || esTDCSim) return;
 
     const t = readTerminos();
     const inicio = toIsoDate(fechaInicioHeader || t.fechaPrimerPago || '');
@@ -724,6 +727,8 @@ export function SimulacionTab({ mode, solicitudId, lineaProducto, tipoProducto, 
         porcentajeMoratorioProducto={porcentajeMoratorioProducto}
         factorMoratorioProducto={factorMoratorioProducto}
         ivaProducto={ivaProducto}
+        onFechaInicioChange={onFechaInicioChange}
+        onFechaFinChange={onFechaFinChange}
       />
     );
   }

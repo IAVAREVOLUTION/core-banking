@@ -1,3 +1,4 @@
+import { MontoInput } from '../ui/MontoInput';
 import { useState, useEffect, useMemo } from 'react';
 import { toast } from 'sonner';
 import { DatePicker } from '@/app/components/ui/DatePicker';
@@ -380,7 +381,7 @@ export function SolicitudCargosTab({ mode, solicitudId, lineaProducto, tipoProdu
                       <input type="text" value={c.descripcion} onChange={e => { e.stopPropagation(); update(c.id, 'descripcion', e.target.value); }} disabled={isRO || cargoBloqueado(c)} onClick={e => e.stopPropagation()} className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-lg bg-white focus:ring-2 focus:ring-[#4A6FA5]/30 focus:border-[#4A6FA5]" placeholder="Descripción..." />
                     </td>
                     <td className="px-3 py-2">
-                      <input type="number" step="0.01" min="0" value={c.monto} onChange={e => { e.stopPropagation(); update(c.id, 'monto', parseFloat(e.target.value) || 0); }} disabled={isRO || cargoBloqueado(c)} onClick={e => e.stopPropagation()} className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-lg bg-white text-right focus:ring-2 focus:ring-[#4A6FA5]/30 focus:border-[#4A6FA5]" />
+                      <MontoInput step="0.01" min="0" value={c.monto} onChange={e => { e.stopPropagation(); update(c.id, 'monto', parseFloat(e.target.value) || 0); }} disabled={isRO || cargoBloqueado(c)} onClick={e => e.stopPropagation()} className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-lg bg-white text-right focus:ring-2 focus:ring-[#4A6FA5]/30 focus:border-[#4A6FA5]" />
                     </td>
                     <td className="px-3 py-2" onClick={e => e.stopPropagation()}>
                       <DatePicker value={c.fechaCargo} onChange={v => update(c.id, 'fechaCargo', v)} disabled={isRO || cargoBloqueado(c)} placeholder="dd/mm/aaaa" className="px-2 py-1.5" />

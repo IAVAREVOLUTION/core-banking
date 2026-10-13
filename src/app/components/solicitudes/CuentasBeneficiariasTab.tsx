@@ -13,6 +13,7 @@
  * pero el pie de la tabla contrasta la suma contra el Monto Autorizado, porque
  * repartir de más o de menos es el error caro de esta pantalla.
  */
+import { MontoInput } from '../ui/MontoInput';
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { toast } from 'sonner';
 import { useCuentasBancariasDB, type CuentaBancaria } from '../../hooks/useCuentasBancariasDB';
@@ -244,8 +245,8 @@ export function CuentasBeneficiariasTab({
                 <td className="px-2 py-1.5 text-center text-gray-700">{i.moneda || 'MXN'}</td>
                 <td className="px-2 py-1.5 text-right">
                   {isRO ? fmt(i.montoDispersion) : (
-                    <input
-                      type="text"
+                    <MontoInput
+
                       value={String(i.montoDispersion)}
                       onChange={e => cambiarMonto(i.id, e.target.value)}
                       className="w-32 px-1.5 py-1 border border-gray-300 rounded text-xs text-right font-mono"

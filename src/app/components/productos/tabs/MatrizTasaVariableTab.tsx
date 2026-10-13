@@ -1,3 +1,4 @@
+import { MontoInput } from '../../ui/MontoInput';
 import { useState, useEffect, forwardRef, useImperativeHandle } from 'react';
 import { toast } from 'sonner';
 import { K_PERIODS } from '../../../data/mockData';
@@ -438,9 +439,9 @@ function FormModal({ mode, item, productId, tasasReferencia, periodos, onSave, o
 
                 <div>
                   <label className="block text-xs text-gray-700 mb-1 font-medium">Monto Mínimo <span className="text-red-600">*</span></label>
-                  <input 
-                    type="text" 
-                    inputMode="decimal"
+                  <MontoInput 
+ 
+
                     value={formData.montoMinimo} 
                     onChange={(e) => handleMontoChange('montoMinimo', e.target.value)} 
                     disabled={isViewMode} 
@@ -451,9 +452,9 @@ function FormModal({ mode, item, productId, tasasReferencia, periodos, onSave, o
 
                 <div>
                   <label className="block text-xs text-gray-700 mb-1 font-medium">Monto Máximo <span className="text-red-600">*</span></label>
-                  <input 
-                    type="text" 
-                    inputMode="decimal"
+                  <MontoInput 
+ 
+
                     value={formData.montoMaximo} 
                     onChange={(e) => handleMontoChange('montoMaximo', e.target.value)} 
                     disabled={isViewMode} 
@@ -464,9 +465,9 @@ function FormModal({ mode, item, productId, tasasReferencia, periodos, onSave, o
 
                 <div>
                   <label className="block text-xs text-gray-700 mb-1 font-medium">Monto Default <span className="text-red-600">*</span></label>
-                  <input 
-                    type="text" 
-                    inputMode="decimal"
+                  <MontoInput 
+ 
+
                     value={formData.montoDefault} 
                     onChange={(e) => handleMontoChange('montoDefault', e.target.value)} 
                     disabled={isViewMode} 

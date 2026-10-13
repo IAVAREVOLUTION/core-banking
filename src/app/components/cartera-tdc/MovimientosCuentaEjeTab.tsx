@@ -12,6 +12,7 @@
  * Personas para no arriesgar esa pantalla, que es la fuente de verdad del
  * saldo del cliente.
  */
+import { MontoInput } from '../ui/MontoInput';
 import { useState, useEffect, useCallback } from 'react';
 import { toast } from 'sonner';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
@@ -236,8 +237,8 @@ export function MovimientosCuentaEjeTab({ mode, clienteId, referenciaCuenta }: P
                 </div>
                 <div>
                   <label className="block text-xs text-gray-700 mb-1">Monto <span className="text-red-600">*</span></label>
-                  <input
-                    type="text" inputMode="decimal" value={monto}
+                  <MontoInput
+ value={monto}
                     onChange={e => setMonto(e.target.value.replace(/[^0-9.]/g, ''))}
                     placeholder="0.00" className={`${inp} text-right font-mono`}
                   />

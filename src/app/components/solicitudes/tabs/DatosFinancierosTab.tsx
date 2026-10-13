@@ -14,6 +14,7 @@
  * Persiste en el subtab 'datosFinancieros' (sesión + store guardado), que es lo
  * que SolicitudCreditoForm recoge en `_allSubtabs` al guardar.
  */
+import { MontoInput } from '../../ui/MontoInput';
 import { useState, useEffect, useRef } from 'react';
 import { saveToSession, loadFromSession, loadFromSavedStore, parseCurrency } from '../solicitudCreditoStore';
 
@@ -107,8 +108,8 @@ export function DatosFinancierosTab({ mode, solicitudId }: Props) {
       <label className={labelClass}>{label}</label>
       <div className="relative">
         <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-600">$</span>
-        <input
-          type="text"
+        <MontoInput
+
           value={data[field]}
           onChange={e => setNum(field, e.target.value)}
           onBlur={() => curBlur(field)}

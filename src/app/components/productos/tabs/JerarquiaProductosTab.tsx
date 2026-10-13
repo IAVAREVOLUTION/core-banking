@@ -1,3 +1,4 @@
+import { MontoInput } from '../../ui/MontoInput';
 import { useState } from 'react';
 import { toast } from 'sonner';
 
@@ -335,7 +336,7 @@ function FormModal({ mode, item, onSave, onClose }: FormModalProps) {
 
                 <div>
                   <label className="block text-xs text-gray-700 mb-1 font-medium">Monto SGA</label>
-                  <input type="number" value={formData.montoSga} onChange={(e) => handleChange('montoSga', parseFloat(e.target.value))} disabled={isViewMode} className={inputClassName()} />
+                  <MontoInput value={formData.montoSga} onChange={(e) => handleChange('montoSga', parseFloat(e.target.value))} disabled={isViewMode} className={inputClassName()} />
                 </div>
 
                 <div className="col-span-3">

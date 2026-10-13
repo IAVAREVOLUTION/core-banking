@@ -1,3 +1,4 @@
+import { MontoInput } from '../ui/MontoInput';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { toast } from 'sonner';
 import { BarChart, Bar, PieChart, Pie, Cell, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
@@ -845,11 +846,11 @@ function AvisoForm({ mode, avisoId, onCancel, onSave }: {
                         <input type="number" min="1" value={d.cantidad} onChange={e => updateDetalle(d.id, 'cantidad', Math.max(1, +e.target.value || 1))} disabled={isRO} className={`w-full px-1 py-0.5 text-xs border border-gray-300 rounded text-center ${isRO ? 'bg-gray-100' : 'bg-white'}`} />
                       </td>
                       <td className="px-2 py-1.5 border-r border-gray-200">
-                        <input type="number" step="0.01" min="0" value={d.monto} onChange={e => updateDetalle(d.id, 'monto', +e.target.value || 0)} disabled={isRO} className={`w-full px-1 py-0.5 text-xs border border-gray-300 rounded text-right ${isRO ? 'bg-gray-100' : 'bg-white'}`} />
+                        <MontoInput step="0.01" min="0" value={d.monto} onChange={e => updateDetalle(d.id, 'monto', +e.target.value || 0)} disabled={isRO} className={`w-full px-1 py-0.5 text-xs border border-gray-300 rounded text-right ${isRO ? 'bg-gray-100' : 'bg-white'}`} />
                       </td>
                       <td className="px-2 py-1.5 text-xs text-right border-r border-gray-200 bg-gray-50">{fmt(d.subtotal)}</td>
                       <td className="px-2 py-1.5 border-r border-gray-200">
-                        <input type="number" step="0.01" min="0" value={d.pagado} onChange={e => updateDetalle(d.id, 'pagado', Math.max(0, +e.target.value || 0))} disabled={isRO} className={`w-full px-1 py-0.5 text-xs border border-gray-300 rounded text-right ${isRO ? 'bg-gray-100' : 'bg-white'}`} />
+                        <MontoInput step="0.01" min="0" value={d.pagado} onChange={e => updateDetalle(d.id, 'pagado', Math.max(0, +e.target.value || 0))} disabled={isRO} className={`w-full px-1 py-0.5 text-xs border border-gray-300 rounded text-right ${isRO ? 'bg-gray-100' : 'bg-white'}`} />
                       </td>
                       <td className="px-2 py-1.5 text-xs text-right border-r border-gray-200 bg-gray-50">{fmt(d.saldo)}</td>
                       <td className={`px-2 py-1.5 text-xs border-r border-gray-200 ${d.estatusConcepto === 'Pagado' ? 'text-green-700' : d.estatusConcepto === 'Parcial' ? 'text-yellow-700' : 'text-gray-500'}`}>{d.estatusConcepto}</td>

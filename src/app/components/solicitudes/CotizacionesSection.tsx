@@ -1,3 +1,4 @@
+import { MontoInput } from '../ui/MontoInput';
 import { useState } from 'react';
 import { DatePicker } from '@/app/components/ui/DatePicker';
 
@@ -317,8 +318,8 @@ export function CotizacionesSection({ solicitudId }: CotizacionesSectionProps) {
                 <label className="text-xs w-32 flex-shrink-0 text-gray-700 font-medium">
                   MONTO SOLICITADO <span className="text-red-600">*</span>
                 </label>
-                <input
-                  type="text"
+                <MontoInput
+
                   value={nuevaCotizacion.montoSolicitado}
                   onChange={(e) => handleChangeCotizacion('montoSolicitado', e.target.value)}
                   placeholder="$0.00"

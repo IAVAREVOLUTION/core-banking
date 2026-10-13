@@ -16,6 +16,7 @@
  *
  * Validaciones institucionales — spec §4, §6, §9
  */
+import { MontoInput } from '../ui/MontoInput';
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Search, X, Building2, AlertTriangle, Lock, CalendarDays } from 'lucide-react';
 import { toast } from 'sonner';
@@ -885,8 +886,8 @@ export function CotizacionCaptacionForm({ mode, cotizacion, onSave, onBack, onCr
                         Monto Cotizado <span className="text-red-500">*</span>
                         {data.producto.montoMinimo > 0 && <span className="text-gray-400 ml-1">(mín: {formatMoney(data.producto.montoMinimo)})</span>}
                       </label>
-                      <input
-                        type="number"
+                      <MontoInput
+
                         value={data.montoCotizado || ''}
                         disabled={isView}
                         min={data.producto.montoMinimo || 0}
