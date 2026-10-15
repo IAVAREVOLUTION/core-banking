@@ -10,6 +10,7 @@ import {
 import { createCreditoFromSolicitud } from '../creditos/creditoStore';
 import { useSolicitudesDB, asegurarDetalleSolicitud } from '../../hooks/useSolicitudesDB';
 import { useProductosCatalogoDB } from '../../hooks/useProductosCatalogoDB';
+import { esPersonaMoral, tipoPersonaDe } from '@/app/lib/personaJuridica';
 
 type ViewState = { type: 'list' } | { type: 'form'; mode: 'nuevo' | 'editar' | 'ver'; solicitudId?: number | string; dbId?: string };
 
@@ -62,10 +63,7 @@ function parseDate(dateStr: string): Date {
 /** Normaliza "Persona Física" / "Persona Moral" → "Física" / "Moral" para el select del form */
 function normalizeTipoPersona(raw: string): string {
   if (!raw) return '';
-  const l = raw.toLowerCase();
-  if (l.includes('moral')) return 'Moral';
-  if (l.includes('f') || l.includes('física') || l.includes('fisica')) return 'Física';
-  return raw;
+  return tipoPersonaDe(raw) ?? raw;
 }
 
 /**
@@ -108,7 +106,9 @@ export function buildFormDataFromListItem(s: SolicitudListItem): Record<string, 
   const joinTipoProducto = extra._tipoProducto || '';
   const joinDescripcion = extra._descripcion || '';
   const joinFases = extra._fases || '';
-  const rawTipoPersona = extra._tipoPersona || hdr.tipo_persona || d.tipoPersona || joinTipoPersona || '';
+  // El cliente manda (personería en J_CLIENTES.subtipo); lo guardado en la solicitud es respaldo.
+  const rawTipoPersona = (tipoPersonaDe(extra._clienteSubtipo) ? extra._clienteSubtipo : '')
+    || extra._tipoPersona || hdr.tipo_persona || d.tipoPersona || (tipoPersonaDe(joinTipoPersona) ? joinTipoPersona : '') || '';
   return {
     id: extra._dbId || String(s.id) || '',
     noSol: s.noSol || hdr.no_sol || d.noSol || '',
@@ -660,6 +660,10 @@ export function SolicitudCreditoList({
       productoId: cp.productoId || '',
       nombreProducto: cp.nombreProducto || '',
       montoSolicitado: cp.montoSolicitado || '',
+      // Plazo del encabezado: antes sólo viajaba en Términos y Condiciones y el
+      // encabezado quedaba vacío hasta abrir esa pestaña (sin plazo no se
+      // resuelve la Matriz de Tasa Fija ni se puede simular).
+      plazo: String(cp.plazo || cp._terminosCondiciones?.plazo || ''),
       descripcion: `Solicitud generada desde Cotización ${cp.cotizacionId || ''}`,
       faseId: '1',
       descripcionFase: 'Fase 1 — Recepción de Documentos',
@@ -800,7 +804,7 @@ export function SolicitudCreditoList({
       cotizacionId: hdr.cotizacion_id || d.cotizacionId || '',
       lineaProducto: hdr.linea_producto || d.lineaProducto || joinLineaProducto || 'Crédito',
       tipoProducto: s.tipoProducto || hdr.tipo_producto || d.tipoProducto || joinTipoProducto || '',
-      tipoPersona: hdr.tipo_persona || d.tipoPersona || joinTipoPersona || '',
+      tipoPersona: normalizeTipoPersona((tipoPersonaDe(extra._clienteSubtipo) ? extra._clienteSubtipo : '') || hdr.tipo_persona || d.tipoPersona || (tipoPersonaDe(joinTipoPersona) ? joinTipoPersona : '') || ''),
       nombrePersona: hdr.nombre_persona || d.nombrePersona || joinNombre || '',
       apellidoPaternoPersona: hdr.apellido_paterno_persona || d.apellidoPaternoPersona || joinApPaterno || '',
       apellidoMaternoPersona: hdr.apellido_materno_persona || d.apellidoMaternoPersona || joinApMaterno || '',

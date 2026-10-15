@@ -63,6 +63,20 @@ export function ConsultaBuroPanel({ consultas, onChange, datos, isView = false, 
   const [paso, setPaso] = useState<string | null>(null);
   const [verReporte, setVerReporte] = useState<ConsultaBuroRegistro | null>(null);
   const [xml, setXml] = useState<string | null>(null);
+  // Selección para eliminar registros de consulta.
+  const [seleccion, setSeleccion] = useState<Array<string | number>>([]);
+  const alternarSel = (id: string | number) =>
+    setSeleccion(prev => (prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]));
+  const eliminarSeleccion = () => {
+    if (seleccion.length === 0) return;
+    if (!confirm(`¿Está seguro de eliminar ${seleccion.length} consulta(s) de Buró?`)) return;
+    const restantes = consultas.filter(c => !seleccion.includes(c.id));
+    onChange(restantes);
+    setSeleccion([]);
+    // El estatus del SIC queda con la consulta más reciente que conserve resultado.
+    const ultima = [...restantes].reverse().find(c => (c as any).estatus === 'POSITIVO' || (c as any).estatus === 'NEGATIVO');
+    if (ultima) onResultado?.((ultima as any).estatus);
+  };
 
   const pm = datos.tipoPersona === 'PM';
   const faltan = validarDatosConsulta(datos);
@@ -134,9 +148,20 @@ export function ConsultaBuroPanel({ consultas, onChange, datos, isView = false, 
       <div className="bg-blue-50 border-l-4 border-primary-theme px-3 py-2 mb-3 flex items-center justify-between">
         <span className="text-sm font-medium text-gray-800">{titulo}</span>
         {!isView && (
-          <button type="button" onClick={abrir} className="px-4 py-1.5 btn-accent-theme rounded text-xs hover:bg-accent-hover-theme font-medium">
-            Nuevo
-          </button>
+          <div className="flex items-center gap-2">
+            <button type="button" onClick={abrir} className="px-4 py-1.5 btn-accent-theme rounded text-xs hover:bg-accent-hover-theme font-medium">
+              Nuevo
+            </button>
+            <button
+              type="button"
+              onClick={eliminarSeleccion}
+              disabled={seleccion.length === 0}
+              title={seleccion.length ? `Eliminar ${seleccion.length} consulta(s)` : 'Seleccione las consultas a eliminar'}
+              className="px-4 py-1.5 btn-accent-theme rounded text-xs hover:bg-accent-hover-theme font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Eliminar{seleccion.length > 0 ? ` (${seleccion.length})` : ''}
+            </button>
+          </div>
         )}
       </div>
 
@@ -144,6 +169,17 @@ export function ConsultaBuroPanel({ consultas, onChange, datos, isView = false, 
         <table className="w-full text-xs">
           <thead>
             <tr className="bg-[#E7E6E6] border-b border-gray-400">
+              {!isView && (
+                <th className="px-2 py-2 w-8 border-r border-gray-300 text-center">
+                  <input
+                    type="checkbox"
+                    aria-label="Seleccionar todas las consultas"
+                    checked={consultas.length > 0 && seleccion.length === consultas.length}
+                    onChange={() => setSeleccion(seleccion.length === consultas.length ? [] : consultas.map(c => c.id))}
+                    className="w-3.5 h-3.5 accent-[color:var(--theme-primary)]"
+                  />
+                </th>
+              )}
               {['Fecha y hora', 'Usuario', 'Tipo de Consulta', 'Folio'].map(h => (
                 <th key={h} className="px-3 py-2 text-left font-medium text-xs text-gray-800 border-r border-gray-300">{h}</th>
               ))}
@@ -155,10 +191,21 @@ export function ConsultaBuroPanel({ consultas, onChange, datos, isView = false, 
           </thead>
           <tbody className="bg-white">
             {consultas.length === 0 && (
-              <tr><td colSpan={8} className="px-3 py-8 text-center text-gray-400 text-xs">No hay consultas a Buró registradas.</td></tr>
+              <tr><td colSpan={isView ? 8 : 9} className="px-3 py-8 text-center text-gray-400 text-xs">No hay consultas a Buró registradas.</td></tr>
             )}
             {[...consultas].reverse().map(c => (
-              <tr key={c.id} className="border-b border-gray-200">
+              <tr key={c.id} className={`border-b border-gray-200 ${seleccion.includes(c.id) ? 'bg-[color:var(--theme-tint-soft)]' : ''}`}>
+                {!isView && (
+                  <td className="px-2 py-2 border-r border-gray-200 text-center">
+                    <input
+                      type="checkbox"
+                      aria-label={`Seleccionar consulta ${c.folio || c.id}`}
+                      checked={seleccion.includes(c.id)}
+                      onChange={() => alternarSel(c.id)}
+                      className="w-3.5 h-3.5 accent-[color:var(--theme-primary)]"
+                    />
+                  </td>
+                )}
                 <td className="px-3 py-2 text-gray-700 border-r border-gray-200 whitespace-nowrap">{c.fechaHora}</td>
                 <td className="px-3 py-2 text-gray-700 border-r border-gray-200">{c.usuario}</td>
                 <td className="px-3 py-2 text-gray-700 border-r border-gray-200">

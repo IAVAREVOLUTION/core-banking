@@ -336,6 +336,19 @@ export const FRECUENCIAS_PAGO: { label: string; dias: number }[] = [
 
 export const IVA_RATE = 0.16;
 
+/**
+ * Total del seguro financiado = Monto × (1 + Tasa).
+ * La tasa del seguro se guarda como DECIMAL (0.08 = 8 %), igual que la matriz
+ * normalizada; antes se volvía a dividir entre 100 y se aplicaba 0.08 % en vez
+ * de 8 %. Se aceptan ambas formas: ≤ 1 es decimal, > 1 es porcentaje.
+ */
+export function totalSeguroConTasa(monto: number, tasa: number): number {
+  const m = Number(monto) || 0;
+  const t = Number(tasa) || 0;
+  const pct = t > 0 && t <= 1 ? t * 100 : t;
+  return Math.round(m * (1 + pct / 100) * 100) / 100;
+}
+
 // ═══════════════════════════════════════════════════════════════
 // FUNCIONES UTILITARIAS
 // ═══════════════════════════════════════════════════════════════

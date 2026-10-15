@@ -29,6 +29,7 @@ import { fechasCobroComision } from '../../lib/fechasComisionGPO';
 import { SeleccionarClienteModal } from '../solicitudes/SeleccionarClienteModal';
 import { CampoMonto } from '@/app/components/ui/CampoMonto';
 import { DatePicker } from '@/app/components/ui/DatePicker';
+import { tipoPersonaDe } from '@/app/lib/personaJuridica';
 
 type FormMode = 'create' | 'edit' | 'view';
 type TabId = 'default' | 'solicitudes' | 'adjuntos' | 'cierre';
@@ -217,6 +218,14 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
     () => clientes.find(c => String(c.dbUuid) === String(form?.cliente_id)),
     [clientes, form?.cliente_id],
   );
+  /**
+   * Tipo de persona REAL del cliente ligado (fuente única lib/personaJuridica).
+   * Antes la Solicitud nacía siempre como 'Moral', así que las TDC de personas
+   * físicas quedaban como Moral. Sin cliente resuelto se conserva 'Moral'
+   * (el Emisor de 2º Piso es un ente público).
+   */
+  const tipoPersonaCliente: 'Física' | 'Moral' =
+    tipoPersonaDe((clienteMatch as any)?.personalidad) ?? 'Moral';
 
   // ── Pestaña Solicitudes (j_corp_fin) — HU-CRM-05 CA-02 ──
   // Solo consulta cuando la Oportunidad ya existe en BD: sin id no hay
@@ -555,7 +564,7 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
         cotizacionId: form.no_cotiza, // folio_crm — referencia cruzada al CRM (cabe en no_referenc1, ≤30 chars)
         lineaProducto: 'Línea de Crédito',
         tipoProducto,
-        tipoPersona: 'Moral',
+        tipoPersona: tipoPersonaCliente,
         noCliente: data.cliente?.claveCliente || '',
         nombrePersona: data.cliente?.nombreCompleto || '',
         apellidoPaternoPersona: '',
@@ -828,10 +837,11 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
       // le pintaba columnas de amortización (Capital/Saldo Insoluto) en vez
       // de Comisión/IVA/Total.
       tipoProducto: data.producto?.tipoProducto || 'Garantía Financiera 2o Piso',
-      tipoPersona: 'Moral',
-      nombrePersona: nameParts[0] || nombreCompletoEmisor,
-      apellidoPaternoPersona: nameParts[1] || nombreCompletoEmisor || 'N/A',
-      apellidoMaternoPersona: nameParts.slice(2).join(' '),
+      tipoPersona: tipoPersonaCliente,
+      // Persona Moral: la Razón Social completa y sin apellidos.
+      nombrePersona: tipoPersonaCliente === 'Moral' ? nombreCompletoEmisor : (nameParts[0] || nombreCompletoEmisor),
+      apellidoPaternoPersona: tipoPersonaCliente === 'Moral' ? '' : (nameParts[1] || nombreCompletoEmisor || 'N/A'),
+      apellidoMaternoPersona: tipoPersonaCliente === 'Moral' ? '' : nameParts.slice(2).join(' '),
       productoId: form.producto_id || '',
       nombreProducto: data.producto?.nombreProducto || '',
       montoSolicitado: montoStr,

@@ -7,13 +7,20 @@
  * ignoran al hacer merge. Por eso todo lector debe usar esta función en vez
  * de concatenar nombre + apellidos a ciegas.
  */
+import { tipoPersonaDe } from './personaJuridica';
+
 type Campos = Record<string, unknown> | null | undefined;
 
 const txt = (v: unknown) => (typeof v === 'string' ? v.trim() : v == null ? '' : String(v).trim());
 
 export function esPersonaMoral(p: Campos, subtipo?: string | null): boolean {
   const candidatos = [subtipo, p?.subtipo, p?.personalidad, p?.tipoPersonaJuridica, p?.personeria, p?.tipo];
-  return candidatos.some(v => /moral/i.test(txt(v)));
+  // Primer campo con una personería reconocible manda (fuente única: personaJuridica).
+  for (const v of candidatos) {
+    const t = tipoPersonaDe(v);
+    if (t) return t === 'Moral';
+  }
+  return false;
 }
 
 export function nombrePersona(p: Campos, subtipo?: string | null): string {

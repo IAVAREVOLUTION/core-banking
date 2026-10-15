@@ -19,6 +19,48 @@ import { useState, useEffect, useRef } from 'react';
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { FileText, DollarSign, Clock, CheckCircle } from 'lucide-react';
 import { toast } from '@/app/lib/notificaciones';
+import { projectId, publicAnonKey } from '/utils/supabase/info';
+
+/**
+ * Tipo de persona REAL del cliente de la cotización, leído de la BD (J_CLIENTES).
+ * Antes se adivinaba por el nombre ("S.A." / "SA de CV" ⇒ Moral, si no Física),
+ * así que una Persona Moral como "Aguascalientes" llegaba a la Solicitud como
+ * Física y pedía Apellido Paterno. Misma regla que el resto del sistema: sólo
+ * Persona Física y PFAE son físicas; todo lo demás es moral.
+ */
+async function resolverPersonaCliente(clienteId: string, nombreCompleto: string): Promise<{
+  tipoPersona: 'Física' | 'Moral'; nombre: string; apPat: string; apMat: string;
+}> {
+  const partes = (nombreCompleto || '').trim().split(/\s+/);
+  const comoFisica = { tipoPersona: 'Física' as const, nombre: partes[0] || '', apPat: partes[1] || '', apMat: partes.slice(2).join(' ') };
+  const porNombre = /S\.?A\.?( DE C\.?V\.?)?$|SA de CV/i.test(nombreCompleto || '');
+  const comoMoral = { tipoPersona: 'Moral' as const, nombre: (nombreCompleto || '').trim(), apPat: '', apMat: '' };
+  if (!clienteId) return porNombre ? comoMoral : comoFisica;
+  try {
+    const res = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-7e2d13d9/clientes/${clienteId}`, {
+      headers: { Authorization: `Bearer ${publicAnonKey}` },
+    });
+    if (!res.ok) return porNombre ? comoMoral : comoFisica;
+    const json = await res.json();
+    const fila = json?.data ?? json;
+    const reg = Array.isArray(fila) ? fila[0] : fila;
+    let d: any = reg?.data ?? {};
+    for (let i = 0; i < 5 && typeof d === 'string'; i++) { try { d = JSON.parse(d); } catch { break; } }
+    // Fuente única: lib/personaJuridica (Dependencia Pública, Fideicomiso… = Moral).
+    const fisica = tipoPersonaDe(d?.tipo || d?.personalidad || reg?.subtipo) !== 'Moral';
+    if (!fisica) {
+      return { tipoPersona: 'Moral', nombre: String(d?.denominacionRazonSocial || d?.razonSocial || nombreCompleto || '').trim(), apPat: '', apMat: '' };
+    }
+    return {
+      tipoPersona: 'Física',
+      nombre: String(d?.nombre || comoFisica.nombre),
+      apPat: String(d?.apellidoPaterno || comoFisica.apPat),
+      apMat: String(d?.apellidoMaterno || comoFisica.apMat),
+    };
+  } catch {
+    return porNombre ? comoMoral : comoFisica;
+  }
+}
 
 import { CotizacionCaptacionList } from './CotizacionCaptacionList';
 import { CotizacionCaptacionForm } from './CotizacionCaptacionForm';
@@ -27,7 +69,8 @@ import { useCotizacionesCaptacionDB } from '../../hooks/useCotizacionesCaptacion
 import { CotizacionCreditoList } from './CotizacionCreditoList';
 import { CotizacionCreditoForm } from './CotizacionCreditoForm';
 import type { CotizacionCredito } from './cotizacionCreditoTypes';
-import { generarNoCotizaCredito, crearCotizacionCreditoVacia } from './cotizacionCreditoTypes';
+import { generarNoCotizaCredito, crearCotizacionCreditoVacia, totalSeguroConTasa } from './cotizacionCreditoTypes';
+import { tipoPersonaDe } from '@/app/lib/personaJuridica';
 
 type SubCategoria = 'captacion' | 'credito' | 'linea-credito';
 type ViewMode = 'dashboard' | 'list' | 'form';
@@ -398,21 +441,20 @@ export function CotizacionesModule({ deepLinkCotizacionId, deepLinkLinea, onDeep
   };
 
   /** Crear Solicitud desde Cotización Captación — spec solicitudes-financieras §1–§4 */
-  const handleCrearSolicitudCaptacion = (c: CotizacionCaptacion) => {
+  const handleCrearSolicitudCaptacion = async (c: CotizacionCaptacion) => {
     if (c.estatus_cotiza === 'Aceptada') {
       toast.error('Cotización ya aceptada', { description: 'Esta cotización ya generó una solicitud.', duration: 3000 });
       return;
     }
-    const nameParts = (c.data.cliente?.nombreCompleto || '').split(' ');
-    const isMoral = (c.data.cliente?.nombreCompleto || '').includes('S.A.') || (c.data.cliente?.nombreCompleto || '').includes('SA de CV');
+    const persona = await resolverPersonaCliente(String((c as any).cliente_id || (c.data?.cliente as any)?.id || ''), c.data.cliente?.nombreCompleto || '');
     const mappedData = {
       cotizacionId: c.no_cotiza,
       lineaProducto: 'Captación',
       tipoProducto: c.data.producto?.tipoProducto || '',
-      tipoPersona: isMoral ? 'Moral' : 'Física',
-      nombrePersona: nameParts[0] || '',
-      apellidoPaternoPersona: nameParts[1] || '',
-      apellidoMaternoPersona: nameParts.slice(2).join(' ') || '',
+      tipoPersona: persona.tipoPersona,
+      nombrePersona: persona.nombre,
+      apellidoPaternoPersona: persona.apPat,
+      apellidoMaternoPersona: persona.apMat,
       // FIX: usar c.producto_id (UUID de J_PRODUCTOS) — claveProducto es la clave textual, no el UUID
       productoId: c.producto_id || '',
       nombreProducto: c.data.producto?.nombreProducto || '',
@@ -485,21 +527,21 @@ export function CotizacionesModule({ deepLinkCotizacionId, deepLinkLinea, onDeep
   const handleEditCredito = (c: CotizacionCredito) => { setSelectedCredito(c); setFormMode('edit'); setView('form'); };
 
   /** Crear Solicitud desde Cotización (Crédito / LC) — spec solicitudes-financieras §1–§4 */
-  const handleCrearSolicitudCredito = (c: CotizacionCredito) => {
+  const handleCrearSolicitudCredito = async (c: CotizacionCredito) => {
     if (c.estatus_cotiza === 'Aceptada') {
       toast.error('Cotización ya aceptada', { description: 'Esta cotización ya generó una solicitud.', duration: 3000 });
       return;
     }
     // Mapeo Cotización → Solicitud según spec §4
-    const nameParts = (c.data.cliente?.nombreCompleto || '').split(' ');
+    const persona = await resolverPersonaCliente(String(c.cliente_id || (c.data?.cliente as any)?.id || ''), c.data.cliente?.nombreCompleto || '');
     const mappedData = {
       cotizacionId: c.no_cotiza,
       lineaProducto: c.data.lineaProducto || 'Crédito',
       tipoProducto: c.data.producto?.tipoProducto || '',
-      tipoPersona: (c.data.cliente?.nombreCompleto || '').includes('S.A.') || (c.data.cliente?.nombreCompleto || '').includes('SA de CV') ? 'Moral' : 'Física',
-      nombrePersona: nameParts[0] || '',
-      apellidoPaternoPersona: nameParts[1] || '',
-      apellidoMaternoPersona: nameParts.slice(2).join(' ') || '',
+      tipoPersona: persona.tipoPersona,
+      nombrePersona: persona.nombre,
+      apellidoPaternoPersona: persona.apPat,
+      apellidoMaternoPersona: persona.apMat,
       productoId: c.producto_id || '',
       nombreProducto: c.data.producto?.nombreProducto || '',
       montoSolicitado: Number(c.data.montoSolicitado || 0).toFixed(2),
@@ -543,7 +585,12 @@ export function CotizacionesModule({ deepLinkCotizacionId, deepLinkLinea, onDeep
           montoCubrirGarantia: Number(c.data.montoCubrirGarantia || 0),
         } : {}),
         seguroFinanciado: c.data.seguroFinanciado || false,
-        montoSeguro: Number(c.data.montoSeguro || 0).toFixed(2),
+        // Términos guarda en montoSeguro el TOTAL del seguro (monto × (1 + tasa)):
+        // la simulación de la Solicitud lo divide entre los pagos. Antes se
+        // enviaba sólo el monto base y el seguro salía sin su tasa.
+        montoSeguro: (c.data.seguroFinanciado
+          ? totalSeguroConTasa(Number(c.data.montoSeguro || 0), Number(c.data.tasaSeguro || 0))
+          : Number(c.data.montoSeguro || 0)).toFixed(2),
         // Seguro elegido: la cotización lo identifica por nombre.
         ...(c.data.seguroFinanciado && c.data.seguroNombre ? {
           seguroNombre: c.data.seguroNombre,

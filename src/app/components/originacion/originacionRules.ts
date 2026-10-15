@@ -1,3 +1,4 @@
+import { esPersonaMoral } from '@/app/lib/personaJuridica';
 export type LineaProducto = 'Crédito' | 'Captación' | 'Línea de Crédito';
 export type TipoProducto = 'Crédito Simple' | 'Crédito Revolvente' | 'Línea de Crédito';
 export type FaseOriginacion =
@@ -636,7 +637,7 @@ function validarFase4Formalizacion(
     }
 
     // 2. VALIDAR ACTA CONSTITUTIVA (para Persona Moral) — debe estar cargada y validada
-    if (tipoPersona === 'Moral') {
+    if (esPersonaMoral(tipoPersona)) {
       const actaCargada = documentos.some(d =>
         d.toLowerCase().includes('acta constitutiva') || d.toLowerCase().includes('acta_constitutiva')
       );
@@ -678,7 +679,7 @@ function validarFase4Formalizacion(
       fase,
       faseDestino: null,
       motivos: [
-        `Validación completa. Plantillas: ${valPlantillas.plantillasDetectadas.join(', ')}.${tipoPersona === 'Moral' ? ' Acta Constitutiva: validada.' : ''} Contrato y pagaré generados. Revise e imprima los documentos antes de avanzar.`,
+        `Validación completa. Plantillas: ${valPlantillas.plantillasDetectadas.join(', ')}.${esPersonaMoral(tipoPersona) ? ' Acta Constitutiva: validada.' : ''} Contrato y pagaré generados. Revise e imprima los documentos antes de avanzar.`,
       ],
       validaciones: {
         documentosCompletos: true,

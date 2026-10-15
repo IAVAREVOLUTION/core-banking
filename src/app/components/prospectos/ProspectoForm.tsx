@@ -19,6 +19,7 @@ import type { RegistroPLD, ResolucionPLD } from '@/app/lib/pldSimulado';
 import { getUsuarioSesion } from '@/app/lib/sesion';
 import { CampoMonto } from '@/app/components/ui/CampoMonto';
 import { formatearFecha } from '@/app/lib/fechas';
+import { DireccionModal } from '@/app/components/shared/DireccionModal';
 
 // ═══════════════════════════════════════════════════════════════════
 // PERSONERÍA JURÍDICA — qué juego de campos aplica
@@ -1103,6 +1104,25 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, onCa
     setDireccionFormMode('edit');
     setSelectedDireccion(direccion);
     setShowDireccionModal(true);
+  };
+
+  // ── Consulta Buró (SIC): selección y eliminación de registros ──
+  const [selectedSicIds, setSelectedSicIds] = useState<Array<string | number>>([]);
+  const toggleSic = (id: string | number) =>
+    setSelectedSicIds(prev => (prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]));
+  const handleEliminarSic = () => {
+    if (selectedSicIds.length === 0) {
+      toast.error('Seleccione al menos una consulta de Buró para eliminar');
+      return;
+    }
+    if (!confirm(`¿Está seguro de eliminar ${selectedSicIds.length} consulta(s) de Buró?`)) return;
+    const restantes = consultas.filter(c => !selectedSicIds.includes(c.id));
+    setConsultas(restantes);
+    setSelectedSicIds([]);
+    // El estatus del SIC refleja la consulta más reciente que quede con resultado.
+    const ultima = [...restantes].reverse().find(c => c.estatus === 'POSITIVO' || c.estatus === 'NEGATIVO');
+    setFormData((prev: any) => ({ ...prev, estatusSIC: ultima ? ultima.estatus : 'Pendiente' }));
+    toast.success(`${selectedSicIds.length} consulta(s) eliminada(s)`, { description: 'Guarde el tipo interlocutor para conservar el cambio.' });
   };
 
   const handleEliminarDireccion = () => {
@@ -2490,8 +2510,13 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, onCa
                     >
                       Nuevo
                     </button>
-                    <button className="px-4 py-1.5 btn-accent-theme rounded text-xs hover:bg-accent-hover-theme font-medium">
-                      Eliminar
+                    <button
+                      onClick={handleEliminarSic}
+                      disabled={selectedSicIds.length === 0}
+                      className="px-4 py-1.5 btn-accent-theme rounded text-xs hover:bg-accent-hover-theme font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                      title={selectedSicIds.length ? `Eliminar ${selectedSicIds.length} consulta(s)` : 'Seleccione las consultas a eliminar'}
+                    >
+                      Eliminar{selectedSicIds.length > 0 ? ` (${selectedSicIds.length})` : ''}
                     </button>
                   </div>
                 )}
@@ -2502,6 +2527,17 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, onCa
                 <table className="w-full text-xs">
                   <thead>
                     <tr className="bg-[#E7E6E6] border-b border-gray-400">
+                      {!isView && (
+                        <th className="px-2 py-2 w-8 border-r border-gray-300 text-center">
+                          <input
+                            type="checkbox"
+                            aria-label="Seleccionar todas las consultas"
+                            checked={consultas.length > 0 && selectedSicIds.length === consultas.length}
+                            onChange={() => setSelectedSicIds(selectedSicIds.length === consultas.length ? [] : consultas.map(c => c.id))}
+                            className="w-3.5 h-3.5 accent-[color:var(--theme-primary)]"
+                          />
+                        </th>
+                      )}
                       <th className="px-3 py-2 text-left font-medium text-xs text-gray-800 border-r border-gray-300">Fecha y hora del registro</th>
                       <th className="px-3 py-2 text-left font-medium text-xs text-gray-800 border-r border-gray-300">Usuario que registró</th>
                       <th className="px-3 py-2 text-left font-medium text-xs text-gray-800 border-r border-gray-300">Tipo de Consulta *</th>
@@ -2516,13 +2552,24 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, onCa
                   <tbody className="bg-white">
                     {consultas.length === 0 && (
                       <tr>
-                        <td colSpan={9} className="px-3 py-8 text-center text-gray-400 text-xs">
+                        <td colSpan={isView ? 9 : 10} className="px-3 py-8 text-center text-gray-400 text-xs">
                           No hay consultas SIC registradas para este tipo interlocutor
                         </td>
                       </tr>
                     )}
                     {consultas.map((consulta) => (
-                      <tr key={consulta.id} className="border-b border-gray-300">
+                      <tr key={consulta.id} className={`border-b border-gray-300 ${selectedSicIds.includes(consulta.id) ? 'bg-[color:var(--theme-tint-soft)]' : ''}`}>
+                        {!isView && (
+                          <td className="px-2 py-2 border-r border-gray-300 text-center">
+                            <input
+                              type="checkbox"
+                              aria-label={`Seleccionar consulta ${consulta.folio || consulta.id}`}
+                              checked={selectedSicIds.includes(consulta.id)}
+                              onChange={() => toggleSic(consulta.id)}
+                              className="w-3.5 h-3.5 accent-[color:var(--theme-primary)]"
+                            />
+                          </td>
+                        )}
                         <td className="px-3 py-2 text-xs text-gray-700 border-r border-gray-300">{consulta.fechaHora}</td>
                         <td className="px-3 py-2 text-xs text-gray-700 border-r border-gray-300">{consulta.usuario}</td>
                         <td className="px-3 py-2 border-r border-gray-300">
@@ -2691,8 +2738,11 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, onCa
       {/* Modal de Dirección */}
       {showDireccionModal && (
         <DireccionModal
-          mode={direccionFormMode}
-          direccion={selectedDireccion}
+          modo={direccionFormMode}
+          inicial={selectedDireccion}
+          nombrePorOmision={esPersoneriaMoral(formData.tipo)
+            ? ((formData as any).denominacionRazonSocial || '')
+            : [formData.nombre, formData.apellidoPaterno, formData.apellidoMaterno].filter(Boolean).join(' ')}
           onSave={handleSaveDireccion}
           onCancel={() => setShowDireccionModal(false)}
         />
@@ -3629,280 +3679,6 @@ export function ProspectoForm({ mode = 'create', prospecto, onSave, onBack, onCa
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-// Componente Modal de Dirección
-interface DireccionModalProps {
-  mode: 'create' | 'edit';
-  direccion: any;
-  onSave: (direccionData: any) => void;
-  onCancel: () => void;
-}
-
-function DireccionModal({ mode, direccion, onSave, onCancel }: DireccionModalProps) {
-  // En modo editar, cargar datos existentes; en modo crear, TODO en blanco
-  const isEditMode = mode === 'edit' && direccion;
-  const [formData, setFormData] = useState({
-    pais: isEditMode ? (direccion.pais || '') : '',
-    atencion: isEditMode ? (direccion.atencion || '') : '',
-    destinatario: isEditMode ? (direccion.destinatario || '') : '',
-    tipoCalle: isEditMode ? (direccion.tipoCalle || '') : '',
-    calle: isEditMode ? (direccion.calle || '') : '',
-    numeroExterior: isEditMode ? (direccion.numeroExterior || '') : '',
-    piso: isEditMode ? (direccion.piso || '') : '',
-    numeroInterior: isEditMode ? (direccion.numeroInterior || '') : '',
-    colonia: isEditMode ? (direccion.colonia || '') : '',
-    municipio: isEditMode ? (direccion.municipio || '') : '',
-    codigoPostal: isEditMode ? (direccion.codigoPostal || '') : '',
-    ciudad: isEditMode ? (direccion.ciudad || '') : '',
-    estado: isEditMode ? (direccion.estado || '') : '',
-  });
-
-  const handleChange = (field: string, value: string) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
-  };
-
-  const handleSubmit = () => {
-    // Validar campos requeridos
-    const required = [
-      { field: 'pais', label: 'País' },
-      { field: 'calle', label: 'Calle' },
-      { field: 'numeroExterior', label: 'Número Exterior' },
-      { field: 'codigoPostal', label: 'Código Postal' },
-      { field: 'colonia', label: 'Colonia' },
-    ];
-    const missing = required.filter(r => !formData[r.field as keyof typeof formData]);
-    if (missing.length > 0) {
-      toast.error('Campos requeridos faltantes', {
-        description: `Complete: ${missing.map(m => m.label).join(', ')}`,
-      });
-      return;
-    }
-    onSave(formData);
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="bg-white rounded shadow-xl w-[900px] max-h-[90vh] overflow-auto">
-        {/* Header institucional */}
-        <div className="bg-primary-theme px-6 py-3 flex items-center justify-between">
-          <h2 className="text-white text-sm font-semibold">
-            {mode === 'create' ? 'Nueva Dirección' : 'Editar Dirección'}
-          </h2>
-          <button 
-            onClick={onCancel}
-            className="text-white hover:text-gray-200 text-xl leading-none"
-          >
-            ×
-          </button>
-        </div>
-
-        <div className="p-6">
-          {/* Sección con borde institucional */}
-          <div className="border-l-4 border-primary-theme bg-gray-100 px-4 py-2 mb-4">
-            <h3 className="text-xs font-semibold text-gray-700">INFORMACIÓN DE DIRECCIÓN</h3>
-          </div>
-
-          {/* Formulario de captura de dirección */}
-          <div className="space-y-3">
-            {/* Fila 1 */}
-            <div className="grid grid-cols-2 gap-x-6">
-              <div>
-                <label className="text-xs text-gray-700 mb-1 block">
-                  País <span className="text-red-600">*</span>
-                </label>
-                <select
-                  value={formData.pais}
-                  onChange={(e) => handleChange('pais', e.target.value)}
-                  className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded"
-                >
-                  <option value="">Seleccionar...</option>
-                  <option value="México">México</option>
-                  <option value="Estados Unidos">Estados Unidos</option>
-                  <option value="Canadá">Canadá</option>
-                </select>
-              </div>
-              <div>
-                <label className="text-xs text-gray-700 mb-1 block">Atención</label>
-                <input
-                  type="text"
-                  value={formData.atencion}
-                  onChange={(e) => handleChange('atencion', e.target.value)}
-                  placeholder="Atención..."
-                  className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded"
-                />
-              </div>
-            </div>
-
-            {/* Fila 2 */}
-            <div className="grid grid-cols-2 gap-x-6">
-              <div>
-                <label className="text-xs text-gray-700 mb-1 block">
-                  Destinatario <span className="text-red-600">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={formData.destinatario}
-                  onChange={(e) => handleChange('destinatario', e.target.value)}
-                  placeholder="Destinatario..."
-                  className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded"
-                />
-              </div>
-              <div>
-                <label className="text-xs text-gray-700 mb-1 block">Tipo de Calle</label>
-                <select
-                  value={formData.tipoCalle}
-                  onChange={(e) => handleChange('tipoCalle', e.target.value)}
-                  className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded"
-                >
-                  <option value="">Seleccionar...</option>
-                  <option value="AV">AV</option>
-                  <option value="CALLE">CALLE</option>
-                  <option value="BLVD">BLVD</option>
-                  <option value="PRIV">PRIV</option>
-                </select>
-              </div>
-            </div>
-
-            {/* Fila 3 */}
-            <div className="grid grid-cols-2 gap-x-6">
-              <div>
-                <label className="text-xs text-gray-700 mb-1 block">
-                  Calle <span className="text-red-600">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={formData.calle}
-                  onChange={(e) => handleChange('calle', e.target.value)}
-                  placeholder="Calle..."
-                  className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded"
-                />
-              </div>
-              <div>
-                <label className="text-xs text-gray-700 mb-1 block">
-                  Número Exterior <span className="text-red-600">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={formData.numeroExterior}
-                  onChange={(e) => handleChange('numeroExterior', e.target.value)}
-                  placeholder="Número exterior..."
-                  className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded"
-                />
-              </div>
-            </div>
-
-            {/* Fila 4 */}
-            <div className="grid grid-cols-2 gap-x-6">
-              <div>
-                <label className="text-xs text-gray-700 mb-1 block">Piso</label>
-                <input
-                  type="text"
-                  value={formData.piso}
-                  onChange={(e) => handleChange('piso', e.target.value)}
-                  placeholder="Piso..."
-                  className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded"
-                />
-              </div>
-              <div>
-                <label className="text-xs text-gray-700 mb-1 block">Número Interior</label>
-                <input
-                  type="text"
-                  value={formData.numeroInterior}
-                  onChange={(e) => handleChange('numeroInterior', e.target.value)}
-                  placeholder="Número interior..."
-                  className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded"
-                />
-              </div>
-            </div>
-
-            {/* Fila 5 */}
-            <div className="grid grid-cols-2 gap-x-6">
-              <div>
-                <label className="text-xs text-gray-700 mb-1 block">
-                  Código Postal <span className="text-red-600">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={formData.codigoPostal}
-                  onChange={(e) => handleChange('codigoPostal', e.target.value)}
-                  placeholder="Código postal..."
-                  maxLength={5}
-                  className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded"
-                />
-              </div>
-              <div>
-                <label className="text-xs text-gray-700 mb-1 block">
-                  Colonia <span className="text-red-600">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={formData.colonia}
-                  onChange={(e) => handleChange('colonia', e.target.value)}
-                  placeholder="Colonia..."
-                  className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded"
-                />
-              </div>
-            </div>
-
-            {/* Fila 6 */}
-            <div className="grid grid-cols-2 gap-x-6">
-              <div>
-                <label className="text-xs text-gray-700 mb-1 block">Municipio/Alcaldía</label>
-                <input
-                  type="text"
-                  value={formData.municipio}
-                  onChange={(e) => handleChange('municipio', e.target.value)}
-                  placeholder="Municipio/Alcaldía..."
-                  className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded"
-                />
-              </div>
-              <div>
-                <label className="text-xs text-gray-700 mb-1 block">Ciudad</label>
-                <input
-                  type="text"
-                  value={formData.ciudad}
-                  onChange={(e) => handleChange('ciudad', e.target.value)}
-                  placeholder="Ciudad..."
-                  className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded"
-                />
-              </div>
-            </div>
-
-            {/* Fila 7 */}
-            <div className="grid grid-cols-2 gap-x-6">
-              <div>
-                <label className="text-xs text-gray-700 mb-1 block">Estado</label>
-                <input
-                  type="text"
-                  value={formData.estado}
-                  onChange={(e) => handleChange('estado', e.target.value)}
-                  placeholder="Estado..."
-                  className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded"
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Botones de acción */}
-          <div className="flex justify-end gap-2 mt-6">
-            <button 
-              onClick={onCancel}
-              className="px-6 py-2 bg-gray-500 text-white rounded text-xs hover:bg-gray-600"
-            >
-              Cancelar
-            </button>
-            <button 
-              onClick={handleSubmit}
-              className="px-6 py-2 btn-primary-theme rounded text-xs hover:bg-primary-hover-theme"
-            >
-              Guardar
-            </button>
-          </div>
-        </div>
-      </div>
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { toast } from '@/app/lib/notificaciones';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
+import { esPersonaMoral, tipoPersonaDe } from '@/app/lib/personaJuridica';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-7e2d13d9`;
 
@@ -40,12 +41,8 @@ function mapRow(row: JClienteRow): ClienteItem {
 
   // Normalizar personalidad: puede venir de subtipo o de data.personalidad
   const rawPersonalidad = (row.subtipo || g('personalidad') || g('tipoPersona') || '').trim();
-  const normalizarPersonalidad = (val: string): string => {
-    const lower = val.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-    if (lower === 'fisica' || lower === 'persona fisica' || lower === 'pf') return 'Física';
-    if (lower === 'moral' || lower === 'persona moral' || lower === 'pm') return 'Moral';
-    return val || '';
-  };
+  // Fuente única (lib/personaJuridica): Dependencia Pública, Fideicomiso… = Moral.
+  const normalizarPersonalidad = (val: string): string => tipoPersonaDe(val) ?? (val || '');
   const esMoral = normalizarPersonalidad(rawPersonalidad) === 'Moral';
 
   // BUG FIX — Persona Moral no tiene nombre/apellidos; su nombre vive en

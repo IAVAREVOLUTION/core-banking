@@ -12,6 +12,7 @@
  *  5. Comités autorizados (todos en estatus Autorizado)
  */
 import { useMemo } from 'react';
+import { esPersonaMoral } from '@/app/lib/personaJuridica';
 
 // ── Tipos públicos ─────────────────────────────────────────────────
 export interface DocumentoValidacion {
@@ -111,7 +112,7 @@ function getNotaDate(n: NotaValidacion): Date {
 function filtrarPorPersona(requisitos: RequisitoFase[], tipoPersona: string): RequisitoFase[] {
   if (!tipoPersona) return requisitos;
   const tp = tipoPersona.toLowerCase();
-  const isMoral = tp.includes('moral');
+  const isMoral = esPersonaMoral(tp);
 
   return requisitos.filter(r => {
     if (!r.tipoPersona) return true;

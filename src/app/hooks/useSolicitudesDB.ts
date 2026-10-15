@@ -249,6 +249,8 @@ function mapRowToListItem(row: SolicitudDBRow): SolicitudListItem {
     _clienteCurp: row.cliente_curp || null,
     _clienteRfc: row.cliente_rfc || null,
     _clienteTipo: row.cliente_tipo || null,
+    /** Personería del cliente (J_CLIENTES.subtipo) — fuente de verdad del tipo de persona. */
+    _clienteSubtipo: row.cliente_subtipo || null,
     _gobierno: row.institucion_gobierno || null,
     _tipoPersona: hdr.tipo_persona || d.tipoPersona || row.cliente_tipo || null,
     _productoNombre: row.producto_nombre || null,
@@ -323,6 +325,13 @@ function formToDBPayload(form: SolicitudFormData, allSubtabs?: Record<string, an
     const orig = origSol[origKey];
     return Array.isArray(orig) ? orig : [];
   }
+  /**
+   * Subtab no abierto en la sesión: sus registros vienen de BD ya en formato
+   * de BD (snake_case). Se conservan tal cual; re-mapearlos como si fueran del
+   * formulario (camelCase) los guardaba en null y se perdía la información.
+   */
+  const deBD = (sessionKey: string, origKey: string): any[] | null =>
+    allSubtabs?.[sessionKey] === undefined && Array.isArray(origSol[origKey]) ? origSol[origKey] : null;
 
   const terminos = allSubtabs?.terminos || {};
 
@@ -565,7 +574,26 @@ function formToDBPayload(form: SolicitudFormData, allSubtabs?: Record<string, an
       };
     })(),
     expediente_electronico: {
-      documentos: documentos.map((doc: any) => ({
+      // Si la sesión no trae documentos se reutilizan los de BD (snake_case):
+      // se normalizan antes de mapear para no guardar null sobre sus campos.
+      documentos: documentos.map((d: any) => ({
+        ...d,
+        fecha: d.fecha ?? d.fecha_creacion,
+        tipoDocumento: d.tipoDocumento ?? d.tipo_documento,
+        archivo: d.archivo ?? d.archivo_adjunto,
+        tipoArchivo: d.tipoArchivo ?? d.tipo_archivo,
+        faseId: d.faseId ?? d.fase_id,
+        validadoIA: d.validadoIA ?? d.validado_ia,
+        storagePath: d.storagePath ?? d.storage_path,
+        storageBucket: d.storageBucket ?? d.storage_bucket,
+        tamanoKB: d.tamanoKB ?? d.tamano_kb,
+        iaMotivos: d.iaMotivos ?? d.ia_motivos,
+        iaExtraido: d.iaExtraido ?? d.ia_extraido,
+        fechaActualizacion: d.fechaActualizacion ?? d.fecha_actualizacion,
+        versionDe: d.versionDe ?? d.version_de,
+        versionRaiz: d.versionRaiz ?? d.version_raiz,
+        archivoPendiente: d.archivoPendiente ?? d.archivo_pendiente,
+      })).map((doc: any) => ({
         id: doc.id || null,
         fecha_creacion: doc.fecha || null,
         usuario: doc.usuario || null,
@@ -588,7 +616,7 @@ function formToDBPayload(form: SolicitudFormData, allSubtabs?: Record<string, an
         ...versionToDB(doc),
       })),
     },
-    garantias: garantias.map((g: any) => ({
+    garantias: deBD('garantias', 'garantias') ?? garantias.map((g: any) => ({
       tipo_garantia: g.tipo || null, subtipo: g.subtipo || null,
       descripcion: g.descripcion || null, valor_garantia: g.valorNominal || null,
       monto_cubrir_garantia: g.montoCubrirGarantia ?? null,
@@ -603,18 +631,18 @@ function formToDBPayload(form: SolicitudFormData, allSubtabs?: Record<string, an
       proveedor_rfc: g.proveedorRfc || g.proveedor_rfc || null,
       garantia_id: g.garantiaId || g.id || null,
     })),
-    comisiones: comisiones.map((c: any) => ({
+    comisiones: deBD('comisiones', 'comisiones') ?? comisiones.map((c: any) => ({
       tipo_comision: c.tipoComision ?? null, descripcion: c.descripcion ?? null,
       monto: c.montoCalculado ?? null, porcentaje: c.porcentaje ?? null,
       base: c.base ?? null, estatus: c.estatus ?? null, periodicidad: null,
     })),
-    autorizaciones: autorizaciones.map((a: any) => ({
+    autorizaciones: deBD('autorizaciones', 'autorizaciones') ?? autorizaciones.map((a: any) => ({
       usuario: a.usuario || null, puesto: a.puesto || null,
       estado_autorizacion: a.estatus || null, fecha_autorizacion: a.fechaHora || null,
       comentario: a.observaciones || null, area: a.area || null,
       descripcion: a.descripcion || null,
     })),
-    notas: notas.map((n: any) => ({
+    notas: deBD('notas', 'notas') ?? notas.map((n: any) => ({
       fecha: n.fecha || null, usuario: n.usuario || null,
       puesto: n.puesto || null, nota: n.nota || null,
       archivo_adjunto: n.archivoAdjunto || null,

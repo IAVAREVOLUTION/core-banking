@@ -54,6 +54,7 @@ import { SolicitudBaseForm } from '../solicitudes/SolicitudBaseForm';
 import { getUsuarioSesion } from '../../lib/sesion';
 import { buildFormDataFromListItem, preloadSubtabsFromDBData } from '../solicitudes/SolicitudCreditoList';
 import { CampoMonto } from '@/app/components/ui/CampoMonto';
+import { esPersonaMoral } from '@/app/lib/personaJuridica';
 
 // ── Helper: parsear fecha "DD/MM/YYYY HH:MM" → Date (compartido con useFaseValidation) ──
 function parseFechaStr(fecha: string): Date {
@@ -1466,7 +1467,7 @@ function FaseActionBar({
     // Detectar tipo de persona: Moral, Fís. c/Act. Emp. o Física
     const cli = formData.cliente || '';
     const tipoPersona: import('./originacionRules').TipoPersona =
-      (cli.includes('S.A.') || cli.includes('S. de R.L.') || cli.includes('S.C.') || cli.includes('S.A.P.I.'))
+      (esPersonaMoral((formData as any).tipoPersona) || cli.includes('S.A.') || cli.includes('S. de R.L.') || cli.includes('S.C.') || cli.includes('S.A.P.I.'))
         ? 'Moral'
         : (formData.lineaProducto === 'Crédito' && (cli.includes('Act. Emp') || cli.includes('Empresarial')))
         ? 'Fís. c/Act. Emp.'
@@ -1678,7 +1679,7 @@ function FaseActionBar({
     {fase === 'Integración del Expediente' && (() => {
       const cli = formData.cliente || '';
       const tp: import('./originacionRules').TipoPersona =
-        (cli.includes('S.A.') || cli.includes('S. de R.L.') || cli.includes('S.C.') || cli.includes('S.A.P.I.'))
+        (esPersonaMoral((formData as any).tipoPersona) || cli.includes('S.A.') || cli.includes('S. de R.L.') || cli.includes('S.C.') || cli.includes('S.A.P.I.'))
           ? 'Moral'
           : (formData.lineaProducto === 'Crédito' && (cli.includes('Act. Emp') || cli.includes('Empresarial')))
           ? 'Fís. c/Act. Emp.'

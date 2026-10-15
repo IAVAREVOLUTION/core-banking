@@ -48,6 +48,8 @@ import {
 } from '@/app/hooks/useClientePersistence';
 import { CampoMonto } from '@/app/components/ui/CampoMonto';
 import { nombrePersona, esPersonaMoral } from '@/app/lib/nombrePersona';
+import { esPersonaMoral as esMoralPersoneria, tipoPersonaDe } from '@/app/lib/personaJuridica';
+import { DireccionModal } from '@/app/components/shared/DireccionModal';
 
 type FormMode = 'nuevo' | 'editar' | 'ver';
 
@@ -796,7 +798,12 @@ export function AltaClienteDefault({ onBack, onSave, mode, cliente, onNavigateTo
         for (const c of candidates) {
           if (Array.isArray(c) && c.length > 0) {
             console.log(`[SIC-LOAD] ✅ encontradas (${c.length} registros)`);
+            // Se conserva TODO el registro (folio, score, reporte del Buró para el
+            // PDF/XML…) y sólo se normalizan los nombres de los campos básicos.
+            // Antes se copiaban 6 campos y el reporte generado en Tipo
+            // Interlocutor se perdía al abrir la Persona (y al guardarla).
             return c.map((d: any, idx: number) => ({
+              ...d,
               id: d.id ?? idx + 1,
               fechaHora: d.fechaHora || d.fecha_hora || d.fecha || d.createdAt || d.created_at || d.fechaRegistro || '',
               usuario: d.usuario || d.user || d.usuarioRegistro || d.usuario_registro || d.registradoPor || '',
@@ -822,7 +829,10 @@ export function AltaClienteDefault({ onBack, onSave, mode, cliente, onNavigateTo
         for (const c of candidates) {
           if (Array.isArray(c) && c.length > 0) {
             console.log(`[LISTAS-NEGRAS-LOAD] ✅ encontradas (${c.length} registros)`);
+            // Igual que el SIC: se conserva el registro completo (folio,
+            // coincidencias, resolución de la verificación PLD).
             return c.map((d: any, idx: number) => ({
+              ...d,
               id: d.id ?? idx + 1,
               fecha: d.fecha || d.fechaHora || d.fecha_hora || d.createdAt || d.created_at || d.fechaRegistro || '',
               usuario: d.usuario || d.user || d.usuarioRegistro || d.usuario_registro || d.registradoPor || '',
@@ -1247,7 +1257,7 @@ export function AltaClienteDefault({ onBack, onSave, mode, cliente, onNavigateTo
   };
 
   // ── Datos de la persona para Buró y verificación PLD ──
-  const esMoral = normalizePersonalidad(formData.personalidad) === 'Moral';
+  const esMoral = esMoralPersoneria(formData.personalidad);
   const domicilioPersona = (() => {
     if (formData.direccion) return formData.direccion;
     const d = (Array.isArray(direcciones) && (direcciones.find((x: any) => x.principal) || direcciones[0])) || null;
@@ -1334,7 +1344,7 @@ export function AltaClienteDefault({ onBack, onSave, mode, cliente, onNavigateTo
     try {
       // Construir el nombre completo del cliente
       // Para persona moral, el nombre completo es solo el nombre (denominación); para física incluye apellidos
-      const isPersonaMoral = formData.personalidad === 'Moral';
+      const isPersonaMoral = esMoralPersoneria(formData.personalidad);
       const nombreCompleto = isPersonaMoral
         ? formData.nombre.trim()
         : `${formData.nombre} ${formData.apellidoPaterno} ${formData.apellidoMaterno}`.trim();
@@ -1704,8 +1714,9 @@ export function AltaClienteDefault({ onBack, onSave, mode, cliente, onNavigateTo
 
           {/* ═══ HELPERS DE PERSONALIDAD — controlan visibilidad de campos ═══ */}
           {(() => {
-            const isMoral = formData.personalidad === 'Moral';
-            const isFisicaOrPFAE = formData.personalidad === 'Física' || formData.personalidad === 'PFAE' || !formData.personalidad;
+            // Fuente única (lib/personaJuridica): Dependencia Pública, Fideicomiso… también son Moral.
+            const isMoral = esMoralPersoneria(formData.personalidad);
+            const isFisicaOrPFAE = !isMoral;
             const isPFAE = formData.personalidad === 'PFAE';
             return (
           <div className="p-3">
@@ -1734,7 +1745,7 @@ export function AltaClienteDefault({ onBack, onSave, mode, cliente, onNavigateTo
                       value={formData.personalidad || ''}
                       onChange={(e) => {
                         const val = e.target.value;
-                        if (val === 'Moral') {
+                        if (esMoralPersoneria(val)) {
                           updateFormFields({ 
                             personalidad: val, 
                             apellidoPaterno: '', 
@@ -3346,278 +3357,22 @@ export function AltaClienteDefault({ onBack, onSave, mode, cliente, onNavigateTo
         </div>
       </div>
 
-      {/* Modal Nueva Dirección */}
+      {/* Modal de Dirección — componente único (shared/DireccionModal) */}
       {showDireccionModal && (
-        <div className="fixed inset-0 bg-black/20 flex items-center justify-center z-50">
-          <div className="bg-white rounded shadow-xl w-[900px] max-h-[90vh] overflow-auto">
-            {/* Header institucional */}
-            <div className="bg-primary-theme px-6 py-3 flex items-center justify-between">
-              <h2 className="text-white text-sm font-semibold">
-                {editingDireccionId !== null ? 'Editar Dirección' : 'Nueva Dirección'}
-              </h2>
-              <button 
-                onClick={() => { setShowDireccionModal(false); setEditingDireccionId(null); }}
-                className="text-white hover:text-gray-200 text-xl leading-none"
-              >
-                ×
-              </button>
-            </div>
-
-            <div className="p-6">
-              {/* Sección con borde azul */}
-              <div className="border-l-4 border-primary-theme bg-gray-100 px-4 py-2 mb-4">
-                <h3 className="text-xs font-semibold text-gray-700">INFORMACIÓN DE DIRECCIÓN</h3>
-              </div>
-
-              {/* Formulario de captura de dirección */}
-              <div className="space-y-3">
-                {/* Fila 1 */}
-                <div className="grid grid-cols-2 gap-x-6">
-                  <div>
-                    <label className="text-xs text-gray-700 mb-1 block">
-                      País <span className="text-red-600">*</span>
-                    </label>
-                    <select 
-                      value={nuevaDireccionForm.pais}
-                      onChange={(e) => setNuevaDireccionForm({...nuevaDireccionForm, pais: e.target.value})}
-                      className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded"
-                    >
-                      <option value="">Seleccionar...</option>
-                      <option value="México">México</option>
-                      <option value="Estados Unidos">Estados Unidos</option>
-                      <option value="Canadá">Canadá</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="text-xs text-gray-700 mb-1 block">Atención</label>
-                    <input 
-                      type="text" 
-                      placeholder="Atención..."
-                      value={nuevaDireccionForm.atencion}
-                      onChange={(e) => setNuevaDireccionForm({...nuevaDireccionForm, atencion: e.target.value})}
-                      className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded" 
-                    />
-                  </div>
-                </div>
-
-                {/* Fila 2 */}
-                <div className="grid grid-cols-2 gap-x-6">
-                  <div>
-                    <label className="text-xs text-gray-700 mb-1 block">
-                      Destinatario <span className="text-red-600">*</span>
-                    </label>
-                    <input 
-                      type="text" 
-                      placeholder="Destinatario..."
-                      value={nuevaDireccionForm.destinatario}
-                      onChange={(e) => setNuevaDireccionForm({...nuevaDireccionForm, destinatario: e.target.value})}
-                      className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded" 
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs text-gray-700 mb-1 block">Tipo de Calle</label>
-                    <select 
-                      value={nuevaDireccionForm.tipoCalle}
-                      onChange={(e) => setNuevaDireccionForm({...nuevaDireccionForm, tipoCalle: e.target.value})}
-                      className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded"
-                    >
-                      <option value="">Seleccionar...</option>
-                      <option value="Av">Av</option>
-                      <option value="Calle">Calle</option>
-                      <option value="Callejón">Callejón</option>
-                      <option value="Privada">Privada</option>
-                      <option value="Boulevard">Boulevard</option>
-                    </select>
-                  </div>
-                </div>
-
-                {/* Fila 3 */}
-                <div className="grid grid-cols-2 gap-x-6">
-                  <div>
-                    <label className="text-xs text-gray-700 mb-1 block">
-                      Calle <span className="text-red-600">*</span>
-                    </label>
-                    <input 
-                      type="text" 
-                      placeholder="Calle..."
-                      value={nuevaDireccionForm.calle}
-                      onChange={(e) => setNuevaDireccionForm({...nuevaDireccionForm, calle: e.target.value})}
-                      className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded" 
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs text-gray-700 mb-1 block">
-                      Número Exterior <span className="text-red-600">*</span>
-                    </label>
-                    <input 
-                      type="text" 
-                      placeholder="Número exterior..."
-                      value={nuevaDireccionForm.numeroExterior}
-                      onChange={(e) => setNuevaDireccionForm({...nuevaDireccionForm, numeroExterior: e.target.value})}
-                      className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded" 
-                    />
-                  </div>
-                </div>
-
-                {/* Fila 4 */}
-                <div className="grid grid-cols-2 gap-x-6">
-                  <div>
-                    <label className="text-xs text-gray-700 mb-1 block">Piso</label>
-                    <input 
-                      type="text" 
-                      placeholder="Piso..."
-                      value={nuevaDireccionForm.piso}
-                      onChange={(e) => setNuevaDireccionForm({...nuevaDireccionForm, piso: e.target.value})}
-                      className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded" 
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs text-gray-700 mb-1 block">Número Interior</label>
-                    <input 
-                      type="text" 
-                      placeholder="Número interior..."
-                      value={nuevaDireccionForm.numeroInterior}
-                      onChange={(e) => setNuevaDireccionForm({...nuevaDireccionForm, numeroInterior: e.target.value})}
-                      className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded" 
-                    />
-                  </div>
-                </div>
-
-                {/* Fila 5 */}
-                <div className="grid grid-cols-2 gap-x-6">
-                  <div>
-                    <label className="text-xs text-gray-700 mb-1 block">
-                      Código Postal <span className="text-red-600">*</span>
-                    </label>
-                    <input 
-                      type="text" 
-                      placeholder="Código postal..."
-                      value={nuevaDireccionForm.codigoPostal}
-                      onChange={(e) => setNuevaDireccionForm({...nuevaDireccionForm, codigoPostal: e.target.value})}
-                      className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded" 
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs text-gray-700 mb-1 block">
-                      Colonia <span className="text-red-600">*</span>
-                    </label>
-                    <input 
-                      type="text" 
-                      placeholder="Colonia..."
-                      value={nuevaDireccionForm.colonia}
-                      onChange={(e) => setNuevaDireccionForm({...nuevaDireccionForm, colonia: e.target.value})}
-                      className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded" 
-                    />
-                  </div>
-                </div>
-
-                {/* Fila 6 */}
-                <div className="grid grid-cols-2 gap-x-6">
-                  <div>
-                    <label className="text-xs text-gray-700 mb-1 block">Municipio/Alcaldía</label>
-                    <input 
-                      type="text" 
-                      placeholder="Municipio/Alcaldía..."
-                      value={nuevaDireccionForm.municipio}
-                      onChange={(e) => setNuevaDireccionForm({...nuevaDireccionForm, municipio: e.target.value})}
-                      className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded" 
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs text-gray-700 mb-1 block">Ciudad</label>
-                    <input 
-                      type="text" 
-                      placeholder="Ciudad..."
-                      value={nuevaDireccionForm.ciudad}
-                      onChange={(e) => setNuevaDireccionForm({...nuevaDireccionForm, ciudad: e.target.value})}
-                      className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded" 
-                    />
-                  </div>
-                </div>
-
-                {/* Fila 7 */}
-                <div className="grid grid-cols-2 gap-x-6">
-                  <div>
-                    <label className="text-xs text-gray-700 mb-1 block">Estado</label>
-                    <input 
-                      type="text" 
-                      placeholder="Estado..."
-                      value={nuevaDireccionForm.estado}
-                      onChange={(e) => setNuevaDireccionForm({...nuevaDireccionForm, estado: e.target.value})}
-                      className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded" 
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs text-gray-700 mb-1 block">Tipo de Dirección</label>
-                    <select 
-                      value={nuevaDireccionForm.tipoDireccion}
-                      onChange={(e) => setNuevaDireccionForm({...nuevaDireccionForm, tipoDireccion: e.target.value})}
-                      className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded"
-                    >
-                      <option value="Particular">Particular</option>
-                      <option value="Comercial">Comercial</option>
-                      <option value="Fiscal">Fiscal</option>
-                      <option value="Laboral">Laboral</option>
-                      <option value="Otra">Otra</option>
-                    </select>
-                  </div>
-                </div>
-              </div>
-
-              {/* Botones de acción */}
-              <div className="flex justify-end gap-2 mt-6">
-                <button 
-                  onClick={() => {
-                    setShowDireccionModal(false);
-                    setEditingDireccionId(null);
-                    setNuevaDireccionForm({
-                      pais: 'México', atencion: '', destinatario: '',
-                      tipoCalle: '', calle: '', numeroExterior: '',
-                      piso: '', numeroInterior: '', codigoPostal: '',
-                      colonia: '', municipio: '', ciudad: '', estado: '',
-                      tipoDireccion: 'Particular',
-                    });
-                  }}
-                  className="px-6 py-2 bg-gray-500 text-white rounded text-xs hover:bg-gray-600"
-                >
-                  Cancelar
-                </button>
-                <button 
-                  onClick={() => {
-                    if (editingDireccionId !== null) {
-                      // Modo edición: actualizar dirección existente
-                      handleActualizarDireccion(editingDireccionId, nuevaDireccionForm);
-                    } else {
-                      // Modo nuevo: agregar dirección
-                      handleAgregarDireccion(nuevaDireccionForm);
-                    }
-                    // Limpiar el formulario
-                    setNuevaDireccionForm({
-                      pais: 'México',
-                      atencion: '',
-                      destinatario: '',
-                      tipoCalle: '',
-                      calle: '',
-                      numeroExterior: '',
-                      piso: '',
-                      numeroInterior: '',
-                      codigoPostal: '',
-                      colonia: '',
-                      municipio: '',
-                      ciudad: '',
-                      estado: '',
-                      tipoDireccion: 'Particular',
-                    });
-                    setEditingDireccionId(null);
-                  }}
-                  className="px-6 py-2 btn-primary-theme rounded text-xs hover:bg-primary-hover-theme"
-                >
-                  {editingDireccionId !== null ? 'Actualizar' : 'Guardar'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
+        <DireccionModal
+          modo={editingDireccionId !== null ? 'edit' : 'create'}
+          inicial={editingDireccionId !== null ? nuevaDireccionForm : null}
+          nombrePorOmision={esMoralPersoneria(formData.personalidad)
+            ? (formData.razonSocial || formData.nombre || '')
+            : [formData.nombre, formData.apellidoPaterno, formData.apellidoMaterno].filter(Boolean).join(' ')}
+          conTipoDireccion
+          onSave={(datos) => {
+            if (editingDireccionId !== null) handleActualizarDireccion(editingDireccionId, datos);
+            else handleAgregarDireccion(datos);
+            setEditingDireccionId(null);
+          }}
+          onCancel={() => { setShowDireccionModal(false); setEditingDireccionId(null); }}
+        />
       )}
     </div>
   );

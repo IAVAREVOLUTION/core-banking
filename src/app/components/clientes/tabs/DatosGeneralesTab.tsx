@@ -8,6 +8,7 @@ import {
   SelectValue,
 } from '../../ui/select';
 import { Cliente } from '../../../data/mockClientesData';
+import { esPersonaMoral, tipoPersonaDe } from '@/app/lib/personaJuridica';
 
 interface DatosGeneralesTabProps {
   formData: Partial<Cliente>;
@@ -16,7 +17,7 @@ interface DatosGeneralesTabProps {
 }
 
 export function DatosGeneralesTab({ formData, updateFormData, isView }: DatosGeneralesTabProps) {
-  const isPersonaMoral = formData.personalidad === 'Persona Moral' || (formData.personalidad as string | undefined) === 'Moral';
+  const isPersonaMoral = esPersonaMoral(formData.personalidad);
 
   if (isView) {
     // Vista de solo lectura - texto plano sin fondos

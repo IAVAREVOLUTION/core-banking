@@ -165,6 +165,13 @@ export interface DisposicionAplicada {
   fecha: string;
   /** Saldo de la línea después de aplicar esta disposición. */
   saldoResultante: number;
+  /**
+   * Disposición pagada totalmente: su monto ya se reintegró al Saldo Monto
+   * Garantía (lo marca el servidor al aplicar el último pago). Se conserva en
+   * el arreglo para que una re-activación no la vuelva a descontar.
+   */
+  liquidada?: boolean;
+  fechaLiquidacion?: string;
 }
 
 /** Nodo propio de REQ-18 dentro de `data.solicitud.banca2oPiso`. */
@@ -852,7 +859,8 @@ export async function aplicarActivacionDisposicion(
 export async function sumarAvisosDisposiciones(
   nodo?: Banca2oPisoData,
 ): Promise<{ ok: boolean; monto: number; cuantos: number; sinAvisos: number; error?: string }> {
-  const aplicadas = Array.isArray(nodo?.disposicionesAplicadas) ? nodo!.disposicionesAplicadas! : [];
+  // Las liquidadas ya no se deben: no entran al escenario de pánico.
+  const aplicadas = (Array.isArray(nodo?.disposicionesAplicadas) ? nodo!.disposicionesAplicadas! : []).filter(a => !a.liquidada);
   if (aplicadas.length === 0) return { ok: true, monto: 0, cuantos: 0, sinAvisos: 0 };
 
   let monto = 0;
@@ -878,7 +886,7 @@ export async function sumarAvisosDisposiciones(
 }
 
 export function sumarDisposicionesActivas(nodo?: Banca2oPisoData): { monto: number; cuantas: number } {
-  const aplicadas = Array.isArray(nodo?.disposicionesAplicadas) ? nodo!.disposicionesAplicadas! : [];
+  const aplicadas = (Array.isArray(nodo?.disposicionesAplicadas) ? nodo!.disposicionesAplicadas! : []).filter(a => !a.liquidada);
   return {
     monto: aplicadas.reduce((s, a) => s + (Number(a.monto) || 0), 0),
     cuantas: aplicadas.length,

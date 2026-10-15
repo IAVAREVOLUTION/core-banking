@@ -33,6 +33,7 @@ import {
   calcularPagoPeriodo,
   generarTablaAmortizacionCredito,
   IVA_RATE,
+  totalSeguroConTasa,
   crearCotizacionCreditoVacia,
   validarCotizacionCredito,
   TIPOS_CALCULO_AMORTIZACION,
@@ -372,6 +373,15 @@ export function CotizacionCreditoForm({ mode, lineaProducto, cotizacion, onSave,
     }
   }, [data.montoSolicitado, data.aforo]);
 
+  // Cotizaciones guardadas con el cálculo anterior (tasa aplicada como 0.08 %):
+  // al abrirlas se recalcula el total del seguro con la tasa correcta.
+  useEffect(() => {
+    if (!data.seguroFinanciado || !(data.montoSeguro > 0)) return;
+    const correcto = totalSeguroConTasa(data.montoSeguro, data.tasaSeguro);
+    if (Math.abs(correcto - (data.totalSeguro || 0)) > 0.005) setData({ totalSeguro: correcto });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data.seguroFinanciado, data.montoSeguro, data.tasaSeguro, data.totalSeguro]);
+
   // ── Tabla amortización — spec §10 ──
   const tablaAmort = useMemo(() => {
     const segPer = data.seguroFinanciado && data.totalSeguro > 0 && data.plazo > 0
@@ -483,7 +493,7 @@ export function CotizacionCreditoForm({ mode, lineaProducto, cotizacion, onSave,
       const tasaSeg = matchingRow.tasaDefault;
       // totalSeguro = montoDefault * (1 + tasaDefault/100)
       // pagoSeguroPeriodo = totalSeguro / plazo  (se calcula en el useEffect de pagos)
-      const totalSeg = Math.round(montoSeg * (1 + tasaSeg / 100) * 100) / 100;
+      const totalSeg = totalSeguroConTasa(montoSeg, tasaSeg);
       setData({
         seguroNombre: seg.nombre,
         montoSeguro: montoSeg,
@@ -1154,7 +1164,7 @@ export function CotizacionCreditoForm({ mode, lineaProducto, cotizacion, onSave,
                                             const montoSeg = row.montoDefault;
                                             const tasaSeg = row.tasaDefault;
                                             // totalSeguro = montoDefault * (1 + tasaDefault/100)
-                                            const totalSeg = Math.round(montoSeg * (1 + tasaSeg / 100) * 100) / 100;
+                                            const totalSeg = totalSeguroConTasa(montoSeg, tasaSeg);
                                             setData({
                                               montoSeguro: montoSeg,
                                               tasaSeguro: tasaSeg,

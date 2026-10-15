@@ -12,6 +12,7 @@ import { projectId, publicAnonKey } from '/utils/supabase/info';
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-7e2d13d9`;
 
 let cache: Map<string, string> | null = null;
+let cargadoEn = 0;
 let enCurso: Promise<Map<string, string>> | null = null;
 
 function noSolDeFila(r: any): string {
@@ -23,8 +24,8 @@ function noSolDeFila(r: any): string {
   return String(d?.header?.no_sol || d?.noSol || d?.no_sol || '');
 }
 
-export function cargarNoSolicitudes(): Promise<Map<string, string>> {
-  if (cache) return Promise.resolve(cache);
+export function cargarNoSolicitudes(forzar = false): Promise<Map<string, string>> {
+  if (cache && !forzar) return Promise.resolve(cache);
   if (!enCurso) {
     enCurso = fetch(`${API_BASE}/solicitudes-credito?vista=lista`, { headers: { Authorization: `Bearer ${publicAnonKey}` } })
       .then(r => (r.ok ? r.json() : null))
@@ -36,6 +37,7 @@ export function cargarNoSolicitudes(): Promise<Map<string, string>> {
           if (f?.id && no) m.set(String(f.id), no);
         }
         cache = m;
+        cargadoEn = Date.now();
         return m;
       })
       .catch(() => new Map<string, string>())
@@ -44,13 +46,22 @@ export function cargarNoSolicitudes(): Promise<Map<string, string>> {
   return enCurso;
 }
 
-export function useNoSolicitudes(activo = true): Map<string, string> {
+/**
+ * `ids`: solicitudes que se van a mostrar. Si alguna no está en el mapa (se
+ * creó después de cargarlo) se recarga — antes el mapa duraba toda la sesión y
+ * las solicitudes nuevas salían como "#ID corto" en vez de su folio.
+ */
+export function useNoSolicitudes(activo = true, ids?: string[]): Map<string, string> {
   const [mapa, setMapa] = useState<Map<string, string>>(() => cache || new Map());
+  const faltantes = (ids || []).filter(id => id && !mapa.has(String(id))).sort().join(',');
   useEffect(() => {
     if (!activo) return;
     let vivo = true;
-    cargarNoSolicitudes().then(m => { if (vivo) setMapa(m); });
+    // Recarga sólo si faltan folios y la última carga no es reciente (evita ciclos
+    // con ids que de verdad no tienen folio).
+    const forzar = faltantes !== '' && Date.now() - cargadoEn > 10_000;
+    cargarNoSolicitudes(forzar).then(m => { if (vivo) setMapa(m); });
     return () => { vivo = false; };
-  }, [activo]);
+  }, [activo, faltantes]);
   return mapa;
 }

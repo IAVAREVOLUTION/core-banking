@@ -106,9 +106,9 @@ export function SolicitudActivacionList({
         type:                  initialEditItem.tipo || String(raw.type || ''),
         fechaSolicitud:        initialEditItem.fechaSolicitud || '',
 estatus:               initialEditItem.estatus || d.estatus || 'Pendiente',
-        cliente:               initialEditItem.cliente || String(header.cliente || ''),
+        cliente:               String(header.cliente || '') || initialEditItem.cliente,
         numeroDocumento:       initialEditItem.numeroDocumento || String(header.numeroDocumento || raw.cliente_curp || ''),
-        cuentaBancaria:        String(raw.solicitud_no_cuenta || header.cuentaBancaria || ''),
+        cuentaBancaria:        String(header.cuentaBancaria || raw.solicitud_no_cuenta || ''),
         formaDePago:           String(header.formaDePago || 'Banca por internet'),
         institucionFinanciera: String(header.institucionFinanciera || ''),
         referencia:            String(header.referencia || initialEditItem._dbId || ''),
@@ -191,9 +191,9 @@ estatus:               initialEditItem.estatus || d.estatus || 'Pendiente',
       type:                  initialEditItem.tipo || String(raw.type || ''),
       fechaSolicitud:        initialEditItem.fechaSolicitud || '',
       estatus:               initialEditItem.estatus || 'Pendiente',
-      cliente:               initialEditItem.cliente || String(header.cliente || ''),
+      cliente:               String(header.cliente || '') || initialEditItem.cliente,
       numeroDocumento:       initialEditItem.numeroDocumento || String(header.numeroDocumento || raw.cliente_curp || ''),
-      cuentaBancaria:        String(raw.solicitud_no_cuenta || header.cuentaBancaria || ''),
+      cuentaBancaria:        String(header.cuentaBancaria || raw.solicitud_no_cuenta || ''),
       formaDePago:           String(header.formaDePago || 'Banca por internet'),
       institucionFinanciera: String(header.institucionFinanciera || ''),
       referencia:            String(header.referencia || initialEditItem._dbId || ''),
@@ -275,12 +275,12 @@ estatus:               initialEditItem.estatus || d.estatus || 'Pendiente',
       estatus: s.estatus || 'Pendiente',
       // JOIN read-only
       numeroDocumento: s.numeroDocumento || String(raw.cliente_curp || header.numeroDocumento || ''),
-      cliente:         s.cliente         || String(header.cliente   || ''),
-      cuentaBancaria:  String(raw.solicitud_no_cuenta || header.cuentaBancaria || ''),
+      cliente:         String(header.cliente || '') || s.cliente,
+      cuentaBancaria:  String(header.cuentaBancaria || raw.solicitud_no_cuenta || ''),
       // data.header
       formaDePago:           String(header.formaDePago           || 'Banca por internet'),
       institucionFinanciera: String(header.institucionFinanciera || ''),
-      referencia:            String(s._dbId || s.id || ''),
+      referencia:            String(header.referencia || s._dbId || s.id || ''),
       montoTransaccion,
       moneda,
       nota:        String(header.nota       || ''),
@@ -418,7 +418,7 @@ estatus:               initialEditItem.estatus || d.estatus || 'Pendiente',
   // ─── LIST VIEW: filtro y orden ─────────────────────────────────────
   // Antes del return del formulario: useOrdenTabla es un hook.
   // No. de solicitud legible para la columna ID (las activaciones sólo guardan el UUID).
-  const noSolPorId = useNoSolicitudes();
+  const noSolPorId = useNoSolicitudes(true, solicitudes.map(s => s.solicitudId));
   const filteredSolicitudes = solicitudes.filter(s =>
     (!filterEstatus || s.estatus === filterEstatus) &&
     coincideBusqueda(searchTerm, [s.solicitudId, noSolPorId.get(s.solicitudId), s.cliente, s.numeroDocumento, s.tipo, s.fechaSolicitud, s.moneda, s.estatus]));

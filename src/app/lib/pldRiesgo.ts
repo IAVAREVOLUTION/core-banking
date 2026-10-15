@@ -9,6 +9,7 @@
  * por qué salió así y pueda ajustarlo.
  */
 import { repararDataSolicitud } from './repararDataSolicitud';
+import { esPersonaMoral } from './personaJuridica';
 
 export type FactorRiesgo = 'actividadEconomica' | 'residencia' | 'nacionalidad' | 'tipoPersona' | 'pepListasNegras';
 export const PONDERACION: Record<FactorRiesgo, number> = {
@@ -40,7 +41,7 @@ export function calcularRiesgo(rawData: unknown, personalidad?: string): Resulta
 
   const nombre = norm(g('denominacionRazonSocial', 'razonSocial', 'nombre'));
   const pers = norm(personalidad || g('personalidad', 'subtipo', 'tipo'));
-  const esMoral = pers.includes('moral');
+  const esMoral = esPersonaMoral(pers);
   const esPFAE = pers.includes('actividad') || pers === 'pfae';
 
   // 1) Actividad económica

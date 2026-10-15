@@ -63,4 +63,12 @@ describe('buroSimulado', () => {
     const xml = reporteBuroAXml(generarReporteBuro({ tipoPersona: 'PM', rfc: 'ABC850101AB1', razonSocial: 'Hierro & Acero <SA>', direccion: 'x' }, AUT, FECHA));
     expect(xml).toContain('HIERRO &amp; ACERO &lt;SA&gt;');
   });
+  it('con resultado forzado siempre cumple el resultado pedido', () => {
+    for (let i = 1; i <= 200; i++) {
+      const pos = generarReporteBuro(PF, AUT, FECHA, { resultado: 'POSITIVO', semilla: i });
+      const neg = generarReporteBuro(PF, AUT, FECHA, { resultado: 'NEGATIVO', semilla: i });
+      expect(pos.resultado).toBe('POSITIVO');
+      expect(neg.resultado).toBe('NEGATIVO');
+    }
+  });
 });

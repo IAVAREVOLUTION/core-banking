@@ -39,6 +39,20 @@ interface EventoContable {
   fecha: string;
   estatus: 'Capturado' | 'Procesado' | 'Error';
   journal_id?: string;
+  /** Total contabilizado (débito) — para reconocer pólizas de pago anteriores. */
+  total?: number;
+  /** Aviso al que se aplicó la póliza y pagos (J_PAGOS) que contabilizó. */
+  factura_id?: string | null;
+  pagos_ids?: string[] | null;
+}
+
+/** Un pago aplicado al documento, con el concepto que cubrió. */
+export interface PagoDocumento {
+  id: string;
+  referencia: string;
+  fecha: string;
+  monto: number;
+  componente: string;
 }
 
 /** Componente contable para la generación (Sub Producto + Monto del Detail). */
@@ -69,6 +83,12 @@ interface Props {
    * facturado: un aviso pagado en parte sólo genera póliza por lo cobrado.
    */
   readonly componentesPagados?: ComponenteContable[];
+  /**
+   * Pagos del documento (aviso). Con ellos la póliza de pago contabiliza SÓLO
+   * los pagos que ninguna póliza anterior incluyó: un segundo pago del mismo
+   * aviso no vuelve a contabilizar el primero.
+   */
+  readonly pagosDocumento?: { facturaId: string; pagos: PagoDocumento[] };
 }
 
 /** ¿El evento contabiliza un PAGO recibido? (usa montos pagados, no facturados) */
@@ -106,10 +126,62 @@ const ESTATUS_CLS: Record<string, string> = {
 
 // ── Componente ─────────────────────────────────────────────────────────────────
 
-export function GeneracionContableTab({ solicitudId, credito, componentes, componentesPagados }: Props) {
-  /** Componentes que corresponden a cada evento: pagados para eventos de pago. */
-  const componentesDe = (ev: { evento_codigo?: string; evento_nombre?: string } | null) =>
-    (ev && componentesPagados && esEventoDePago(ev) ? componentesPagados : componentes) || [];
+export function GeneracionContableTab({ solicitudId, credito, componentes, componentesPagados, pagosDocumento }: Props) {
+  // (los eventos se declaran abajo; estas funciones sólo se llaman al renderizar)
+  /**
+   * Pagos del documento que YA quedaron en una póliza de pago procesada:
+   *  - pólizas nuevas: guardan los ids de pago que contabilizaron;
+   *  - pólizas anteriores (sin ese registro): se reconocen porque su total
+   *    coincide con los primeros pagos del aviso en orden cronológico.
+   */
+  const pagosPendientes = (): PagoDocumento[] => {
+    if (!pagosDocumento) return [];
+    const { facturaId, pagos } = pagosDocumento;
+    const contabilizados = new Set<string>();
+    const pagoEvs = eventos.filter(e => e.estatus === 'Procesado' && esEventoDePago(e));
+    for (const e of pagoEvs) {
+      if (Array.isArray(e.pagos_ids) && (!e.factura_id || String(e.factura_id) === facturaId)) {
+        e.pagos_ids.forEach(id => contabilizados.add(String(id)));
+      }
+    }
+    // Pólizas anteriores: agrupar los pagos por referencia (cada pago aplicado)
+    // en orden y reclamar el bloque cuya suma coincide con el total de la póliza.
+    const lotes: { ids: string[]; total: number }[] = [];
+    const orden = [...pagos].sort((a, b) => (a.fecha || '').localeCompare(b.fecha || '') || Number(a.id) - Number(b.id));
+    for (const p of orden) {
+      const ult = lotes[lotes.length - 1];
+      if (ult && (pagos.find(x => x.id === ult.ids[0])?.referencia || '') === p.referencia) {
+        ult.ids.push(p.id); ult.total = Math.round((ult.total + p.monto) * 100) / 100;
+      } else {
+        lotes.push({ ids: [p.id], total: p.monto });
+      }
+    }
+    for (const e of pagoEvs.filter(x => !Array.isArray(x.pagos_ids) && (x.total || 0) > 0)) {
+      const libres = lotes.filter(l => l.ids.every(id => !contabilizados.has(id)));
+      let acum = 0;
+      const tomados: string[] = [];
+      for (const l of libres) {
+        acum = Math.round((acum + l.total) * 100) / 100;
+        tomados.push(...l.ids);
+        if (Math.abs(acum - (e.total || 0)) < 0.05) { tomados.forEach(id => contabilizados.add(id)); break; }
+        if (acum > (e.total || 0)) break;
+      }
+    }
+    return pagos.filter(p => !contabilizados.has(String(p.id)));
+  };
+
+  /** Componentes que corresponden a cada evento: en eventos de pago, sólo lo pendiente de contabilizar. */
+  const componentesDe = (ev: { evento_codigo?: string; evento_nombre?: string } | null): ComponenteContable[] => {
+    if (ev && esEventoDePago(ev)) {
+      if (pagosDocumento) {
+        const porComp = new Map<string, number>();
+        for (const p of pagosPendientes()) porComp.set(p.componente, Math.round(((porComp.get(p.componente) || 0) + p.monto) * 100) / 100);
+        return [...porComp.entries()].map(([id_componente, monto]) => ({ id_componente, monto }));
+      }
+      if (componentesPagados) return componentesPagados;
+    }
+    return componentes || [];
+  };
 
   const isUUID = UUID_RE.test(solicitudId || '');
 
@@ -147,6 +219,9 @@ export function GeneracionContableTab({ solicitudId, credito, componentes, compo
           fecha:         r.fecha   || '',
           estatus:       mapEstatus(r.estatus),
           journal_id:    r.id,
+          total:         Number(r.total_debit) || 0,
+          factura_id:    r.factura_id ?? null,
+          pagos_ids:     Array.isArray(r.pagos_ids) ? r.pagos_ids.map(String) : null,
         }));
         setEventos(rows);
         ssSave(solicitudId, rows);
@@ -247,6 +322,10 @@ export function GeneracionContableTab({ solicitudId, credito, componentes, compo
         body: JSON.stringify({
           solicitud_id: solicitudId,
           componentes:  comps,
+          // Póliza de pago: aviso y pagos que contabiliza (para no repetirlos después).
+          ...(pagosDocumento && esEventoDePago(ev)
+            ? { documento: { factura_id: pagosDocumento.facturaId, pagos_ids: pagosPendientes().map(p => p.id) } }
+            : {}),
         }),
       });
       const j = await res.json();

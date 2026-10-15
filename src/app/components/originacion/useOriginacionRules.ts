@@ -7,6 +7,7 @@ import {
   FaseOriginacion,
 } from './originacionRules';
 import { OriginacionFormData } from './originacionStore';
+import { tipoPersonaDe } from '@/app/lib/personaJuridica';
 
 export type AccionFase = 'enviarFase' | 'regresarFase' | 'formalizarContrato' | 'solicitudActivacion' | 'activarCuenta';
 
@@ -44,7 +45,8 @@ export function useOriginacionRules({
   onCrearCuenta,
 }: UseOriginacionRulesProps) {
   const getContext = useCallback((): OriginacionContext => {
-    const tipoPersona = formData.cliente.includes('S.A.') || formData.cliente.includes('S. de R.L.') || formData.cliente.includes('S.C.') ? 'Moral' : 'Física';
+    const tipoPersona = tipoPersonaDe((formData as any).tipoPersona)
+      ?? (formData.cliente.includes('S.A.') || formData.cliente.includes('S. de R.L.') || formData.cliente.includes('S.C.') ? 'Moral' : 'Física');
 
     return {
       id: 0,
