@@ -165,6 +165,13 @@ export interface DisposicionAplicada {
   fecha: string;
   /** Saldo de la línea después de aplicar esta disposición. */
   saldoResultante: number;
+  /**
+   * Disposición pagada totalmente: su monto ya se reintegró al Saldo Monto
+   * Garantía (lo marca el servidor al aplicar el último pago). Se conserva en
+   * el arreglo para que una re-activación no la vuelva a descontar.
+   */
+  liquidada?: boolean;
+  fechaLiquidacion?: string;
 }
 
 /** Nodo propio de REQ-18 dentro de `data.solicitud.banca2oPiso`. */
@@ -187,6 +194,12 @@ export interface Banca2oPisoData {
 export interface LineaCreditoRow extends CarteraCredito {
   /** `data.solicitud.terminos_condiciones._raw` — alimenta la pestaña de Términos. */
   terminosRaw: Record<string, any>;
+  /**
+   * Fideicomiso de Fuente de Pago instrumentado en la Solicitud (subtab
+   * "Estructura Operativa de 2o Piso", `data.solicitud.estructura_2o_piso`).
+   * Es el deudor de los avisos de comisión de la línea.
+   */
+  fideicomiso?: { numero: string; fiduciaria: string };
   /**
    * `data.solicitud.cargos` — alimenta la pestaña de Cargos.
    * Se leen de la BD y NO de sessionStorage: este módulo puede abrirse sin haber
@@ -846,7 +859,8 @@ export async function aplicarActivacionDisposicion(
 export async function sumarAvisosDisposiciones(
   nodo?: Banca2oPisoData,
 ): Promise<{ ok: boolean; monto: number; cuantos: number; sinAvisos: number; error?: string }> {
-  const aplicadas = Array.isArray(nodo?.disposicionesAplicadas) ? nodo!.disposicionesAplicadas! : [];
+  // Las liquidadas ya no se deben: no entran al escenario de pánico.
+  const aplicadas = (Array.isArray(nodo?.disposicionesAplicadas) ? nodo!.disposicionesAplicadas! : []).filter(a => !a.liquidada);
   if (aplicadas.length === 0) return { ok: true, monto: 0, cuantos: 0, sinAvisos: 0 };
 
   let monto = 0;
@@ -872,7 +886,7 @@ export async function sumarAvisosDisposiciones(
 }
 
 export function sumarDisposicionesActivas(nodo?: Banca2oPisoData): { monto: number; cuantas: number } {
-  const aplicadas = Array.isArray(nodo?.disposicionesAplicadas) ? nodo!.disposicionesAplicadas! : [];
+  const aplicadas = (Array.isArray(nodo?.disposicionesAplicadas) ? nodo!.disposicionesAplicadas! : []).filter(a => !a.liquidada);
   return {
     monto: aplicadas.reduce((s, a) => s + (Number(a.monto) || 0), 0),
     cuantas: aplicadas.length,
@@ -949,6 +963,12 @@ export function useLineasCreditoActivas() {
             gobierno: r.institucion_gobierno || undefined,
             fechaSol: r.fecha_sol || r.fecha_autori || '',
             terminosRaw: t,
+            fideicomiso: (() => {
+              const e = rawSolicitud.estructura_2o_piso || {};
+              const numero = String(e.numero_fideicomiso_fuente_pago || '').trim();
+              const fiduciaria = String(e.institucion_fiduciaria || '').trim();
+              return numero || fiduciaria ? { numero, fiduciaria } : undefined;
+            })(),
             documentos: mapDocumentosExpediente(rawSolicitud, dataObj),
             cargos: cargosRaw.map((c: any) => ({
               tipoCargo: String(c?.tipo_cargo ?? c?.tipoCargo ?? c?.tipo_comision ?? c?.tipoComision ?? ''),

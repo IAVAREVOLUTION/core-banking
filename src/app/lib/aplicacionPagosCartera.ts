@@ -15,7 +15,7 @@
 import { projectId, publicAnonKey } from '/utils/supabase/info';
 import { repararDataSolicitud } from './repararDataSolicitud';
 import { aplicarPago, money, type DocumentoCxC, type ResultadoAplicacionPago } from './motorAplicacionPagos';
-import { mapaPrelacion, ordenDe, type FilaPrelacion } from './prelacionCargos';
+import { mapaPrelacion, ordenDe, claveConcepto, type FilaPrelacion } from './prelacionCargos';
 
 const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-7e2d13d9`;
 const HDR = { 'Content-Type': 'application/json', Authorization: `Bearer ${publicAnonKey}` };
@@ -141,7 +141,8 @@ export async function cargarAvisosPagables(solicitudId: string, prelacion: FilaP
         nombreConcepto: String(l.descripcion_subproducto || l.cve_subproducto || ''),
         monto: num(l.monto),
         pagoTotal: pagadoPorLinea.get(String(l.id)) || 0,
-        ordenPrelacion: ordenDe(String(l.cve_subproducto || ''), mapa),
+        // El orden guardado en el aviso manda; si no lo tiene, el del producto por clave de concepto.
+        ordenPrelacion: Number(l.orden_prelacion) > 0 ? Number(l.orden_prelacion) : ordenDe(claveConcepto(String(l.cve_subproducto || '')), mapa),
       }));
       // Aviso sin desglose: una sola línea por el total (se paga como bloque).
       const conDetalle = detalle.length > 0 ? detalle : [{

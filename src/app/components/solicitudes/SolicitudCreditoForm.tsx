@@ -104,6 +104,7 @@ import { FacturasArrendamientoTab } from './FacturasArrendamientoTab';
 import { ComitesTab } from '../shared/ComitesTab';
 import { CampoMonto } from '@/app/components/ui/CampoMonto';
 import { decidirFaseIA, decidirFasePorPresencia, esPromptSoloPresencia, REGLAS_GENERALES_FASE_IA } from '@/app/lib/decisionFaseIA';
+import { esPersonaMoral, tipoPersonaDe } from '@/app/lib/personaJuridica';
 
 // ═══════════════════════════════════════════════════════════════════
 // COMPUERTAS DEL BPM GPO — ancladas a la POSICIÓN de la fase
@@ -176,7 +177,7 @@ function getRequisitosObligatoriosFase(
       const persona = String(r.persona || r.tipoPersona || '').toLowerCase();
       if (persona && !persona.includes('todo') && !persona.includes('all')) {
         const tp = tipoPersona.toLowerCase();
-        const isMoral = tp.includes('moral');
+        const isMoral = esPersonaMoral(tipoPersona);
         const isEmp = tp.includes('emp') || tp.includes('empresarial');
         if (isMoral && !persona.includes('moral')) return false;
         if (!isMoral && !isEmp && persona.includes('moral')) return false;
@@ -671,9 +672,12 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
           .map(f => `${f.periodo || 'sin frecuencia'} ${(parseFloat(String(f.tasaMinima ?? '0')) || 0).toFixed(2)}%`)
           .join(' · ');
         toast.warning(`Hay ${candidatas.length} filas de matriz para este plazo`, {
-          description: `Difieren en frecuencia y tasa (${opciones}). Abra la Matriz de Tasa Fija y elija cuál aplica.`,
+          description: `Difieren en frecuencia y tasa (${opciones}). Elija en la Matriz de Tasa Fija cuál aplica.`,
           duration: 12000,
         });
+        // Sin tasa la solicitud no puede simular: se abre la Matriz para que el
+        // usuario elija la fila en vez de dejar sólo un aviso que se pierde.
+        if (mode !== 'ver' && !(parseFloat(String(tasaSeleccionadaHeader || '')) > 0)) setShowMatrizModal(true);
       }
       return;
     }
@@ -1610,7 +1614,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
             // Filtrar por tipo de persona: excluir docs que no aplican al cliente
             const docPersona = String(r.tipoPersona || '').toLowerCase();
             if (docPersona && docPersona !== 'todos' && docPersona !== 'all') {
-              const esMoral = clienteTipoPersonaLower.includes('moral');
+              const esMoral = esPersonaMoral(clienteTipoPersonaLower);
               if (docPersona.includes('moral') && !esMoral) return false;
               if (!docPersona.includes('moral') && esMoral) return false;
             }
@@ -3002,7 +3006,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
           // guardado parcial nunca puede limpiarse a '' (los vacios se ignoran
           // para no borrar datos por accidente) — por eso se ignoran esos dos
           // campos por completo aqui, sin importar que haya quedado guardado.
-          const esClienteMoral = rowC.subtipo === 'Persona Moral';
+          const esClienteMoral = esPersonaMoral(rowC.subtipo || g('personalidad') || g('tipo'));
           const nombreDB = esClienteMoral
             ? (g('denominacionRazonSocial') || g('razonSocial') || g('nombre') || g('nombreCompleto') || '')
             : ([g('nombre'), g('apellidoPaterno'), g('apellidoMaterno')].filter(Boolean).join(' ') || g('nombreCompleto') || '');
@@ -3063,7 +3067,9 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
       const errores: string[] = [];
       if (!formData.noSol || formData.noSol.trim() === '') errores.push('Número de Solicitud');
       if (!formData.nombrePersona || formData.nombrePersona.trim() === '') errores.push('Nombre del solicitante');
-      if (!formData.apellidoPaternoPersona || formData.apellidoPaternoPersona.trim() === '') errores.push('Apellido Paterno');
+      // Persona Moral no tiene apellidos ("Moral" o "Persona Moral" según el origen).
+      const esPersonaMoralSol = esPersonaMoral(formData.tipoPersona);
+      if (!esPersonaMoralSol && (!formData.apellidoPaternoPersona || formData.apellidoPaternoPersona.trim() === '')) errores.push('Apellido Paterno');
       if (!formData.lineaProducto || formData.lineaProducto.trim() === '') errores.push('Línea de Producto');
       if (!formData.tipoProducto || formData.tipoProducto.trim() === '') errores.push('Tipo de Producto');
       if (!formData.productoId || formData.productoId.trim() === '') errores.push('Producto');
@@ -3401,8 +3407,8 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
     const tp = n(formData.tipoProducto);
     if (!lp.includes('credito')) return false;
     if (lp.includes('captac') || lp.includes('ahorro') || lp.includes('invers') || tp.includes('invers')) return false;
-    if (tp.includes('arrendamiento')) return false;
-    if (esGPOForm) return false;
+    // Todos los productos activos (Crédito, Línea de Crédito, GPO, Arrendamiento):
+    // el beneficiario y la cuenta de la activación salen de Cuenta(s) Beneficiaria(s).
     return true;
   };
 
@@ -3918,7 +3924,8 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
     // Persona Moral no tiene apellidos: el formulario ni siquiera dibuja el
     // campo (ahí va la Razón Social). Exigirlo dejaba la Solicitud imposible
     // de guardar, y el aviso señalaba un campo que no existe en pantalla.
-    const esMoral = (formData.tipoPersona || '').toLowerCase().startsWith('moral');
+    // Acepta "Moral" y "Persona Moral" (el selector usa la segunda).
+    const esMoral = esPersonaMoral(formData.tipoPersona);
     if (!formData.nombrePersona) e.nombrePersona = esMoral ? 'Capture la Razón Social' : 'Obligatorio';
     if (!esMoral && !formData.apellidoPaternoPersona) e.apellidoPaternoPersona = 'Obligatorio';
     if (!formData.productoId) e.productoId = 'Obligatorio';
@@ -4553,7 +4560,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
               </span>
               {formData.tipoPersona && (
                 <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-semibold shrink-0 ${
-                  formData.tipoPersona === 'Moral' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'
+                  esPersonaMoral(formData.tipoPersona) ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'
                 }`}>
                   {CAT_TIPO_PERSONA.find(c => c.value === formData.tipoPersona)?.label || formData.tipoPersona}
                 </span>
@@ -5007,6 +5014,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
                     fechaInicioHeader={formData.fechaInicio || ''}
                     frecuenciaHeader={frecuenciaSeleccionadaHeader}
                     onFechaFinChange={v => set('fechaFin', v)}
+                    onSinTasa={matrizTasaFijaProducto.length > 0 && mode !== 'ver' ? () => setShowMatrizModal(true) : undefined}
                   />
                 )}
                 {sec.id === 'facturas' && (
@@ -5245,7 +5253,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
           set('apellidoMaternoPersona', c.apellidoMaterno || '');
           set('noCliente', c.idCliente);
           set('_clienteId' as keyof SolicitudFormData, c.dbUuid || c.idCliente);
-          set('tipoPersona', c.personalidad?.toLowerCase().includes('moral') ? 'Moral' : 'Física');
+          set('tipoPersona', esPersonaMoral(c.personalidad) ? 'Moral' : 'Física');
           set('_rfc' as keyof SolicitudFormData, c.rfc || '');
           set('_curp' as keyof SolicitudFormData, c.curp || '');
           set('_gobierno' as keyof SolicitudFormData, c.gobierno || '');

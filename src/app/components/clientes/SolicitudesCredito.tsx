@@ -8,6 +8,7 @@ import { consumeNoSol, getFechaSolicitudNow, EMPTY_FORM } from '../solicitudes/s
 import type { SolicitudFormData } from '../solicitudes/solicitudCreditoStore';
 import type { Cliente } from './ClientesList';
 import { CampoMonto } from '@/app/components/ui/CampoMonto';
+import { esPersonaMoral, tipoPersonaDe } from '@/app/lib/personaJuridica';
 
 interface SolicitudesCreditoProps {
   onBack: () => void;
@@ -19,7 +20,7 @@ interface SolicitudesCreditoProps {
 
 function mapPersonalidad(personalidad?: string): string {
   if (!personalidad) return '';
-  return personalidad.toLowerCase().includes('moral') ? 'Moral' : 'Física';
+  return tipoPersonaDe(personalidad) ?? 'Física';
 }
 
 function isoToDisplay(val?: string | null): string {

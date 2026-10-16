@@ -40,6 +40,7 @@ import { toast } from '@/app/lib/notificaciones';
 import { Search, UserPlus, Trash2, X, Users, AlertCircle, Loader2, Star } from 'lucide-react';
 import { supabase } from '../../lib/supabaseClient';
 import { nombrePersona, esPersonaMoral } from '@/app/lib/nombrePersona';
+import { esPersonaMoral as esMoralPersoneria, tipoPersonaDe } from '@/app/lib/personaJuridica';
 
 // ═══════════════════════════════════════════════════════════════════
 // TIPOS
@@ -491,8 +492,8 @@ export function PersonasRelacionadas({
     if (filterTipo !== '-Todos-') {
       filtered = filtered.filter(c => {
         const p = (c.personalidad || '').toLowerCase();
-        if (filterTipo === 'Persona Física') return p.includes('física') || p.includes('fisica');
-        if (filterTipo === 'Persona Moral') return p.includes('moral');
+        if (filterTipo === 'Persona Física') return tipoPersonaDe(p) === 'Física';
+        if (filterTipo === 'Persona Moral') return esMoralPersoneria(p);
         return true;
       });
     }

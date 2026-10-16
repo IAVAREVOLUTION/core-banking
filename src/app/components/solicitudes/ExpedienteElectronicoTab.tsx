@@ -2575,7 +2575,9 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
               </button>
             )}
             {/* Genera de una vez los documentos de plantilla que pide la fase actual */}
-            {!isRO && generablesDeLaFase.length > 0 && (
+            {/* Crédito Individual: sólo se ofrece el Kit Legal (ya genera Contrato,
+                Solicitud y Pagaré declarados); estos dos botones sobran ahí. */}
+            {!isRO && !esCreditoIndividual && generablesDeLaFase.length > 0 && (
               <button
                 onClick={handleGenerarDocumentosFase}
                 disabled={generandoFase}
@@ -2593,7 +2595,7 @@ export function ExpedienteElectronicoTab({ mode, solicitudId, faseIdActual, prod
             {/* REQ-23 HU-23.1 — Pagaré solo, para productos cuya fase lo declara
                 (p. ej. Crédito Simple 2º Piso, que no tiene plantilla de contrato
                 y por eso nunca podía usar el Kit Legal). */}
-            {!isRO && requisitoPagareDeLaFase && tienePlantillaPagare && !pagareYaGenerado && (
+            {!isRO && !esCreditoIndividual && requisitoPagareDeLaFase && tienePlantillaPagare && !pagareYaGenerado && (
               <button
                 onClick={handleGenerarPagare}
                 disabled={generandoPagare}

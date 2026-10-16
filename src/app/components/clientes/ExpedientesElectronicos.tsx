@@ -39,6 +39,8 @@ const DATA_FILE_FIELDS: Record<string, string> = {
 
 /** Campos que NUNCA son archivos — excluidos del escaneo dinámico */
 const NON_FILE_FIELDS = new Set([
+  // Perfil del proyecto: valores de catálogo, nunca archivos.
+  'sectorInfraestructura', 'tipoFinanciamiento', 'monedaInversion', 'descripcionObra',
   'fechaNacimiento', 'fechaOriginacion', 'fechaActivacion', 'fechaAlta',
   'fechaModificacion', 'fechaCreacion', 'fechaVencimiento', 'fechaExpedicion',
   'nombre', 'apellidoPaterno', 'apellidoMaterno', 'denominacionRazonSocial',
@@ -65,7 +67,10 @@ function looksLikeFilePath(value: any): boolean {
   if (typeof value !== 'string' || !value.trim()) return false;
   if (DATE_PATTERN.test(value) || ISO_DATE_PATTERN.test(value)) return false;
   if (FILE_EXTENSIONS.test(value)) return true;
-  if (value.includes('/') && !value.startsWith('http') && !value.includes(' ') && value.length > 5) return true;
+  // Una ruta sin extensión sólo cuenta si está en una carpeta de Storage conocida.
+  // Antes bastaba con tener "/" y no tener espacios, y valores de catálogo como
+  // el Sector "Transporte/Carreteras" aparecían como documentos fantasma en el KM.
+  if (!value.startsWith('http') && !value.includes(' ') && /^(expedientes-electronicos|constancias|residencia|documentos|expedientes)\//i.test(value)) return true;
   return false;
 }
 

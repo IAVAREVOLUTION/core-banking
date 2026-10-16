@@ -1,5 +1,6 @@
 import { BarChart, Bar, PieChart, Pie, Cell, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { Cliente } from './ClientesList';
+import { esPersonaMoral, tipoPersonaDe } from '@/app/lib/personaJuridica';
 
 /** Recibe registros reales de BD (personalidad = subtipo, p. ej. "Persona Fisica") o de ejemplo. */
 type ClienteResumen = {
@@ -14,9 +15,10 @@ type ClienteResumen = {
  */
 function tipoPersonalidad(p?: string | null): 'fisica' | 'pfae' | 'moral' | 'otra' {
   const v = (p || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-  if (v.includes('moral')) return 'moral';
   if (v === 'pfae' || (v.includes('fisica') && v.includes('actividad'))) return 'pfae';
-  if (v.includes('fisica')) return 'fisica';
+  const t = tipoPersonaDe(p);
+  if (t === 'Moral') return 'moral';
+  if (t === 'Física') return 'fisica';
   return 'otra';
 }
 

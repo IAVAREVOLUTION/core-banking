@@ -249,6 +249,8 @@ export interface AmortizacionRow {
   ivaInteres: number;
   pagoPeriodo: number;
   pagoSeguro: number;
+  /** IVA del seguro (16 %). Forma parte del Pago Total, igual que en Cartera. */
+  ivaSeguro: number;
   pagoTotal: number;
   moneda: string;
 }
@@ -333,6 +335,19 @@ export const FRECUENCIAS_PAGO: { label: string; dias: number }[] = [
 ];
 
 export const IVA_RATE = 0.16;
+
+/**
+ * Total del seguro financiado = Monto × (1 + Tasa).
+ * La tasa del seguro se guarda como DECIMAL (0.08 = 8 %), igual que la matriz
+ * normalizada; antes se volvía a dividir entre 100 y se aplicaba 0.08 % en vez
+ * de 8 %. Se aceptan ambas formas: ≤ 1 es decimal, > 1 es porcentaje.
+ */
+export function totalSeguroConTasa(monto: number, tasa: number): number {
+  const m = Number(monto) || 0;
+  const t = Number(tasa) || 0;
+  const pct = t > 0 && t <= 1 ? t * 100 : t;
+  return Math.round(m * (1 + pct / 100) * 100) / 100;
+}
 
 // ═══════════════════════════════════════════════════════════════
 // FUNCIONES UTILITARIAS
@@ -422,7 +437,10 @@ export function generarTablaAmortizacionCredito(
 
     const pagoPeriodo = Math.round((pagoCapital + pagoInteres + ivaInteres) * 100) / 100;
     const pagoSeguro = Math.round(seguroPorPeriodo * 100) / 100;
-    const pagoTotal = Math.round((pagoPeriodo + pagoSeguro) * 100) / 100;
+    // El Pago Total incluye TODOS los conceptos: capital, interés, IVA interés,
+    // seguro e IVA del seguro (antes faltaba éste y el aviso quedaba por menos).
+    const ivaSeguro = Math.round(pagoSeguro * IVA_RATE * 100) / 100;
+    const pagoTotal = Math.round((pagoPeriodo + pagoSeguro + ivaSeguro) * 100) / 100;
 
     saldo = Math.round((saldo - pagoCapital) * 100) / 100;
     if (saldo < saldoFinal) saldo = saldoFinal;
@@ -436,6 +454,7 @@ export function generarTablaAmortizacionCredito(
       ivaInteres,
       pagoPeriodo,
       pagoSeguro,
+      ivaSeguro,
       pagoTotal,
       moneda: 'MXN',
     });

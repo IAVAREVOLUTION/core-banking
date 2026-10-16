@@ -40,6 +40,8 @@ interface Props {
   frecuenciaHeader?: string;
   /** Notifica la fecha del último pago cuando cambia la tabla/calendario */
   onFechaFinChange?: (fecha: string) => void;
+  /** Falta la tasa (matriz con varias filas para el plazo): abre la Matriz de Tasa Fija. */
+  onSinTasa?: () => void;
 }
 
 /** Determina si el producto es de tipo Captación/Aportación (no crédito) */
@@ -195,7 +197,7 @@ function sumarDias(fechaIso: string, dias: number): string {
   return d.toISOString().split('T')[0];
 }
 
-export function SimulacionTab({ mode, solicitudId, lineaProducto, tipoProducto, calendarioAportaciones, simulacionInicial, montoAutorizado, montoSolicitadoHeader, plazoHeader, tasaHeader, fechaInicioHeader, frecuenciaHeader, onFechaFinChange }: Props) {
+export function SimulacionTab({ mode, solicitudId, lineaProducto, tipoProducto, calendarioAportaciones, simulacionInicial, montoAutorizado, montoSolicitadoHeader, plazoHeader, tasaHeader, fechaInicioHeader, frecuenciaHeader, onFechaFinChange, onSinTasa }: Props) {
   const isRO = mode === 'ver';
   const isCap = esCaptacion(lineaProducto, tipoProducto);
   const _tpRaw = (tipoProducto || lineaProducto || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
@@ -601,6 +603,11 @@ export function SimulacionTab({ mode, solicitudId, lineaProducto, tipoProducto, 
       ? parseFloat(parseCurrency(terminos.montoSeguro || '0')) / (plazo || 1)
       : 0;
 
+    if (monto > 0 && plazo > 0 && !(tasa > 0) && onSinTasa) {
+      toast.error('Falta la tasa', { description: 'Elija en la Matriz de Tasa Fija la fila (frecuencia y tasa) que aplica a este plazo.', duration: 6000 });
+      onSinTasa();
+      return;
+    }
     if (monto <= 0 || tasa <= 0 || plazo <= 0) {
       toast.error('Datos insuficientes', {
         description: `Complete Monto (${ monto }), Tasa (${ tasa }) y Plazo (${ plazo }) en Plazos y Montos / Términos y Condiciones.`,

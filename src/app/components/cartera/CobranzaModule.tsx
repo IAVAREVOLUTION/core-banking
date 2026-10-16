@@ -157,6 +157,8 @@ interface DetalleRow {
   moneda: string;
   subtotal: number;
   estatus: string;
+  /** Orden de prelación del cargo (Prelación de cargos del producto): 1 se paga primero. */
+  orden_prelacion?: number | null;
 }
 
 // ─── Tabla institucional de detalle (idéntica a SolicitudActivacionDetailTab) ──
@@ -246,6 +248,7 @@ function CobranzaDetailTable({ aviso, detalle, loading }: {
             <table className="w-full text-xs border-collapse">
               <thead>
                 <tr className="border-b border-gray-400" style={{ backgroundColor: 'var(--theme-table-header, #F3F4F6)' }}>
+                  <th className="px-3 py-2 text-center font-medium text-xs text-gray-800 border-r border-gray-300 w-16" title="Orden de prelación: en qué orden se aplica el pago a cada cargo">ORDEN</th>
                   <th className="px-3 py-2 text-left  font-medium text-xs text-gray-800 border-r border-gray-300">SUBPRODUCTO</th>
                   <th className="px-3 py-2 text-left  font-medium text-xs text-gray-800 border-r border-gray-300">DESCRIPCIÓN</th>
                   <th className="px-3 py-2 text-right font-medium text-xs text-gray-800 border-r border-gray-300 w-20">CANTIDAD</th>
@@ -259,12 +262,13 @@ function CobranzaDetailTable({ aviso, detalle, loading }: {
               <tbody className="bg-white">
                 {detalle.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="px-3 py-6 text-center text-gray-400 italic text-xs">
+                    <td colSpan={9} className="px-3 py-6 text-center text-gray-400 italic text-xs">
                       Sin líneas de detalle — el aviso puede no tener desglose registrado
                     </td>
                   </tr>
-                ) : detalle.map((row, i) => (
+                ) : [...detalle].sort((a, b) => (a.orden_prelacion ?? 1000) - (b.orden_prelacion ?? 1000)).map((row, i) => (
                   <tr key={String(row.id || i)} className="border-b border-gray-200">
+                    <td className="px-3 py-2 border-r border-gray-200 text-center text-gray-700">{row.orden_prelacion ?? '—'}</td>
                     <td className="px-3 py-2 border-r border-gray-200 font-medium text-gray-800">{row.cve_subproducto}</td>
                     <td className="px-3 py-2 border-r border-gray-200 text-gray-700">{row.descripcion_subproducto}</td>
                     <td className="px-3 py-2 border-r border-gray-200 text-right text-gray-700">{Number(row.cantidad).toLocaleString('es-MX')}</td>
@@ -278,7 +282,7 @@ function CobranzaDetailTable({ aviso, detalle, loading }: {
               </tbody>
               <tfoot>
                 <tr className="border-t-2 border-gray-400 bg-gray-50">
-                  <td colSpan={6} className="px-3 py-2 text-right text-xs font-semibold text-gray-800">TOTAL GENERAL:</td>
+                  <td colSpan={7} className="px-3 py-2 text-right text-xs font-semibold text-gray-800">TOTAL GENERAL:</td>
                   <td className="px-3 py-2 text-right text-xs font-bold text-gray-900">{fmt(total || aviso.monto_transaccion)}</td>
                   <td/>
                 </tr>
@@ -309,6 +313,46 @@ function AvisoForm({ aviso: inicial, mode, onBack, onPagado }: {
   // Arranca en "cargando": el detalle se pide a la BD al abrir el aviso.
   const [loadingDetalle, setLoadingDetalle] = useState(true);
   const detalleLoaded = useRef(false);
+  // Lo pagado de cada línea del aviso (J_PAGOS.factura_detalle_id) — para la
+  // póliza de pago, que sólo contabiliza lo cobrado.
+  const [pagadoPorLinea, setPagadoPorLinea] = useState<Record<string, number>>({});
+  const [pagosSinLinea, setPagosSinLinea] = useState(0);
+  // Cada pago aplicado al aviso (renglón de J_PAGOS): permite que la póliza de
+  // pago contabilice sólo lo que aún no se ha contabilizado.
+  const [pagosAviso, setPagosAviso] = useState<Array<{ id: string; referencia: string; fecha: string; monto: number; detalleId: string | null }>>([]);
+  const [cargandoPagos, setCargandoPagos] = useState(true);
+
+  useEffect(() => {
+    if (!aviso.solicitud_id) { setCargandoPagos(false); return; }
+    setCargandoPagos(true);
+    fetch(`${API_BASE}/cartera/pagos/${aviso.solicitud_id}`, { headers: HDR })
+      .then(r => r.json())
+      .then(json => {
+        const porLinea: Record<string, number> = {};
+        let sinLinea = 0;
+        const lista: Array<{ id: string; referencia: string; fecha: string; monto: number; detalleId: string | null }> = [];
+        for (const p of (Array.isArray(json?.data) ? json.data : [])) {
+          if (String(p?.factura_id ?? '') !== String(aviso.id)) continue;
+          if (String(p?.estatus || '') === 'Cancelado') continue;
+          const monto = parseFloat(String(p?.monto ?? 0).replace(/[^0-9.-]/g, '')) || 0;
+          lista.push({
+            id: String(p.id), referencia: String(p.referencia || ''), fecha: String(p.fecha_pago || ''),
+            monto, detalleId: p?.detalle_linea_id != null ? String(p.detalle_linea_id) : null,
+          });
+          if (p?.detalle_linea_id != null) {
+            const k = String(p.detalle_linea_id);
+            porLinea[k] = Math.round(((porLinea[k] || 0) + monto) * 100) / 100;
+          } else {
+            sinLinea += monto;
+          }
+        }
+        setPagadoPorLinea(porLinea);
+        setPagosSinLinea(sinLinea);
+        setPagosAviso(lista);
+      })
+      .catch(() => {})
+      .finally(() => setCargandoPagos(false));
+  }, [aviso.id, aviso.solicitud_id]);
 
   // Cargar el detalle desde la BD al abrir el aviso — no sólo al entrar a Detail:
   // la Generación Contable necesita esos componentes para armar la póliza, y si
@@ -537,7 +581,7 @@ function AvisoForm({ aviso: inicial, mode, onBack, onPagado }: {
           {/* Generación Contable tab */}
           {activeTab === 'contable' && (
             <div className="p-4">
-              {aviso.solicitud_id && loadingDetalle ? (
+              {aviso.solicitud_id && (loadingDetalle || cargandoPagos) ? (
                 <div className="py-8 text-center text-xs text-gray-500">Cargando componentes del aviso…</div>
               ) : aviso.solicitud_id ? (
                 <GeneracionContableTab
@@ -551,6 +595,36 @@ function AvisoForm({ aviso: inicial, mode, onBack, onPagado }: {
                     id_componente: r.descripcion_subproducto || r.cve_subproducto,
                     monto:         Number(r.monto),
                   }))}
+                  // Póliza de pago: sólo lo pagado de cada concepto. Si el aviso
+                  // se pagó completo sin desglose por línea (pago total antiguo),
+                  // lo pagado es el monto de cada concepto.
+                  componentesPagados={detalle.map(r => {
+                    const porLinea = pagadoPorLinea[String(r.id)];
+                    const pagadoCompletoSinDesglose = Object.keys(pagadoPorLinea).length === 0
+                      && (pagosSinLinea > 0 || aviso.estatus === 'Pagado');
+                    return {
+                      id_componente: r.descripcion_subproducto || r.cve_subproducto,
+                      monto: porLinea ?? (pagadoCompletoSinDesglose ? Number(r.monto) || 0 : 0),
+                    };
+                  }).filter(c => c.monto > 0)}
+                  // Pagos del aviso con su concepto: la póliza de pago toma sólo los
+                  // que todavía no se contabilizaron.
+                  pagosDocumento={{
+                    facturaId: String(aviso.id),
+                    pagos: pagosAviso.length > 0 && pagosAviso.some(p => p.detalleId)
+                      ? pagosAviso.filter(p => p.detalleId).map(p => {
+                          const lin = detalle.find(r => String(r.id) === p.detalleId);
+                          return { ...p, componente: lin ? (lin.descripcion_subproducto || lin.cve_subproducto) : 'Pago' };
+                        })
+                      // Pago total antiguo sin desglose por línea: el aviso completo.
+                      : (pagosSinLinea > 0 || aviso.estatus === 'Pagado')
+                        ? detalle.filter(r => Number(r.monto) > 0).map(r => ({
+                            id: `aviso-${aviso.id}-${r.id}`, referencia: 'pago-total', fecha: '',
+                            monto: Number(r.monto) || 0, detalleId: String(r.id),
+                            componente: r.descripcion_subproducto || r.cve_subproducto,
+                          }))
+                        : [],
+                  }}
                 />
               ) : (
                 <div className="py-8 text-center text-xs text-gray-400">

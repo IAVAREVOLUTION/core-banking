@@ -18,6 +18,7 @@
 
 import type { DocumentoCargado, RequisitoProducto, Nota } from '../components/solicitudes/solicitudCreditoStore';
 import type { SolicitudActivacionListItem } from '../components/solicitudes-activacion/solicitudActivacionStore';
+import { esPersonaMoral } from '@/app/lib/personaJuridica';
 
 export interface ValidationResult {
   valid: boolean;
@@ -51,8 +52,8 @@ export function validarDocumentosFase(
     const persona = String((r as any).tipoPersona || (r as any).persona || '').toLowerCase();
     if (!persona || persona.includes('todo') || persona.includes('all') || persona === '') return true;
     const tp = tipoPersona.toLowerCase();
-    if (tp.includes('moral') && !persona.includes('moral')) return false;
-    if (!tp.includes('moral') && persona.includes('moral')) return false;
+    if (esPersonaMoral(tp) && !persona.includes('moral')) return false;
+    if (!esPersonaMoral(tp) && persona.includes('moral')) return false;
     return true;
   });
 
@@ -233,7 +234,7 @@ export function validarFormalizarContrato(opts: {
   }
 
   // 6. Acta Constitutiva validada (Persona Moral)
-  if (opts.tipoPersona === 'Moral') {
+  if (esPersonaMoral(opts.tipoPersona)) {
     const actaValidada = opts.documentosCargados.some(d =>
       d.estatus === 'Validado' &&
       (d.tipoDocumento?.toLowerCase().includes('acta constitutiva') ||
@@ -775,12 +776,12 @@ export function validarDocumentosPorFase(
     const tp = tipoPersona.toLowerCase();
     console.log(`[validarDocumentosPorFase] "${r.tipoDocumento}" persona="${persona}" tp="${tp}"`);
     // Si el doc es solo para Moral y el cliente es Física → excluir
-    if (persona.includes('moral') && !tp.includes('moral')) {
+    if (persona.includes('moral') && !esPersonaMoral(tp)) {
       console.log(`[validarDocumentosPorFase] EXCLUYENDO "${r.tipoDocumento}" - es para Moral, cliente es ${tipoPersona}`);
       return false;
     }
     // Si el doc es solo para Física y el cliente es Moral → excluir
-    if ((persona.includes('física') || persona.includes('fisica') || persona.includes('fisic')) && tp.includes('moral')) return false;
+    if ((persona.includes('física') || persona.includes('fisica') || persona.includes('fisic')) && esPersonaMoral(tp)) return false;
     return true;
   });
 

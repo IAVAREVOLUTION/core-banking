@@ -18,6 +18,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase, SUPABASE_URL } from '../lib/supabaseClient';
 import { publicAnonKey } from '/utils/supabase/info';
 import type { Prospecto } from '../components/prospectos/ProspectosList';
+import { esPersonaMoral, tipoPersonaDe } from '@/app/lib/personaJuridica';
 
 const API_BASE = `${SUPABASE_URL}/functions/v1/make-server-7e2d13d9`;
 
@@ -61,7 +62,7 @@ function mapRowToProspecto(row: ClienteProspectoRow, index: number): Prospecto {
   // se ignoran para no borrar datos por accidente). Por eso, para Moral,
   // se ignoran apellidoPaterno/apellidoMaterino POR COMPLETO al construir el
   // nombre a mostrar, sin importar qué haya quedado guardado.
-  const esMoral = row.subtipo === 'Persona Moral';
+  const esMoral = esPersonaMoral(row.subtipo || (d as any).personalidad || (d as any).tipo || (legacy as any).personalidad);
   const razonSocial = (d.denominacionRazonSocial as string) || (legacy.denominacionRazonSocial as string) || '';
   const nombrePila = (d.nombre as string) || (legacy.nombre as string) || '';
   const apPat = esMoral ? '' : ((d.apellidoPaterno as string) || (legacy.apellidoPaterno as string) || '');

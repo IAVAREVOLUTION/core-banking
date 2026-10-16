@@ -16,6 +16,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase, SUPABASE_URL } from '../lib/supabaseClient';
 import { publicAnonKey } from '/utils/supabase/info';
+import { esPersonaMoral, tipoPersonaDe } from '@/app/lib/personaJuridica';
 
 const API_BASE = `${SUPABASE_URL}/functions/v1/make-server-7e2d13d9`;
 
@@ -113,7 +114,7 @@ function mapRowToCliente(row: JClienteRow, index: number): ClienteDB {
   // puede limpiarse a '' (los vacíos se ignoran para no borrar datos por
   // accidente), así que aquí se ignoran esos dos campos POR COMPLETO para
   // Moral, sin importar qué haya quedado guardado.
-  const esMoral = row.subtipo === 'Persona Moral';
+  const esMoral = esPersonaMoral(row.subtipo || g('personalidad') || g('tipo'));
   const nombre = g('nombre') || g('denominacionRazonSocial') || g('razonSocial');
   const apellidoPaterno = esMoral ? '' : g('apellidoPaterno');
   const apellidoMaterno = esMoral ? '' : g('apellidoMaterno');

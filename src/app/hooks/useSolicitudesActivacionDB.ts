@@ -371,11 +371,13 @@ function mapRowToListItem(row: SolicitudActivacionDBRow): SolicitudActivacionLis
 
   const header = (d.header as Record<string, unknown>) || {};
 
-  const clienteNombre = [
+  // Manda el nombre guardado en la activación (el beneficiario de la Cuenta
+  // Beneficiaria); el del cliente de la solicitud sólo es respaldo.
+  const clienteNombre = String(header.cliente || '').trim() || [
     row.cliente_nombre,
     row.cliente_ap_paterno,
     row.cliente_ap_materno,
-  ].filter(Boolean).join(' ') || (header.cliente as string) || '(sin nombre)';
+  ].filter(Boolean).join(' ') || '(sin nombre)';
 
   // montoTransaccion is the first payment amount — never fall back to solicitud_monto (total)
   const rawMonto = parseMoney(header.montoTransaccion);

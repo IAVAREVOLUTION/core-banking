@@ -4298,6 +4298,9 @@ const carteraCrearFacturaHandler = async (c: any) => {
       }
     } catch { /* gobierno queda null */ }
 
+    // Prelación de cargos del producto: cada línea del aviso guarda su orden.
+    const mapaPrelacion = await mapaPrelacionDeSolicitud(solicitud_id);
+
     // Crear una factura por amortización para que cada una cambie a 'Facturada'
     let primeraFactura: { id: string; numero_documento: string } | null = null;
     const ts = Date.now();
@@ -4348,11 +4351,14 @@ const carteraCrearFacturaHandler = async (c: any) => {
             { cve: 'IVA_SEG', desc: 'IVA Seguro',  monto: parseFloat(amort.iva_seguro)   || 0 },
           ].filter(sp => sp.monto > 0);
 
-      for (const sp of subproductos) {
+      const conOrden = subproductos
+        .map((sp: any) => ({ ...sp, orden: ordenPrelacionDe(sp.cve, mapaPrelacion) }))
+        .sort((a: any, b: any) => a.orden - b.orden);
+      for (const sp of conOrden) {
         await sql`
           INSERT INTO "EFINANCIANET_DB"."J_FACTURAS_DETALLE"
-            (factura_id, cve_subproducto, descripcion_subproducto, cantidad, monto, porcentaje_impuesto, moneda, subtotal, estatus)
-          VALUES (${factura.id}, ${sp.cve}, ${sp.desc}, 1, ${sp.monto}, 0, ${moneda}, ${sp.monto}, 'Pendiente')
+            (factura_id, cve_subproducto, descripcion_subproducto, cantidad, monto, porcentaje_impuesto, moneda, subtotal, estatus, orden_prelacion)
+          VALUES (${factura.id}, ${sp.cve}, ${sp.desc}, 1, ${sp.monto}, 0, ${moneda}, ${sp.monto}, 'Pendiente', ${sp.orden})
         `;
       }
     }
@@ -4369,6 +4375,150 @@ const carteraCrearFacturaHandler = async (c: any) => {
 // Req 12: registra movimiento en J_PAGOS (concepto='Cargo de Crédito')
 // Req 13: disminuye monto_aut en J_CUENTAS_CORP_CLIENTES
 // ═══════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════
+// Prelación de cargos del producto → orden de cada concepto del aviso.
+// Misma lógica que src/app/lib/prelacionCargos.ts (cliente).
+// ═══════════════════════════════════════════════════════════════════
+const CLAVES_AVISO = ['MORATORIO', 'IVA_MORA', 'COMISION', 'IVA_COM', 'INTERES', 'IVA_INT', 'SEGURO', 'IVA_SEG', 'CAPITAL'];
+const claveConceptoPrelacion = (nombre: unknown): string => {
+  const crudo = String(nombre ?? '').trim();
+  if (CLAVES_AVISO.includes(crudo.toUpperCase())) return crudo.toUpperCase();
+  const n = crudo.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  if (!n) return '';
+  const iva = /\biva\b/.test(n);
+  if (n.includes('capital')) return 'CAPITAL';
+  if (n.includes('seguro')) return iva ? 'IVA_SEG' : 'SEGURO';
+  if (n.includes('moratorio')) return iva ? 'IVA_MORA' : 'MORATORIO';
+  if (n.includes('comision')) return iva ? 'IVA_COM' : 'COMISION';
+  if (n.includes('interes')) return iva ? 'IVA_INT' : 'INTERES';
+  if (iva) return 'IVA_INT';
+  return n.toUpperCase().replace(/[^A-Z0-9]+/g, '_').slice(0, 30);
+};
+/** Prelación del producto de la solicitud → { clave: orden } (1 = se paga primero). */
+const mapaPrelacionDeSolicitud = async (solicitudId: string | null | undefined): Promise<Record<string, number>> => {
+  let filas: any[] = [];
+  try {
+    if (solicitudId && /^[0-9a-f-]{36}$/i.test(String(solicitudId))) {
+      const [p] = await sql`
+        SELECT p.data FROM "EFINANCIANET_DB"."J_CUENTAS_CORP_CLIENTES" cc
+        JOIN "EFINANCIANET_DB"."J_PRODUCTOS" p ON p.id::text = cc.producto_id::text
+        WHERE cc.id = ${solicitudId}::uuid LIMIT 1
+      `;
+      const d = p ? parseJsonbData(p.data) : {};
+      const pre = d.prelacion ?? d.prelacionCargos;
+      if (Array.isArray(pre)) filas = pre;
+    }
+  } catch { /* sin prelación: orden por omisión */ }
+  const ordenadas = filas
+    .map((f, i) => ({ f, i, o: parseFloat(String(f?.ordenAplicacion ?? '')) }))
+    .sort((a, b) => {
+      const oa = Number.isFinite(a.o) ? a.o : Number.MAX_SAFE_INTEGER;
+      const ob = Number.isFinite(b.o) ? b.o : Number.MAX_SAFE_INTEGER;
+      return oa !== ob ? oa - ob : a.i - b.i;
+    });
+  const mapa: Record<string, number> = {};
+  let k = 1;
+  for (const { f } of ordenadas) {
+    const clave = claveConceptoPrelacion(f?.productosCargos);
+    if (clave && mapa[clave] === undefined) mapa[clave] = k++;
+  }
+  for (const clave of CLAVES_AVISO) if (mapa[clave] === undefined) mapa[clave] = k++;
+  return mapa;
+};
+const ordenPrelacionDe = (cve: unknown, mapa: Record<string, number>): number =>
+  mapa[claveConceptoPrelacion(cve)] ?? 1000;
+
+/**
+ * Disposición de Línea de Crédito 2o Piso PAGADA TOTALMENTE → se restablece la
+ * línea padre:
+ *   - "Saldo Monto Garantía" (`saldo_actual` de la línea) += monto dispuesto
+ *     (el mismo que se descontó al activarla, `disposicionesAplicadas[].monto`);
+ *   - "Sub-Status" → 'Operación Normal' cuando ya no queda ninguna disposición
+ *     sin liquidar (con otra disposición viva la garantía sigue ejerciéndose).
+ *
+ * Idempotente: la disposición queda marcada `liquidada` en la línea y no se
+ * vuelve a sumar. No se quita del arreglo: ese registro es el que impide que
+ * una re-activación vuelva a descontarla.
+ *
+ * "Pagada totalmente": ningún aviso pendiente y, si tiene tabla de
+ * amortización, todos sus periodos con aviso Pagado; sin tabla, saldo en 0.
+ */
+const restablecerLineaSiDisposicionLiquidada = async (
+  disposicionId: string,
+): Promise<{ restablecida: boolean; lineaId?: string; monto?: number; saldoNuevo?: number; subEstatus?: string }> => {
+  const LOG = '[restablecer-linea]';
+  if (!/^[0-9a-f-]{36}$/i.test(String(disposicionId || ''))) return { restablecida: false };
+  const [disp] = await sql`
+    SELECT id, saldo_actual, data FROM "EFINANCIANET_DB"."J_CUENTAS_CORP_CLIENTES"
+    WHERE id = ${disposicionId}::uuid
+  `;
+  if (!disp) return { restablecida: false };
+  const dData = parseJsonbData(disp.data);
+  const lineaId = String(dData?.solicitud?.disposicionDe || dData?.disposicionDe || '');
+  if (!/^[0-9a-f-]{36}$/i.test(lineaId)) return { restablecida: false };
+
+  const [est] = await sql`
+    SELECT
+      (SELECT COUNT(*)::int FROM "EFINANCIANET_DB"."J_CALEN_PAGOS_AMORTIZA" a
+        WHERE a.cotizacion_id = ${disposicionId}::uuid) AS periodos,
+      (SELECT COUNT(DISTINCT a.id)::int FROM "EFINANCIANET_DB"."J_CALEN_PAGOS_AMORTIZA" a
+        JOIN "EFINANCIANET_DB"."J_FACTURAS" f ON f.amortizacion_id = a.id
+        WHERE a.cotizacion_id = ${disposicionId}::uuid AND f.estatus = 'Pagado') AS periodos_pagados,
+      (SELECT COUNT(*)::int FROM "EFINANCIANET_DB"."J_FACTURAS" f
+        WHERE f.solicitud_id = ${disposicionId}::uuid AND COALESCE(f.estatus, 'Pendiente') NOT IN ('Pagado', 'Cancelado')) AS avisos_pendientes,
+      (SELECT COUNT(*)::int FROM "EFINANCIANET_DB"."J_FACTURAS" f
+        WHERE f.solicitud_id = ${disposicionId}::uuid AND f.estatus = 'Pagado') AS avisos_pagados
+  `;
+  const saldoDisp = parseFloat(String(disp.saldo_actual ?? '0').replace(/[^0-9.-]/g, '')) || 0;
+  const liquidada = (est?.avisos_pendientes ?? 1) === 0 && (est?.avisos_pagados ?? 0) > 0
+    && ((est?.periodos ?? 0) > 0 ? est.periodos_pagados >= est.periodos : saldoDisp <= 0.005);
+  if (!liquidada) return { restablecida: false };
+
+  return await sql.begin(async (tx: any) => {
+    const [linea] = await tx`
+      SELECT id, saldo_actual, data FROM "EFINANCIANET_DB"."J_CUENTAS_CORP_CLIENTES"
+      WHERE id = ${lineaId}::uuid FOR UPDATE
+    `;
+    if (!linea) return { restablecida: false };
+    const lData = parseJsonbData(linea.data);
+    const sol = (lData.solicitud && typeof lData.solicitud === 'object') ? lData.solicitud : {};
+    const nodo = (sol.banca2oPiso && typeof sol.banca2oPiso === 'object') ? sol.banca2oPiso : {};
+    const aplicadas: any[] = Array.isArray(nodo.disposicionesAplicadas) ? nodo.disposicionesAplicadas : [];
+    const idx = aplicadas.findIndex(a => String(a?.disposicionId) === String(disposicionId));
+    // Nunca descontada de la línea, o ya restablecida: nada que sumar.
+    if (idx < 0 || aplicadas[idx]?.liquidada) return { restablecida: false };
+
+    const monto = Number(aplicadas[idx].monto) || 0;
+    const saldoAntes = parseFloat(String(linea.saldo_actual ?? '0').replace(/[^0-9.-]/g, '')) || 0;
+    const saldoNuevo = Math.round((saldoAntes + monto) * 100) / 100;
+    const ahora = new Date().toISOString();
+    const nuevasAplicadas = aplicadas.map((a, i) => i === idx ? { ...a, liquidada: true, fechaLiquidacion: ahora } : a);
+    const quedanVivas = nuevasAplicadas.some(a => !a?.liquidada);
+    const nuevoNodo: Record<string, any> = { ...nodo, disposicionesAplicadas: nuevasAplicadas };
+    if (!quedanVivas) {
+      nuevoNodo.subEstatus = 'Operación Normal';
+      delete nuevoNodo.panicoDesde;
+      delete nuevoNodo.panicoPorDisposicion;
+    }
+    const noSolDisp = aplicadas[idx].noSol || disposicionId;
+    const movimientos = Array.isArray(lData.movimientos) ? lData.movimientos : [];
+    movimientos.push({
+      id: `mov-liq-${Date.now()}`, fechaHora: ahora, fechaRegistro: ahora,
+      tipo: 'Abono', concepto: `Restablecimiento de garantía - disposición ${noSolDisp} liquidada`,
+      referencia: noSolDisp, monto, usuario: 'Sistema', estatus: 'Aplicado',
+      saldoInicial: saldoAntes, saldoFinal: saldoNuevo, origenCreacion: 'Cobranza',
+    });
+    const newData = { ...lData, movimientos, solicitud: { ...sol, banca2oPiso: nuevoNodo } };
+    await tx`
+      UPDATE "EFINANCIANET_DB"."J_CUENTAS_CORP_CLIENTES"
+      SET saldo_actual = ${saldoNuevo}::numeric, data = ${sql.json(newData)}
+      WHERE id = ${lineaId}::uuid
+    `;
+    console.log(`${LOG} disposición ${disposicionId} liquidada → línea ${lineaId}: ${saldoAntes} + ${monto} = ${saldoNuevo}${quedanVivas ? '' : ' · Sub-Status: Operación Normal'}`);
+    return { restablecida: true, lineaId, monto, saldoNuevo, subEstatus: quedanVivas ? undefined : 'Operación Normal' };
+  });
+};
+
 const carteraMarcarPagadoHandler = async (c: any) => {
   const LOG = '[PAGAR-FACTURA]';
   try {
@@ -4490,7 +4640,14 @@ const carteraMarcarPagadoHandler = async (c: any) => {
       }
     }
 
-    return c.json({ ok: true, monto, referencia });
+    // Disposición pagada totalmente → restablecer Saldo Monto Garantía y Sub-Status de su línea.
+    let lineaRestablecida: any = null;
+    if (solicitudId) {
+      try { lineaRestablecida = await restablecerLineaSiDisposicionLiquidada(String(solicitudId)); }
+      catch (e: any) { console.warn(`${LOG} restablecer línea fallido (el pago sí quedó): ${e?.message}`); }
+    }
+
+    return c.json({ ok: true, monto, referencia, linea_restablecida: lineaRestablecida?.restablecida ? lineaRestablecida : null });
   } catch (err: any) {
     console.error(`${LOG} Error:`, err?.message);
     return c.json({ ok: false, error: String(err?.message || err) }, 500);
@@ -4630,13 +4787,29 @@ const carteraAplicarPagoHandler = async (c: any) => {
       console.warn(`${LOG} movimientos fallidos (el pago sí quedó aplicado): ${movErr?.message}`);
     }
 
-    return c.json({ ok: true, monto_total_aplicado: totalAplicado });
+    // Disposición pagada totalmente → restablecer Saldo Monto Garantía y Sub-Status de su línea.
+    let lineaRestablecida: any = null;
+    try { lineaRestablecida = await restablecerLineaSiDisposicionLiquidada(solicitudId); }
+    catch (e: any) { console.warn(`${LOG} restablecer línea fallido (el pago sí quedó): ${e?.message}`); }
+
+    return c.json({ ok: true, monto_total_aplicado: totalAplicado, linea_restablecida: lineaRestablecida?.restablecida ? lineaRestablecida : null });
   } catch (err: any) {
     console.error(`${LOG} Error:`, err?.message);
     return c.json({ ok: false, error: String(err?.message || err) }, 500);
   }
 };
 
+// Reintento / puesta al corriente: restablece la línea de una disposición ya pagada.
+const restablecerLineaHandler = async (c: any) => {
+  try {
+    const r = await restablecerLineaSiDisposicionLiquidada(String(c.req.param('id') || ''));
+    return c.json({ ok: true, ...r });
+  } catch (err: any) {
+    return c.json({ ok: false, error: String(err?.message || err) }, 500);
+  }
+};
+app.post(`${PREFIX}/cartera/disposiciones/:id/restablecer-linea`, restablecerLineaHandler);
+app.post(`/cartera/disposiciones/:id/restablecer-linea`, restablecerLineaHandler);
 app.post(`${PREFIX}/cartera/aplicar-pago`, carteraAplicarPagoHandler);
 app.post(`/cartera/aplicar-pago`, carteraAplicarPagoHandler);
 app.patch(`${PREFIX}/cartera/facturas/:id/pagar`, carteraMarcarPagadoHandler);
@@ -5119,6 +5292,9 @@ const contableEventosGetHandler = async (c: any) => {
         prompt_ia:   d.prompt_ia || '',
         estatus:     r.estatus === 'creada' ? 'Creado' : r.estatus === 'procesada' ? 'Procesado' : (r.estatus || 'Creado'),
         poliza:      d.poliza    || null,
+        // Póliza de pago: aviso y pagos (J_PAGOS) que contabilizó.
+        factura_id:  d.factura_id ?? null,
+        pagos_ids:   Array.isArray(d.pagos_ids) ? d.pagos_ids : null,
         fecha:       r.fecha,
         total_debit:  r.total_debit,
         total_credit: r.total_credit,
@@ -5195,7 +5371,7 @@ app.post(`${PREFIX}/contable/eventos/:id/ejecutar`, async (c: any) => {
   try {
     const journalId = c.req.param('id');
     const b = await c.req.json();
-    const { solicitud_id, contexto, prompt_ia, componentes } = b;
+    const { solicitud_id, contexto, prompt_ia, componentes, documento } = b;
 
     // 1. Leer encabezado y cuenta financiera
     const [header] = await sql`
@@ -5400,6 +5576,12 @@ app.post(`${PREFIX}/contable/eventos/:id/ejecutar`, async (c: any) => {
 
     // 6. Actualizar encabezado: status=Procesado, totales reales
     const existData = parseJsonbData(header.data);
+    // Póliza de pago: registrar qué pagos contabilizó, para que la siguiente
+    // póliza del mismo aviso no los vuelva a contabilizar.
+    if (documento && documento.factura_id) {
+      existData.factura_id = String(documento.factura_id);
+      existData.pagos_ids = Array.isArray(documento.pagos_ids) ? documento.pagos_ids.map(String) : [];
+    }
     await sql`
       UPDATE "EFINANCIANET_DB"."J_GL_JOURNAL_ENCABEZADO"
       SET status       = 'Procesado',
@@ -5509,13 +5691,10 @@ app.get(`${PREFIX}/cartera/facturas/:id/detalle`, async (c: any) => {
     const rows = await sql`
       SELECT id, factura_id, cve_subproducto, descripcion_subproducto,
         cantidad, monto::numeric AS monto,
-        porcentaje_impuesto, moneda, subtotal::numeric AS subtotal, estatus
+        porcentaje_impuesto, moneda, subtotal::numeric AS subtotal, estatus, orden_prelacion
       FROM "EFINANCIANET_DB"."J_FACTURAS_DETALLE"
       WHERE factura_id = ${facturaId}::bigint
-      ORDER BY CASE cve_subproducto
-        WHEN 'CAPITAL'  THEN 1 WHEN 'INTERES' THEN 2
-        WHEN 'IVA_INT'  THEN 3 WHEN 'SEGURO'  THEN 4 WHEN 'IVA_SEG' THEN 5
-        ELSE 9 END
+      ORDER BY id
     `;
     // También devolver el header de la factura para el HEADER del Detail
     const [factura] = await sql`
@@ -5526,7 +5705,13 @@ app.get(`${PREFIX}/cartera/facturas/:id/detalle`, async (c: any) => {
       FROM "EFINANCIANET_DB"."J_FACTURAS" f
       WHERE f.id = ${facturaId}::bigint LIMIT 1
     `;
-    return c.json({ ok: true, header: factura || null, detalle: rows });
+    // Orden de prelación: el guardado al generar el aviso; los avisos anteriores
+    // a ese campo lo calculan con la Prelación de cargos del producto.
+    const mapa = rows.some((r: any) => r.orden_prelacion == null) ? await mapaPrelacionDeSolicitud(factura?.solicitud_id) : {};
+    const detalle = rows
+      .map((r: any) => ({ ...r, orden_prelacion: r.orden_prelacion ?? ordenPrelacionDe(r.cve_subproducto, mapa) }))
+      .sort((a: any, b: any) => a.orden_prelacion - b.orden_prelacion || Number(a.id) - Number(b.id));
+    return c.json({ ok: true, header: factura || null, detalle });
   } catch (err: any) {
     return c.json({ ok: false, error: err.message, detalle: [] }, 500);
   }
@@ -5537,13 +5722,10 @@ app.get(`/cartera/facturas/:id/detalle`, async (c: any) => {
     const rows = await sql`
       SELECT id, factura_id, cve_subproducto, descripcion_subproducto,
         cantidad, monto::numeric AS monto,
-        porcentaje_impuesto, moneda, subtotal::numeric AS subtotal, estatus
+        porcentaje_impuesto, moneda, subtotal::numeric AS subtotal, estatus, orden_prelacion
       FROM "EFINANCIANET_DB"."J_FACTURAS_DETALLE"
       WHERE factura_id = ${facturaId}::bigint
-      ORDER BY CASE cve_subproducto
-        WHEN 'CAPITAL'  THEN 1 WHEN 'INTERES' THEN 2
-        WHEN 'IVA_INT'  THEN 3 WHEN 'SEGURO'  THEN 4 WHEN 'IVA_SEG' THEN 5
-        ELSE 9 END
+      ORDER BY id
     `;
     const [factura] = await sql`
       SELECT f.id, f.numero_documento, f.fecha_emision, f.fecha_compromiso,
@@ -5553,7 +5735,13 @@ app.get(`/cartera/facturas/:id/detalle`, async (c: any) => {
       FROM "EFINANCIANET_DB"."J_FACTURAS" f
       WHERE f.id = ${facturaId}::bigint LIMIT 1
     `;
-    return c.json({ ok: true, header: factura || null, detalle: rows });
+    // Orden de prelación: el guardado al generar el aviso; los avisos anteriores
+    // a ese campo lo calculan con la Prelación de cargos del producto.
+    const mapa = rows.some((r: any) => r.orden_prelacion == null) ? await mapaPrelacionDeSolicitud(factura?.solicitud_id) : {};
+    const detalle = rows
+      .map((r: any) => ({ ...r, orden_prelacion: r.orden_prelacion ?? ordenPrelacionDe(r.cve_subproducto, mapa) }))
+      .sort((a: any, b: any) => a.orden_prelacion - b.orden_prelacion || Number(a.id) - Number(b.id));
+    return c.json({ ok: true, header: factura || null, detalle });
   } catch (err: any) {
     return c.json({ ok: false, error: err.message, detalle: [] }, 500);
   }

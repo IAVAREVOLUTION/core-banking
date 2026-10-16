@@ -210,15 +210,24 @@ export function generarReporteBuro(
   datos: DatosConsultaBuro,
   autorizacion: AutorizacionBuro,
   ahora: Date = new Date(),
+  /**
+   * Fuerza el resultado de la consulta. Lo usa `consultarBuroSimulado` para que
+   * cada consulta salga POSITIVO o NEGATIVO al 50 %, con un reporte nuevo cada
+   * vez. Sin él, el reporte es determinístico por RFC (pruebas).
+   */
+  forzar?: { resultado: ResultadoBuro; semilla: number },
 ): ReporteBuro {
   const pm = datos.tipoPersona === 'PM';
   const rfc = datos.rfc.trim().toUpperCase();
-  const rng = generador(semilla(rfc));
+  const rng = generador(forzar ? forzar.semilla : semilla(rfc));
   // Las consultas previas dependen también del día, para que no sean idénticas siempre.
-  const rngDia = generador(semilla(rfc + fechaISO(ahora)));
+  const rngDia = generador(forzar ? forzar.semilla ^ 0x5bd1e995 : semilla(rfc + fechaISO(ahora)));
 
   const tirada = rng.sig();
-  const perfil: Perfil = tirada < 0.08 ? 'sinHistorial' : tirada < 0.68 ? 'bueno' : tirada < 0.88 ? 'leve' : 'grave';
+  const perfil: Perfil = forzar
+    // POSITIVO = con registros negativos; NEGATIVO = al corriente o sin historial.
+    ? (forzar.resultado === 'POSITIVO' ? 'grave' : (tirada < 0.1 ? 'sinHistorial' : 'bueno'))
+    : tirada < 0.08 ? 'sinHistorial' : tirada < 0.68 ? 'bueno' : tirada < 0.88 ? 'leve' : 'grave';
 
   const catalogo = pm ? PRODUCTOS_PM : PRODUCTOS_PF;
   const otorgantes = pm ? OTORGANTES_PM : OTORGANTES_PF;
@@ -230,7 +239,9 @@ export function generarReporteBuro(
       const prod = rng.elegir(catalogo);
       const antig = rng.entero(4, 96); // meses
       const apertura = mesesAtras(ahora, antig, rng.entero(1, 28));
-      const cerrada = antig > 18 && rng.sig() < 0.35;
+      // Resultado forzado POSITIVO: la primera cuenta queda abierta y con atraso ≥ 30 días.
+      const conAtrasoForzado = forzar?.resultado === 'POSITIVO' && i === 0;
+      const cerrada = !conAtrasoForzado && antig > 18 && rng.sig() < 0.35;
       const sinLimite = prod.tipoCuenta === 'Sin límite preestablecido';
       const limite = sinLimite ? 0 : rng.redondear(rng.entero(prod.min, prod.max), pm ? 10_000 : 500);
       const uso = prod.tipoCuenta === 'Revolvente' ? rng.sig() * (perfil === 'bueno' ? 0.6 : 0.95) : Math.max(0, 1 - antig / 120);
@@ -240,8 +251,9 @@ export function generarReporteBuro(
       let atraso = 1;
       if (!cerrada && perfil === 'leve' && rng.sig() < 0.35) atraso = 2;
       if (!cerrada && perfil === 'grave' && rng.sig() < 0.55) atraso = rng.elegir([3, 4, 5, 7]);
+      if (conAtrasoForzado) atraso = Math.max(atraso, rng.elegir([3, 4, 5]));
       let mop = '0' + atraso;
-      if (antig <= 4) mop = '00';
+      if (antig <= 4 && !conAtrasoForzado) mop = '00';
       if (cerrada && perfil === 'grave' && rng.sig() < 0.25) { mop = '97'; saldo = 0; }
 
       const vencido = atraso > 1 && !cerrada ? rng.redondear(saldo * Math.min(0.9, 0.05 * atraso + rng.sig() * 0.1), pm ? 1_000 : 10) : 0;
@@ -325,8 +337,11 @@ export function generarReporteBuro(
 
   // Alertas de prevención (raras)
   const alertas: string[] = [];
-  if (rng.sig() < 0.04) alertas.push('El domicilio consultado está asociado a múltiples expedientes');
-  if (!pm && datos.curp && datos.curp.trim().length !== 18) alertas.push('La CURP proporcionada no tiene un formato válido');
+  // Con resultado forzado NEGATIVO no se agregan alertas (lo volverían POSITIVO).
+  if (forzar?.resultado !== 'NEGATIVO') {
+    if (rng.sig() < 0.04) alertas.push('El domicilio consultado está asociado a múltiples expedientes');
+    if (!pm && datos.curp && datos.curp.trim().length !== 18) alertas.push('La CURP proporcionada no tiene un formato válido');
+  }
 
   // Resultado (regla CORE: NEGATIVO = sin registros negativos)
   const negativos = peor >= 3 || (resumen.saldoVencido > 0 && peor >= 2) || alertas.length > 0;
@@ -444,5 +459,8 @@ export async function consultarBuroSimulado(
   await pausa(500 + Math.random() * 500);
   alAvanzar?.('Recibiendo reporte de crédito…');
   await pausa(500 + Math.random() * 800);
-  return generarReporteBuro(datos, autorizacion);
+  // 50 % POSITIVO / 50 % NEGATIVO en cada consulta, con un reporte distinto cada vez.
+  const resultado: ResultadoBuro = Math.random() < 0.5 ? 'POSITIVO' : 'NEGATIVO';
+  const sem = (Math.floor(Math.random() * 0xffffffff) ^ Date.now()) >>> 0;
+  return generarReporteBuro(datos, autorizacion, new Date(), { resultado, semilla: sem || 1 });
 }

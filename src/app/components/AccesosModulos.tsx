@@ -10,6 +10,12 @@ interface Modulo { id: string; label: string }
 const GRUPOS = GRUPOS_MODULOS;
 
 const CLAVE = 'inicio-accesos:abiertos';
+/** Toda la sección ACCESOS plegada/desplegada (se recuerda por usuario del navegador). */
+const CLAVE_SECCION = 'inicio-accesos:seccion-abierta';
+
+function leerSeccionAbierta(): boolean {
+  try { return localStorage.getItem(CLAVE_SECCION) !== '0'; } catch { return true; }
+}
 
 function leerAbiertos(): Set<string> {
   try {
@@ -31,6 +37,11 @@ function IconoModulo() {
 
 export function AccesosModulos({ modulos, onNavigate }: { modulos: Modulo[]; onNavigate: (id: string) => void }) {
   const [abiertos, setAbiertosEstado] = useState<Set<string>>(leerAbiertos);
+  const [seccionAbierta, setSeccionAbiertaEstado] = useState<boolean>(leerSeccionAbierta);
+  const setSeccionAbierta = (v: boolean) => {
+    setSeccionAbiertaEstado(v);
+    try { localStorage.setItem(CLAVE_SECCION, v ? '1' : '0'); } catch { /* sin almacenamiento */ }
+  };
   const setAbiertos = (s: Set<string>) => {
     setAbiertosEstado(s);
     try { localStorage.setItem(CLAVE, JSON.stringify([...s])); } catch { /* sin almacenamiento */ }
@@ -58,22 +69,33 @@ export function AccesosModulos({ modulos, onNavigate }: { modulos: Modulo[]; onN
 
   return (
     <div className="mb-6">
-      <div className="bg-primary-light-theme border-l-4 border-primary-theme px-3 py-2 mb-3 flex items-center justify-between">
-        <div>
+      <div className={`bg-primary-light-theme border-l-4 border-primary-theme px-3 py-2 ${seccionAbierta ? 'mb-3' : ''} flex items-center justify-between`}>
+        <button
+          type="button"
+          onClick={() => setSeccionAbierta(!seccionAbierta)}
+          aria-expanded={seccionAbierta}
+          aria-controls="accesos-grupos"
+          title={seccionAbierta ? 'Ocultar accesos' : 'Mostrar accesos'}
+          className="flex items-center gap-2 text-left"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true"
+            className={`shrink-0 text-gray-600 transition-transform ${seccionAbierta ? '' : '-rotate-90'}`}>
+            <path d="M6 9l6 6 6-6" />
+          </svg>
           <span className="text-sm font-medium text-gray-800">ACCESOS</span>
-          <span className="text-[11px] text-gray-500 ml-2">{modulos.length} módulo(s) disponibles</span>
-        </div>
-        <div className="flex items-center gap-3">
+          <span className="text-[11px] text-gray-500">{modulos.length} módulo(s) disponibles</span>
+        </button>
+        {seccionAbierta && <div className="flex items-center gap-3">
           <button type="button" onClick={() => setAbiertos(new Set(grupos.map(g => g.id)))} className="text-[11px] text-gray-500 hover:text-[color:var(--theme-primary)] hover:underline">
             Expandir todo
           </button>
           <button type="button" onClick={() => setAbiertos(new Set())} className="text-[11px] text-gray-500 hover:text-[color:var(--theme-primary)] hover:underline">
             Colapsar todo
           </button>
-        </div>
+        </div>}
       </div>
 
-      <div className="space-y-2">
+      {seccionAbierta && <div id="accesos-grupos" className="space-y-2">
         {grupos.map(g => {
           const abierto = abiertos.has(g.id);
           return (
@@ -115,7 +137,7 @@ export function AccesosModulos({ modulos, onNavigate }: { modulos: Modulo[]; onN
             </section>
           );
         })}
-      </div>
+      </div>}
     </div>
   );
 }

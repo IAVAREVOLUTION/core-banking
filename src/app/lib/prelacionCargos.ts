@@ -41,6 +41,9 @@ const norm = (v: unknown) =>
 
 /** Nombre del Taller ("Iva Interés", "CAPITAL"…) → clave del aviso. */
 export function claveConcepto(nombre: string): string {
+  // Ya es una clave del aviso (CAPITAL, IVA_INT…): se respeta.
+  const crudo = String(nombre ?? '').trim().toUpperCase();
+  if (CONCEPTOS_AVISO[crudo]) return crudo;
   const n = norm(nombre);
   if (!n) return '';
   const iva = /\biva\b/.test(n);
