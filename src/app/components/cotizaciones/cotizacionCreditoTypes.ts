@@ -174,6 +174,16 @@ export interface ArchivoAdjuntoOportunidad {
   plantilla?: string;
   /** false = quedó como blob local porque falló la subida a Storage. */
   enStorage: boolean;
+  // ── Control de versiones (mismo esquema que el KM Digital de la Solicitud) ──
+  /** '1.0', '2.0'… Ausente = 1.0 (registros anteriores al versionado). */
+  version?: string;
+  /** Id del primer registro del documento: agrupa todas sus versiones. */
+  versionRaiz?: string;
+  /** Id de la versión de la que se creó ésta. */
+  versionDe?: string;
+  /** ISO 8601 — cuándo se cargó esta versión. */
+  fechaActualizacion?: string;
+  nota?: string;
 }
 
 // ═══════════════════════════════════════════════════════════════

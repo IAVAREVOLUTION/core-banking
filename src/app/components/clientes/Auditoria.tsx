@@ -90,7 +90,7 @@ export function Auditoria({ onBack, mode, clienteId }: AuditoriaProps) {
 
             <div>
               <label className="block text-xs text-gray-600 mb-1.5">
-                Sucursal
+                Oficina de promoción
               </label>
               <div className="text-xs text-gray-900 bg-gray-100 px-3 py-2 rounded border border-gray-300">
                 {auditoria.sucursal}

@@ -130,7 +130,7 @@ export function ProductoLineaCreditoFormDatosProducto({
 
           {/* Sucursales */}
           <div>
-            <label className={labelClass}>Sucursales {requiredStar}</label>
+            <label className={labelClass}>Oficinas de promoción {requiredStar}</label>
             {isView ? (
               <div className={viewFieldClass}>{formData.sucursal}</div>
             ) : (

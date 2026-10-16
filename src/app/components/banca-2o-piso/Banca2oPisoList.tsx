@@ -124,7 +124,7 @@ export function Banca2oPisoList({ rows, loading, error, refetch, onVer }: Props)
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#666" strokeWidth="1.5">
               <rect x="3" y="4" width="18" height="16" rx="2" /><path d="M3 9h18M8 14h8" />
             </svg>
-            <h2 className="text-lg font-normal text-gray-800">Banca 2º Piso</h2>
+            <h2 className="text-lg font-normal text-gray-800">Banca de Desarrollo</h2>
           </div>
           <div className="flex items-center gap-4 text-sm text-gray-700">
             <span onClick={handleListaClick} className="cursor-pointer hover:text-secondary-theme transition-colors">Lista</span>

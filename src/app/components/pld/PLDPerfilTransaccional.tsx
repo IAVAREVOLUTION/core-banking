@@ -318,7 +318,7 @@ export function PLDPerfilTransaccional({ mode = 'editar', onBack }: Props) {
                           <th className="px-3 py-2 text-left text-[10px] border-r border-gray-300" style={{ fontWeight: 600 }}>Nombre / Razón Social</th>
                           <th className="px-3 py-2 text-left text-[10px] border-r border-gray-300" style={{ fontWeight: 600 }}>RFC</th>
                           <th className="px-3 py-2 text-left text-[10px] border-r border-gray-300" style={{ fontWeight: 600 }}>Personalidad</th>
-                          <th className="px-3 py-2 text-left text-[10px]" style={{ fontWeight: 600 }}>Sucursal</th>
+                          <th className="px-3 py-2 text-left text-[10px]" style={{ fontWeight: 600 }}>Oficina de promoción</th>
                         </tr>
                       </thead>
                       <tbody>

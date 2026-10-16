@@ -162,7 +162,7 @@ export function ProspectosDashboard({ prospectos, onNew, onEdit, onView, onProsp
                 <tr>
                   <th className="text-left px-3 py-2 font-medium text-gray-700">No. Interlocutor</th>
                   <th className="text-left px-3 py-2 font-medium text-gray-700">Nombre</th>
-                  <th className="text-left px-3 py-2 font-medium text-gray-700">Sucursal</th>
+                  <th className="text-left px-3 py-2 font-medium text-gray-700">Oficina de promoción</th>
                   <th className="text-left px-3 py-2 font-medium text-gray-700">Fecha</th>
                 </tr>
               </thead>
@@ -250,7 +250,7 @@ export function ProspectosDashboard({ prospectos, onNew, onEdit, onView, onProsp
         {/* KPI 2: Prospectos por Sucursal */}
         <div className="bg-white border border-gray-300 rounded">
           <div className="bg-white border-b border-gray-300 px-4 py-3">
-            <h2 className="text-base font-medium text-gray-900">Tipos Interlocutor por Sucursal</h2>
+            <h2 className="text-base font-medium text-gray-900">Tipos Interlocutor por Oficina de promoción</h2>
             <p className="text-xs text-gray-600 mt-0.5">Distribución geográfica de tipos interlocutor</p>
           </div>
           <div className="p-4">

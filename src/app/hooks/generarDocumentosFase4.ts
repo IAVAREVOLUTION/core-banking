@@ -1607,7 +1607,7 @@ export function generarSolicitudPDF(datos: DatosSolicitud): string {
       ['Finalidad',        datos.finalidad || 'N/A'] as [string,string],
     ]),
     ['',                ''],
-    ['SUCURSAL',        datos.sucursal || 'N/A'],
+    ['OFICINA DE PROMOCIÓN',        datos.sucursal || 'N/A'],
     ['',                ''],
     [esInversion ? 'DECLARACION DEL INVERSIONISTA' : 'DECLARACION DEL SOLICITANTE', ''],
     [esInversion

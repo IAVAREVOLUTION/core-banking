@@ -915,7 +915,7 @@ export function ProductoCaptacionForm({ mode, productoId, producto, onCancel, on
     { id: 'expedientes', label: 'Requisitos OK' },
     { id: 'cargo', label: 'Cargo' },
     { id: 'comisiones', label: 'Comisiones' },
-    { id: 'sucursal', label: 'Sucursal' },
+    { id: 'sucursal', label: 'Oficina de promoción' },
     // === Tabs específicos de Captación (mantener sin cambios) ===
     { id: 'constitucion', label: 'Constitución' },
     { id: 'acceso-cuenta', label: 'Acceso Cuenta' },

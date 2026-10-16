@@ -189,7 +189,7 @@ export function DatosGeneralesTab({ formData, updateFormData, isView }: DatosGen
 
           <div className="flex items-center gap-2">
             <Label htmlFor="sucursal" className="text-xs text-[#3C3C3C] w-16 flex-shrink-0">
-              Sucursal
+              Oficina de promoción
             </Label>
             <Input
               id="sucursal"

@@ -204,7 +204,7 @@ export function ClienteDireccionForm({ onBack }: ClienteDireccionFormProps) {
                     <input type="text" disabled className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded bg-gray-100 text-gray-600" />
                   </div>
                   <div className="flex items-center gap-2">
-                    <label className="text-xs w-36 flex-shrink-0 text-gray-700">SUCURSAL</label>
+                    <label className="text-xs w-36 flex-shrink-0 text-gray-700">OFICINA DE PROMOCIÓN</label>
                     <input type="text" disabled value="MATRIZ (01)" className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded bg-gray-100 text-gray-600" />
                   </div>
                   <div className="flex items-center gap-2">

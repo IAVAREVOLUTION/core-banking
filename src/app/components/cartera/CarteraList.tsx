@@ -114,7 +114,7 @@ export interface CarteraListProps {
   etiqueta?: string;
 }
 
-export function CarteraList({ sublineaFija, etiqueta = 'Cartera de Crédito 2º Piso' }: CarteraListProps = {}) {
+export function CarteraList({ sublineaFija, etiqueta = 'Cartera Banca de Desarrollo' }: CarteraListProps = {}) {
   const [view, setView] = useState<ViewState>({ type: 'inicio' });
   const { rows: rowsTodos, loading, error, refetch } = useCreditos();
   const rows = useMemo(
@@ -385,7 +385,7 @@ function DashboardScreen({ rows, loading, error, refetch, onVer }: {
 // ═══════════════════════════════════════════════════════════════════
 // LIST SCREEN — diseño idéntico a SolicitudActivacionList
 // ═══════════════════════════════════════════════════════════════════
-function ListScreen({ rows, loading, error, refetch, onVer, onEditar, sublineaFija, etiqueta = 'Cartera de Crédito 2º Piso' }: {
+function ListScreen({ rows, loading, error, refetch, onVer, onEditar, sublineaFija, etiqueta = 'Cartera Banca de Desarrollo' }: {
   rows: CarteraCredito[]; loading: boolean; error: string | null;
   refetch: () => void;
   onVer: (c: CarteraCredito) => void;

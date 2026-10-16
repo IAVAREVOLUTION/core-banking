@@ -16,6 +16,8 @@ import { useState, useMemo, useEffect, useRef } from 'react';
 import { toast } from '@/app/lib/notificaciones';
 import type { CotizacionCredito, BitacoraEstatusOportunidad, ArchivoAdjuntoOportunidad, SolicitudLOSRef, BitacoraCierreComercial } from '../cotizaciones/cotizacionCreditoTypes';
 import { generarCartaOferta, subirCartaOferta, CartaOfertaError, subirDocumentoAceptacion, esPDFValido, DocumentoAceptacionError } from './cartaOfertaPDF';
+import { KmOportunidadTab } from './KmOportunidadTab';
+import { agregarVersion, vigenteDeTipo, documentosVigentes } from '@/app/lib/versionesKmOportunidad';
 import { CAT_ESTATUS_OPORTUNIDAD, CAT_ESTATUS_OPORTUNIDAD_CIERRE, ESTATUS_OPORTUNIDAD_GANADA, ESTATUS_OPORTUNIDAD_PERDIDA } from '../cotizaciones/cotizacionCreditoTypes';
 import { currentUser } from '../../data/mockData';
 import { useProductosLineaCreditoDB } from '../../hooks/useProductosLineaCreditoDB';
@@ -452,18 +454,18 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
       //
       // Se guarda en dos lugares a propósito: en documentoAceptacion (es el
       // candado del Cierre Comercial) y en archivosAdjuntos (para que el
-      // ejecutivo la vea junto a la carta original en su pestaña). Si se
-      // reemplaza por una nueva versión firmada, se sustituye la anterior en
-      // la lista en vez de acumular copias.
-      const adjuntosSinFirmaPrevia = archivosAdjuntos.filter(
-        a => a.id !== documentoAceptacion?.id,
-      );
+      // ejecutivo la vea junto a la carta original en su pestaña). Si ya había
+      // una firmada, la nueva entra como SIGUIENTE VERSIÓN del mismo documento
+      // y la anterior queda en el historial del KM (antes se borraba).
+      const previa = vigenteDeTipo(archivosAdjuntos, 'Carta Oferta Firmada')
+        ?? archivosAdjuntos.find(a => a.id === documentoAceptacion?.id);
+      const lista = agregarVersion(archivosAdjuntos, adjunto, previa);
       const actualizado: CotizacionCredito = {
         ...form,
         data: {
           ...data,
-          documentoAceptacion: adjunto,
-          archivosAdjuntos: [...adjuntosSinFirmaPrevia, adjunto],
+          documentoAceptacion: lista[lista.length - 1],
+          archivosAdjuntos: lista,
         },
       };
       setForm(actualizado);
@@ -905,6 +907,20 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
   const archivosAdjuntos: ArchivoAdjuntoOportunidad[] = Array.isArray(data.archivosAdjuntos)
     ? data.archivosAdjuntos
     : [];
+  /**
+   * Cambios hechos desde el KM Digital (agregar, nueva versión, quitar). Se
+   * persisten de inmediato, igual que la Carta Oferta. La evidencia del Cierre
+   * Comercial sigue a la versión vigente de la Carta Oferta Firmada.
+   */
+  const guardarAdjuntos = (lista: ArchivoAdjuntoOportunidad[]) => {
+    const firmada = vigenteDeTipo(lista, 'Carta Oferta Firmada');
+    const actualizado: CotizacionCredito = {
+      ...form,
+      data: { ...data, archivosAdjuntos: lista, ...(firmada ? { documentoAceptacion: firmada } : {}) },
+    };
+    setForm(actualizado);
+    onSave(actualizado);
+  };
   /** Paso 1 del flujo Generar → Firmar → Subir: ¿ya existe una carta que firmar? */
   const hayCartaGenerada = archivosAdjuntos.some(a => a.tipo === 'Carta Oferta');
 
@@ -962,9 +978,10 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
       // volvía a picar Guardar, el adjunto se perdía y nunca aparecía en la
       // pestaña Archivos Adjuntos al recargar. Se persiste de inmediato,
       // mismo patrón que handleCerrarGanada/handleCerrarPerdida.
+      // Regenerarla crea la siguiente versión de la Carta Oferta (KM Digital).
       const actualizado: CotizacionCredito = {
         ...form,
-        data: { ...data, archivosAdjuntos: [...archivosAdjuntos, adjunto] },
+        data: { ...data, archivosAdjuntos: agregarVersion(archivosAdjuntos, adjunto, vigenteDeTipo(archivosAdjuntos, 'Carta Oferta')) },
       };
       setForm(actualizado);
       onSave(actualizado);
@@ -1036,7 +1053,7 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
 
   const tabs: { id: TabId; label: string }[] = [
     { id: 'default', label: 'Datos Generales' },
-    { id: 'adjuntos', label: `Documentos de la Oportunidad${archivosAdjuntos.length ? ` (${archivosAdjuntos.length})` : ''}` },
+    { id: 'adjuntos', label: `Documentos de la Oportunidad${archivosAdjuntos.length ? ` (${documentosVigentes(archivosAdjuntos).length})` : ''}` },
     { id: 'cierre', label: 'Cierre Comercial' },
     { id: 'solicitudes', label: 'Solicitudes' },
   ];
@@ -1758,9 +1775,7 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
               {seccion('Documentos de la Oportunidad')}
               <div className="p-4">
                 <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-                  <span className="text-[11px] text-gray-500">
-                    {archivosAdjuntos.length} archivo{archivosAdjuntos.length === 1 ? '' : 's'} adjunto{archivosAdjuntos.length === 1 ? '' : 's'}
-                  </span>
+                  <span className="text-[11px] font-semibold text-gray-700 uppercase tracking-wide">KM Digital</span>
 
                   {!isView && (
                     /* Flujo en 2 pasos, agrupado en un solo bloque para que se
@@ -1813,57 +1828,16 @@ export function OportunidadForm({ mode, oportunidad, onSave, onBack, existeEnBD,
                   </p>
                 )}
 
-                <div className="border border-gray-300 overflow-x-auto">
-                  <table className="w-full text-xs">
-                    <thead>
-                      <tr className="bg-gray-100 border-b border-gray-300">
-                        <th className="px-3 py-2 text-left font-normal text-gray-700 w-20">Ver</th>
-                        <th className="px-3 py-2 text-left font-normal text-gray-700">ARCHIVO</th>
-                        <th className="px-3 py-2 text-left font-normal text-gray-700 w-32">Tipo de Documento</th>
-                        <th className="px-3 py-2 text-left font-normal text-gray-700 w-44">PLANTILLA</th>
-                        <th className="px-3 py-2 text-right font-normal text-gray-700 w-20">TAMAÑO</th>
-                        <th className="px-3 py-2 text-left font-normal text-gray-700 w-40">FECHA</th>
-                        <th className="px-3 py-2 text-left font-normal text-gray-700 w-36">USUARIO</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {archivosAdjuntos.length === 0 ? (
-                        <tr>
-                          <td colSpan={7} className="px-3 py-8 text-center text-gray-400">
-                            Sin archivos adjuntos. Genere la Carta Oferta para agregar el primero.
-                          </td>
-                        </tr>
-                      ) : (
-                        [...archivosAdjuntos].reverse().map((a, i) => (
-                          <tr key={a.id} className="border-b border-gray-200" style={{ backgroundColor: i % 2 === 1 ? '#F9F9F9' : '#FFFFFF' }}>
-                            <td className="px-3 py-2">
-                              <button
-                                type="button"
-                                className="enlace-accion text-[color:var(--theme-link)] hover:underline"
-                                onClick={() => { setCartaEnVisor({ url: a.url, nombre: a.nombre }); }}
-                              >
-                                Ver
-                              </button>
-                            </td>
-                            <td className="px-3 py-2 text-gray-700 font-mono text-[10px] break-all">{a.nombre}</td>
-                            <td className="px-3 py-2">
-                              <span className="inline-block px-2 py-0.5 rounded bg-blue-50 text-blue-700 text-[10px]">{a.tipo}</span>
-                            </td>
-                            <td className="px-3 py-2 text-gray-600 text-[10px]">{a.plantilla || '—'}</td>
-                            <td className="px-3 py-2 text-gray-700 text-right font-mono">{a.tamanoKB} KB</td>
-                            <td className="px-3 py-2 text-gray-700 whitespace-nowrap">{new Date(a.fecha).toLocaleString('es-MX')}</td>
-                            <td className="px-3 py-2 text-gray-700">
-                              {a.usuario}
-                              {!a.enStorage && (
-                                <span className="ml-1 text-[9px] text-amber-600" title="No se subió a Storage; se pierde al recargar">⚠ local</span>
-                              )}
-                            </td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
+                <KmOportunidadTab
+                  archivos={archivosAdjuntos}
+                  oportunidadId={form.id || form.no_cotiza}
+                  usuario={currentUser.name}
+                  soloLectura={isView}
+                  tiposBloqueados={cierreLocked ? ['Carta Oferta', 'Carta Oferta Firmada'] : []}
+                  idProtegido={documentoAceptacion?.id}
+                  onVer={a => setCartaEnVisor({ url: a.url, nombre: a.nombre })}
+                  onCambiar={guardarAdjuntos}
+                />
               </div>
             </div>
           )}

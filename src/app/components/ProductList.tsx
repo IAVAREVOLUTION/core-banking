@@ -83,7 +83,7 @@ export function ProductList({ products, onNew, onEdit, onView }: ProductListProp
               <TableHead className="min-w-[250px]">Descripción</TableHead>
               <TableHead>Línea Producto</TableHead>
               <TableHead>Sublínea</TableHead>
-              <TableHead>Sucursal</TableHead>
+              <TableHead>Oficina de promoción</TableHead>
               <TableHead>Estatus</TableHead>
               <TableHead className="min-w-[150px]">Fecha Registro</TableHead>
             </TableRow>

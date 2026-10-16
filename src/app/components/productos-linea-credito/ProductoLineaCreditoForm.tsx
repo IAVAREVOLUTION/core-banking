@@ -207,7 +207,7 @@ export function ProductoLineaCreditoForm({
         { field: 'tipoLinea', label: 'Tipo de Línea' },
         { field: 'subTipo', label: 'Sub Tipo' },
         { field: 'vigenciaLineaDias', label: 'Vigencia de la línea (Días)' },
-        { field: 'sucursal', label: 'Sucursales' },
+        { field: 'sucursal', label: 'Oficinas de promoción' },
         { field: 'numDisposicionesAbiertas', label: 'Núm. Disposiciones Abiertas' },
       ];
 
@@ -594,7 +594,7 @@ export function ProductoLineaCreditoForm({
     { id: 'condiciones-disposicion', label: 'Condiciones de Disposiciones' },
     { id: 'productos-disposicion', label: 'Productos Disposición' },
     { id: 'parametros-calculo', label: 'Parámetro de Cálculo' },
-    { id: 'sucursal', label: 'Sucursal' },
+    { id: 'sucursal', label: 'Oficina de promoción' },
     { id: 'garantias', label: 'Bienes' },
     { id: 'motor-contable', label: 'Motor Contable' },
     { id: 'prelacion-cargos', label: 'Prelación de cargos' },

@@ -99,6 +99,7 @@ import { ComitesTab } from '../shared/ComitesTab';
 import { CampoMonto } from '@/app/components/ui/CampoMonto';
 import { decidirFaseIA, decidirFasePorPresencia, esPromptSoloPresencia, REGLAS_GENERALES_FASE_IA } from '@/app/lib/decisionFaseIA';
 import { esPersonaMoral, tipoPersonaDe } from '@/app/lib/personaJuridica';
+import { subtabVisible } from '@/app/lib/sesion';
 
 // ═══════════════════════════════════════════════════════════════════
 // COMPUERTAS DEL BPM GPO — ancladas a la POSICIÓN de la fase
@@ -215,7 +216,7 @@ const ETIQUETAS_CAMPO_OBLIGATORIO: Record<string, string> = {
   nombrePersona: 'Nombre',
   apellidoPaternoPersona: 'Apellido Paterno',
   productoId: 'Producto',
-  sucursal: 'Sucursal',
+  sucursal: 'Oficina de promoción',
   montoSolicitado: 'Monto Solicitado',
   plazo: 'Plazo',
 };
@@ -270,7 +271,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
     return initial;
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [activeSection, setActiveSection] = useState<string>('fases');
+  const [activeSection, setActiveSection] = useState<string>(() => subtabVisible('fases') ? 'fases' : 'default');
 
   // ══════════════════════════════════════════════════════════════════
   // AUTO-HIDRATACIÓN DESDE BD — red de seguridad
@@ -361,7 +362,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
     const hidden = _cap ? ['garantias'] : [];
     const unavailable = hidden.filter(id => !ids.includes(id));
     if (hidden.includes(activeSection) || unavailable.includes(activeSection)) {
-      setActiveSection('fases');
+      setActiveSection(subtabVisible('fases') ? 'fases' : 'default');
     }
   }, [formData.lineaProducto, activeSection]);
   const [showClienteModal, setShowClienteModal] = useState(false);
@@ -677,6 +678,30 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
     setFilaMatrizSeleccionada(fila);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [formData.plazo, formData.montoSolicitado, matrizTasaFijaProducto, filaMatrizSeleccionada]);
+
+  // Términos efectivos: Plazo, Tasa, Frecuencia y Monto del encabezado se
+  // escriben en los Términos de la sesión. Antes sólo lo hacía la sección
+  // "Términos y Condiciones" y únicamente mientras estaba abierta (el acordeón
+  // monta una sección a la vez), así que las fases, la generación de
+  // documentos y el guardado leían tasa/frecuencia vacías o desactualizadas.
+  // Sólo se escriben valores no vacíos: nunca se borra lo ya capturado.
+  useEffect(() => {
+    if (isRO) return;
+    const base: any = loadFromSession<any>(storageId, 'terminos')
+      ?? loadFromSavedStore<any>(storageId, 'terminos')
+      ?? {};
+    const delEncabezado: Record<string, string> = {};
+    const plazo = String(formData.plazo || '').trim();
+    const tasa = String(tasaSeleccionadaHeader || '').trim();
+    const frecuencia = String(frecuenciaSeleccionadaHeader || '').trim();
+    const monto = String(formData.montoSolicitado || '').trim();
+    if (plazo && plazo !== String(base.plazo ?? '')) delEncabezado.plazo = plazo;
+    if (tasa && parseFloat(tasa) > 0 && tasa !== String(base.tasa ?? '')) delEncabezado.tasa = tasa;
+    if (frecuencia && frecuencia !== String(base.frecuencia ?? '')) delEncabezado.frecuencia = frecuencia;
+    if (monto && parseFloat(monto.replace(/[^0-9.-]/g, '')) > 0 && monto !== String(base.montoSolicitado ?? '')) delEncabezado.montoSolicitado = monto;
+    if (Object.keys(delEncabezado).length === 0) return;
+    saveToSession(storageId, 'terminos', { ...base, ...delEncabezado });
+  }, [isRO, storageId, formData.plazo, formData.montoSolicitado, tasaSeleccionadaHeader, frecuenciaSeleccionadaHeader]);
 
   // Validación en tiempo real: Monto y Plazo del encabezado deben permanecer
   // dentro del rango de la fila de Matriz vigente.
@@ -1215,7 +1240,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
           const faltan = faltantesEstructura2oPiso(est);
           if (faltan.length > 0) {
             toast.error('No se puede avanzar de fase', {
-              description: `Estructura Operativa de 2o Piso incompleta: ${faltan.join(' · ')}`,
+              description: `Estructura Operativa incompleta: ${faltan.join(' · ')}`,
               duration: 10000,
             });
             return;
@@ -2832,7 +2857,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
       if (!formData.productoId || formData.productoId.trim() === '') errores.push('Producto');
       if (!formData.fechaSolicitud || formData.fechaSolicitud.trim() === '') errores.push('Fecha de Solicitud');
       if (!formData.montoSolicitado || formData.montoSolicitado.trim() === '' || parseFloat(formData.montoSolicitado.replace(/[^0-9.-]/g, '')) <= 0) errores.push('Monto Autorizado');
-      if (!formData.sucursal || formData.sucursal.trim() === '') errores.push('Sucursal');
+      if (!formData.sucursal || formData.sucursal.trim() === '') errores.push('Oficina de promoción');
       // Validaciones específicas por tipo
       const _lineaVal = (formData.lineaProducto || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
       const _esCaptVal = _lineaVal.includes('captac') || _lineaVal.includes('invers');
@@ -3842,7 +3867,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
     { id: 'terminos',          label: 'Términos y Condiciones' },
     // REQ-9 — solo en Garantía Financiera 2o Piso; va antes de cotizar porque el
     // analista "viste" el ecosistema al admitir la solicitud.
-    ...(esGPOForm ? [{ id: 'estructura2oPiso', label: 'Estructura Operativa de 2o Piso' }] : []),
+    ...(esGPOForm ? [{ id: 'estructura2oPiso', label: 'Estructura Operativa' }] : []),
     // REQ-10 — Actividad 5 del BPM: Análisis de Grado de Riesgo.
     ...(esGPOForm ? [{ id: 'modeloViabilidad', label: 'Modelo y Viabilidad Financiera' }] : []),
     // REQ-11 — Actividad 6.1 del BPM: Votación del Comité de Prepago y Crédito.
@@ -3869,7 +3894,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
     { id: 'comisiones',        label: 'Comisiones' },
     { id: 'notas',             label: 'Notas' },
     { id: 'flujoTrabajo',      label: 'Flujo de Trabajo' },
-  ];
+  ].filter(s => subtabVisible(s.id));
 
   return (
     <div className="flex-1 flex flex-col bg-white overflow-auto">
@@ -4264,7 +4289,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
             </select>
           </div>
           <div>
-            <Lbl req error={errors.sucursal}>Sucursal</Lbl>
+            <Lbl req error={errors.sucursal}>Oficina de promoción</Lbl>
             <select value={formData.sucursal} onChange={e => set('sucursal', e.target.value)} disabled={isRO} className={sc(!!errors.sucursal)}>
               {CAT_SUCURSAL.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
             </select>

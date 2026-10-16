@@ -62,23 +62,23 @@ function emptyEmpleado(): Omit<Empleado, 'id'> {
 // ═══════════════════════════════════════════════════════════════════
 async function exportExcelEmp(data: Empleado[]) {
   const XLSX = await cargarXLSX();
-  const rows = data.map((d) => ({ 'No': d.noEmpleado, 'Ap. Paterno': d.apellidoPaterno, 'Ap. Materno': d.apellidoMaterno, 'Nombre': d.nombre, 'Cargo': d.cargo, 'ID Usuario': d.idUsuario, 'Responsabilidad': d.responsabilidad, 'Sucursal': d.sucursal, 'Correo': d.correoElectronico }));
+  const rows = data.map((d) => ({ 'No': d.noEmpleado, 'Ap. Paterno': d.apellidoPaterno, 'Ap. Materno': d.apellidoMaterno, 'Nombre': d.nombre, 'Cargo': d.cargo, 'ID Usuario': d.idUsuario, 'Responsabilidad': d.responsabilidad, 'Oficina de promoción': d.sucursal, 'Correo': d.correoElectronico }));
   const ws = XLSX.utils.json_to_sheet(rows); const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Empleados'); XLSX.writeFile(wb, 'empleados.xlsx'); toast.success('Exportado a Excel');
 }
 async function exportCSVEmp(data: Empleado[]) {
   const XLSX = await cargarXLSX();
-  const rows = data.map((d) => ({ 'No': d.noEmpleado, 'Ap. Paterno': d.apellidoPaterno, 'Nombre': d.nombre, 'ID Usuario': d.idUsuario, 'Correo': d.correoElectronico, 'Sucursal': d.sucursal }));
+  const rows = data.map((d) => ({ 'No': d.noEmpleado, 'Ap. Paterno': d.apellidoPaterno, 'Nombre': d.nombre, 'ID Usuario': d.idUsuario, 'Correo': d.correoElectronico, 'Oficina de promoción': d.sucursal }));
   const ws = XLSX.utils.json_to_sheet(rows); const csv = XLSX.utils.sheet_to_csv(ws);
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' }); const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = 'empleados.csv'; link.click(); toast.success('Exportado a CSV');
 }
 async function exportPDFEmp(data: Empleado[]) {
   const { jsPDF, autoTable } = await cargarPDF();
   const doc = new jsPDF({ orientation: 'landscape' }); doc.setFontSize(14); doc.text('Empleados', 14, 18); doc.setFontSize(9); doc.text(`Generado: ${formatearFecha(new Date())}`, 14, 24);
-  autoTable(doc, { startY: 30, head: [['No', 'Ap. Paterno', 'Nombre', 'Cargo', 'ID Usuario', 'Responsabilidad', 'Sucursal', 'Correo']], body: data.map((d) => [d.noEmpleado, d.apellidoPaterno, d.nombre, d.cargo, d.idUsuario, d.responsabilidad, d.sucursal, d.correoElectronico]), styles: { fontSize: 7 }, headStyles: { fillColor: [74, 111, 165] }, alternateRowStyles: { fillColor: [245, 245, 245] } });
+  autoTable(doc, { startY: 30, head: [['No', 'Ap. Paterno', 'Nombre', 'Cargo', 'ID Usuario', 'Responsabilidad', 'Oficina de promoción', 'Correo']], body: data.map((d) => [d.noEmpleado, d.apellidoPaterno, d.nombre, d.cargo, d.idUsuario, d.responsabilidad, d.sucursal, d.correoElectronico]), styles: { fontSize: 7 }, headStyles: { fillColor: [74, 111, 165] }, alternateRowStyles: { fillColor: [245, 245, 245] } });
   doc.save('empleados.pdf'); toast.success('Exportado a PDF');
 }
 function doPrintEmp(data: Empleado[]) {
-  const html = `<html><head><title>Empleados</title><style>body{font-family:Arial;font-size:11px;margin:20px}h2{color:#4A6FA5}table{border-collapse:collapse;width:100%}th{background:#4A6FA5;color:#fff;padding:6px 8px;text-align:left;font-size:10px}td{padding:4px 8px;border-bottom:1px solid #ddd;font-size:10px}tr:nth-child(even){background:#f5f5f5}</style></head><body><h2>Empleados</h2><table><tr><th>No</th><th>Ap. Paterno</th><th>Nombre</th><th>Cargo</th><th>ID Usuario</th><th>Responsabilidad</th><th>Sucursal</th></tr>${data.map((d) => `<tr><td>${d.noEmpleado}</td><td>${d.apellidoPaterno}</td><td>${d.nombre}</td><td>${d.cargo}</td><td>${d.idUsuario}</td><td>${d.responsabilidad}</td><td>${d.sucursal}</td></tr>`).join('')}</table></body></html>`;
+  const html = `<html><head><title>Empleados</title><style>body{font-family:Arial;font-size:11px;margin:20px}h2{color:#4A6FA5}table{border-collapse:collapse;width:100%}th{background:#4A6FA5;color:#fff;padding:6px 8px;text-align:left;font-size:10px}td{padding:4px 8px;border-bottom:1px solid #ddd;font-size:10px}tr:nth-child(even){background:#f5f5f5}</style></head><body><h2>Empleados</h2><table><tr><th>No</th><th>Ap. Paterno</th><th>Nombre</th><th>Cargo</th><th>ID Usuario</th><th>Responsabilidad</th><th>Oficina de promoción</th></tr>${data.map((d) => `<tr><td>${d.noEmpleado}</td><td>${d.apellidoPaterno}</td><td>${d.nombre}</td><td>${d.cargo}</td><td>${d.idUsuario}</td><td>${d.responsabilidad}</td><td>${d.sucursal}</td></tr>`).join('')}</table></body></html>`;
   const w = window.open('', '_blank'); if (w) { w.document.write(html); w.document.close(); w.print(); }
 }
 
@@ -206,7 +206,7 @@ function CreateModalEmp({ nextNo, puestoOptions, responsabilidadOptions, sucursa
             {fld('Contraseña', 'contrasena', { type: 'password' })}
             {fld('Puesto de trabajo', 'puestoTrabajo', { type: 'select', options: puestoOptions })}
             {fld('Confirmar', 'confirmarContrasena', { type: 'password' })}
-            {fld('Sucursal', 'sucursal', { type: 'select', options: sucursalOptions })}
+            {fld('Oficina de promoción', 'sucursal', { type: 'select', options: sucursalOptions })}
             {fld('Tipo empleado', 'tipoEmpleado', { type: 'select', options: TIPO_EMPLEADO_OPTIONS })}
             {fld('División', 'division', { type: 'select', options: divisionOptions })}
             <div className="col-span-2 mt-2 mb-1"><div className="bg-primary-tint-theme border-l-4 border-primary-theme px-3 py-1.5 rounded-r inline-block"><span className="text-[11px] text-primary-theme" style={{ fontWeight: 600 }}>Contacto</span></div></div>
@@ -331,7 +331,7 @@ export function EmpleadosSection() {
                 <th className="px-2 py-1.5 text-left text-gray-700 border-r border-gray-400 whitespace-nowrap" {...orden.th('usuario')}>ID de usuario{orden.flecha('usuario')}</th>
                 <th className="px-2 py-1.5 text-left text-gray-700 border-r border-gray-400 whitespace-nowrap" {...orden.th('responsabilidad')}>Responsabilidad{orden.flecha('responsabilidad')}</th>
                 <th className="px-2 py-1.5 text-left text-gray-700 border-r border-gray-400 whitespace-nowrap" {...orden.th('puesto')}>Puesto{orden.flecha('puesto')}</th>
-                <th className="px-2 py-1.5 text-left text-gray-700 border-r border-gray-400 whitespace-nowrap" {...orden.th('sucursal')}>Sucursal{orden.flecha('sucursal')}</th>
+                <th className="px-2 py-1.5 text-left text-gray-700 border-r border-gray-400 whitespace-nowrap" {...orden.th('sucursal')}>Oficina de promoción{orden.flecha('sucursal')}</th>
                 <th className="px-2 py-1.5 text-left text-gray-700 border-r border-gray-400 whitespace-nowrap" {...orden.th('tipo')}>Tipo{orden.flecha('tipo')}</th>
                 <th className="px-2 py-1.5 text-center text-gray-700 whitespace-nowrap" {...orden.th('enLinea')}>En línea{orden.flecha('enLinea')}</th>
               </tr>

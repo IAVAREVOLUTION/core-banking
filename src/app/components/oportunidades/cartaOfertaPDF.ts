@@ -223,14 +223,26 @@ export async function subirDocumentoAceptacion(
   if (!esPDFValido(file)) {
     throw new DocumentoAceptacionError('Solo se acepta un archivo PDF para la Carta Oferta firmada.');
   }
+  return subirArchivoOportunidad(file, oportunidadId, 'aceptacion');
+}
 
+/**
+ * Sube cualquier documento del KM Digital de la Oportunidad (PDF, imagen,
+ * Office…). Misma estrategia de degradación a blob URL local si Storage falla.
+ */
+export async function subirArchivoOportunidad(
+  file: File,
+  oportunidadId: string,
+  carpeta = 'km',
+): Promise<SubidaCartaOferta> {
   const nombreSeguro = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-  const storagePath = `oportunidades/${oportunidadId || 'sin-id'}/aceptacion/${Date.now()}-${nombreSeguro}`;
+  const storagePath = `oportunidades/${oportunidadId || 'sin-id'}/${carpeta}/${Date.now()}-${nombreSeguro}`;
+  const contentType = file.type || (esPDFValido(file) ? 'application/pdf' : 'application/octet-stream');
 
   try {
     const { data, error } = await supabase.storage
       .from(BUCKET_EXPEDIENTES)
-      .upload(storagePath, file, { cacheControl: '3600', upsert: false, contentType: 'application/pdf' });
+      .upload(storagePath, file, { cacheControl: '3600', upsert: false, contentType });
 
     if (!error && data?.path) {
       let url = `https://${projectId}.supabase.co/storage/v1/object/public/${BUCKET_EXPEDIENTES}/${data.path}`;

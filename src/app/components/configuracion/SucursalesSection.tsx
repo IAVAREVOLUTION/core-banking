@@ -201,7 +201,7 @@ async function exportExcel(data: Sucursal[]) {
   const rows = data.map((d) => ({ 'No': d.noSucursal, 'Nombre': d.nombre, 'Ubicación': d.ubicacion, 'Organización': d.nombreOrganizacion, 'Dirección': d.direccion, 'C.P.': d.codigoPostal, 'Ciudad': d.ciudad, 'Región': d.region, 'País': d.pais, 'Teléfono': d.telefono }));
   const ws = XLSX.utils.json_to_sheet(rows);
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Sucursales');
+  XLSX.utils.book_append_sheet(wb, ws, 'Oficinas de promoción');
   XLSX.writeFile(wb, 'sucursales.xlsx');
   toast.success('Exportado a Excel');
 }
@@ -217,7 +217,7 @@ async function exportCSV(data: Sucursal[]) {
 async function exportPDF(data: Sucursal[]) {
   const { jsPDF, autoTable } = await cargarPDF();
   const doc = new jsPDF({ orientation: 'landscape' });
-  doc.setFontSize(14); doc.text('Sucursales', 14, 18);
+  doc.setFontSize(14); doc.text('Oficinas de promoción', 14, 18);
   doc.setFontSize(9); doc.text(`Generado: ${formatearFecha(new Date())}`, 14, 24);
   autoTable(doc, {
     startY: 30,
@@ -229,7 +229,7 @@ async function exportPDF(data: Sucursal[]) {
   toast.success('Exportado a PDF');
 }
 function doPrint(data: Sucursal[]) {
-  const html = `<html><head><title>Sucursales</title><style>body{font-family:Arial;font-size:11px;margin:20px}h2{color:#4A6FA5}table{border-collapse:collapse;width:100%}th{background:#4A6FA5;color:#fff;padding:6px 8px;text-align:left;font-size:10px}td{padding:4px 8px;border-bottom:1px solid #ddd;font-size:10px}tr:nth-child(even){background:#f5f5f5}</style></head><body><h2>Sucursales</h2><table><tr><th>No</th><th>Nombre</th><th>Tipo</th><th>Ubicación</th><th>Ciudad</th><th>Región</th><th>Teléfono</th></tr>${data.map((d) => `<tr><td>${d.noSucursal}</td><td>${d.nombre}</td><td>${d.tipoOrganizacion}</td><td>${d.ubicacion}</td><td>${d.ciudad}</td><td>${d.region}</td><td>${d.telefono}</td></tr>`).join('')}</table></body></html>`;
+  const html = `<html><head><title>Oficinas de promoción</title><style>body{font-family:Arial;font-size:11px;margin:20px}h2{color:#4A6FA5}table{border-collapse:collapse;width:100%}th{background:#4A6FA5;color:#fff;padding:6px 8px;text-align:left;font-size:10px}td{padding:4px 8px;border-bottom:1px solid #ddd;font-size:10px}tr:nth-child(even){background:#f5f5f5}</style></head><body><h2>Oficinas de promoción</h2><table><tr><th>No</th><th>Nombre</th><th>Tipo</th><th>Ubicación</th><th>Ciudad</th><th>Región</th><th>Teléfono</th></tr>${data.map((d) => `<tr><td>${d.noSucursal}</td><td>${d.nombre}</td><td>${d.tipoOrganizacion}</td><td>${d.ubicacion}</td><td>${d.ciudad}</td><td>${d.region}</td><td>${d.telefono}</td></tr>`).join('')}</table></body></html>`;
   const w = window.open('', '_blank'); if (w) { w.document.write(html); w.document.close(); w.print(); }
 }
 
@@ -336,7 +336,7 @@ function DeleteConfirmSuc({ suc, childCount, onConfirm, onCancel }: { suc: Sucur
       <div className="bg-white rounded-lg shadow-2xl w-[420px] overflow-hidden" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center gap-2 px-5 py-3 bg-red-600 text-white"><AlertTriangle size={16} /><span className="text-sm" style={{ fontWeight: 600 }}>Confirmar eliminación</span></div>
         <div className="p-5">
-          <p className="text-xs text-gray-700 mb-2">¿Está seguro de eliminar la sucursal?</p>
+          <p className="text-xs text-gray-700 mb-2">¿Está seguro de eliminar la oficina de promoción?</p>
           <div className="bg-gray-50 border border-gray-200 rounded p-3 mb-3">
             <p className="text-[11px] text-gray-800" style={{ fontWeight: 600 }}>{suc.nombre}</p>
             <p className="text-[10px] text-gray-500 mt-0.5">No. {suc.noSucursal} &bull; {suc.tipoOrganizacion}</p>
@@ -344,7 +344,7 @@ function DeleteConfirmSuc({ suc, childCount, onConfirm, onCancel }: { suc: Sucur
           {childCount > 0 && (
             <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded p-2.5 mb-3">
               <AlertTriangle size={13} className="text-amber-600 flex-shrink-0 mt-0.5" />
-              <p className="text-[10px] text-amber-800">Esta sucursal tiene <span style={{ fontWeight: 600 }}>{childCount} sucursal(es) hija(s)</span> que también serán eliminadas.</p>
+              <p className="text-[10px] text-amber-800">Esta oficina de promoción tiene <span style={{ fontWeight: 600 }}>{childCount} oficina(s) de promoción hija(s)</span> que también serán eliminadas.</p>
             </div>
           )}
           <p className="text-[10px] text-gray-500">Esta acción no se puede deshacer.</p>
@@ -412,17 +412,17 @@ function CreateModalSuc({ nextNo, sucursalOptions, onSave, onCancel }: {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onCancel}>
       <div className="bg-white rounded-lg shadow-2xl flex flex-col" style={{ width: '780px', maxHeight: '88vh' }} onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between px-5 py-3 bg-[color:var(--theme-primary)] rounded-t-lg">
-          <div className="flex items-center gap-2"><Plus size={15} className="text-white" /><span className="text-white text-sm" style={{ fontWeight: 600 }}>Nueva Sucursal</span><span className="text-white/60 text-xs ml-2">No. {nextNo}</span></div>
+          <div className="flex items-center gap-2"><Plus size={15} className="text-white" /><span className="text-white text-sm" style={{ fontWeight: 600 }}>Nueva Oficina de promoción</span><span className="text-white/60 text-xs ml-2">No. {nextNo}</span></div>
           <button aria-label="Cerrar" title="Cerrar" onClick={onCancel} className="text-white/80 hover:text-white p-0.5 rounded hover:bg-white/10"><X size={18} /></button>
         </div>
         <div className="flex-1 overflow-y-auto p-5">
           <div className="grid grid-cols-2 gap-x-8 gap-y-2.5">
             <div className="col-span-2 mb-1"><div className="bg-[color:var(--theme-tint)] border-l-4 border-[color:var(--theme-primary)] px-3 py-1.5 rounded-r inline-block"><span className="text-[11px] text-[color:var(--theme-primary)]" style={{ fontWeight: 600 }}>Datos principales</span></div></div>
-            {fld('Nombre sucursal', 'nombre', { required: true })}
+            {fld('Nombre oficina de promoción', 'nombre', { required: true })}
             {fld('Ubicación', 'ubicacion')}
             {fld('Tipo de organización', 'tipoOrganizacion', { type: 'select', options: TIPO_ORG_OPTIONS })}
-            {fld('No. Sucursal', 'noSucursal', { required: true })}
-            {fld('Sucursal principal', 'sucursalPrincipalId', { type: 'select', options: sucursalOptions })}
+            {fld('No. Oficina de promoción', 'noSucursal', { required: true })}
+            {fld('Oficina de promoción principal', 'sucursalPrincipalId', { type: 'select', options: sucursalOptions })}
             {fld('Dirección', 'direccion')}
             {fld('Nombre de la org.', 'nombreOrganizacion', { required: true })}
             {fld('C.P.', 'codigoPostal', { required: true })}
@@ -438,7 +438,7 @@ function CreateModalSuc({ nextNo, sucursalOptions, onSave, onCancel }: {
             {fld('Representante Legal 1', 'representanteLegal1')}
             {fld('Representante Legal 2', 'representanteLegal2')}
             {fld('Indicador socio', 'indicadorSocio', { type: 'checkbox' })}
-            {fld('Org. de sucursal', 'indicadorOrganizacion', { type: 'checkbox' })}
+            {fld('Org. de oficina de promoción', 'indicadorOrganizacion', { type: 'checkbox' })}
           </div>
         </div>
         <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-gray-200 bg-gray-50 rounded-b-lg">
@@ -487,7 +487,7 @@ export function SucursalesSection() {
   const handleSaveForm = useCallback(() => {
     if (!formData) return;
     setData((p) => p.map((s) => s.id === formData.id ? { ...formData } : s));
-    toast.success('Cambios guardados', { description: `Sucursal "${formData.nombre}" actualizada.` });
+    toast.success('Cambios guardados', { description: `Oficina de promoción "${formData.nombre}" actualizada.` });
   }, [formData]);
 
   const handleResetForm = useCallback(() => {
@@ -503,7 +503,7 @@ export function SucursalesSection() {
     setSelectedId(newId); setFormData({ ...newSuc });
     if (newSuc.sucursalPrincipalId) setExpandedIds((p) => { const n = new Set(p); n.add(newSuc.sucursalPrincipalId!); return n; });
     setShowCreate(false);
-    toast.success('Sucursal creada', { description: `${newSuc.nombre} (No. ${newSuc.noSucursal}) agregada.` });
+    toast.success('Oficina de promoción creada', { description: `${newSuc.nombre} (No. ${newSuc.noSucursal}) agregada.` });
   }, [data]);
 
   const getDescendantCount = useCallback((id: number): number => {
@@ -521,7 +521,7 @@ export function SucursalesSection() {
     if (remaining.length > 0) { setSelectedId(remaining[0].id); setFormData({ ...remaining[0] }); }
     else { setSelectedId(null); setFormData(null); }
     setDeleteTarget(null);
-    toast.success('Sucursal eliminada', { description: `"${deleteTarget.nombre}" eliminada.` });
+    toast.success('Oficina de promoción eliminada', { description: `"${deleteTarget.nombre}" eliminada.` });
   }, [deleteTarget, data]);
 
   const sucursalOptions = useMemo(() => data.map((s) => ({ value: String(s.id), label: s.nombre })), [data]);
@@ -536,7 +536,7 @@ export function SucursalesSection() {
       <div className="w-[220px] flex-shrink-0 border-r border-gray-300 bg-white flex flex-col">
         <div className="px-3 py-2 bg-[color:var(--theme-tint)] border-b border-gray-300 flex items-center gap-2">
           <Store size={14} className="text-[color:var(--theme-primary)]" />
-          <span className="text-xs text-[color:var(--theme-primary)]" style={{ fontWeight: 600 }}>Sucursales</span>
+          <span className="text-xs text-[color:var(--theme-primary)]" style={{ fontWeight: 600 }}>Oficinas de promoción</span>
           <span className="text-[9px] text-[color:var(--theme-primary)]/60 ml-auto">{data.length}</span>
         </div>
         <div className="flex-1 overflow-y-auto p-1">
@@ -549,7 +549,7 @@ export function SucursalesSection() {
         {/* TABLA */}
         <div className="flex-shrink-0 border-b border-gray-300 bg-white flex flex-col">
           <div className="px-3 py-1.5 border-b border-gray-200 flex items-center gap-1 bg-gray-50">
-            <span className="text-xs text-[color:var(--theme-primary)] px-2 py-0.5 bg-[color:var(--theme-tint)] rounded" style={{ fontWeight: 600 }}>Sucursales</span>
+            <span className="text-xs text-[color:var(--theme-primary)] px-2 py-0.5 bg-[color:var(--theme-tint)] rounded" style={{ fontWeight: 600 }}>Oficinas de promoción</span>
             <div className="flex items-center gap-1 ml-3">
               <div className="relative">
                 <button onClick={() => setShowMenu((p) => !p)} className="flex items-center gap-1 px-2.5 py-1 text-[11px] border border-gray-300 rounded bg-white hover:bg-gray-100 text-gray-700">
@@ -558,7 +558,7 @@ export function SucursalesSection() {
                 {showMenu && <ExportMenuSuc data={filteredData} onClose={() => setShowMenu(false)} />}
               </div>
               <button onClick={() => setShowCreate(true)} className="flex items-center gap-1 px-2.5 py-1 text-[11px] border border-gray-300 rounded bg-white hover:bg-gray-100 text-gray-700"><Plus size={11} />Nuevo</button>
-              <button onClick={() => { if (!selectedId) { toast.warning('Seleccione una sucursal'); return; } const s = data.find((i) => i.id === selectedId); if (s) setDeleteTarget(s); }}
+              <button onClick={() => { if (!selectedId) { toast.warning('Seleccione una oficina de promoción'); return; } const s = data.find((i) => i.id === selectedId); if (s) setDeleteTarget(s); }}
                 className="flex items-center gap-1 px-2.5 py-1 text-[11px] border border-gray-300 rounded bg-white hover:bg-gray-100 text-gray-700"><Trash2 size={11} />Eliminar</button>
               <button onClick={() => setShowSearch((p) => !p)} className={`flex items-center gap-1 px-2.5 py-1 text-[11px] border rounded ${showSearch ? 'border-[color:var(--theme-primary)] bg-[color:var(--theme-tint)] text-[color:var(--theme-primary)]' : 'border-gray-300 bg-white hover:bg-gray-100 text-gray-700'}`}>
                 <Search size={11} />Consulta
@@ -600,7 +600,7 @@ export function SucursalesSection() {
                     <td className="px-2 py-1 whitespace-nowrap">{s.pais}</td>
                   </tr>
                 ))}
-                {filteredData.length === 0 && <tr><td colSpan={8} className="px-4 py-6 text-center text-gray-400">No se encontraron sucursales.</td></tr>}
+                {filteredData.length === 0 && <tr><td colSpan={8} className="px-4 py-6 text-center text-gray-400">No se encontraron oficinas de promoción.</td></tr>}
               </tbody>
             </table>
           </div>
@@ -616,13 +616,13 @@ export function SucursalesSection() {
               </div>
               <div className="p-4 bg-white mx-3 my-3 rounded border border-gray-200">
                 <div className="grid grid-cols-2 gap-x-8 gap-y-2.5">
-                  <FormFieldSuc label="Sucursal" name="nombre" value={formData.nombre} required onChange={handleFieldChange} />
+                  <FormFieldSuc label="Oficina de promoción" name="nombre" value={formData.nombre} required onChange={handleFieldChange} />
                   <FormFieldSuc label="Ubicación" name="ubicacion" value={formData.ubicacion} onChange={handleFieldChange} />
                   <FormFieldSuc label="Tipo de organización" name="tipoOrganizacion" value={formData.tipoOrganizacion} type="select" options={TIPO_ORG_OPTIONS} onChange={handleFieldChange} />
                   <FormFieldSuc label="Dirección" name="direccion" value={formData.direccion} onChange={handleFieldChange} />
-                  <FormFieldSuc label="Sucursal principal" name="sucursalPrincipalId" value={formData.sucursalPrincipalId ? String(formData.sucursalPrincipalId) : ''} type="select" options={sucursalOptions} onChange={handleFieldChange} />
+                  <FormFieldSuc label="Oficina de promoción principal" name="sucursalPrincipalId" value={formData.sucursalPrincipalId ? String(formData.sucursalPrincipalId) : ''} type="select" options={sucursalOptions} onChange={handleFieldChange} />
                   <FormFieldSuc label="Código postal" name="codigoPostal" value={formData.codigoPostal} required onChange={handleFieldChange} />
-                  <FormFieldSuc label="Org. de sucursal" name="indicadorOrganizacion" type="checkbox" checked={formData.indicadorOrganizacion} onCheck={handleCheckChange} />
+                  <FormFieldSuc label="Org. de oficina de promoción" name="indicadorOrganizacion" type="checkbox" checked={formData.indicadorOrganizacion} onCheck={handleCheckChange} />
                   <FormFieldSuc label="Ciudad" name="ciudad" value={formData.ciudad} required onChange={handleFieldChange} />
                   <FormFieldSuc label="Nombre de la org." name="nombreOrganizacion" value={formData.nombreOrganizacion} required onChange={handleFieldChange} />
                   <FormFieldSuc label="Región" name="region" value={formData.region} type="select" options={REGION_OPTIONS} onChange={handleFieldChange} />
@@ -630,9 +630,9 @@ export function SucursalesSection() {
                   <FormFieldSuc label="País" name="pais" value={formData.pais} type="select" options={PAIS_OPTIONS} onChange={handleFieldChange} />
                   <FormFieldSuc label="ID comerc. tarjeta" name="idComercianteTarjeta" value={formData.idComercianteTarjeta} onChange={handleFieldChange} />
                   <FormFieldSuc label="Teléfono" name="telefono" value={formData.telefono} onChange={handleFieldChange} />
-                  <FormFieldSuc label="No Sucursal" name="noSucursal" value={formData.noSucursal} required readOnly />
+                  <FormFieldSuc label="No Oficina de promoción" name="noSucursal" value={formData.noSucursal} required readOnly />
                   <FormFieldSuc label="Moneda" name="moneda" value={formData.moneda} required type="select" options={MONEDA_OPTIONS} onChange={handleFieldChange} />
-                  <FormFieldSuc label="No Sucursal Princ." name="noSucursalPrincipal" value={formData.noSucursalPrincipal} onChange={handleFieldChange} />
+                  <FormFieldSuc label="No Oficina de promoción Princ." name="noSucursalPrincipal" value={formData.noSucursalPrincipal} onChange={handleFieldChange} />
                   <FormFieldSuc label="Indicador de socio" name="indicadorSocio" type="checkbox" checked={formData.indicadorSocio} onCheck={handleCheckChange} />
                   <div className="col-span-2 border-t border-gray-100 my-1" />
                   <FormFieldSuc label="RFC Empresa" name="rfcEmpresa" value={formData.rfcEmpresa} onChange={handleFieldChange} />
@@ -647,7 +647,7 @@ export function SucursalesSection() {
               </div>
             </div>
           ) : (
-            <div className="flex items-center justify-center h-full text-gray-400 text-sm">Seleccione una sucursal del árbol o la tabla para ver sus detalles</div>
+            <div className="flex items-center justify-center h-full text-gray-400 text-sm">Seleccione una oficina de promoción del árbol o la tabla para ver sus detalles</div>
           )}
         </div>
       </div>

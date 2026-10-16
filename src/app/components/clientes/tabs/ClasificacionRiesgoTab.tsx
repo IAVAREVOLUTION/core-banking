@@ -57,7 +57,7 @@ export function ClasificacionRiesgoTab({ formData, updateFormData, isView }: Cla
               <div className="flex-1 text-xs text-gray-700">{formData.numeroEmpleados || ''}</div>
             </div>
             <div className="flex items-center gap-2">
-              <label className="text-xs w-48 flex-shrink-0 text-gray-700">NÚMERO DE SUCURSALES</label>
+              <label className="text-xs w-48 flex-shrink-0 text-gray-700">NÚMERO DE OFICINAS DE PROMOCIÓN</label>
               <div className="flex-1 text-xs text-gray-700">{formData.numeroSucursales || ''}</div>
             </div>
           </div>
@@ -229,7 +229,7 @@ export function ClasificacionRiesgoTab({ formData, updateFormData, isView }: Cla
 
           <div className="space-y-2">
             <Label htmlFor="numeroSucursales" className="text-[#3C3C3C]">
-              Número de Sucursales
+              Número de Oficinas de promoción
             </Label>
             {isView ? (
               <div className="px-3 py-2 text-sm text-gray-700">{formData.numeroSucursales || ''}</div>

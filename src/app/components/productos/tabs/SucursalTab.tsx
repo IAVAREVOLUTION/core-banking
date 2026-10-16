@@ -98,10 +98,10 @@ export const SucursalTab = forwardRef<{ getData: () => Sucursal[] }, SucursalTab
           ...formData
         };
         setData([...data, newItem]);
-        toast.success('Sucursal creada');
+        toast.success('Oficina de promoción creada');
       } else if (formMode === 'edit') {
         setData(data.map(d => d.id === selectedItem?.id ? { ...d, ...formData } : d));
-        toast.success('Sucursal actualizada');
+        toast.success('Oficina de promoción actualizada');
       }
       setShowFormModal(false);
     };
@@ -114,7 +114,7 @@ export const SucursalTab = forwardRef<{ getData: () => Sucursal[] }, SucursalTab
       <>
         <div className="bg-white">
           <div className="mb-3">
-            <span className="text-sm font-medium text-gray-800">Sucursales</span>
+            <span className="text-sm font-medium text-gray-800">Oficinas de promoción</span>
           </div>
 
           <div className="flex items-center gap-2 mb-3">
@@ -155,7 +155,7 @@ export const SucursalTab = forwardRef<{ getData: () => Sucursal[] }, SucursalTab
             <table className="w-full text-xs">
               <thead>
                 <tr className="bg-[color:var(--theme-primary)] text-white">
-                  <th className="px-3 py-2 text-left font-medium text-xs border-r border-white/20 whitespace-nowrap">Sucursal</th>
+                  <th className="px-3 py-2 text-left font-medium text-xs border-r border-white/20 whitespace-nowrap">Oficina de promoción</th>
                   <th className="px-3 py-2 text-left font-medium text-xs border-r border-white/20 whitespace-nowrap">Ubicación</th>
                   <th className="px-3 py-2 text-center font-medium text-xs whitespace-nowrap">Activo</th>
                 </tr>
@@ -236,7 +236,7 @@ function FormModal({ mode, item, productId, onSave, onClose }: FormModalProps) {
 
     // Validar campos requeridos
     const requiredFields = [
-      { field: 'branchId', label: 'Sucursal' },
+      { field: 'branchId', label: 'Oficina de promoción' },
       { field: 'location', label: 'Ubicación' },
     ];
 
@@ -287,7 +287,7 @@ function FormModal({ mode, item, productId, onSave, onClose }: FormModalProps) {
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
       <div className="bg-white shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col border-2 border-gray-400" onClick={(e) => e.stopPropagation()}>
         <div className="bg-[color:var(--theme-secondary)] px-4 py-2.5 border-b-2 border-gray-400 flex items-center justify-between">
-          <h3 className="text-sm font-medium text-white">{mode === 'create' ? 'Nueva Sucursal' : mode === 'edit' ? 'Editar Sucursal' : 'Ver Sucursal'}</h3>
+          <h3 className="text-sm font-medium text-white">{mode === 'create' ? 'Nueva Oficina de promoción' : mode === 'edit' ? 'Editar Oficina de promoción' : 'Ver Oficina de promoción'}</h3>
           <button onClick={onClose} className="text-white hover:text-gray-300 font-bold text-lg leading-none">×</button>
         </div>
 
@@ -295,12 +295,12 @@ function FormModal({ mode, item, productId, onSave, onClose }: FormModalProps) {
           <form onSubmit={handleSubmit}>
             <div className="mb-4">
               <div className="bg-[#E7E6E6] px-3 py-1.5 mb-3 border-l-4 border-[color:var(--theme-secondary)]">
-                <span className="text-xs font-medium text-gray-800">INFORMACIÓN DE SUCURSAL</span>
+                <span className="text-xs font-medium text-gray-800">INFORMACIÓN DE OFICINA DE PROMOCIÓN</span>
               </div>
 
               <div className="grid grid-cols-1 gap-y-3">
                 <div>
-                  <label className="block text-xs text-gray-700 mb-1 font-medium">Sucursal <span className="text-red-600">*</span></label>
+                  <label className="block text-xs text-gray-700 mb-1 font-medium">Oficina de promoción <span className="text-red-600">*</span></label>
                   <select 
                     value={formData.branchId} 
                     onChange={(e) => handleChange('branchId', e.target.value)} 
@@ -322,7 +322,7 @@ function FormModal({ mode, item, productId, onSave, onClose }: FormModalProps) {
                     value={formData.location} 
                     readOnly
                     disabled={isViewMode} 
-                    placeholder="Se autocompleta al seleccionar sucursal" 
+                    placeholder="Se autocompleta al seleccionar oficina de promoción" 
                     className={`${inputClassName()} bg-gray-100`}
                   />
                 </div>
@@ -337,7 +337,7 @@ function FormModal({ mode, item, productId, onSave, onClose }: FormModalProps) {
                       disabled={isViewMode} 
                       className="w-4 h-4" 
                     />
-                    <span className="text-xs text-gray-700">Activar producto en esta sucursal</span>
+                    <span className="text-xs text-gray-700">Activar producto en esta oficina de promoción</span>
                   </div>
                 </div>
               </div>

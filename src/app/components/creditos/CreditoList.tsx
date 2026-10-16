@@ -340,7 +340,7 @@ export function CreditoList({ onNew, onEdit, onView }: CreditoListProps) {
                 <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700">LÍNEA PRODUCTO</th>
                 <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700">SUBLÍNEA</th>
                 <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700">PRODUCTO</th>
-                <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700">SUCURSAL</th>
+                <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700">OFICINA DE PROMOCIÓN</th>
                 <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700">ESTATUS CRÉDITO</th>
                 <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700">FECHA DE INICIO</th>
                 <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700">FECHA FIN</th>

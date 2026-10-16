@@ -492,7 +492,7 @@ export function ProspectosList({ onNew, onEdit, onView, prospectos: prospectosPr
                 <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700" {...orden.th('id')}>NO. INTERLOCUTOR{orden.flecha('id')}</th>
                 <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700" {...orden.th('nombre')}>NOMBRE{orden.flecha('nombre')}</th>
                 <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700" {...orden.th('estatus')}>ESTATUS DEL CLIENTE{orden.flecha('estatus')}</th>
-                <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700" {...orden.th('sucursal')}>SUCURSAL{orden.flecha('sucursal')}</th>
+                <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700" {...orden.th('sucursal')}>OFICINA DE PROMOCIÓN{orden.flecha('sucursal')}</th>
                 <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700" {...orden.th('sic')}>ESTATUS SIC{orden.flecha('sic')}</th>
                 <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700" {...orden.th('listaNegra')}>ESTATUS LISTA NEGRA{orden.flecha('listaNegra')}</th>
                 <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700" {...orden.th('fecha')}>FECHA ORIGINACION{orden.flecha('fecha')}</th>
