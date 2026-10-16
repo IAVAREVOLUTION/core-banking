@@ -10,7 +10,6 @@
     "lint": "eslint src",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:tdc": "node tests/tdc/run.mjs",
     "check": "npm run typecheck && npm run lint && npm run test"
   },
   "dependencies": {
