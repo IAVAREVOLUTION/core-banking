@@ -51,7 +51,7 @@ import {
   type DocumentoCargado,
 } from '../solicitudes/solicitudCreditoStore';
 import { SolicitudBaseForm } from '../solicitudes/SolicitudBaseForm';
-import { getUsuarioSesion } from '../../lib/sesion';
+import { getUsuarioSesion, subtabVisible } from '../../lib/sesion';
 import { buildFormDataFromListItem, preloadSubtabsFromDBData } from '../solicitudes/SolicitudCreditoList';
 import { CampoMonto } from '@/app/components/ui/CampoMonto';
 import { esPersonaMoral } from '@/app/lib/personaJuridica';
@@ -1133,7 +1133,7 @@ function OriginacionForm({ mode, originacionId, onCancel, onSave, onActivarCuent
     { id: 'comisiones',         label: 'Comisiones' },
     { id: 'notas',              label: 'Notas' },
     { id: 'flujoTrabajo',       label: 'Flujo de Trabajo' },
-  ];
+  ].filter(s => subtabVisible(s.id));
 
   return (
     <div className="flex-1 flex flex-col bg-white overflow-auto">
@@ -1197,7 +1197,7 @@ function OriginacionForm({ mode, originacionId, onCancel, onSave, onActivarCuent
             <div><Lbl req error={errors.cliente}>Nombre Interlocutor</Lbl>{isRO ? <input type="text" value={fd.cliente} disabled className={ic(false, true)} /> : <select value={fd.cliente} onChange={e => set('cliente', e.target.value)} className={sc(!!errors.cliente)}><option value="">Seleccionar...</option>{CAT_CLIENTES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}</select>}{errors.cliente && <span className="text-[10px] text-red-500">{errors.cliente}</span>}</div>
             <div><Lbl req error={errors.fechaSolicitud}>Fecha de Solicitud</Lbl><DatePicker value={fd.fechaSolicitud} onChange={v => set('fechaSolicitud', v)} disabled={isRO} placeholder="DD/MM/YYYY" className={`px-2 py-1 ${errors.fechaSolicitud ? 'border-red-400' : ''}`} />{errors.fechaSolicitud && <span className="text-[10px] text-red-500">{errors.fechaSolicitud}</span>}</div>
             <div><Lbl>Empresa Fondeadora</Lbl>{isRO ? <input type="text" value={fd.empresaFondeadora || '—'} disabled className={ic(false, true)} /> : <select value={fd.empresaFondeadora} onChange={e => set('empresaFondeadora', e.target.value)} className={sc()}><option value="">Seleccionar...</option>{CAT_EMPRESA_FONDEADORA.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}</select>}</div>
-            <div><Lbl req error={errors.sucursal}>Sucursal</Lbl><select value={fd.sucursal} onChange={e => set('sucursal', e.target.value)} disabled={isRO} className={sc(!!errors.sucursal)}><option value="">Seleccionar...</option>{CAT_SUCURSAL.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}</select>{errors.sucursal && <span className="text-[10px] text-red-500">{errors.sucursal}</span>}</div>
+            <div><Lbl req error={errors.sucursal}>Oficina de promoción</Lbl><select value={fd.sucursal} onChange={e => set('sucursal', e.target.value)} disabled={isRO} className={sc(!!errors.sucursal)}><option value="">Seleccionar...</option>{CAT_SUCURSAL.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}</select>{errors.sucursal && <span className="text-[10px] text-red-500">{errors.sucursal}</span>}</div>
             <div><Lbl req error={errors.montoSolicitado}>Monto Solicitado</Lbl><div className="relative"><span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-600">$</span><CampoMonto value={fd.montoSolicitado} onChange={e => numSet('montoSolicitado', e.target.value)} onBlur={() => curBlur('montoSolicitado')} disabled={isRO} placeholder="0.00" className={`${ic(!!errors.montoSolicitado)} pl-5`} /></div>{errors.montoSolicitado && <span className="text-[10px] text-red-500">{errors.montoSolicitado}</span>}</div>
           </div>
           <div className="space-y-3">

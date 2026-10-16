@@ -211,7 +211,7 @@ export function ClientesDashboard({ clientes, onNew, onEdit, onView, onClientesC
                   <th className="text-left px-3 py-2 font-medium text-gray-700">Nombre</th>
                   <th className="text-left px-3 py-2 font-medium text-gray-700">Tipo</th>
                   <th className="text-left px-3 py-2 font-medium text-gray-700">Fecha</th>
-                  <th className="text-left px-3 py-2 font-medium text-gray-700">Sucursal</th>
+                  <th className="text-left px-3 py-2 font-medium text-gray-700">Oficina de promoción</th>
                 </tr>
               </thead>
               <tbody>

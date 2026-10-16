@@ -50,14 +50,14 @@ const CONFIG_TAB_GROUPS: TabGroup[] = [
     tabs: [
       { id: 'parametros-generales', label: 'Generales', icon: <Settings size={14} /> },
       { id: 'parametros-institucion', label: 'Institución', icon: <Building2 size={14} /> },
-      { id: 'parametros-sucursales', label: 'Sucursales', icon: <MapPin size={14} /> },
+      { id: 'parametros-sucursales', label: 'Oficinas de promoción', icon: <MapPin size={14} /> },
     ],
   },
   {
     groupLabel: 'Estructura Organizacional',
     tabs: [
       { id: 'instituciones-financieras', label: 'Inst. Financieras', icon: <Landmark size={14} /> },
-      { id: 'sucursales', label: 'Sucursales', icon: <Store size={14} /> },
+      { id: 'sucursales', label: 'Oficinas de promoción', icon: <Store size={14} /> },
       { id: 'puestos-trabajo', label: 'Puestos', icon: <Briefcase size={14} /> },
       { id: 'empleados', label: 'Empleados', icon: <UserCheck size={14} /> },
     ],

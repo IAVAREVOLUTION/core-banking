@@ -183,7 +183,7 @@ export function PLDKYCInfo({ onBack }: Props) {
                   <th className="px-3 py-2.5 text-left text-xs text-gray-700">Nombre Interlocutor</th>
                   <th className="px-3 py-2.5 text-left text-xs text-gray-700">RFC</th>
                   <th className="px-3 py-2.5 text-left text-xs text-gray-700">Personalidad</th>
-                  <th className="px-3 py-2.5 text-left text-xs text-gray-700">Sucursal</th>
+                  <th className="px-3 py-2.5 text-left text-xs text-gray-700">Oficina de promoción</th>
                   <th className="px-3 py-2.5 text-left text-xs text-gray-700">Estatus KYC</th>
                   <th className="px-3 py-2.5 text-left text-xs text-gray-700">Nivel Riesgo</th>
                   <th className="px-3 py-2.5 text-left text-xs text-gray-700">Ult. Revisión</th>
@@ -273,7 +273,7 @@ export function PLDKYCInfo({ onBack }: Props) {
             <div className="flex items-center gap-2"><label className={labelCls}>PERSONALIDAD</label><div className={disabledCls}>{editData.clientePersonalidad}</div></div>
             <div className="flex items-center gap-2"><label className={labelCls}>RFC</label><div className={`${disabledCls} font-mono`}>{editData.clienteRFC||'—'}</div></div>
             <div className="flex items-center gap-2"><label className={labelCls}>CURP</label><div className={`${disabledCls} font-mono`}>{editData.clienteCURP||'—'}</div></div>
-            <div className="flex items-center gap-2"><label className={labelCls}>SUCURSAL</label><div className={disabledCls}>{editData.clienteSucursal}</div></div>
+            <div className="flex items-center gap-2"><label className={labelCls}>OFICINA DE PROMOCIÓN</label><div className={disabledCls}>{editData.clienteSucursal}</div></div>
           </div>
         </div>
 

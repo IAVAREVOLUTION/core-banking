@@ -18,14 +18,13 @@ import {
   SolicitudFormData, EMPTY_FORM, MOCK_FORMS, SOLICITUDES_LISTA,
   saveToSession, loadFromSession, loadFromSavedStore, saveToSavedStore, commitAndClearSession, clearSession,
   marcarCargosAplicados,
-  formatCurrency, parseCurrency, generateNoSol, consumeNoSol, getFechaSolicitudNow, generateId,
+  formatCurrency, parseCurrency, generateNoSol, consumeNoSol, getFechaSolicitudNow,
   CAT_LINEA_PRODUCTO, CAT_TIPO_PRODUCTO, CAT_TIPO_PERSONA, CAT_PRODUCTOS,
   CAT_FASES, CAT_SUCURSAL, CAT_ESTATUS_SOLICITUD,
   calcularCargosArrendamiento, generarFacturaDesembolsoInicial,
   generarXMLProveedor, leerXMLProveedor,
   type DocumentoCargado, type RequisitoProducto, type FacturaArrendamiento,
   esArrendamiento, documentosVigentes, versionFromDB,
-  esTarjetaCredito,
 } from './solicitudCreditoStore';
 import { TerminosCondicionesTab } from './TerminosCondicionesTab';
 import {
@@ -47,9 +46,6 @@ import {
 import { SimulacionTab, calcularNumeroPeriodos } from './SimulacionTab';
 import { CuentasBeneficiariasTab } from './CuentasBeneficiariasTab';
 import { generarPagareDesdePlantilla } from '../../hooks/generarDocumentosFase4';
-import { contabilizarActivacion } from '../../lib/contabilizarEventoTDC';
-import { indicador } from '../../lib/motorMovimientosTDC';
-import { useComponentesContablesCatalogo } from '../../hooks/useComponentesContablesCatalogo';
 // REQ-24 HU-24.1 — alta automatica de la Solicitud de Activacion al liberar.
 import { crearActivacionDispersion } from '../../hooks/useSolicitudesActivacionDB';
 import { fetchLineaPadre, fetchCuentasBeneficiarias } from '../banca-2o-piso/banca2oPisoStore';
@@ -68,8 +64,6 @@ import { DatePicker } from '../ui/DatePicker';
 import { FasesSolicitudTab } from './tabs/FasesSolicitudTab';
 import { SeleccionarClienteModal } from './SeleccionarClienteModal';
 import { PartesRelacionadasTab } from './tabs/PartesRelacionadasTab';
-import { DatosFinancierosTab } from './tabs/DatosFinancierosTab';
-import { CondicionesTarjetaTab } from './tabs/CondicionesTarjetaTab';
 import { useProductosCatalogoDB, type ProductoCatalogo } from '../../hooks/useProductosCatalogoDB';
 import { useSolicitudesDB, fetchNextNoSol, updateFaseSolicitudDB, avanzarFaseSolicitudDB, regresarFaseSolicitudDB, formalizarContratoSolicitudDB, activarCuentaDB, actualizarEstatusSolicitudDB, crearCuentaDesdeSolicitudDB, actualizarDispersionDB, actualizarFacturasDB, asegurarDetalleSolicitud } from '../../hooks/useSolicitudesDB';
 import {
@@ -105,6 +99,7 @@ import { ComitesTab } from '../shared/ComitesTab';
 import { CampoMonto } from '@/app/components/ui/CampoMonto';
 import { decidirFaseIA, decidirFasePorPresencia, esPromptSoloPresencia, REGLAS_GENERALES_FASE_IA } from '@/app/lib/decisionFaseIA';
 import { esPersonaMoral, tipoPersonaDe } from '@/app/lib/personaJuridica';
+import { subtabVisible } from '@/app/lib/sesion';
 
 // ═══════════════════════════════════════════════════════════════════
 // COMPUERTAS DEL BPM GPO — ancladas a la POSICIÓN de la fase
@@ -221,7 +216,7 @@ const ETIQUETAS_CAMPO_OBLIGATORIO: Record<string, string> = {
   nombrePersona: 'Nombre',
   apellidoPaternoPersona: 'Apellido Paterno',
   productoId: 'Producto',
-  sucursal: 'Sucursal',
+  sucursal: 'Oficina de promoción',
   montoSolicitado: 'Monto Solicitado',
   plazo: 'Plazo',
 };
@@ -276,7 +271,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
     return initial;
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [activeSection, setActiveSection] = useState<string>('fases');
+  const [activeSection, setActiveSection] = useState<string>(() => subtabVisible('fases') ? 'fases' : 'default');
 
   // ══════════════════════════════════════════════════════════════════
   // AUTO-HIDRATACIÓN DESDE BD — red de seguridad
@@ -367,7 +362,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
     const hidden = _cap ? ['garantias'] : [];
     const unavailable = hidden.filter(id => !ids.includes(id));
     if (hidden.includes(activeSection) || unavailable.includes(activeSection)) {
-      setActiveSection('fases');
+      setActiveSection(subtabVisible('fases') ? 'fases' : 'default');
     }
   }, [formData.lineaProducto, activeSection]);
   const [showClienteModal, setShowClienteModal] = useState(false);
@@ -492,23 +487,12 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
     toast.success('Solicitud enviada', { description: 'Estatus actualizado a "En proceso". La solicitud aparece en Originación.' });
   }, [formData, storageId]);
 
-  // Catálogo de Componentes Contables — resuelve el nombre de la clave '023'
-  // al generar el cargo automático de activación de una línea TDC.
-  const { componentes: componentesCatalogo } = useComponentesContablesCatalogo();
-
   // ── Producto seleccionado (rawData para auto-llenar Términos y Condiciones) ──
   const productoSeleccionado = useMemo(() => {
     if (!formData.productoId) return undefined;
     const found = productosDB.find(p => p.id === formData.productoId);
     return found;
   }, [formData.productoId, productosDB]);
-
-  // Reglas de Pago y Corte TDC configuradas en el producto (subtab del producto
-  // Línea de Crédito). Alimentan la precarga del acordeón Condiciones de la Tarjeta.
-  const reglaTDCProducto = useMemo(() => {
-    const r = productoSeleccionado?.rawData?.reglasPagoCorteTDC;
-    return r && typeof r === 'object' && !Array.isArray(r) ? r : undefined;
-  }, [productoSeleccionado]);
 
   // ── % Enganche — visible en el encabezado (solo Arrendamiento) ──
   const isArrendamientoHeader = (formData.tipoProducto || '').toLowerCase().includes('arrendamiento');
@@ -694,6 +678,30 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
     setFilaMatrizSeleccionada(fila);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [formData.plazo, formData.montoSolicitado, matrizTasaFijaProducto, filaMatrizSeleccionada]);
+
+  // Términos efectivos: Plazo, Tasa, Frecuencia y Monto del encabezado se
+  // escriben en los Términos de la sesión. Antes sólo lo hacía la sección
+  // "Términos y Condiciones" y únicamente mientras estaba abierta (el acordeón
+  // monta una sección a la vez), así que las fases, la generación de
+  // documentos y el guardado leían tasa/frecuencia vacías o desactualizadas.
+  // Sólo se escriben valores no vacíos: nunca se borra lo ya capturado.
+  useEffect(() => {
+    if (isRO) return;
+    const base: any = loadFromSession<any>(storageId, 'terminos')
+      ?? loadFromSavedStore<any>(storageId, 'terminos')
+      ?? {};
+    const delEncabezado: Record<string, string> = {};
+    const plazo = String(formData.plazo || '').trim();
+    const tasa = String(tasaSeleccionadaHeader || '').trim();
+    const frecuencia = String(frecuenciaSeleccionadaHeader || '').trim();
+    const monto = String(formData.montoSolicitado || '').trim();
+    if (plazo && plazo !== String(base.plazo ?? '')) delEncabezado.plazo = plazo;
+    if (tasa && parseFloat(tasa) > 0 && tasa !== String(base.tasa ?? '')) delEncabezado.tasa = tasa;
+    if (frecuencia && frecuencia !== String(base.frecuencia ?? '')) delEncabezado.frecuencia = frecuencia;
+    if (monto && parseFloat(monto.replace(/[^0-9.-]/g, '')) > 0 && monto !== String(base.montoSolicitado ?? '')) delEncabezado.montoSolicitado = monto;
+    if (Object.keys(delEncabezado).length === 0) return;
+    saveToSession(storageId, 'terminos', { ...base, ...delEncabezado });
+  }, [isRO, storageId, formData.plazo, formData.montoSolicitado, tasaSeleccionadaHeader, frecuenciaSeleccionadaHeader]);
 
   // Validación en tiempo real: Monto y Plazo del encabezado deben permanecer
   // dentro del rango de la fila de Matriz vigente.
@@ -1232,7 +1240,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
           const faltan = faltantesEstructura2oPiso(est);
           if (faltan.length > 0) {
             toast.error('No se puede avanzar de fase', {
-              description: `Estructura Operativa de 2o Piso incompleta: ${faltan.join(' · ')}`,
+              description: `Estructura Operativa incompleta: ${faltan.join(' · ')}`,
               duration: 10000,
             });
             return;
@@ -1660,40 +1668,6 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
               ).join('\n')
             : '  Sin requisitos configurados para esta fase.';
 
-          // Una tarjeta no dispersa: pedirle cuentas beneficiarias la reprueba siempre.
-          const esTDCFase = esTarjetaCredito(
-            formData.tipoProducto,
-            formData.nombreProducto,
-            productoSeleccionado?.nombreProducto,
-          );
-
-          // ── Criterios de validación ──────────────────────────────────────────
-          // Sin esto la IA rechaza por hechos que en México son normales: el
-          // comprobante de domicilio suele estar a nombre del titular del
-          // servicio (padre, arrendador, cónyuge) y el domicilio del INE es el
-          // que tenía al emitirse la credencial, no el actual.
-          const criteriosValidacion = [
-            '=== CRITERIOS DE VALIDACIÓN (obligatorios) ===',
-            '1. El Comprobante de Domicilio PUEDE estar a nombre de un TERCERO (titular del',
-            '   servicio: arrendador, familiar, cónyuge). Que el nombre no coincida con el INE',
-            '   NO es motivo de rechazo ni una discrepancia crítica.',
-            '2. El domicilio del INE PUEDE diferir del Comprobante de Domicilio: la credencial',
-            '   trae el domicilio vigente al momento de su emisión. NO es motivo de rechazo.',
-            '3. Sólo marca discrepancia crítica cuando el documento impida identificar al',
-            '   solicitante: ilegible, alterado, vencido, o que claramente no corresponde al',
-            '   tipo de documento requerido.',
-            '4. Valida PRESENCIA y LEGIBILIDAD de los documentos obligatorios de la fase. No',
-            '   inventes requisitos que no estén en la lista de documentos obligatorios ni',
-            '   exijas documentos generados que el expediente no declare como obligatorios.',
-            '5. El tipo de persona del expediente (Física/Moral) es un dato del sistema, no se',
-            '   deduce de los documentos: no lo reportes como inconsistencia.',
-            ...(esTDCFase ? [
-              '6. Este producto es una TARJETA DE CRÉDITO: no dispersa recursos, así que NO',
-              '   requiere cuentas beneficiarias ni monto a dispersar. No lo tomes como falta.',
-            ] : []),
-            '', '',
-          ].join('\n');
-
           // ── Payload e instrucción de respuesta según tipo de fase ────────────
           let promptConContexto: string;
           let payloadFaseIA: Record<string, any>;
@@ -1707,7 +1681,6 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
               'Debes hacer matching SEMÁNTICO: si el nombre del documento cargado corresponde al tipo requerido ' +
               '(aunque el texto sea diferente), considera que SÍ está cubierto. Documentos sin fase asignada ' +
               '(faseId=0 o vacío) también deben considerarse presentes para la validación.\n\n' +
-              criteriosValidacion +
               '=== DATOS DEL CLIENTE ===\n' +
               `Nombre: ${nombreCliente}\n` +
               `Tipo persona: ${formData.tipoPersona || 'No especificado'}\n` +
@@ -1724,12 +1697,9 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
               `Plazo: ${terminos.plazo || terminos.plazoMeses || 'No especificado'}\n` +
               `Moneda: ${terminos.moneda || 'MXN'}\n\n` +
               `=== FASE ACTUAL: ${faseNombre} (Fase ${seqActual}) ===\n\n` +
-              // En TDC se omite: mandarlo en 0 hacía que la IA lo reportara
-              // como "falta de cuenta beneficiaria" y reprobara la fase.
-              (esTDCFase ? '' :
-                '=== CUENTA(S) BENEFICIARIA(S) — DISPERSIÓN ===\n' +
-                resumenCuentasBenef + '\n' +
-                `Cuentas registradas: ${cuentasBenef.length} | Monto Autorizado: ${montoAutNum} | Total a dispersar: ${totalDispersionNum}\n\n`) +
+              '=== CUENTA(S) BENEFICIARIA(S) — DISPERSIÓN ===\n' +
+              resumenCuentasBenef + '\n' +
+              `Cuentas registradas: ${cuentasBenef.length} | Monto Autorizado: ${montoAutNum} | Total a dispersar: ${totalDispersionNum}\n\n` +
               '=== DOCUMENTOS OBLIGATORIOS PARA ESTA FASE ===\n' +
               reqResumen + '\n\n' +
               '=== DOCUMENTOS CARGADOS EN EL EXPEDIENTE (incluyendo banca móvil) ===\n' +
@@ -1743,30 +1713,6 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
               faseNumero: seqActual,
               botonPresionado: 'enviarFase',
               promptIA: promptConContexto,
-              // BUG FIX: la edge function arma su `contextoFase` con
-              // `datosCliente` y `datosCredito`, pero aquí sólo se mandaban los
-              // campos sueltos (nombreSolicitante, monto, plazo…). El modelo
-              // recibía `datosCliente: {}` / `datosCredito: {}` y rechazaba la
-              // fase por "datos vacíos" aunque el prompt sí los traía en texto.
-              datosCliente: {
-                nombre: nombreCliente,
-                tipoPersona: formData.tipoPersona || '',
-                noCliente: formData.noCliente || '',
-                curp: formData._curp || '',
-                rfc: formData._rfc || '',
-                noSolicitud: formData.noSol || '',
-              },
-              datosCredito: {
-                lineaProducto: formData.lineaProducto || '',
-                tipoProducto: formData.tipoProducto || '',
-                producto: productoSeleccionado?.nombreProducto || formData.tipoProducto || '',
-                montoSolicitado: terminos.montoSolicitado || terminos.monto || '',
-                montoAutorizado: formData.montoAutorizado || '',
-                plazo: terminos.plazo || terminos.plazoMeses || '',
-                tasa: terminos.tasa || '',
-                frecuencia: terminos.frecuencia || '',
-                moneda: terminos.moneda || 'MXN',
-              },
               nombreSolicitante: nombreCliente,
               tipoPersona: formData.tipoPersona,
               noSol: formData.noSol || '',
@@ -2133,170 +2079,6 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
             return;
           }
           setFormData(prev => ({ ...prev, estatusSolicitud: 'Autorizada' }));
-
-          // ── ESPEC 5.1 — ACTIVACION_LINEA ──
-          // El disparador NO se asume: es este punto exacto, cuando
-          // `actualizarEstatusSolicitudDB(..., 'Autorizada')` ya confirmó en BD.
-          // 'Autorizada' es el estatus real con el que CACAO Banking libera una
-          // Solicitud y la pasa a cartera; para TDC no hay dispersión de por
-          // medio, así que liberar y activar son el mismo instante.
-          //
-          // Sólo Tarjeta de Crédito: las demás líneas siguen su propio flujo y
-          // esta especificación no las alcanza.
-          if (esTarjetaCredito(
-                formData.tipoProducto,
-                formData.nombreProducto,
-                productoSeleccionado?.nombreProducto,
-                (productoSeleccionado as any)?.sublineaProducto,
-              )) {
-            const fechaActivacion = new Date().toISOString().slice(0, 10);
-
-            // ── Cargo automático "023 — Saldo Anterior" ──
-            // Nace con toda línea TDC al activarse, en cero. Es el renglón que
-            // el primer Cierre de Corte usará para arrastrar lo no pagado del
-            // periodo anterior; sin él habría que crearlo a mano justo cuando
-            // más prisa hay.
-            //
-            // Va aquí, no en un efecto ni en el guardado, porque el disparador
-            // es la transición confirmada en BD: si el UPDATE de arriba hubiera
-            // fallado, este bloque nunca se alcanza.
-            try {
-              const cargosPrevios: any[] =
-                loadFromSession<any[]>(storageId, 'cargos') ||
-                loadFromSavedStore<any[]>(storageId, 'cargos') ||
-                [];
-
-              // Idempotencia por CLAVE, no por nombre: el nombre lo pone el
-              // catálogo y puede cambiar; la clave es el contrato.
-              const yaExiste = cargosPrevios.some(
-                (c: any) =>
-                  String(c?.clave ?? '').trim() === CLAVE_SALDO_ANTERIOR ||
-                  String(c?.tipoCargo ?? '').trim().startsWith(`${CLAVE_SALDO_ANTERIOR} `),
-              );
-
-              if (!yaExiste) {
-                // El nombre sale del Catálogo de Componentes; la constante sólo
-                // entra si el catálogo no respondió.
-                const delCatalogo = (componentesCatalogo || []).find(
-                  (x: any) => String(x?.codigo ?? '').trim() === CLAVE_SALDO_ANTERIOR,
-                );
-                const nombreConcepto =
-                  String(delCatalogo?.nombre ?? '').trim() || NOMBRE_SALDO_ANTERIOR_RESPALDO;
-
-                // ── Las banderas salen de Afectación de la Línea del producto ──
-                // No se escriben aquí: son configuración, y el mismo criterio
-                // que ya usa el motor de movimientos para cualquier concepto.
-                // Para 023 el producto declara bFactura = S, así que fijarlas
-                // en código habría creado el cargo con el valor equivocado y el
-                // Cierre de Corte no lo habría facturado.
-                const afectacion: any[] = Array.isArray(
-                  (productoSeleccionado as any)?.rawData?.afectacionLinea,
-                ) ? (productoSeleccionado as any).rawData.afectacionLinea : [];
-
-                const filaAfectacion = afectacion.find(
-                  (a: any) => String(a?.clave ?? '').trim() === CLAVE_SALDO_ANTERIOR,
-                );
-
-                if (!filaAfectacion) {
-                  // Sin configuración no se inventan las banderas: se avisa y se
-                  // usa lo mínimo seguro (Cargo, genera cargo, no factura).
-                  console.warn(
-                    `[SolicitudCreditoForm] El concepto ${CLAVE_SALDO_ANTERIOR} no está en ` +
-                    '"Afectación de la Línea" del producto; el cargo se crea con valores por omisión.',
-                  );
-                }
-
-                // `indicador` normaliza S/s/" S "/Y/y — el mismo criterio del
-                // motor, para que "Sí" capturado de cualquier forma valga igual.
-                const naturaleza =
-                  String(filaAfectacion?.naturaleza ?? '').trim().toLowerCase() === 'abono'
-                    ? 'Abono' : 'Cargo';
-
-                const cargoSaldoAnterior = {
-                  id: generateId(),
-                  clave: CLAVE_SALDO_ANTERIOR,
-                  // El subtab muestra "clave — nombre", igual que los cargos
-                  // que vienen de Movimientos de la Línea.
-                  tipoCargo: `${CLAVE_SALDO_ANTERIOR} — ${nombreConcepto}`,
-                  descripcion: nombreConcepto,
-                  monto: 0,
-                  fechaCargo: fechaActivacion,
-                  estatus: 'Pendiente',
-                  naturaleza,
-                  bCargo: filaAfectacion ? indicador(filaAfectacion.bCargo) : 'S',
-                  bFactura: filaAfectacion ? indicador(filaAfectacion.bFactura) : 'N',
-                  notas: filaAfectacion
-                    ? 'Generado automáticamente al activar la Línea de Crédito. ' +
-                      'Banderas tomadas de Afectación de la Línea del producto.'
-                    : 'Generado automáticamente al activar la Línea de Crédito. ' +
-                      `El concepto ${CLAVE_SALDO_ANTERIOR} no está en Afectación de la Línea del producto.`,
-                };
-
-                const todosLosCargos = [...cargosPrevios, cargoSaldoAnterior];
-                saveToSession(storageId, 'cargos', todosLosCargos);
-                saveToSavedStore(storageId, 'cargos', todosLosCargos);
-                // `cargos` sólo viaja a BD cuando se incluye explícitamente en
-                // _allSubtabs — mismo camino que el cargo automático de la
-                // Formalización GPO.
-                await onSave?.({ ...formData, _allSubtabs: { cargos: todosLosCargos } });
-              }
-            } catch (errCargo) {
-              // No se aborta la liberación: la línea ya quedó Autorizada y ése
-              // es el efecto principal. Pero se dice, no se traga.
-              console.error('[SolicitudCreditoForm] No se generó el cargo 023:', errCargo);
-              toast.warning('La línea se activó, pero no se generó el cargo "Saldo Anterior"', {
-                description: 'Agréguelo manualmente en el subtab Cargos antes del primer corte.',
-                duration: 12000,
-              });
-            }
-
-            // §12 — el monto es el APROBADO, no el dispuesto ni el disponible.
-            const montoAprobado = parseFloat(
-              String(formData.montoAutorizado || '0').replace(/[^0-9.-]/g, ''),
-            ) || 0;
-
-            const contab = await contabilizarActivacion({
-              ctx: {
-                // §2 — la Guía Contabilizadora del producto. Sin cuentas en código.
-                guia: (productoSeleccionado as any)?.rawData?.motorContable,
-                productoId: String(formData.productoId || ''),
-                claveProducto: (productoSeleccionado as any)?.claveProducto,
-                nombreProducto: productoSeleccionado?.nombreProducto,
-                clienteId: String(formData._clienteId || ''),
-                lineaId: String(dbIdCierre),
-                cuentaId: String(dbIdCierre),
-                // Este formulario no tiene contexto de usuario; el RPC usa
-                // 'Sistema' por omisión.
-                usuario: undefined,
-                // §16 — la clave lógica de idempotencia sale de la línea, no de
-                // la hora: reintentar la liberación no genera una segunda póliza.
-                correlationId: `activacion|${dbIdCierre}`,
-              },
-              idLineaCredito: String(dbIdCierre),
-              montoAprobado,
-              fechaActivacion,
-            });
-
-            if (!contab.ok) {
-              // §81 — no se reporta como contabilizado lo que no lo está.
-              // La línea ya quedó Autorizada (el efecto de negocio principal);
-              // se dice con claridad y, como la contabilización es idempotente,
-              // se puede reintentar desde Cartera TDC.
-              toast.error('La línea se liberó pero NO quedó contabilizada', {
-                description: contab.error,
-                duration: 15000,
-              });
-            } else if (contab.persistido && !contab.yaEstaba) {
-              toast.success(`Póliza contable ${contab.numeroPoliza} generada`, {
-                description:
-                  `ACTIVACION_LINEA · Debe ${contab.poliza.totalDebe.toFixed(2)} = ` +
-                  `Haber ${contab.poliza.totalHaber.toFixed(2)} · ` +
-                  `${contab.poliza.partidas.length} partidas. Consulte Pólizas Contables.`,
-                duration: 10000,
-              });
-            }
-          }
-
           toast.success('Proceso completado', {
             description: `${formData.noSol}: última fase (${faseNombre}) concluida.`,
             duration: 8000,
@@ -2534,7 +2316,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
         // Guardar el estado completo de la solicitud para no perder datos al cambiar de fase
         try {
           const subtabsAutoSave: Record<string, any> = {};
-          const subtabKeys = ['terminos', 'simulacion', 'simulacion_cal', 'simulacion_inv', 'simulacion_arrendamiento', 'documentos', 'garantias', 'comisiones', 'autorizaciones', 'notas', 'partesRelacionadas', 'facturas', 'cargos', 'estructura2oPiso', 'modeloViabilidad', 'votacionCPC', 'resolucionCIC', 'validacionClausulas', 'comites', 'activacionesDispersion', 'datosFinancieros', 'condicionesTarjeta', '_originalData'];
+          const subtabKeys = ['terminos', 'simulacion', 'simulacion_cal', 'simulacion_inv', 'simulacion_arrendamiento', 'documentos', 'garantias', 'comisiones', 'autorizaciones', 'notas', 'partesRelacionadas', 'facturas', 'cargos', 'estructura2oPiso', 'modeloViabilidad', 'votacionCPC', 'resolucionCIC', 'validacionClausulas', 'comites', 'activacionesDispersion', '_originalData'];
           for (const key of subtabKeys) {
             const data = loadFromSession(storageId, key) ?? loadFromSavedStore(storageId, key);
             if (data) subtabsAutoSave[key] = data;
@@ -3075,7 +2857,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
       if (!formData.productoId || formData.productoId.trim() === '') errores.push('Producto');
       if (!formData.fechaSolicitud || formData.fechaSolicitud.trim() === '') errores.push('Fecha de Solicitud');
       if (!formData.montoSolicitado || formData.montoSolicitado.trim() === '' || parseFloat(formData.montoSolicitado.replace(/[^0-9.-]/g, '')) <= 0) errores.push('Monto Autorizado');
-      if (!formData.sucursal || formData.sucursal.trim() === '') errores.push('Sucursal');
+      if (!formData.sucursal || formData.sucursal.trim() === '') errores.push('Oficina de promoción');
       // Validaciones específicas por tipo
       const _lineaVal = (formData.lineaProducto || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
       const _esCaptVal = _lineaVal.includes('captac') || _lineaVal.includes('invers');
@@ -3974,7 +3756,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
 
     // ── Recopilar datos de TODAS las subtabs ANTES de commitAndClearSession ──
     const allSubtabs: Record<string, any> = {};
-    const subtabKeys = ['terminos', 'simulacion', 'simulacion_cal', 'simulacion_inv', 'simulacion_arrendamiento', 'documentos', 'garantias', 'comisiones', 'autorizaciones', 'notas', 'partesRelacionadas', 'facturas', 'cargos', 'estructura2oPiso', 'modeloViabilidad', 'votacionCPC', 'resolucionCIC', 'validacionClausulas', 'comites', 'activacionesDispersion', 'datosFinancieros', 'condicionesTarjeta', '_originalData'];
+    const subtabKeys = ['terminos', 'simulacion', 'simulacion_cal', 'simulacion_inv', 'simulacion_arrendamiento', 'documentos', 'garantias', 'comisiones', 'autorizaciones', 'notas', 'partesRelacionadas', 'facturas', 'cargos', 'estructura2oPiso', 'modeloViabilidad', 'votacionCPC', 'resolucionCIC', 'validacionClausulas', 'comites', 'activacionesDispersion', '_originalData'];
     for (const key of subtabKeys) {
       // _originalData puede haber sido limpiado de session por commitAndClearSession en el save anterior;
       // usar savedStore como fallback para no perder los datos de banca móvil al hacer deep merge
@@ -4052,23 +3834,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
    * tipo_producto = "Simple" y linea_producto = "Línea de Crédito" — ninguno
    * contiene "garantía", así que el nombre por sí solo no basta.
    */
-  /**
-   * Concepto del cargo que nace con toda línea TDC al activarse.
-   * La clave es el contrato con el Catálogo de Componentes Contables; el
-   * nombre es sólo respaldo por si el catálogo no responde.
-   */
-  const CLAVE_SALDO_ANTERIOR = '023';
-  const NOMBRE_SALDO_ANTERIOR_RESPALDO = 'Saldo Anterior';
-
   const esGPOForm = useMemo(() => {
-    // Una TDC comparte línea con la GPO pero no es GPO: sin este corte
-    // aparecían sus 5 subtabs de 2o Piso y sus validaciones de fase.
-    if (esTarjetaCredito(
-      formData.tipoProducto,
-      formData.nombreProducto,
-      productoSeleccionado?.nombreProducto,
-      (productoSeleccionado as any)?.sublineaProducto,
-    )) return false;
     const nombre = `${productoSeleccionado?.nombreProducto || ''} ${formData.nombreProducto || ''} ${formData.tipoProducto || ''}`
       .toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
     if (nombre.includes('garant')) return true;
@@ -4099,11 +3865,9 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
   const sections = [
     { id: 'default',           label: 'Default' },
     { id: 'terminos',          label: 'Términos y Condiciones' },
-    { id: 'datosFinancieros',  label: 'Datos Financieros' },
-    { id: 'condicionesTarjeta',label: 'Condiciones de la Tarjeta' },
     // REQ-9 — solo en Garantía Financiera 2o Piso; va antes de cotizar porque el
     // analista "viste" el ecosistema al admitir la solicitud.
-    ...(esGPOForm ? [{ id: 'estructura2oPiso', label: 'Estructura Operativa de 2o Piso' }] : []),
+    ...(esGPOForm ? [{ id: 'estructura2oPiso', label: 'Estructura Operativa' }] : []),
     // REQ-10 — Actividad 5 del BPM: Análisis de Grado de Riesgo.
     ...(esGPOForm ? [{ id: 'modeloViabilidad', label: 'Modelo y Viabilidad Financiera' }] : []),
     // REQ-11 — Actividad 6.1 del BPM: Votación del Comité de Prepago y Crédito.
@@ -4130,7 +3894,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
     { id: 'comisiones',        label: 'Comisiones' },
     { id: 'notas',             label: 'Notas' },
     { id: 'flujoTrabajo',      label: 'Flujo de Trabajo' },
-  ];
+  ].filter(s => subtabVisible(s.id));
 
   return (
     <div className="flex-1 flex flex-col bg-white overflow-auto">
@@ -4525,7 +4289,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
             </select>
           </div>
           <div>
-            <Lbl req error={errors.sucursal}>Sucursal</Lbl>
+            <Lbl req error={errors.sucursal}>Oficina de promoción</Lbl>
             <select value={formData.sucursal} onChange={e => set('sucursal', e.target.value)} disabled={isRO} className={sc(!!errors.sucursal)}>
               {CAT_SUCURSAL.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
             </select>
@@ -4945,31 +4709,6 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
                     clienteId={formData._clienteId}
                   />
                 )}
-                {sec.id === 'datosFinancieros' && (
-                  /* La `key` con hidratacionKey lo obliga a remontar cuando la
-                     auto-hidratación siembra la sesión: si no, un acordeón ya
-                     montado se queda con su estado vacío para siempre. */
-                  <DatosFinancierosTab
-                    key={`datfin-${storageId}-${hidratacionKey}`}
-                    mode={mode}
-                    solicitudId={storageId}
-                  />
-                )}
-                {sec.id === 'condicionesTarjeta' && (
-                  <CondicionesTarjetaTab
-                    key={`condtdc-${storageId}-${hidratacionKey}`}
-                    mode={mode}
-                    solicitudId={storageId}
-                    reglaTDC={reglaTDCProducto}
-                    tasaMoratoriaProducto={
-                      String(
-                        (productoSeleccionado as any)?.rawData?.porcentajeInteresMoratorio ??
-                        (productoSeleccionado as any)?.rawData?.factorMoratorio ??
-                        ''
-                      )
-                    }
-                  />
-                )}
                 {sec.id === 'terminos' && (
                   <TerminosCondicionesTab
                     key={`term-${storageId}-${hidratacionKey}`}
@@ -4983,9 +4722,6 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
                     tasaCotizacion={(cotizacionData as any)?._terminosCondiciones?.tasa || ''}
                     plazoCotizacion={(cotizacionData as any)?._terminosCondiciones?.plazo || ''}
                     cotizacionTerminos={(cotizacionData as any)?._terminosCondiciones}
-                    fechaFinHeader={formData.fechaFin}
-                    onFechaInicioChange={v => set('fechaInicio', v)}
-                    onFechaFinChange={v => set('fechaFin', v)}
                     onFechaPrimeraAportacionChange={v => set('fechaInicio', v)}
                     onMontoAutorizadoChange={v => set('montoAutorizado', v)}
                     onTasaChange={v => setTasaSeleccionadaHeader(v)}

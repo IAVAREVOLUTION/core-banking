@@ -405,7 +405,7 @@ export function AltaCreditoDefault({ onBack, onSave, mode }: AltaCreditoDefaultP
               </div>
 
               <div>
-                <label className="block text-[10px] text-gray-600 mb-0.5">SUCURSAL <span className="text-red-600">*</span></label>
+                <label className="block text-[10px] text-gray-600 mb-0.5">OFICINA DE PROMOCIÓN <span className="text-red-600">*</span></label>
                 {!camposEditables ? (
                   <div className={readOnlyTextClass}>{formData.sucursal || 'N/A'}</div>
                 ) : (

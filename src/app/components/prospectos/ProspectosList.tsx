@@ -66,13 +66,6 @@ export interface Prospecto {
   monedaInversion?: string;
   tipoFinanciamiento?: string;
   descripcionObra?: string;
-  // ── Perfil TDC — datos financieros del solicitante ──
-  tdcIngresoComprobado?: string;
-  tdcOtrosIngresos?: string;
-  tdcDeudaMensual?: string;
-  tdcGastosMensuales?: string;
-  tdcAntiguedadLaboral?: string;
-  tdcActividadEconomica?: string;
   /** Datos crudos del JSONB de J_CLIENTES — para detectar archivos (constanciaResidencia, etc.) */
   _rawData?: Record<string, any>;
 }
@@ -499,7 +492,7 @@ export function ProspectosList({ onNew, onEdit, onView, prospectos: prospectosPr
                 <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700" {...orden.th('id')}>NO. INTERLOCUTOR{orden.flecha('id')}</th>
                 <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700" {...orden.th('nombre')}>NOMBRE{orden.flecha('nombre')}</th>
                 <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700" {...orden.th('estatus')}>ESTATUS DEL CLIENTE{orden.flecha('estatus')}</th>
-                <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700" {...orden.th('sucursal')}>SUCURSAL{orden.flecha('sucursal')}</th>
+                <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700" {...orden.th('sucursal')}>OFICINA DE PROMOCIÓN{orden.flecha('sucursal')}</th>
                 <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700" {...orden.th('sic')}>ESTATUS SIC{orden.flecha('sic')}</th>
                 <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700" {...orden.th('listaNegra')}>ESTATUS LISTA NEGRA{orden.flecha('listaNegra')}</th>
                 <th className="px-3 py-2.5 text-left font-normal text-xs text-gray-700" {...orden.th('fecha')}>FECHA ORIGINACION{orden.flecha('fecha')}</th>

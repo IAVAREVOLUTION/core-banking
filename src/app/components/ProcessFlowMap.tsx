@@ -44,7 +44,7 @@ const FLOW_STEPS: FlowStep[] = [
     moduleId: 'configuracion',
     icon: <Settings size={20} />,
     status: 'ok',
-    statusDetail: 'Completo: Parámetros, Sucursales, Empleados, Puestos, Catálogos, Instituciones Financieras, Mantenimiento',
+    statusDetail: 'Completo: Parámetros, Oficinas de promoción, Empleados, Puestos, Catálogos, Instituciones Financieras, Mantenimiento',
     outgoingFlows: [
       { targetStep: 'config-productos', label: '→ Productos', status: 'ok', detail: 'Navegación por tab en barra principal' },
     ],

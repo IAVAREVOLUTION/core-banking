@@ -142,7 +142,7 @@ export function CreditoForm({ mode, onCancel }: CreditoFormProps) {
               {/* Columna 3 */}
               <div className="space-y-1.5">
                 <div className="flex flex-col">
-                  <label className="text-[10px] text-gray-600 mb-0.5">SUCURSAL <span className="text-red-600">*</span></label>
+                  <label className="text-[10px] text-gray-600 mb-0.5">OFICINA DE PROMOCIÓN <span className="text-red-600">*</span></label>
                   {!camposEditables ? (
                     <div className="px-2 py-1 text-xs text-gray-700">CDMX</div>
                   ) : (

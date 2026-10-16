@@ -184,21 +184,6 @@ export function preloadSubtabsFromDBData(
   const ps = tc.parametros_simulacion || {};
   const rawTerminos = tc._raw || {};
   const hasRowExtras = rowExtras?.montoCubrirGarantia != null || rowExtras?.porcentajeAforo != null;
-
-  // ── Datos Financieros — heredado del Perfil TDC del Cierre Comercial ──
-  // El Cierre Comercial lo guarda en terminos._raw.perfilTDC con sus propios
-  // nombres; aquí se traduce a los campos que captura DatosFinancierosTab.
-  const perfilTDC = rawTerminos.perfilTDC;
-  if (perfilTDC && typeof perfilTDC === 'object') {
-    saveToSession(storageId, 'datosFinancieros', {
-      ingresoMensualComprobado: String(perfilTDC.ingresoComprobado ?? ''),
-      otrosIngresos: String(perfilTDC.otrosIngresos ?? ''),
-      deudaMensualActual: String(perfilTDC.deudaMensual ?? ''),
-      gastosMensualesEstimados: String(perfilTDC.gastosMensuales ?? ''),
-      antiguedadLaboralMeses: String(perfilTDC.antiguedadLaboral ?? ''),
-      actividadEconomica: String(perfilTDC.actividadEconomica ?? ''),
-    });
-  }
   if (Object.keys(tc).length > 0 || hasRowExtras) {
     saveToSession(storageId, 'terminos', {
       montoSolicitado: ps.monto_solicitado || rawTerminos.montoSolicitado || '',
@@ -1261,7 +1246,7 @@ estatusSolicitud: s.estatusSolicitud || d.estatusSolicitud || 'Pendiente',
                 <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700" {...orden.th('fecha')}>FECHA{orden.flecha('fecha')}</th>
                 <th className="px-2 py-2.5 text-right font-medium text-xs text-gray-700" {...orden.th('montoSol')}>MONTO SOL.{orden.flecha('montoSol')}</th>
                 <th className="px-2 py-2.5 text-right font-medium text-xs text-gray-700" {...orden.th('montoAut')}>MONTO AUT.{orden.flecha('montoAut')}</th>
-                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700" {...orden.th('sucursal')}>SUCURSAL{orden.flecha('sucursal')}</th>
+                <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700" {...orden.th('sucursal')}>OFICINA DE PROMOCIÓN{orden.flecha('sucursal')}</th>
                 <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700" {...orden.th('fase')}>FASE{orden.flecha('fase')}</th>
                 <th className="px-2 py-2.5 text-left font-medium text-xs text-gray-700" {...orden.th('estatus')}>ESTATUS{orden.flecha('estatus')}</th>
               </tr>
@@ -1346,7 +1331,7 @@ estatusSolicitud: s.estatusSolicitud || d.estatusSolicitud || 'Pendiente',
                 <div className="flex items-center gap-2"><span className="text-gray-500 w-28">N° Solicitud:</span><span className="text-gray-800 font-medium">{solicitudToGenerate.noSol}</span></div>
                 <div className="flex items-center gap-2"><span className="text-gray-500 w-28">Estatus:</span><span className="text-green-700 font-medium">{solicitudToGenerate.estatusSolicitud}</span></div>
                 <div className="flex items-center gap-2"><span className="text-gray-500 w-28">Solicitante:</span><span className="text-gray-800 font-medium">{solicitudToGenerate.nombreCompleto}</span></div>
-                <div className="flex items-center gap-2"><span className="text-gray-500 w-28">Sucursal:</span><span className="text-gray-800">{solicitudToGenerate.sucursal}</span></div>
+                <div className="flex items-center gap-2"><span className="text-gray-500 w-28">Oficina de promoción:</span><span className="text-gray-800">{solicitudToGenerate.sucursal}</span></div>
                 <div className="flex items-center gap-2"><span className="text-gray-500 w-28">Monto Sol.:</span><span className="text-gray-800">{formatCurrency(solicitudToGenerate.montoSolicitado)}</span></div>
                 <div className="flex items-center gap-2"><span className="text-gray-500 w-28">Monto Aut.:</span><span className="text-gray-800 font-medium">{formatCurrency(solicitudToGenerate.montoAutorizado)}</span></div>
                 <div className="flex items-center gap-2"><span className="text-gray-500 w-28">Producto:</span><span className="text-gray-800">{solicitudToGenerate.nombreProducto}</span></div>

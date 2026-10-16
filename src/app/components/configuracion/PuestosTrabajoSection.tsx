@@ -86,23 +86,23 @@ function emptyPuesto(): Omit<PuestoTrabajo, 'id'> {
 // ═══════════════════════════════════════════════════════════════════
 async function exportExcelPT(data: PuestoTrabajo[]) {
   const XLSX = await cargarXLSX();
-  const rows = data.map((d) => ({ 'Row ID': d.rowIdBase, 'Puesto': d.puestoTrabajo, 'Superior': d.puestoSuperiorNombre, 'Tipo': d.tipoPuesto, 'Sucursal': d.sucursal, 'Territorio': d.territorio, 'Apellidos': d.apellidos, 'Nombre': d.nombre, 'Cargo': d.cargo }));
+  const rows = data.map((d) => ({ 'Row ID': d.rowIdBase, 'Puesto': d.puestoTrabajo, 'Superior': d.puestoSuperiorNombre, 'Tipo': d.tipoPuesto, 'Oficina de promoción': d.sucursal, 'Territorio': d.territorio, 'Apellidos': d.apellidos, 'Nombre': d.nombre, 'Cargo': d.cargo }));
   const ws = XLSX.utils.json_to_sheet(rows); const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Puestos'); XLSX.writeFile(wb, 'puestos_trabajo.xlsx'); toast.success('Exportado a Excel');
 }
 async function exportCSVPT(data: PuestoTrabajo[]) {
   const XLSX = await cargarXLSX();
-  const rows = data.map((d) => ({ 'Puesto': d.puestoTrabajo, 'Superior': d.puestoSuperiorNombre, 'Tipo': d.tipoPuesto, 'Sucursal': d.sucursal, 'Apellidos': d.apellidos, 'Nombre': d.nombre }));
+  const rows = data.map((d) => ({ 'Puesto': d.puestoTrabajo, 'Superior': d.puestoSuperiorNombre, 'Tipo': d.tipoPuesto, 'Oficina de promoción': d.sucursal, 'Apellidos': d.apellidos, 'Nombre': d.nombre }));
   const ws = XLSX.utils.json_to_sheet(rows); const csv = XLSX.utils.sheet_to_csv(ws);
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' }); const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = 'puestos_trabajo.csv'; link.click(); toast.success('Exportado a CSV');
 }
 async function exportPDFPT(data: PuestoTrabajo[]) {
   const { jsPDF, autoTable } = await cargarPDF();
   const doc = new jsPDF({ orientation: 'landscape' }); doc.setFontSize(14); doc.text('Puestos de Trabajo', 14, 18); doc.setFontSize(9); doc.text(`Generado: ${formatearFecha(new Date())}`, 14, 24);
-  autoTable(doc, { startY: 30, head: [['Row ID', 'Puesto', 'Superior', 'Tipo', 'Sucursal', 'Territorio', 'Cargo']], body: data.map((d) => [d.rowIdBase, d.puestoTrabajo, d.puestoSuperiorNombre, d.tipoPuesto, d.sucursal, d.territorio, d.cargo]), styles: { fontSize: 7 }, headStyles: { fillColor: [74, 111, 165] }, alternateRowStyles: { fillColor: [245, 245, 245] } });
+  autoTable(doc, { startY: 30, head: [['Row ID', 'Puesto', 'Superior', 'Tipo', 'Oficina de promoción', 'Territorio', 'Cargo']], body: data.map((d) => [d.rowIdBase, d.puestoTrabajo, d.puestoSuperiorNombre, d.tipoPuesto, d.sucursal, d.territorio, d.cargo]), styles: { fontSize: 7 }, headStyles: { fillColor: [74, 111, 165] }, alternateRowStyles: { fillColor: [245, 245, 245] } });
   doc.save('puestos_trabajo.pdf'); toast.success('Exportado a PDF');
 }
 function doPrintPT(data: PuestoTrabajo[]) {
-  const html = `<html><head><title>Puestos de Trabajo</title><style>body{font-family:Arial;font-size:11px;margin:20px}h2{color:#4A6FA5}table{border-collapse:collapse;width:100%}th{background:#4A6FA5;color:#fff;padding:6px 8px;text-align:left;font-size:10px}td{padding:4px 8px;border-bottom:1px solid #ddd;font-size:10px}tr:nth-child(even){background:#f5f5f5}</style></head><body><h2>Puestos de Trabajo</h2><table><tr><th>Puesto</th><th>Superior</th><th>Tipo</th><th>Sucursal</th><th>Apellidos</th><th>Nombre</th><th>Cargo</th></tr>${data.map((d) => `<tr><td>${d.puestoTrabajo}</td><td>${d.puestoSuperiorNombre}</td><td>${d.tipoPuesto}</td><td>${d.sucursal}</td><td>${d.apellidos}</td><td>${d.nombre}</td><td>${d.cargo}</td></tr>`).join('')}</table></body></html>`;
+  const html = `<html><head><title>Puestos de Trabajo</title><style>body{font-family:Arial;font-size:11px;margin:20px}h2{color:#4A6FA5}table{border-collapse:collapse;width:100%}th{background:#4A6FA5;color:#fff;padding:6px 8px;text-align:left;font-size:10px}td{padding:4px 8px;border-bottom:1px solid #ddd;font-size:10px}tr:nth-child(even){background:#f5f5f5}</style></head><body><h2>Puestos de Trabajo</h2><table><tr><th>Puesto</th><th>Superior</th><th>Tipo</th><th>Oficina de promoción</th><th>Apellidos</th><th>Nombre</th><th>Cargo</th></tr>${data.map((d) => `<tr><td>${d.puestoTrabajo}</td><td>${d.puestoSuperiorNombre}</td><td>${d.tipoPuesto}</td><td>${d.sucursal}</td><td>${d.apellidos}</td><td>${d.nombre}</td><td>${d.cargo}</td></tr>`).join('')}</table></body></html>`;
   const w = window.open('', '_blank'); if (w) { w.document.write(html); w.document.close(); w.print(); }
 }
 
@@ -309,7 +309,7 @@ function CreateModalPT({ nextRowId, puestoOptions, onSave, onCancel }: {
             {fld('Row Id Base', 'rowIdBase')}
             {fld('Puesto de trabajo', 'puestoTrabajo', { required: true })}
             {fld('Tipo de puesto', 'tipoPuesto', { required: true, type: 'select', options: TIPO_PUESTO_OPTIONS })}
-            {fld('Sucursal', 'sucursal', { required: true, type: 'select', options: SUCURSAL_OPTIONS })}
+            {fld('Oficina de promoción', 'sucursal', { required: true, type: 'select', options: SUCURSAL_OPTIONS })}
             {fld('Puesto superior', 'puestoSuperiorId', { type: 'select', options: puestoOptions })}
             {fld('Territorio', 'territorio', { type: 'select', options: TERRITORIO_OPTIONS })}
             {fld('Cargo', 'cargo')}
@@ -442,7 +442,7 @@ export function PuestosTrabajoSection() {
             <table className="w-full text-[11px]">
               <thead className="sticky top-0 z-10">
                 <tr className="bg-[#D0D0D0]">
-                  <th className="px-2 py-1.5 text-left text-gray-700 border-r border-gray-400 whitespace-nowrap">Sucursal</th>
+                  <th className="px-2 py-1.5 text-left text-gray-700 border-r border-gray-400 whitespace-nowrap">Oficina de promoción</th>
                   <th className="px-2 py-1.5 text-left text-gray-700 border-r border-gray-400 whitespace-nowrap">Puesto de trabajo</th>
                   <th className="px-2 py-1.5 text-left text-gray-700 border-r border-gray-400 whitespace-nowrap">Puesto superior</th>
                   <th className="px-2 py-1.5 text-left text-gray-700 border-r border-gray-400 whitespace-nowrap">Tipo</th>
@@ -491,7 +491,7 @@ export function PuestosTrabajoSection() {
                   <FormFieldPT label="Remunerable" name="remunerable" type="checkbox" checked={formData.remunerable} onCheck={handleCheckChange} />
                   <FormFieldPT label="Tipo de puesto" name="tipoPuesto" value={formData.tipoPuesto} type="select" options={TIPO_PUESTO_OPTIONS} required onChange={handleFieldChange} />
                   <FormFieldPT label="Lanz. plan remun." name="lanzamientoPlanRemuneracion" value={formData.lanzamientoPlanRemuneracion} onChange={handleFieldChange} />
-                  <FormFieldPT label="Sucursal" name="sucursal" value={formData.sucursal} required type="select" options={SUCURSAL_OPTIONS} onChange={handleFieldChange} />
+                  <FormFieldPT label="Oficina de promoción" name="sucursal" value={formData.sucursal} required type="select" options={SUCURSAL_OPTIONS} onChange={handleFieldChange} />
                   <FormFieldPT label="Cód. moneda remun." name="codigoMonedaRemuneracion" value={formData.codigoMonedaRemuneracion} type="select" options={MONEDA_OPTIONS} onChange={handleFieldChange} />
                   <FormFieldPT label="Territorio" name="territorio" value={formData.territorio} type="select" options={TERRITORIO_OPTIONS} onChange={handleFieldChange} />
                   <FormFieldPT label="Producto facturable" name="productoFacturable" value={formData.productoFacturable} onChange={handleFieldChange} />

@@ -339,18 +339,18 @@ export function ParametrosSucursalesSection() {
 
   const handleSave = useCallback(() => {
     const req: { key: keyof ParametrosSucursalesData; label: string }[] = [
-      { key: 'codigoSucursal', label: 'Código de Sucursal' },
-      { key: 'nombreSucursal', label: 'Nombre de la Sucursal' },
+      { key: 'codigoSucursal', label: 'Código de Oficina de promoción' },
+      { key: 'nombreSucursal', label: 'Nombre de la Oficina de promoción' },
       { key: 'codigoPais', label: 'Código de País' },
       { key: 'claseContable', label: 'Clase Contable (GL Class)' },
-      { key: 'sucursalCompensacion', label: 'Sucursal de Compensación' },
+      { key: 'sucursalCompensacion', label: 'Oficina de promoción de Compensación' },
     ];
     const miss = req.filter((r) => !(form[r.key] as string).trim());
     if (miss.length) {
       alert(`Campos obligatorios:\n${miss.map((m) => `• ${m.label}`).join('\n')}`);
       return;
     }
-    alert('Parámetros de Sucursal guardados correctamente.');
+    alert('Parámetros de Oficina de promoción guardados correctamente.');
   }, [form]);
 
   // ── TAB PRINCIPAL: Detalles Generales ──
@@ -360,12 +360,12 @@ export function ParametrosSucursalesSection() {
       <div className="grid grid-cols-3 gap-x-4 gap-y-2.5">
         {/* ── Columna izquierda ── */}
         <div className="space-y-2.5">
-          <FormFieldPS label="Sucursal Padre" name="sucursalPadre" value={form.sucursalPadre} onChange={handleChange} />
+          <FormFieldPS label="Oficina de promoción Padre" name="sucursalPadre" value={form.sucursalPadre} onChange={handleChange} />
           <FormFieldPS label="Oficina Regional" name="oficinaRegional" value={form.oficinaRegional} onChange={handleChange} />
           <FormFieldPS label="Código de País" name="codigoPais" value={form.codigoPais} onChange={handleChange} required type="select" options={PAIS_OPTIONS} />
           <FormFieldPS label="Identidad del Cliente" name="identidadCliente" value={form.identidadCliente} onChange={handleChange} />
           <FormFieldPS label="Moneda Local" name="monedaLocal" value={form.monedaLocal} onChange={handleChange} type="select" options={MONEDA_OPTIONS} />
-          <FormFieldPS label="Grupo de Sucursal" name="grupoSucursal" value={form.grupoSucursal} onChange={handleChange} />
+          <FormFieldPS label="Grupo de Oficina de promoción" name="grupoSucursal" value={form.grupoSucursal} onChange={handleChange} />
           <FormFieldPS label="Clase Contable (GL Class)" name="claseContable" value={form.claseContable} onChange={handleChange} required type="select" options={CLASE_CONTABLE_OPTIONS} />
           <FormFieldPS label="DSN de Reporte" name="dsnReporte" value={form.dsnReporte} onChange={handleChange} />
         </div>
@@ -384,7 +384,7 @@ export function ParametrosSucursalesSection() {
           <FormFieldPS label="Minutos" name="desfaseMinutos" value={form.desfaseMinutos} onChange={handleChange} />
           <CheckFieldPS label="Adelantado" name="adelantado" checked={form.adelantado} onChange={handleCheck} />
           <FormFieldPS label="Nivel de Tiempo" name="nivelTiempo" value={form.nivelTiempo} onChange={handleChange} />
-          <CheckFieldPS label="Sucursal de Fondos" name="sucursalFondos" checked={form.sucursalFondos} onChange={handleCheck} />
+          <CheckFieldPS label="Oficina de promoción de Fondos" name="sucursalFondos" checked={form.sucursalFondos} onChange={handleCheck} />
           <CheckFieldPS label="Permitir Acceso Corp." name="permitirAccesoCorporativo" checked={form.permitirAccesoCorporativo} onChange={handleCheck} />
           <FormFieldPS label="Estado EOC" name="estadoEOC" value={form.estadoEOC} onChange={handleChange} type="select" options={EOC_OPTIONS} />
           <FormFieldPS label="Valor Externo" name="valorExterno" value={form.valorExterno} onChange={handleChange} />
@@ -405,7 +405,7 @@ export function ParametrosSucursalesSection() {
         <div>
           <SectionHeader title="Detalles de ATM (Cajeros Automáticos)" />
           <div className="space-y-2.5 px-4 py-3">
-            <FormFieldPS label="Sucursal ATM" name="sucursalATM" value={form.sucursalATM} onChange={handleChange} />
+            <FormFieldPS label="Oficina de promoción ATM" name="sucursalATM" value={form.sucursalATM} onChange={handleChange} />
             <FormFieldPS label="ID de Institución" name="idInstitucion" value={form.idInstitucion} onChange={handleChange} />
           </div>
         </div>
@@ -421,7 +421,7 @@ export function ParametrosSucursalesSection() {
         <div>
           <SectionHeader title="Pagos Locales" />
           <div className="space-y-2.5 px-4 py-3">
-            <FormFieldPS label="Sucursal de Compensación" name="sucursalCompensacion" value={form.sucursalCompensacion} onChange={handleChange} required />
+            <FormFieldPS label="Oficina de promoción de Compensación" name="sucursalCompensacion" value={form.sucursalCompensacion} onChange={handleChange} required />
             <FormFieldPS label="Cód. Trans. Consola" name="codigoTransaccionConsola" value={form.codigoTransaccionConsola} onChange={handleChange} />
           </div>
         </div>
@@ -484,7 +484,7 @@ export function ParametrosSucursalesSection() {
       case 'preferencias':
         return (
           <div className="grid grid-cols-3 gap-x-6 gap-y-3 px-4 py-3">
-            <FormFieldPS label="Idioma de Sucursal" name="idiomaSucursal" value={form.idiomaSucursal} onChange={handleChange} type="select" options={IDIOMA_OPTIONS} />
+            <FormFieldPS label="Idioma de Oficina de promoción" name="idiomaSucursal" value={form.idiomaSucursal} onChange={handleChange} type="select" options={IDIOMA_OPTIONS} />
             <FormFieldPS label="Formato de Fecha" name="formatoFecha" value={form.formatoFecha} onChange={handleChange} type="select" options={FORMATO_FECHA_OPTIONS} />
             <FormFieldPS label="Formato de Hora" name="formatoHora" value={form.formatoHora} onChange={handleChange} type="select" options={FORMATO_HORA_OPTIONS} />
           </div>
@@ -554,7 +554,7 @@ export function ParametrosSucursalesSection() {
             <MapPin size={16} className="text-primary-theme" />
           </div>
           <h2 className="text-sm text-gray-800 tracking-wide" style={{ fontWeight: 700 }}>
-            Parámetros de Sucursales
+            Parámetros de Oficinas de promoción
           </h2>
         </div>
       </div>
@@ -566,10 +566,10 @@ export function ParametrosSucursalesSection() {
             <div className="px-3 py-2 space-y-1">
 
               {/* ═══ CAMPOS SUPERIORES ═══ */}
-              <SectionHeader title="Datos de la Sucursal" />
+              <SectionHeader title="Datos de la Oficina de promoción" />
               <div className="grid grid-cols-4 gap-x-4 gap-y-2.5 px-4 pb-3">
-                <FormFieldPS label="Código de Sucursal" name="codigoSucursal" value={form.codigoSucursal} onChange={handleChange} required />
-                <FormFieldPS label="Nombre de la Sucursal" name="nombreSucursal" value={form.nombreSucursal} onChange={handleChange} required />
+                <FormFieldPS label="Código de Oficina de promoción" name="codigoSucursal" value={form.codigoSucursal} onChange={handleChange} required />
+                <FormFieldPS label="Nombre de la Oficina de promoción" name="nombreSucursal" value={form.nombreSucursal} onChange={handleChange} required />
                 <FormFieldPS label="Código Alterno" name="codigoAlterno" value={form.codigoAlterno} onChange={handleChange} />
                 <CheckFieldPS label="Estado Disponibilidad" name="estadoDisponibilidad" checked={form.estadoDisponibilidad} onChange={handleCheck} />
               </div>
@@ -596,7 +596,7 @@ export function ParametrosSucursalesSection() {
                   <TabBtn label="Rango CIF" active={lowerTab === 'cif'} onClick={() => setLowerTab('cif')} />
                   <TabBtn label="Func. Globales Interdicción" active={lowerTab === 'interdiccion'} onClick={() => setLowerTab('interdiccion')} />
                   <TabBtn label="Impuestos" active={lowerTab === 'impuestos'} onClick={() => setLowerTab('impuestos')} />
-                  <TabBtn label="Moneda de Sucursal" active={lowerTab === 'moneda'} onClick={() => setLowerTab('moneda')} />
+                  <TabBtn label="Moneda de Oficina de promoción" active={lowerTab === 'moneda'} onClick={() => setLowerTab('moneda')} />
                   <TabBtn label="Campos" active={lowerTab === 'campos'} onClick={() => setLowerTab('campos')} />
                 </div>
                 <div className="border border-t-0 border-gray-200 bg-white">

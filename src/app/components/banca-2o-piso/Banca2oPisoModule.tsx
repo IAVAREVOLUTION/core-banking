@@ -45,7 +45,7 @@ export function Banca2oPisoModule() {
             className={`flex items-center gap-2 px-3 py-1.5 rounded text-sm transition-colors ${
               view.type === 'inicio' ? 'tab-active' : 'tab-inactive'
             }`}
-            title="Dashboard de Banca 2º Piso"
+            title="Dashboard de Banca de Desarrollo"
           >
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
               <path d="M2 8l6-5 6 5v6a1 1 0 01-1 1H3a1 1 0 01-1-1z" />

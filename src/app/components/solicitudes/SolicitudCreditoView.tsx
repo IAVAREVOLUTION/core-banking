@@ -113,7 +113,7 @@ export function SolicitudCreditoView({ solicitud }: SolicitudCreditoViewProps) {
           {/* Columna 3 */}
           <div className="space-y-3">
             <div>
-              <label className="block text-[10px] text-gray-600 mb-0.5 uppercase">Sucursal *</label>
+              <label className="block text-[10px] text-gray-600 mb-0.5 uppercase">Oficina de promoción *</label>
               <div className="text-xs text-gray-900">{solicitud.sucursal || 'Querétaro'}</div>
             </div>
 

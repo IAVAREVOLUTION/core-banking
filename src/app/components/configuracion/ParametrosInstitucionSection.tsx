@@ -281,7 +281,7 @@ export function ParametrosInstitucionSection() {
   const handleSave = useCallback(() => {
     const required: { key: keyof ParametrosInstitucionData; label: string }[] = [
       { key: 'codigoBanco', label: 'Código del banco' },
-      { key: 'codigoSucursal', label: 'Código de sucursal' },
+      { key: 'codigoSucursal', label: 'Código de oficina de promoción' },
       { key: 'monedaLocal', label: 'Moneda local' },
       { key: 'monedaDescuento', label: 'Moneda de descuento' },
       { key: 'monedaOficinaCentral', label: 'Moneda de oficina central' },
@@ -623,10 +623,10 @@ export function ParametrosInstitucionSection() {
               </div>
 
               {/* ═════════════ SECCIÓN: SUCURSAL PRINCIPAL ═════════════ */}
-              <SectionHeader title="Sucursal principal" />
+              <SectionHeader title="Oficina de promoción principal" />
               <div className="grid grid-cols-3 gap-x-6 gap-y-3 px-4 pb-4">
                 <FormFieldPI
-                  label="Código de sucursal"
+                  label="Código de oficina de promoción"
                   name="codigoSucursal"
                   value={formData.codigoSucursal}
                   onChange={handleChange}

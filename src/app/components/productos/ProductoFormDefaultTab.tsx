@@ -52,7 +52,7 @@ export function ProductoFormDefaultTab({ formData, mode, handleChange, showDescu
           )}
         </div>
         <div>
-          <Lbl req>Sucursales</Lbl>
+          <Lbl req>Oficinas de promoción</Lbl>
           {isView ? (
             <div className={viewText}>{formData.sucursal}</div>
           ) : (
@@ -220,7 +220,7 @@ export function ProductoFormDefaultTab({ formData, mode, handleChange, showDescu
           )}
         </div>
         <div>
-          <Lbl req>Sucursal</Lbl>
+          <Lbl req>Oficina de promoción</Lbl>
           {isView ? (
             <div className={viewText}>{formData.sucursal}</div>
           ) : (

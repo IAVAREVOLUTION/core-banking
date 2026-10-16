@@ -19,6 +19,14 @@ const PUESTOS: Record<string, string> = {
   demo: 'Usuario Demo',
 };
 
+/** Subtabs de Solicitud y Originación que NO ve el usuario DEMO (sólo interfaz). */
+const SUBTABS_OCULTOS_DEMO = ['comites', 'comisiones', 'fases'];
+
+/** ¿El usuario de la sesión puede ver este subtab de Solicitud / Originación? */
+export function subtabVisible(id: string): boolean {
+  return !(getUsuarioSesion() === 'demo' && SUBTABS_OCULTOS_DEMO.includes(id));
+}
+
 /** Puesto mostrado junto al usuario (p. ej. en Notas). */
 export function getPuestoSesion(): string {
   return PUESTOS[getUsuarioSesion()] || 'Sistema';

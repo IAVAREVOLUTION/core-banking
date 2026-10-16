@@ -195,7 +195,7 @@ export function InversionesHome({ onViewList, onNewInversion }: InversionesHomeP
         {/* Inversiones por Sucursal */}
         <div className="bg-white rounded-lg border border-gray-300 p-5">
           <div className="mb-4">
-            <h3 className="text-sm font-medium text-gray-900 mb-1">Inversiones por Sucursal</h3>
+            <h3 className="text-sm font-medium text-gray-900 mb-1">Inversiones por Oficina de promoción</h3>
             <p className="text-xs text-gray-500">Distribución de cartera por ubicación</p>
           </div>
           <ResponsiveContainer width="100%" height={250}>

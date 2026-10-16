@@ -263,7 +263,7 @@ export function PLDCalificacionRiesgo({ onBack }: Props) {
                         <th className="px-3 py-2 text-left text-xs text-gray-700">Nombre / Razón Social</th>
                         <th className="px-3 py-2 text-left text-xs text-gray-700">RFC</th>
                         <th className="px-3 py-2 text-left text-xs text-gray-700">Personalidad</th>
-                        <th className="px-3 py-2 text-left text-xs text-gray-700">Sucursal</th>
+                        <th className="px-3 py-2 text-left text-xs text-gray-700">Oficina de promoción</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -337,7 +337,7 @@ export function PLDCalificacionRiesgo({ onBack }: Props) {
             <div className="flex items-center gap-2"><label className={labelCls}>NOMBRE INTERLOCUTOR</label><div className={disabledCls} style={{ fontWeight: 500 }}>{selectedData.nombreCliente}</div></div>
             <div className="flex items-center gap-2"><label className={labelCls}>RFC</label><div className={`${disabledCls} font-mono`}>{selectedData.clienteRFC||'—'}</div></div>
             <div className="flex items-center gap-2"><label className={labelCls}>PERSONALIDAD</label><div className={disabledCls}>{selectedData.clientePersonalidad||'—'}</div></div>
-            <div className="flex items-center gap-2"><label className={labelCls}>SUCURSAL</label><div className={disabledCls}>{selectedData.clienteSucursal||'—'}</div></div>
+            <div className="flex items-center gap-2"><label className={labelCls}>OFICINA DE PROMOCIÓN</label><div className={disabledCls}>{selectedData.clienteSucursal||'—'}</div></div>
             <div className="flex items-center gap-2"><label className={labelCls}>FECHA CALIFICACIÓN</label><div className={disabledCls}>{selectedData.fechaCalificacion||'Sin evaluar'}</div></div>
           </div>
         </div>

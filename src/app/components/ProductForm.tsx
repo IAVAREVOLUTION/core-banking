@@ -218,7 +218,7 @@ export function ProductForm({
                 </div>
 
                 <div className="flex items-center gap-2">
-                  <label className="text-xs w-40 flex-shrink-0 text-gray-700">Sucursales</label>
+                  <label className="text-xs w-40 flex-shrink-0 text-gray-700">Oficinas de promoción</label>
                   {isView ? (
                     <div className="flex-1 px-2 py-0.5 text-xs text-gray-700">{formData.organization}</div>
                   ) : (
@@ -535,7 +535,7 @@ export function ProductForm({
                   </div>
 
                   <div className="flex items-center gap-2">
-                    <label className="text-xs w-40 flex-shrink-0 text-gray-700">Sucursales</label>
+                    <label className="text-xs w-40 flex-shrink-0 text-gray-700">Oficinas de promoción</label>
                     {isView ? (
                       <div className="flex-1 px-2 py-0.5 text-xs text-gray-700">{formData.organization}</div>
                     ) : (

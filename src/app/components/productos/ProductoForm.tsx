@@ -267,7 +267,7 @@ export function ProductoForm({
         { field: 'baseCalculo', label: 'Base Cálculo' },
         { field: 'estatus', label: 'Estatus' },
         { field: 'tipoTasa', label: isSeguros ? 'Tipo Cobertura' : 'Tipo Tasa' },
-        { field: 'sucursal', label: 'Sucursal' },
+        { field: 'sucursal', label: 'Oficina de promoción' },
       ];
 
       // Validar que cada campo requerido tenga un valor válido
@@ -547,7 +547,7 @@ export function ProductoForm({
     { id: 'expedientes-electronicos', label: 'Requisitos OK' },
     { id: 'cargo', label: 'Cargo' },
     { id: 'comision', label: 'Comisión' },
-    { id: 'sucursal', label: 'Sucursal' },
+    { id: 'sucursal', label: 'Oficina de promoción' },
     // === Tabs específicos de Crédito ===
     { id: 'amortizaciones', label: 'Amortizaciones' },
     { id: 'autorizacion', label: 'Autorización' },
@@ -579,7 +579,7 @@ export function ProductoForm({
     { id: 'matriz-tasa-fija', label: 'Montos y Coberturas' },
     { id: 'requisitos', label: 'Requisitos' },
     { id: 'paquetes', label: 'Paquetes' },
-    { id: 'sucursal', label: 'Sucursales' },
+    { id: 'sucursal', label: 'Oficinas de promoción' },
     { id: 'cargo', label: 'Cargos' },
     { id: 'prelacion', label: 'Prelación de Cargo' },
     { id: 'fases', label: 'Fases' },

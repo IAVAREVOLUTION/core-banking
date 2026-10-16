@@ -260,7 +260,7 @@ export function SolicitudesDashboard({ solicitudes, onGoToList }: SolicitudesDas
         {/* Por Sucursal */}
         <div className="bg-white border border-gray-300 rounded">
           <div className="bg-white border-b border-gray-300 px-4 py-3">
-            <h2 className="text-base font-medium text-gray-900">Solicitudes por Sucursal</h2>
+            <h2 className="text-base font-medium text-gray-900">Solicitudes por Oficina de promoción</h2>
             <p className="text-xs text-gray-600 mt-0.5">Distribución geográfica</p>
           </div>
           <div className="p-4">
