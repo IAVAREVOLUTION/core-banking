@@ -122,6 +122,8 @@ export function ProductoLineaCreditoFormDatosProducto({
                 <option value="Simple">Simple</option>
                 <option value="Arrendamiento">Arrendamiento</option>
                 <option value="Global">Global</option>
+                {/* Tarjeta de crédito revolvente — se configura en el subtab Reglas de Pago y Corte TDC */}
+                <option value="Tarjeta de Crédito">Tarjeta de Crédito</option>
                 {/* Habilita los subtabs Prelación 2o Piso y Cobertura y Comisiones 2o Piso */}
                 <option value="Garantía Financiera 2o Piso">Garantía Financiera 2o Piso</option>
               </select>

@@ -135,6 +135,9 @@ export function OportunidadesModule({
         tipoFinanciamiento: L.tipoFinanciamiento || '',
         descripcionObra: L.descripcionObra || '',
         leadOrigenId: L.leadOrigenId || '',
+        // ── Perfil TDC heredado del Lead ──
+        // Su presencia es lo que hace que la Oportunidad se muestre en modo TDC.
+        perfilTDC: (L as any).perfilTDC || undefined,
       },
     };
 

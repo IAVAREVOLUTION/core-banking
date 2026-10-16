@@ -36,13 +36,15 @@ interface CargoTabProps {
    *  fases vivas de sessionStorage (las que el usuario acaba de editar en el
    *  subtab Fases sin guardar todavía) y cae a éstas. */
   fasesProducto?: FaseProducto[];
+  /** Encabezado del tab. Default 'Cargos'; Línea de Crédito usa 'Cargos Permitidos'. */
+  titulo?: string;
 }
 
 // Catálogos — Tipo de Cargo sale del catálogo de Componentes Contables (REQ-15)
 const MONEDA_OPTIONS = ['MXN', 'USD', 'EUR', 'CAD', 'GBP'];
 
 export const CargoTab = forwardRef<{ getData: () => Cargo[] }, CargoTabProps>(
-  ({ mode, productId, lineaProducto = '', sublinea = '', initialData, persistToStorage, storagePrefix, fasesProducto }, ref) => {
+  ({ mode, productId, lineaProducto = '', sublinea = '', initialData, persistToStorage, storagePrefix, fasesProducto, titulo = 'Cargos' }, ref) => {
     const prefix = storagePrefix || 'credito';
     const storageKey = persistToStorage && productId ? `${prefix}_cargo_${productId}` : '';
     // Fases vivas del producto: FasesTab las persiste bajo esta misma
@@ -78,6 +80,7 @@ export const CargoTab = forwardRef<{ getData: () => Cargo[] }, CargoTabProps>(
     );
 
     useImperativeHandle(ref, () => ({ getData: () => data }), [data]);
+
 
     const [selectedRow, setSelectedRow] = useState<number | null>(null);
     const [showConsulta, setShowConsulta] = useState(false);
@@ -153,7 +156,7 @@ export const CargoTab = forwardRef<{ getData: () => Cargo[] }, CargoTabProps>(
       <>
         <div className="bg-white">
           <div className="mb-3">
-            <span className="text-sm font-medium text-gray-800">Cargos</span>
+            <span className="text-sm font-medium text-gray-800">{titulo}</span>
           </div>
 
           <div className="flex items-center gap-2 mb-3">

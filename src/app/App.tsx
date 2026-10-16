@@ -68,6 +68,7 @@ const EjecReportesModule = perezoso(() => import('./components/reportes-regulato
 const PagosReferenciadosModule = perezoso(() => import('./components/pagos-referenciados/PagosReferenciadosModule'), 'PagosReferenciadosModule');
 const CasosCobranzaModule = perezoso(() => import('./components/casos-cobranza/CasosCobranzaModule'), 'CasosCobranzaModule');
 const CarteraList = perezoso(() => import('./components/cartera/CarteraList'), 'CarteraList');
+const CarteraTDCModule = perezoso(() => import('./components/cartera-tdc/CarteraTDCModule'), 'CarteraTDCModule');
 const Banca2oPisoModule = perezoso(() => import('./components/banca-2o-piso/Banca2oPisoModule'), 'Banca2oPisoModule');
 const AportacionesModule = perezoso(() => import('./components/cartera/AportacionesModule'), 'AportacionesModule');
 const CobranzaModule = perezoso(() => import('./components/cartera/CobranzaModule'), 'CobranzaModule');
@@ -101,6 +102,7 @@ const PRECARGA_MODULOS: Partial<Record<string, Array<{ precargar: () => void }>>
   'cartera-arrendamiento': [CarteraArrendamientoList],
   'cartera-credito': [CarteraList],
   'cartera-credito-individual': [CarteraList],
+  'cartera-tdc': [CarteraTDCModule],
   'cartera-inversion': [AportacionesModule],
   'cartera-ahorro': [AportacionesModule],
   'ejec-reportes': [EjecReportesModule],
@@ -110,7 +112,7 @@ const PRECARGA_MODULOS: Partial<Record<string, Array<{ precargar: () => void }>>
 };
 
 type View = 'list' | 'form' | 'direccion';
-type Module = 'dashboard' | 'configuracion' | 'productos' | 'garantias' | 'prospectos' | 'clientes' | 'oportunidades' | 'cotizaciones' | 'cuentas-ahorro' | 'solicitudes-creditos' | 'solicitudes-activacion' | 'originacion' | 'creditos' | 'inversiones' | 'cartera-credito' | 'cartera-credito-individual' | 'cartera-arrendamiento' | 'cartera-inversion' | 'cartera-ahorro' | 'avisos-vencimiento' | 'pld' | 'pagos-referenciados' | 'casos-cobranza' | 'cobranza' | 'ejec-reportes' | 'polizas-contables' | 'gestion-riesgos' | 'banca-2o-piso' | 'une';
+type Module = 'dashboard' | 'configuracion' | 'productos' | 'garantias' | 'prospectos' | 'clientes' | 'oportunidades' | 'cotizaciones' | 'cuentas-ahorro' | 'solicitudes-creditos' | 'solicitudes-activacion' | 'originacion' | 'creditos' | 'inversiones' | 'cartera-credito' | 'cartera-credito-individual' | 'cartera-tdc' | 'cartera-arrendamiento' | 'cartera-inversion' | 'cartera-ahorro' | 'avisos-vencimiento' | 'pld' | 'pagos-referenciados' | 'casos-cobranza' | 'cobranza' | 'ejec-reportes' | 'polizas-contables' | 'gestion-riesgos' | 'banca-2o-piso' | 'une';
 type ClienteView = 'dashboard' | 'list' | 'form' | 'direccion';
 type ProspectoView = 'dashboard' | 'list' | 'form';
 type SolicitudView = 'dashboard' | 'list' | 'form';
@@ -1510,6 +1512,8 @@ function App() {
         ) : moduloActivo === 'cartera-credito-individual' ? (
           // Clon de Cartera de Crédito 2º Piso fijo a la sublínea Crédito Individual.
           <CarteraList sublineaFija="Crédito Individual" etiqueta="Cartera Crédito Individual" />
+        ) : moduloActivo === 'cartera-tdc' ? (
+          <CarteraTDCModule />
         ) : moduloActivo === 'cartera-arrendamiento' ? (
           <CarteraArrendamientoList />
         ) : moduloActivo === 'cartera-inversion' ? (
