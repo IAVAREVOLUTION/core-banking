@@ -10,6 +10,7 @@ export const MODULOS_DEMO = [
   // `clientes` es el modulo que el menu muestra como "Personas".
   'prospectos', 'clientes', 'cotizaciones', 'oportunidades', 'solicitudes-creditos',
   'solicitudes-activacion', 'originacion', 'banca-2o-piso', 'cartera-credito',
+  'cartera-credito-individual',
   'cobranza', 'polizas-contables',
 ];
 
