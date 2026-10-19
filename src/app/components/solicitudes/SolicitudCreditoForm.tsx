@@ -271,7 +271,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
     return initial;
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [activeSection, setActiveSection] = useState<string>(() => subtabVisible('fases') ? 'fases' : 'default');
+  const [activeSection, setActiveSection] = useState<string>(''); // los subtabs inician cerrados
 
   // ══════════════════════════════════════════════════════════════════
   // AUTO-HIDRATACIÓN DESDE BD — red de seguridad
@@ -353,7 +353,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Guard: si la sección activa no existe en el set actual, volver a 'fases' ──
+  // ── Guard: si la sección activa no existe en el set actual, cerrarla ──
   useEffect(() => {
     // sections se recalcula en cada render — no es un dep estable, se resuelve con el string de lineaProducto
     const ids = ['default','expediente','garantias','comites','cargos','terminos','simulacion','partesRelacionadas','fases','notas','flujoTrabajo','comisiones','autorizaciones'];
@@ -362,7 +362,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
     const hidden = _cap ? ['garantias'] : [];
     const unavailable = hidden.filter(id => !ids.includes(id));
     if (hidden.includes(activeSection) || unavailable.includes(activeSection)) {
-      setActiveSection(subtabVisible('fases') ? 'fases' : 'default');
+      setActiveSection('');
     }
   }, [formData.lineaProducto, activeSection]);
   const [showClienteModal, setShowClienteModal] = useState(false);
@@ -4372,7 +4372,7 @@ export function SolicitudCreditoForm({ mode, solicitudId, onCancel, onSave, coti
 
           <div>
             <Lbl req error={errors.lineaProducto}>Línea de Producto</Lbl>
-            <select value={formData.lineaProducto} onChange={e => { set('lineaProducto', e.target.value); setActiveSection('fases'); }} disabled={isRO} className={sc(!!errors.lineaProducto)}>
+            <select value={formData.lineaProducto} onChange={e => { set('lineaProducto', e.target.value); setActiveSection(''); }} disabled={isRO} className={sc(!!errors.lineaProducto)}>
               {CAT_LINEA_PRODUCTO.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
             </select>
             {errors.lineaProducto && <span className="text-[10px] text-red-500 mt-0.5 block">{errors.lineaProducto}</span>}

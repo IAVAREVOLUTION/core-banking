@@ -5,12 +5,26 @@
  */
 let usuarioSesion: string | null = null;
 
+/**
+ * Copia en sessionStorage: la variable de módulo se pierde si el módulo se
+ * vuelve a cargar (recarga en caliente) mientras la sesión sigue abierta, y
+ * entonces DEMO dejaba de reconocerse (veía subtabs que tiene ocultos).
+ */
+const CLAVE_SESION = 'usuario_sesion';
+
 export function setUsuarioSesion(usuario: string | null): void {
   usuarioSesion = usuario;
+  try {
+    if (usuario) sessionStorage.setItem(CLAVE_SESION, usuario);
+    else sessionStorage.removeItem(CLAVE_SESION);
+  } catch { /* sin sessionStorage: queda sólo en memoria */ }
 }
 
 /** Usuario que firma los registros: 'admin', 'demo', … */
 export function getUsuarioSesion(): string {
+  if (!usuarioSesion) {
+    try { usuarioSesion = sessionStorage.getItem(CLAVE_SESION); } catch { /* ignore */ }
+  }
   return usuarioSesion || 'sistema';
 }
 
@@ -20,7 +34,7 @@ const PUESTOS: Record<string, string> = {
 };
 
 /** Subtabs de Solicitud y Originación que NO ve el usuario DEMO (sólo interfaz). */
-const SUBTABS_OCULTOS_DEMO = ['comites', 'comisiones', 'fases'];
+const SUBTABS_OCULTOS_DEMO = ['default', 'comites', 'comisiones', 'fases'];
 
 /** ¿El usuario de la sesión puede ver este subtab de Solicitud / Originación? */
 export function subtabVisible(id: string): boolean {

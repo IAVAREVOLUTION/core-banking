@@ -1001,7 +1001,7 @@ function OriginacionForm({ mode, originacionId, onCancel, onSave, onActivarCuent
 
   const [fd, setFd] = useState<OriginacionFormData>(getInit);
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [activeSec, setActiveSec] = useState('default');
+  const [activeSec, setActiveSec] = useState(''); // los subtabs inician cerrados
   const [showDebug, setShowDebug] = useState(false);
   const [lastResult, setLastResult] = useState<any>(null);
 
