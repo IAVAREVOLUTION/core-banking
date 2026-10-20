@@ -50,9 +50,9 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
     setTimeout(() => {
       const u = usuario.trim().toLowerCase();
       const p = password.trim();
-      if (u === 'admin' && p === 'Test321') {
+      if (u === 'admin' && p === 'Test-123') {
         onLogin({ usuario: 'admin' });          // sin lista = ve todo
-      } else if (u === 'demo' && p === 'Test321') {
+      } else if (u === 'demo' && p === 'Test-123') {
         onLogin({ usuario: 'demo', modulosPermitidos: MODULOS_DEMO });
       } else {
         setError('Usuario o contraseña incorrectos');
