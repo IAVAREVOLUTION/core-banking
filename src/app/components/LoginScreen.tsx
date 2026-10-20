@@ -49,10 +49,10 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
     // Validación básica: admin / admin · demo / demo
     setTimeout(() => {
       const u = usuario.trim().toLowerCase();
-      const p = password.trim().toLowerCase();
-      if (u === 'admin' && p === 'admin') {
+      const p = password.trim();
+      if (u === 'admin' && p === 'Test-123') {
         onLogin({ usuario: 'admin' });          // sin lista = ve todo
-      } else if (u === 'demo' && p === 'demo') {
+      } else if (u === 'demo' && p === 'Test-123') {
         onLogin({ usuario: 'demo', modulosPermitidos: MODULOS_DEMO });
       } else {
         setError('Usuario o contraseña incorrectos');
